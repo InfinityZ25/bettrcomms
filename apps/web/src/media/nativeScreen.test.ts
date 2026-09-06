@@ -93,7 +93,8 @@ describe('native screen signaling lifecycle', () => {
       h264Profile: 'auto',
     }, ['peer-a', 'peer-b']);
     await Promise.resolve();
-    const query = sent.find((signal) => signal.type === 'signal')!;
+    const query = sent.find((signal) =>
+      signal.type === 'signal' && signal.transport === 'native-screen')!;
     for (const peerId of ['peer-a', 'peer-b'])
       await transport.handle({
         type: 'signal', from: peerId, to: 'self', transport: 'native-screen',

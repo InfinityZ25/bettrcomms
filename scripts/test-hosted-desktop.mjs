@@ -38,6 +38,11 @@ try {
       screen: { available: screen.available, version: screen.version },
       media,
       mediaDevices: Boolean(navigator.mediaDevices),
+      voiceCodec: {
+        processor: typeof MediaStreamTrackProcessor === 'function',
+        encoder: typeof AudioEncoder === 'function' && (await AudioEncoder.isConfigSupported({ codec: 'opus', sampleRate: 48000, numberOfChannels: 1, bitrate: 64000 })).supported,
+        decoder: typeof AudioDecoder === 'function' && (await AudioDecoder.isConfigSupported({ codec: 'opus', sampleRate: 48000, numberOfChannels: 1 })).supported,
+      },
     };
   });
   assert.equal(result.boot.apiOrigin, expectedOrigin);
@@ -45,6 +50,7 @@ try {
   assert.equal(result.screen.version, 1);
   assert.equal(result.media.platform, 'windows');
   assert.equal(result.mediaDevices, true);
+  assert.deepEqual(result.voiceCodec, { processor: true, encoder: true, decoder: true });
 
   const nvidiaBridge = await page.evaluate(async () => {
     const invoke = window.__TAURI_INTERNALS__.invoke;

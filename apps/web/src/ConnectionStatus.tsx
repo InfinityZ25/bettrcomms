@@ -26,6 +26,7 @@ export default function ConnectionStatus({
   const [position, setPosition] = useState({ left: 8, bottom: 80 });
   const button = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
+  const relayed = stats.some(s => s.voiceRelay?.state === 'relayed');
   const callValues = stats
     .filter((s) => s.connectionState === 'connected')
     .map((s) => s.route?.currentRoundTripTimeMs)
@@ -33,10 +34,10 @@ export default function ConnectionStatus({
       (value): value is number =>
         typeof value === 'number' && Number.isFinite(value) && value >= 0,
     );
-  const source = peerCount ? 'Call' : 'Server';
+  const source = relayed ? 'Server' : peerCount ? 'Call' : 'Server';
   const value = !joined
     ? null
-    : peerCount
+    : relayed ? serverRtt : peerCount
       ? callValues.length
         ? Math.max(...callValues)
         : null
@@ -146,7 +147,7 @@ export default function ConnectionStatus({
           <strong>
             {joined
               ? peerCount
-                ? stats.some((s) => s.connectionState === 'connected')
+                ? relayed ? 'Voice via server' : stats.some((s) => s.connectionState === 'connected')
                   ? 'Voice connected'
                   : 'Connecting…'
                 : 'Waiting for your people'
@@ -217,7 +218,7 @@ export default function ConnectionStatus({
               <span>
                 {names[s.peerId] ?? 'Friend'}
                 <small>
-                  {s.connectionState === 'connected'
+                  {s.voiceRelay?.state === 'relayed' ? 'Encrypted server voice · TCP' : s.voiceRelay?.state === 'connecting' ? 'Connecting server voice…' : s.voiceRelay?.state === 'unavailable' && s.connectionState !== 'connected' ? s.voiceRelay.message ?? 'Server voice unavailable' : s.connectionState === 'connected'
                     ? s.route?.localCandidateType === 'relay' ||
                       s.route?.remoteCandidateType === 'relay'
                       ? 'Relay'
@@ -228,17 +229,24 @@ export default function ConnectionStatus({
                 </small>
               </span>
               <strong>
-                {s.connectionState === 'connected'
+                {s.voiceRelay?.state === 'relayed' ? 'Server route' : s.connectionState === 'connected'
                   ? ms(s.route?.currentRoundTripTimeMs)
                   : '—'}
               </strong>
             </div>
           ))}
+          {stats.filter(s => s.voiceRelay?.verificationCode).map(s => (
+            <details key={`key-${s.peerId}`}>
+              <summary>Verify voice with {names[s.peerId] ?? 'Friend'}</summary>
+              <p>Compare this code through another trusted channel. Matching codes verify the encryption keys for this relay session. Reconnecting changes the code.</p>
+              <code style={{ overflowWrap: 'anywhere' }}>{s.voiceRelay!.verificationCode}</code>
+            </details>
+          ))}
           <p>
             {!joined
               ? 'Join a call to start measuring.'
               : peerCount
-                ? 'Call ping is the highest measured round-trip time to a connected friend. Voice travels directly or through TURN.'
+                ? relayed ? 'Server ping measures signaling, not the full relayed audio path. Server voice can pause while TCP recovers lost packets. Video still uses WebRTC.' : 'Call ping is the highest measured round-trip time to a connected friend. Voice travels directly or through TURN.'
                 : 'Server ping measures chat and signaling. Call ping appears when a friend connects.'}
           </p>
           <button

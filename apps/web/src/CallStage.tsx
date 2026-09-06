@@ -121,7 +121,7 @@ export default function CallStage({
       ...(microphone && !muted ? [{ id: 'self', track: microphone }] : []),
       ...remote
         .filter(
-          (t) => t.source === 'microphone' && peers[t.peerId] === 'connected',
+          (t) => t.source === 'microphone' && (peers[t.peerId] === 'connected' || stats.some(s => s.peerId === t.peerId && s.voiceRelay?.state === 'relayed')),
         )
         .map((t) => ({ id: t.peerId, track: t.track })),
     ],
@@ -394,6 +394,10 @@ export default function CallStage({
       );
       const e = new MediaEngine({
         signaling: s,
+        voiceRelay: {
+          url: `/api/v1/rooms/${room.id}/voice-relay`,
+          mode: localStorage.getItem('bc-voice-route') === 'relay' ? 'relay' : 'automatic',
+        },
         quality: readQuality(),
         ice: {
           mode:
@@ -637,8 +641,8 @@ export default function CallStage({
       })),
   ];
   const share = shares.find((s) => s.id === selected) ?? shares[0];
-  const connected = Object.values(peers).filter(
-    (s) => s === 'connected',
+  const connected = Object.entries(peers).filter(
+    ([id, state]) => state === 'connected' || stats.some(s => s.peerId === id && s.voiceRelay?.state === 'relayed'),
   ).length;
   function pointerDown(e: PointerEvent) {
     if (zoom <= 1) return;
@@ -709,7 +713,7 @@ export default function CallStage({
                 <span>{names[id] ?? 'Friend'}</span>
                 <span
                   className={
-                    peers[id] === 'connected' ? 'online-dot' : 'connecting-dot'
+                    peers[id] === 'connected' || stats.some(s => s.peerId === id && s.voiceRelay?.state === 'relayed') ? 'online-dot' : 'connecting-dot'
                   }
                 />
               </div>

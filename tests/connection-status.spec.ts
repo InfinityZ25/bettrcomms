@@ -29,6 +29,26 @@ async function mount(page: Page, props: Record<string, unknown>) {
   }, props);
 }
 
+test('server voice is visible and does not present signaling ping as peer latency', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 760 });
+  await mount(page, {
+    joined: true, peerCount: 1, serverRtt: 31, names: { friend: 'Sam' },
+    stats: [{ peerId: 'friend', timestamp: 1, connectionState: 'failed', tracks: [],
+      voiceRelay: { state: 'relayed', verificationCode: '1111-2222-3333-4444-5555-6666-7777-8888' } }],
+  });
+  const trigger = page.getByRole('button', { name: 'Connection diagnostics' });
+  await expect(trigger).toContainText('Voice via server');
+  await expect(trigger).toContainText('Server · 31 ms');
+  await trigger.click();
+  const panel = page.getByRole('region', { name: 'Connection details' });
+  await expect(panel).toContainText('Encrypted server voice · TCP');
+  await expect(panel).toContainText('not the full relayed audio path');
+  await page.getByText('Verify voice with Sam', { exact: true }).click();
+  await expect(panel.locator('code')).toContainText('1111-2222');
+  expect(await panel.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await page.screenshot({ path: '.local/voice-relay-connection.png' });
+});
+
 test('server-only status reports signaling latency and closes with Escape', async ({
   page,
 }) => {

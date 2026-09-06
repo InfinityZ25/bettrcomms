@@ -124,7 +124,7 @@ export class RoomWebSocketSignaling extends EventTarget implements SignalingAdap
         this.dispatchEvent(new CustomEvent(type === "peer.joined" ? "peer-joined" : "peer-left", { detail: { peerId: String(message.from) } }));
       } else if (type === "presence") {
         this.dispatchEvent(new CustomEvent("presence", { detail: { peerId: String(message.from), payload: message.payload } }));
-      } else if (type === "offer" || type === "answer" || type === "ice-candidate" || type === "track-metadata" || (type === "signal" && message.transport === "native-screen")) {
+      } else if (type === "offer" || type === "answer" || type === "ice-candidate" || type === "track-metadata" || (type === "signal" && (message.transport === "native-screen" || message.transport === "voice-relay"))) {
         this.dispatchEvent(new CustomEvent("signal", { detail: message as unknown as MediaSignal }));
       } else if (type === "error") {
         this.dispatchEvent(new CustomEvent("error", { detail: message.error }));

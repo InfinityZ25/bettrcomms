@@ -245,6 +245,10 @@ func (a *API) room(w http.ResponseWriter, r *http.Request, u User, p []string) {
 		a.websocket(w, r, u, rid)
 		return
 	}
+	if len(p) == 3 && p[2] == "voice-relay" {
+		a.voiceRelay(w, r, u, rid)
+		return
+	}
 	if _, e := a.Store.RoomForMember(rid, u.ID); e != nil {
 		a.fail(w, 403, "not_a_member", "room membership required")
 		return

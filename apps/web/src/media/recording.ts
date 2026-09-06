@@ -14,6 +14,7 @@ export interface RecordableTrack {
 }
 
 interface ActiveRecorder {
+  segmentId: string;
   descriptor: RecordableTrack;
   recorder?: MediaRecorder;
   chunks: Blob[];
@@ -93,11 +94,13 @@ export class TrackRecordingSession {
       throw new Error('Cannot add a track to a stopped recording');
     if (
       this.active.some(
-        (active) => active.descriptor.track.id === descriptor.track.id,
+        (active) => active.descriptor.track.id === descriptor.track.id && active.endedAt === undefined,
       )
     )
       return;
     const active: ActiveRecorder = {
+      segmentId: this.active.some(item => item.descriptor.track.id === descriptor.track.id)
+        ? crypto.randomUUID() : descriptor.track.id,
       descriptor,
       chunks: [],
       startedAt: performance.now(),
@@ -193,7 +196,7 @@ export class TrackRecordingSession {
 
   removeTrack(trackId: string): void {
     const active = this.active.find(
-      (item) => item.descriptor.track.id === trackId,
+      (item) => item.descriptor.track.id === trackId && item.endedAt === undefined,
     );
     if (!active || active.endedAt !== undefined) return;
     active.endedReason = 'track-ended';
@@ -262,7 +265,7 @@ export class TrackRecordingSession {
           active.native?.blob ?? new Blob(active.chunks, { type: mimeType });
         if (blob.size) files.push({ name: fileName, blob });
         return {
-          id: active.descriptor.track.id,
+          id: active.segmentId,
           peerId: active.descriptor.peerId,
           source: active.descriptor.source,
           mediaKind: active.descriptor.track.kind as 'audio' | 'video',

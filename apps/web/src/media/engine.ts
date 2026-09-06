@@ -1,4 +1,5 @@
 import { AudioLeveler, type AudioLevelerOptions } from './audio';
+import { VoiceRelay } from './voiceRelay';
 import { TrackRecordingSession, type RecordableTrack } from './recording';
 import type {
   CaptureOptions,
@@ -46,6 +47,7 @@ export interface MediaEngineOptions {
   signaling: SignalingAdapter;
   ice?: IceOptions;
   quality?: MediaQualityOptions;
+  voiceRelay?: { url: string; mode?: 'automatic' | 'relay' };
 }
 
 export class MediaEngine extends EventTarget {
@@ -66,6 +68,14 @@ export class MediaEngine extends EventTarget {
   private nativeAudio?: NativeSystemAudioTrack;
   private nativeAudioAbort?: AbortController;
   private nativeShareGeneration = 0;
+  private readonly voiceRelay?: VoiceRelay;
+  private readonly relayMode: 'automatic' | 'relay';
+  private readonly relayTracks = new Map<string, RemoteTrack>();
+  private readonly relayStates = new Map<string, NonNullable<PeerMediaStats['voiceRelay']>>();
+  private readonly relayTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly stableTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly directReady = new Set<string>();
+  private readonly directProbe = new Map<string, string>();
 
   constructor(options: MediaEngineOptions) {
     super();
@@ -75,6 +85,31 @@ export class MediaEngine extends EventTarget {
       ...options.ice,
     };
     this.quality = { maxAudioBitrate: 256_000, ...options.quality };
+    this.relayMode = options.voiceRelay?.mode ?? 'automatic';
+    if (options.voiceRelay && this.ice.mode !== 'direct-only') {
+      this.voiceRelay = new VoiceRelay({
+        localPeerId: this.signaling.localPeerId,
+        url: options.voiceRelay.url,
+        sendSignal: (signal) => this.send(signal),
+        onTrack: (peerId, track) => {
+          if (track && this.peers.has(peerId) && !this.disposed) {
+            const remote = { peerId, source: 'microphone' as const, track, stream: new MediaStream([track]) };
+            this.relayTracks.set(peerId, remote);
+            this.emit('remote-track', remote);
+          } else if (this.relayTracks.delete(peerId)) {
+            const direct = this.peers.get(peerId)?.remote.get('microphone');
+            if (direct && !this.disposed) this.emit('remote-track', direct);
+            else this.emit('remote-track-removed', { peerId, source: 'microphone' });
+          }
+        },
+        onState: (peerId, state, message) => {
+          if (this.peers.has(peerId) && !this.disposed) {
+            if (state === 'unavailable' && this.directReady.has(peerId)) this.relayStates.delete(peerId);
+            else this.relayStates.set(peerId, { state, message });
+          }
+        },
+      });
+    }
     this.nativeScreen = new NativeScreenTransport(
       this.signaling,
       this.ice.iceServers ?? [],
@@ -493,6 +528,7 @@ export class MediaEngine extends EventTarget {
       previousCleanup?.();
     }
     this.emit('local-track', { source, track });
+    if (source === 'microphone') this.voiceRelay?.setMicrophone(track);
   }
 
   getLocalTracks(): ReadonlyMap<MediaSourceKind, MediaStreamTrack> {
@@ -503,8 +539,11 @@ export class MediaEngine extends EventTarget {
     const peers = peerId
       ? ([this.peers.get(peerId)].filter(Boolean) as Peer[])
       : [...this.peers.values()];
-    return peers.flatMap((peer) => [...peer.remote.values()]).concat(
+    return peers.flatMap((peer) => [...peer.remote.values()].filter(
+      (track) => track.source !== 'microphone' || !this.relayTracks.has(track.peerId),
+    )).concat(
       [...this.nativeRemote.values()].filter((track) => !peerId || track.peerId === peerId),
+      [...this.relayTracks.values()].filter((track) => !peerId || track.peerId === peerId),
     );
   }
 
@@ -564,8 +603,10 @@ export class MediaEngine extends EventTarget {
       );
     pc.onconnectionstatechange = () => {
       this.emit('peer-state', { peerId, state: pc.connectionState });
+      this.updateVoiceRoute(peerId);
       if (pc.connectionState === 'failed') pc.restartIce();
     };
+    this.updateVoiceRoute(peerId);
     if (this.nativeScreen.active) void this.nativeScreen.addPeer(peerId);
     // Do not depend solely on negotiationneeded for the first offer. Some
     // WebRTC implementations can coalesce that event while both callers join.
@@ -577,6 +618,14 @@ export class MediaEngine extends EventTarget {
   }
 
   removePeer(peerId: string): void {
+    this.clearRelayTimer(peerId);
+    clearTimeout(this.stableTimers.get(peerId));
+    this.stableTimers.delete(peerId);
+    this.voiceRelay?.stop(peerId);
+    this.relayTracks.delete(peerId);
+    this.relayStates.delete(peerId);
+    this.directReady.delete(peerId);
+    this.directProbe.delete(peerId);
     void this.nativeScreen.removePeer(peerId);
     const peer = this.peers.get(peerId);
     if (!peer) return;
@@ -595,6 +644,23 @@ export class MediaEngine extends EventTarget {
     // unconditional await here lets a later candidate overtake its offer.
     if ('transport' in signal && signal.transport === 'native-screen') {
       await this.nativeScreen.handle(signal);
+      return;
+    }
+    if ('transport' in signal && signal.transport === 'voice-relay') {
+      if (!this.voiceRelay || !signal.from || !this.peers.has(signal.from)) return;
+      if (signal.data.kind === 'direct-probe') {
+        if (this.directReady.has(signal.from) && typeof signal.data.nonce === 'string' && signal.data.nonce.length <= 64) {
+          await this.send({ type: 'signal', transport: 'voice-relay', to: signal.from, data: { kind: 'direct-ready', nonce: signal.data.nonce } });
+        }
+      } else if (signal.data.kind === 'direct-ready') {
+        if (typeof signal.data.nonce === 'string' && this.directProbe.get(signal.from) === signal.data.nonce)
+          this.restoreDirectVoice(signal.from);
+      } else if (signal.data.kind === 'direct-unready') {
+        this.directProbe.delete(signal.from);
+        this.scheduleVoiceRelay(signal.from);
+      } else {
+        await this.voiceRelay.handleSignal(signal);
+      }
       return;
     }
     const peerId = signal.from;
@@ -801,6 +867,10 @@ export class MediaEngine extends EventTarget {
       peerId,
       timestamp: now,
       connectionState: peer.pc.connectionState,
+      ...(this.relayStates.has(peerId) ? { voiceRelay: {
+        ...this.relayStates.get(peerId)!,
+        verificationCode: await this.voiceRelay?.getVerificationCode(peerId) ?? undefined,
+      } } : {}),
       tracks,
       ...(selectedPair
         ? {
@@ -843,6 +913,7 @@ export class MediaEngine extends EventTarget {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.voiceRelay?.dispose();
     ++this.nativeShareGeneration;
     void this.stopNativeSystemAudio();
     this.nativeScreen.dispose();
@@ -931,7 +1002,60 @@ export class MediaEngine extends EventTarget {
       },
       { once: true },
     );
-    this.emit('remote-track', remote);
+    if (descriptor.source !== 'microphone' || !this.relayTracks.has(peerId))
+      this.emit('remote-track', remote);
+  }
+
+  private clearRelayTimer(peerId: string): void {
+    clearTimeout(this.relayTimers.get(peerId));
+    this.relayTimers.delete(peerId);
+  }
+
+  private updateVoiceRoute(peerId: string): void {
+    if (!this.voiceRelay) return;
+    this.clearRelayTimer(peerId);
+    clearTimeout(this.stableTimers.get(peerId));
+    this.stableTimers.delete(peerId);
+    const peer = this.peers.get(peerId);
+    if (!peer) return;
+    if (peer.pc.connectionState === 'connected' && this.relayMode === 'automatic') {
+      // Both ends must see a stable RTC path before either stops the fallback.
+      this.stableTimers.set(peerId, setTimeout(() => {
+        this.stableTimers.delete(peerId);
+        if (this.peers.get(peerId) !== peer || peer.pc.connectionState !== 'connected') return;
+        this.directReady.add(peerId);
+        const nonce = crypto.randomUUID();
+        this.directProbe.set(peerId, nonce);
+        void this.send({ type: 'signal', transport: 'voice-relay', to: peerId, data: { kind: 'direct-probe', nonce } });
+      }, 5000));
+    } else {
+      this.directReady.delete(peerId);
+      this.directProbe.delete(peerId);
+      void this.send({ type: 'signal', transport: 'voice-relay', to: peerId, data: { kind: 'direct-unready' } });
+      this.scheduleVoiceRelay(peerId);
+    }
+  }
+
+  private scheduleVoiceRelay(peerId: string): void {
+    if (!this.voiceRelay) return;
+    const peer = this.peers.get(peerId);
+    if (!peer) return;
+    this.clearRelayTimer(peerId);
+    this.relayTimers.set(peerId, setTimeout(() => {
+        this.relayTimers.delete(peerId);
+        if (this.disposed || this.peers.get(peerId) !== peer) return;
+        void this.voiceRelay!.start(peerId).catch(error => {
+          this.relayStates.set(peerId, { state: 'unavailable', message: error instanceof Error ? error.message : String(error) });
+        });
+      }, this.relayMode === 'relay' ? 0 : 8000));
+  }
+
+  private restoreDirectVoice(peerId: string): void {
+    if (!this.directReady.has(peerId)) return;
+    this.clearRelayTimer(peerId);
+    this.directProbe.delete(peerId);
+    this.voiceRelay?.stop(peerId);
+    this.relayStates.delete(peerId);
   }
 
   private async sendMetadata(peerId: string): Promise<void> {

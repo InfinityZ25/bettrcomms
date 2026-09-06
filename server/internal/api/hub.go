@@ -33,21 +33,29 @@ type client struct {
 	send chan wire
 }
 type Hub struct {
-	mu    sync.RWMutex
-	rooms map[string]map[*client]struct{}
+	mu     sync.RWMutex
+	rooms  map[string]map[*client]struct{}
+	voices map[string]map[string]*voiceClient
 }
 
-func NewHub() *Hub { return &Hub{rooms: map[string]map[*client]struct{}{}} }
+func NewHub() *Hub {
+	return &Hub{rooms: map[string]map[*client]struct{}{}, voices: map[string]map[string]*voiceClient{}}
+}
 func (h *Hub) add(room string, c *client) []string {
 	h.mu.Lock()
 	if h.rooms[room] == nil {
 		h.rooms[room] = map[*client]struct{}{}
 	}
 	var replaced []*client
+	var replacedVoices []*voiceClient
 	peers := make([]string, 0, len(h.rooms[room]))
 	for existing := range h.rooms[room] {
 		if existing.user == c.user {
 			replaced = append(replaced, existing)
+			if voice := h.voices[room][existing.user]; voice != nil && voice.owner == existing {
+				replacedVoices = append(replacedVoices, voice)
+				delete(h.voices[room], existing.user)
+			}
 			delete(h.rooms[room], existing)
 		} else {
 			peers = append(peers, existing.user)
@@ -67,6 +75,9 @@ func (h *Hub) add(room string, c *client) []string {
 		}
 	}
 	h.mu.Unlock()
+	for _, voice := range replacedVoices {
+		voice.close("signaling connection replaced")
+	}
 	for _, existing := range replaced {
 		go func(old *client) {
 			_ = old.conn.Close(websocket.StatusPolicyViolation, "replaced by a newer connection")
@@ -77,6 +88,11 @@ func (h *Hub) add(room string, c *client) []string {
 func (h *Hub) remove(room string, c *client) {
 	h.mu.Lock()
 	delete(h.rooms[room], c)
+	var voice *voiceClient
+	if candidate := h.voices[room][c.user]; candidate != nil && candidate.owner == c {
+		voice = candidate
+		delete(h.voices[room], c.user)
+	}
 	userStillConnected := false
 	for existing := range h.rooms[room] {
 		if existing.user == c.user {
@@ -86,8 +102,12 @@ func (h *Hub) remove(room string, c *client) {
 	}
 	if len(h.rooms[room]) == 0 {
 		delete(h.rooms, room)
+		delete(h.voices, room)
 	}
 	h.mu.Unlock()
+	if voice != nil {
+		voice.close("signaling connection closed")
+	}
 	if !userStillConnected {
 		h.broadcast(room, c, wire{Type: "peer.left", From: c.user})
 	}
@@ -133,14 +153,19 @@ func (h *Hub) peers(room, user string) []string {
 	return out
 }
 func (h *Hub) disconnectRoomUser(room, user string) {
-	h.mu.RLock()
+	h.mu.Lock()
 	targets := []*client{}
 	for c := range h.rooms[room] {
 		if c.user == user {
 			targets = append(targets, c)
 		}
 	}
-	h.mu.RUnlock()
+	voice := h.voices[room][user]
+	delete(h.voices[room], user)
+	h.mu.Unlock()
+	if voice != nil {
+		voice.close("room membership revoked")
+	}
 	for _, c := range targets {
 		go func(target *client) {
 			_ = target.conn.Close(websocket.StatusPolicyViolation, "room membership revoked")
@@ -148,27 +173,46 @@ func (h *Hub) disconnectRoomUser(room, user string) {
 	}
 }
 func (h *Hub) disconnectRoom(room string) {
-	h.mu.RLock()
+	h.mu.Lock()
 	targets := []*client{}
+	voices := []*voiceClient{}
 	for c := range h.rooms[room] {
 		targets = append(targets, c)
 	}
-	h.mu.RUnlock()
+	for _, voice := range h.voices[room] {
+		voices = append(voices, voice)
+	}
+	delete(h.voices, room)
+	h.mu.Unlock()
+	for _, voice := range voices {
+		voice.close("room deleted")
+	}
 	for _, c := range targets {
 		go func(target *client) { _ = target.conn.Close(websocket.StatusPolicyViolation, "room deleted") }(c)
 	}
 }
 func (h *Hub) disconnectUser(user string) {
-	h.mu.RLock()
+	h.mu.Lock()
 	targets := []*client{}
-	for _, clients := range h.rooms {
+	voices := []*voiceClient{}
+	for room, clients := range h.rooms {
 		for c := range clients {
 			if c.user == user {
 				targets = append(targets, c)
 			}
 		}
+		if voice := h.voices[room][user]; voice != nil {
+			voices = append(voices, voice)
+			delete(h.voices[room], user)
+			if len(h.voices[room]) == 0 {
+				delete(h.voices, room)
+			}
+		}
 	}
-	h.mu.RUnlock()
+	h.mu.Unlock()
+	for _, voice := range voices {
+		voice.close("session revoked")
+	}
 	for _, c := range targets {
 		go func(target *client) { _ = target.conn.Close(websocket.StatusPolicyViolation, "session revoked") }(c)
 	}

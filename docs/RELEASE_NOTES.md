@@ -2,6 +2,16 @@
 
 This is a working browser vertical slice and native application foundation, not a completed replacement for Discord or a public production release.
 
+## Microphone fallback over WebSockets
+
+Calls prefer WebRTC and now attempt encrypted server voice after eight seconds without a connected peer path. Settings → Connection includes explicit Server voice compatibility mode; Direct connections only prevents this route in both directions. Diagnostics show Server voice and distinguish signaling-server ping from end-to-end media latency. Camera, screenshare, and system/application audio remain on WebRTC and still need direct connectivity or TURN.
+
+The fallback sends processed mono Opus microphone audio, starts at 64 kbps, adapts down on socket backlog, and preserves mute, independent source recording, and local playback volume. Bounded client/server queues discard stale unsent audio. Fresh ephemeral keys, replay checks, and a manually comparable verification code protect relay payloads; public-key delivery still trusts authenticated signaling unless users compare codes through another channel. See [voice relay](VOICE_RELAY.md) for the trust model and runtime/operational limits.
+
+Restoring direct voice requires a fresh readiness acknowledgment after a stable WebRTC path. Recording now supports returning to a previously recorded track with a separate timed segment and unique segment ID. No server recording or rewind retention was added.
+
+Validation: production frontend build, 58 unit tests, 50 browser tests (optional TURN test skipped), and Go tests/vet with local Docker PostgreSQL passed. The real-room browser test verified automatic fallback, decoded processed audio, mute silence, relay socket reconnection, and recovery to direct WebRTC. A packaged Windows smoke confirmed Opus encoder/decoder and track-processor capabilities, native IPC, and the external-auth origin boundary. This is not a physical-device/cross-network voice quality test, and macOS relay support remains unverified.
+
 ## Working browser flows
 
 WorkOS login integration and explicit localhost test login, opaque revocable PostgreSQL sessions, friend discovery/requests/acceptance, private rooms and direct rooms, room owner controls, persistent chat, microphone/camera calls, screen sharing with browser-supported audio, per-participant playback gain, optional voice balancing, standard/RNNoise noise suppression, adjustable quality ceilings, direct-only/prefer-direct mode, live route statistics, camera-top/side/focus layouts, zoom/pan/fullscreen, and per-track browser recording downloads.

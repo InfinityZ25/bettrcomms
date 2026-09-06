@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -75,7 +76,7 @@ func TestWebSocketSignalIntegration(t *testing.T) {
 		}
 		return c, w.Result().Cookies()[0]
 	}
-	c1, _ := dial(u1)
+	c1, cookie1 := dial(u1)
 	defer c1.CloseNow()
 	readWire := func(c *websocket.Conn) wire {
 		var v wire
@@ -87,7 +88,7 @@ func TestWebSocketSignalIntegration(t *testing.T) {
 	if got := readWire(c1); got.Type != "peers" {
 		t.Fatalf("first frame=%#v", got)
 	}
-	c2, _ := dial(u2)
+	c2, cookie2 := dial(u2)
 	defer c2.CloseNow()
 	if got := readWire(c2); got.Type != "peers" {
 		t.Fatalf("second first frame=%#v", got)
@@ -137,6 +138,30 @@ func TestWebSocketSignalIntegration(t *testing.T) {
 	if metadata.From != u2.ID || string(metadata.Tracks) != string(tracks) {
 		t.Fatalf("metadata=%#v tracks=%s", metadata, string(metadata.Tracks))
 	}
+	dialVoice := func(cookie *http.Cookie) *websocket.Conn {
+		h := http.Header{}
+		h.Set("Cookie", cookie.String())
+		h.Set("Origin", srv.URL)
+		c, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http")+"/api/v1/rooms/"+room.ID+"/voice-relay", &websocket.DialOptions{HTTPHeader: h})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+	v1, v2 := dialVoice(cookie1), dialVoice(cookie2)
+	defer v1.CloseNow()
+	defer v2.CloseNow()
+	ciphertext := base64.StdEncoding.EncodeToString(make([]byte, 32))
+	if err := wsjsonWrite(ctx, v1, voiceWire{Type: "voice", To: u2.ID, From: "spoofed", Epoch: "epoch-1", Sequence: 7, Data: ciphertext}); err != nil {
+		t.Fatal(err)
+	}
+	var voice voiceWire
+	if err := wsjsonRead(ctx, v2, &voice); err != nil {
+		t.Fatal(err)
+	}
+	if voice.From != u1.ID || voice.To != u2.ID || voice.Sequence != 7 || voice.Data != ciphertext {
+		t.Fatalf("voice routing metadata invalid: type=%q from=%q to=%q sequence=%d", voice.Type, voice.From, voice.To, voice.Sequence)
+	}
 	c3, cookie3 := dial(u2)
 	defer c3.CloseNow()
 	if got := readWire(c3); got.Type != "peers" {
@@ -147,6 +172,13 @@ func TestWebSocketSignalIntegration(t *testing.T) {
 	if _, _, e := c2.Read(closeCtx); websocket.CloseStatus(e) != websocket.StatusPolicyViolation {
 		t.Fatalf("replaced socket close=%v status=%v", e, websocket.CloseStatus(e))
 	}
+	voiceCloseCtx, voiceCloseCancel := context.WithTimeout(ctx, 2*time.Second)
+	defer voiceCloseCancel()
+	if _, _, e := v2.Read(voiceCloseCtx); websocket.CloseStatus(e) != websocket.StatusPolicyViolation {
+		t.Fatalf("replaced voice socket close=%v status=%v", e, websocket.CloseStatus(e))
+	}
+	v3 := dialVoice(cookie3)
+	defer v3.CloseNow()
 	logoutReq, e := http.NewRequest("POST", srv.URL+"/api/v1/auth/logout", strings.NewReader(`{}`))
 	if e != nil {
 		t.Fatal(e)
@@ -166,6 +198,11 @@ func TestWebSocketSignalIntegration(t *testing.T) {
 	defer logoutCancel()
 	if _, _, e = c3.Read(logoutCtx); websocket.CloseStatus(e) != websocket.StatusPolicyViolation {
 		t.Fatalf("logout socket close=%v status=%v", e, websocket.CloseStatus(e))
+	}
+	logoutVoiceCtx, logoutVoiceCancel := context.WithTimeout(ctx, 2*time.Second)
+	defer logoutVoiceCancel()
+	if _, _, e = v3.Read(logoutVoiceCtx); websocket.CloseStatus(e) != websocket.StatusPolicyViolation {
+		t.Fatalf("logout voice socket close=%v status=%v", e, websocket.CloseStatus(e))
 	}
 }
 

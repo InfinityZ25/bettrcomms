@@ -22,7 +22,9 @@ Windows native capture requires the existing FFmpeg runtime described in NATIVE_
 
 ## Connectivity limits
 
-The hosted Go service relays signaling/chat, not media. STUN assists peer discovery. A production TURN deployment is still needed for restrictive NATs and networks; Railway's HTTP service alone does not supply a UDP media relay. Native congestion adaptation and large-group scaling remain outside this preview.
+The hosted Go service relays signaling/chat and offers an encrypted microphone-only WebSocket fallback when direct WebRTC fails. STUN assists direct peer discovery. Server voice is visible in connection diagnostics and can be selected explicitly in Settings → Connection. Direct-only mode disables it. See [server voice](VOICE_RELAY.md) for encryption, buffering, runtime support, and the signaling trust model.
+
+Camera, screen video, and shared system/application audio still require WebRTC connectivity. A production TURN deployment is still needed for those sources on restrictive NATs and networks; Railway's HTTP service alone does not supply a UDP media relay. TCP fallback can stall on packet loss. Native congestion adaptation and large-group scaling remain outside this preview.
 
 The public repository has no project-wide reuse license selected yet. Third-party notices retain their individual licenses; publication alone does not license BetterComms source under MIT or another open-source license.
 

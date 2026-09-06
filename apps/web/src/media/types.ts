@@ -46,7 +46,16 @@ export type MediaSignal =
   | SessionDescriptionSignal
   | IceCandidateSignal
   | TrackMetadataSignal
-  | NativeScreenStopSignal;
+  | NativeScreenStopSignal
+  | VoiceRelaySignal;
+
+export type VoiceRelaySignal = {
+  type: 'signal';
+  transport: 'voice-relay';
+  to: string;
+  from?: string;
+  data: { kind: string; [key: string]: unknown };
+};
 
 export interface SignalingAdapter {
   readonly localPeerId: string;
@@ -110,6 +119,11 @@ export interface PeerMediaStats {
   peerId: string;
   timestamp: number;
   connectionState: RTCPeerConnectionState;
+  voiceRelay?: {
+    state: 'connecting' | 'relayed' | 'unavailable';
+    message?: string;
+    verificationCode?: string;
+  };
   route?: {
     localCandidateType?: RTCIceCandidateType;
     remoteCandidateType?: RTCIceCandidateType;

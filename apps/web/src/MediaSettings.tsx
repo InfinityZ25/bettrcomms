@@ -40,6 +40,7 @@ export function readQuality() {
   }
 }
 export default function MediaSettings() {
+  const [voiceRoute, setVoiceRoute] = useState(() => localStorage.getItem('bc-voice-route') === 'relay' ? 'relay' : 'automatic');
   const [recordingRate, setRecordingRate] = useState(() => readRecordingQuality().screenVideoBitsPerSecond / 1_000_000);
   const desktop = isTauri();
   const storedDenoiser = localStorage.getItem('bc-denoiser');
@@ -299,6 +300,21 @@ export default function MediaSettings() {
       </label>
       <p className="friend-status">
         Connection mode applies when you next join a call.
+      </p>
+      <label className="device-select">
+        Voice route
+        <select disabled={direct} value={voiceRoute} onChange={event => {
+          setVoiceRoute(event.target.value);
+          localStorage.setItem('bc-voice-route', event.target.value);
+        }}>
+          <option value="automatic">Automatic · direct first, server voice fallback</option>
+          <option value="relay">Server voice · compatibility mode</option>
+        </select>
+      </label>
+      <p className="setting-note">
+        Server voice uses encrypted Opus audio, starting at 64 kbps per friend.
+        Camera, screen sharing, and shared app audio still need WebRTC connectivity.
+        Direct-only overrides this setting. Changes apply on your next call.
       </p>
     </>
   );
