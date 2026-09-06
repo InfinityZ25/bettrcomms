@@ -46,6 +46,65 @@ try {
   assert.equal(result.media.platform, 'windows');
   assert.equal(result.mediaDevices, true);
 
+  const nvidiaBridge = await page.evaluate(async () => {
+    const invoke = window.__TAURI_INTERNALS__.invoke;
+    const status = await invoke('nvidia_status');
+    if (!status.ready) return { skipped: true, detail: status.detail };
+    let session;
+    let socket;
+    try {
+      session = await invoke('nvidia_stream_start', {});
+      if (session.sampleRate !== 48_000 || ![480, 512, 960].includes(session.frameSamples))
+        throw new Error('NVIDIA stream returned an unsupported frame format');
+      const reply = await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('NVIDIA hosted loopback bridge timed out')), 8_000);
+        socket = new WebSocket(`ws://127.0.0.1:${session.port}/`);
+        socket.binaryType = 'arraybuffer';
+        let authenticated = false;
+        let processedFrames = 0;
+        socket.onerror = () => reject(new Error('NVIDIA hosted loopback WebSocket failed'));
+        socket.onclose = () => {
+          if (!authenticated) reject(new Error('NVIDIA hosted loopback WebSocket closed during authentication'));
+        };
+        socket.onopen = () => socket.send(JSON.stringify({ token: session.token }));
+        socket.onmessage = event => {
+          if (!authenticated) {
+            if (typeof event.data !== 'string' || JSON.parse(event.data).type !== 'ready') {
+              clearTimeout(timeout);
+              reject(new Error('NVIDIA hosted loopback authentication was rejected'));
+              return;
+            }
+            authenticated = true;
+            socket.send(new Float32Array(session.frameSamples).buffer);
+            return;
+          }
+          if (!(event.data instanceof ArrayBuffer)) return;
+          if (event.data.byteLength !== session.frameSamples * Float32Array.BYTES_PER_ELEMENT) {
+            clearTimeout(timeout);
+            reject(new Error('NVIDIA hosted loopback returned an invalid binary frame'));
+            return;
+          }
+          processedFrames += 1;
+          if (processedFrames < 3) {
+            socket.send(new Float32Array(session.frameSamples).buffer);
+            return;
+          }
+          clearTimeout(timeout);
+          resolve({ bytes: event.data.byteLength, processedFrames });
+        };
+      });
+      return {
+        skipped: false,
+        frameSamples: session.frameSamples,
+        replyBytes: reply.bytes,
+        processedFrames: reply.processedFrames,
+      };
+    } finally {
+      socket?.close();
+      if (session) await invoke('nvidia_stream_stop', { sessionId: session.sessionId }).catch(() => undefined);
+    }
+  });
+
   await page.getByRole('button', { name: /Continue with WorkOS/i }).click();
   await page.waitForURL(url => url.origin !== expectedOrigin, { timeout: 20_000 });
   const authHost = new URL(page.url()).hostname;
@@ -67,6 +126,7 @@ try {
     mediaDevices: result.mediaDevices,
     authHost,
     externalIpc: rejection === 'bridge-not-exposed' ? rejection : 'rejected',
+    nvidiaBridge,
     consoleErrorCount: consoleErrors.length,
     consoleErrors: consoleErrors.slice(0, 5),
   }));
