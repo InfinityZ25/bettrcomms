@@ -1,0 +1,29 @@
+name: bettercomms
+services:
+  turn:
+    image: coturn/coturn:4.17.2-r0
+    profiles: ["relay"]
+    command: ["-c", "/etc/coturn/turnserver.conf"]
+    ports:
+      - "127.0.0.1:3478:3478/udp"
+      - "127.0.0.1:3478:3478/tcp"
+      - "127.0.0.1:49160-49179:49160-49179/udp"
+    volumes:
+      - ./.local/turnserver.conf:/etc/coturn/turnserver.conf:ro
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: bettercomms
+      POSTGRES_PASSWORD: local-development-only
+      POSTGRES_DB: bettercomms
+    ports:
+      - "127.0.0.1:54329:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bettercomms"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+volumes:
+  postgres-data:

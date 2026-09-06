@@ -1,0 +1,71 @@
+.processing-controls {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #171e19;
+  padding: 20px;
+  margin: 24px 0;
+}
+.processing-controls > h3 {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  margin: 0 0 16px !important;
+}
+.processing-controls > p {
+  font-size: 12px;
+  color: #a8b7ac;
+  line-height: 1.7;
+  margin: 12px 0;
+}
+.processing-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr));
+  gap: 18px;
+  align-items: center;
+  margin: 18px 0;
+}
+.processing-options > label:not(.switch-row) {
+  display: grid;
+  gap: 10px;
+  font-size: 13px;
+}
+.processing-options .switch-row {
+  margin: 0;
+}
+.processing-range {
+  display: grid;
+  gap: 10px;
+  font-size: 13px;
+}
+.processing-range > span {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.processing-range output {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.processing-range input {
+  padding: 0;
+  height: 24px;
+  accent-color: var(--accent);
+}
+.processing-engine {
+  padding: 16px;
+  background: #202b22;
+  border-radius: 10px;
+  margin: 18px 0;
+}
+.processing-apply {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 18px;
+}
+.processing-apply > span {
+  font-size: 12px;
+  color: var(--accent);
+}

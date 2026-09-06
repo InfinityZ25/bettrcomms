@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+target/
+*.log
+test-results/
+playwright-report/
+tests/screenshots/
+*.tsbuildinfo
+.local/
+server/bettercomms.exe

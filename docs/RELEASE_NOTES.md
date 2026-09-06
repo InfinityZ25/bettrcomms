@@ -1,0 +1,166 @@
+# 0.1.0 local development build
+
+This is a working browser vertical slice and native application foundation, not a completed replacement for Discord or a public production release.
+
+## Working browser flows
+
+WorkOS login integration and explicit localhost test login, opaque revocable PostgreSQL sessions, friend discovery/requests/acceptance, private rooms and direct rooms, room owner controls, persistent chat, microphone/camera calls, screen sharing with browser-supported audio, per-participant playback gain, optional voice balancing, standard/RNNoise noise suppression, adjustable quality ceilings, direct-only/prefer-direct mode, live route statistics, camera-top/side/focus layouts, zoom/pan/fullscreen, and per-track browser recording downloads.
+
+Recordings capture the tracks received by that client before local playback volume/normalization. They are not original uncompressed remote source recordings. Tracks added during recording get individual start offsets. Stopped recordings automatically save their original blobs and timing manifest to a local IndexedDB library, shared by the browser and desktop implementation (each profile/origin has its own library). The Recordings screen provides synchronized playback, separate audio volume/mute controls, video source selection, seek, rename, delete, and original-file downloads. Playback adjustments do not rewrite source files. The current recorder retains at most 512 MiB of compressed chunks until stopped, automatically stops at the cap, and reports truncation. A save failure keeps download links available and explicitly reports that the recording was not saved. Completed recordings survive ordinary restarts; clearing profile/site data removes them. There is no active-recording crash recovery or gap-free DVR yet.
+
+## Automated evidence
+
+- Go unit, authorization, session, and real PostgreSQL WebSocket tests.
+- TypeScript check and Vite production build.
+- Browser tests with two isolated accounts, real persistence and WebRTC, decoded synthetic camera streams, screen transport, and parsed separate-track recording output.
+- RNNoise worklet output and ownership/disposal test in Chromium.
+- Local coturn relay-only data-channel exchange with selected relay candidates on both peers.
+- Windows MSVC checks, two Rust unit tests, and Tauri release executable build; native development window launched and responsive.
+
+The tests use synthetic media. They do not establish end-to-end latency or quality with real GPUs, sound devices, games, external NATs, or restrictive networks. WorkOS callback configuration is installed in the user's staging environment; completing an interactive WorkOS sign-in remains a user-account smoke test.
+
+## Not yet implemented or verified
+
+- Continuous viewer rewind and disk-backed recording recovery/export synchronization suitable for professional editing.
+- Injected exclusive-game capture, process-specific audio, AV1/HEVC native sharing, or Krisp SDK. Windows window/display capture and H.264 encoder selection are available in the development implementation described below.
+- Packaged desktop authentication and API routing. The native development preview uses the local Vite proxy; the Windows toolchain and executable build are validated.
+- Community/role/channel hierarchies beyond private rooms, SFU voice mode, large-group mesh limits, signed desktop releases, and macOS/Linux parity.
+- An externally reachable production server and TURN service, HTTPS domain, bandwidth/load testing, or a complete accessibility audit.
+
+The UI does not present these unavailable capabilities as working controls. Their contracts and acceptance gates are in the specification and native roadmap.
+
+## Native screen sharing and original MP4 recording (2026-09-05)
+
+The desktop now offers an in-app window/display picker, native Windows Graphics Capture, encoder probes and H.264 NVENC/AMF/QSV/x264 controls, 30/60 FPS, resolution, bitrate, and cursor selection. The encoded stream goes directly to a native WebRTC sender; local native recording remuxes those same access units to MP4 without re-encoding. Browser clients keep browser capture; desktop users can explicitly choose browser sharing when captured audio is required. Native video currently has no captured audio or exclusive-game hook.
+
+Actual NVIDIA RTX 4070 SUPER and AMD integrated graphics tests decoded the selected synthetic window at approximately 60 FPS, 1280 × 720, with verified colors. Both native MP4 exports passed; the real frontend preview-to-recording flow produced a valid H.264/BT.709 MP4. Native helper processes were absent after stop. The test harness checks the restarted host's recording export command registration. Higher resolutions are selectable, but sustained 4K60 gameplay, cross-network native TURN, and combined denoising/game load remain unverified.
+
+Settings now expose a separate browser/received-screen recording bitrate (10/20/40/80 Mbps), with a 20 Mbps default. Camera and audio defaults are 8 Mbps and 256 kbps. Native recording transfers use binary IPC and share the recording session's 512 MiB retained-data cap. See [native sharing](NATIVE_SHARING.md) for runtime requirements and remaining limits. A guarded Tauri development launcher keeps frontend/native commands paired and reuses the workspace's running Vite server.
+
+Regression testing exposed an intermittent simultaneous-join discovery race. The server now atomically registers each connection and snapshots its existing peers, so neither caller misses the other. A concurrent eight-joiner test passes 100 iterations. Per-peer processing also serializes received offers, answers, and candidates.
+
+Camera settings now offer Auto/720p/1080p/1440p/4K and 15/30/60 FPS, defaulting to 1080p30. Preview reports requested and delivered settings, probes capabilities only after explicit activation, and marks unsupported ranges. Quality changes safely replace preview/call capture. The native screen picker preserves focus and scroll across periodic call updates; its initial focus setup no longer reruns when callback props change.
+
+## Optional NVIDIA microphone processing
+
+The Windows desktop now integrates NVIDIA Audio Effects directly, with an app-private runtime/model and no Broadcast application requirement. The initial automatic package targets Ada/RTX 40-series GPUs. Readiness is gated on a real GPU frame-processing probe. The outgoing mono 48 kHz microphone uses a bounded AudioWorklet/native bridge and falls back visibly to RNNoise on sustained processing failure. The actual RTX 4070 SUPER passed native WebView integration and cleanup checks with synthetic input. See [NVIDIA setup](NVIDIA_SETUP.md) for installation and remaining physical-device acceptance.
+
+## Recordings acceptance (2026-09-05)
+
+The local library and multitrack player passed tests with real synthetic MediaRecorder audio/video blobs: automatic call-save integration, two video sources, independent audio volume/mute, late-source timing, seeking, retained partial tracks, and deletion. Storage tests verified byte-for-byte retrieval after closing and relaunching a persistent Chromium profile, atomic replacement, rename/delete, and rollback on a simulated quota failure. The full browser suite passed 10 tests with the opt-in TURN check skipped; nine web unit tests passed. Desktop and mobile player screenshots were inspected. These checks establish local profile persistence and browser decoding, not in-progress crash recovery or compatibility with every external media editor.
+
+## Device settings and desktop permissions (2026-09-05)
+
+Settings now enumerate microphone, camera, and output choices, refresh on device changes, provide a five-second microphone sample using the same selected processing pipeline as calls, with a level meter/playback, a local camera preview, and a speaker test tone. Playback output changes apply to live call audio and recording audio; they never alter recorded source tracks. Unsupported output routing and unavailable devices produce actionable errors. Test capture is explicit, local, and released on close, device change, cancellation, and late permission completion.
+
+On Windows, explicit enable/test/preview/join actions set microphone/camera permission through Tauri IPC and WebView2 Profile4. Permission changes are restricted to the trusted app origin. Unconfigured microphone/camera requests are denied rather than showing a generic WebView permission popup. This restores a previously denied app permission; it does not bypass Windows privacy settings, replace WebRTC capture with native device frames, or remove the browser screen-share chooser. Browser clients retain browser permission controls. Native status normalizes WebView2 origin formatting before comparison.
+
+Validation: fourteen browser tests passed (TURN opt-in skipped), nine web unit tests passed, and thirteen Rust tests passed (NVIDIA hardware unit test opt-in). A native WebView2 check denied then re-enabled both microphone and camera, verifying synthetic getUserMedia rejection/recovery and track cleanup without fake permission UI. Desktop/mobile settings screenshots were inspected. The native preview was restarted normally after testing with no debugging endpoint or fake-device flags. Physical microphone/camera quality and physical speaker routing remain device acceptance checks.
+
+## Dedicated workspace screens
+
+Settings and Recordings now occupy the main workspace instead of modal dialogs. Their hash routes (`#/settings` and `#/recordings`) support direct entry, refresh, and browser history. Each screen provides workspace navigation and Back to call; Escape also returns to the call and restores the launching control's focus. The call stage remains mounted while hidden so switching screens preserves live media and active recording. Settings device tests and recording playback are released when leaving their screen. Room/friend/create dialogs remain contextual dialogs.
+
+Screen acceptance: fifteen browser tests pass (opt-in TURN skipped), including dedicated-screen desktop/mobile accessibility audits, browser history/reload, Escape/focus restoration, pending device-test cleanup, and a two-member call remaining connected through both screens. Nine web unit tests and the desktop release build pass. Device-settings tests no longer create unnecessary accounts, keeping the full suite within the unchanged authentication rate limit.
+
+
+## Shared microphone processing and tuning
+
+Calls and microphone tests now use the same capture options and MediaEngine processing chain. Tests label the actual engine, honor the suppression master switch, apply saved tuning, and report NVIDIA fallback rather than claiming NVIDIA processing. Browser sessions resolve stale NVIDIA preferences to standard browser processing without invoking native IPC; RNNoise remains an explicit browser-compatible WebAssembly option. Native permission and NVIDIA SDK actions remain gated to Tauri.
+
+NVIDIA exposes its documented intensity ratio and opt-in speech-only VAD. RNNoise has no native strength parameter; common post-processing controls are explicitly separate: gain, low-cut, and a quiet-sound gate with threshold, attack, hold, and release. Echo cancellation and automatic input gain configure browser/WebView capture. The post-processing worklet runs off the UI thread and downmixes to mono when enabled; neutral settings add no effects graph. Changes apply with an explicit Apply button to avoid repeatedly reloading the GPU model while dragging sliders.
+
+Validation: nineteen browser tests passed (TURN opt-in skipped), including actual decoded RNNoise output, master-off and browser-native gating, shared tuning, quiet-signal gate attenuation, playback/lifecycle checks, and accessibility. The installed RTX GPU processed frames at intensity 0, 0.5, and 1 and with VAD enabled. A native UI test completed a NVIDIA microphone sample with 50% intensity, VAD, gain, low-cut, and gating; the 30-second renderer-stall regression and mute/cleanup checks also passed. All native UI inputs were synthetic; physical voice quality remains a listening check.
+
+## Delayed live microphone monitor
+
+Settings now offer Start/Stop live loopback alongside the existing five-second sample. The monitor uses the same microphone processing engine and settings as calls and samples, routes to the selected output, and adds a fixed one-second Web Audio delay with an independent monitor volume (initially 50%). It creates no recording files or growing chunk queue. Switching tests, stopping, leaving Settings, changing the microphone or processing configuration, or a reported processing/routing failure releases the monitor and discards delayed audio. Headphones are recommended to avoid acoustic feedback. The browser/native processing boundary is unchanged.
+
+Validation: three loopback tests pass, including a measured delayed synthetic signal, output routing, sample/live replacement, no live MediaRecorder, and cleanup. The full browser run passed 21 tests with TURN skipped and one two-person connection timeout; the connection test passed unchanged on targeted retry. Nine unit tests, the web production build, and the native Cargo release build pass. Physical microphone listening remains a manual check.
+
+## Continuous monitor recovery and SpeexDSP
+
+Live monitoring remains an uninterrupted Web Audio stream delayed by one second; there is no sentence detector, recording duration, or one-second chunk playback loop. The monitor now disables echo cancellation only for its own capture, because monitoring one's own voice can feed the echo canceller and suppress speech. Calls and five-second samples retain their saved echo setting. Headphones are required to avoid feedback, and the selected denoiser, gain and gate still apply. This addresses a plausible cause of reported missing speech; synthetic tests cannot establish the cause of a particular physical microphone dropout.
+
+When the media engine replaces the processed microphone (including NVIDIA falling back to RNNoise), the monitor reconnects its source while retaining the same delay buffer and output graph. It reports the active engine without terminating the test. A processor outage may still leave a gap while the fallback starts; existing buffered audio is not deliberately discarded.
+
+SpeexDSP is now an alternative shared by calls, samples and live monitoring, using local WASM in an AudioWorklet on both browser and desktop. Its shipped wrapper exposes no strength parameter, so the interface keeps gain and gating separate. Krisp remains deferred at the user's request; the vendor requires a commercial SDK license and SDK assets, which are not available in this workspace.
+
+References: https://developer.chrome.com/blog/more-native-echo-cancellation/ ; https://sdk-docs.krisp.ai/docs/licensing-information
+
+Validation: 27 browser tests pass (opt-in TURN skipped), including eight seconds of sustained audio sampled every 50 ms with no observed dropouts, one continuous delay graph through silence/resumption and processed-track replacement, and measurable Speex stationary-noise attenuation plus failure cleanup. Nine unit tests, the web production build, and the desktop Cargo release build pass. Physical speech quality remains a listening check.
+
+## NVIDIA scheduling recovery and readiness probes
+
+An isolated NVIDIA output underrun now re-primes a bounded 80 ms playback buffer instead of failing after three missing frames. Normal startup uses 40 ms. Outstanding input is capped at 240 ms and stale output is trimmed; no raw microphone audio is mixed into the processed path. Permanent stalls, a 250 ms timeout, malformed output, or four recoveries in ten seconds still cause an explicit RNNoise fallback. Recovery can include an audible gap. Diagnostics count underruns, dropped frames and current buffer target.
+
+Native successful readiness probes are cached for 60 seconds, and model initialization is serialized across probes and capture startup. The status path rechecks for an active validated stream after waiting, avoiding a redundant model load. This reduces avoidable GPU model-loading spikes on repeated Settings visits. The reported screenshot alone does not establish GPU memory leakage or the original scheduling delay's cause.
+
+Validation: 17 web unit tests and 16 native unit tests pass (one installed-SDK test remains opt-in); 27 browser tests pass with opt-in TURN skipped. Actual RTX 4070 SUPER validation passed the 30-second renderer-stall, forced native termination, muted capture replacement and cleanup tests. A new hardware jitter test held one real NVIDIA response for 120 ms: it recovered without fallback, reported one underrun and an 80 ms buffer, and continued processing 550 frames over six seconds. Six consecutive native readiness checks returned ready in 1.2-2.8 ms. The ordinary desktop preview was restored with temporary CDP debugging disabled.
+
+Both web production and native release builds pass.
+
+## Recording fullscreen and original-file export
+
+Recordings now have a larger video stage and a fullscreen control, also available by double-clicking the video. Fullscreen retains transport, video source selection, and independent audio controls. The mixer can collapse without disconnecting audio; longer mixers scroll. Playback position, mute, and volume survive fullscreen changes.
+
+Original assets have explicit Download actions in the browser and native Save As actions on desktop, with participant/source labels and original filenames. Desktop exports use bounded sequential chunks, progress, cancellation, and error feedback. A user-selected destination is written through a temporary staging file and replaced atomically only after the declared byte count is complete. Playback adjustments never modify exported source bytes. This also fixes original-file exports immediately after stopping a call recording.
+
+Validation includes a real Windows Save As export of 614,431 bytes with exact byte comparison, native fullscreen expanding to the display dimensions, browser download events and SHA-256 equality, fullscreen playback/node preservation, and desktop/mobile screenshots. Twenty-two web unit tests, twenty-one native unit tests, and twenty-seven browser tests pass; the existing NVIDIA hardware unit test and TURN browser check remain opt-in. Web production and native release builds pass. The normal desktop preview is restored without its temporary debugging endpoint.
+
+## AMD/Intel GPU microphone filtering
+
+The Windows desktop offers DeepFilterNet3 through DirectML as a separate optional engine. It runs inside BetterComms without an Adrenalin audio application or virtual microphone. The model and its recurrent state are bundled; explicit setup installs pinned, hash-verified Microsoft runtime components into app-private storage. The installed runtime, model and notices occupy about 49 MB. The one-time upstream package downloads total 215 MB because they contain additional architectures which are not installed.
+
+Native DXGI enumeration selects AMD/Intel hardware explicitly, preferring AMD when both vendors are present. Readiness requires the complete model to run with CPU execution fallback disabled and meet measured real-time timing bounds. Graph transformations, licenses and reproduction instructions are in [AMD model findings](AMD_MODEL_FINDINGS.md) and [DeepFilterNet setup](DEEPFILTER_SETUP.md). No audio leaves the device for processing.
+
+Calls, microphone samples and live loopback use the same 48 kHz mono pipeline, including saved gain/gating and a 0–100 dB maximum-attenuation control. The dry blend includes the model's exact 32 ms delay. A bounded 512-sample Worker/AudioWorklet bridge keeps frame traffic off the renderer. Three native slots accommodate a call, a microphone test and temporary replacement overlap. Failed startup or sustained transport failure explicitly switches to RNNoise while preserving mute. Browser clients normalize this native-only preference to standard browser processing.
+
+Actual Ryzen 7 7800X3D integrated Radeon validation passed: strict GPU-only graph execution, roughly 3.3 ms p95 processing per 10.7 ms frame in the Rust debug runtime, deterministic reset, and noisy-speech output matching the reference within PCM16 quantization. The native WebView test passed 30 seconds of renderer stalls, forced stream shutdown, microphone recapture, RNNoise fallback with mute retained, and resource cleanup. The existing NVIDIA delayed-response hardware check also passed after sharing the transport. Physical voice quality and gaming contention still need listening/load acceptance; Intel hardware has not been physically tested here and remains gated by the same runtime probe.
+
+Final regression: 29 browser tests passed (TURN opt-in skipped), 24 web unit tests passed, and 26 native unit tests passed (three hardware tests remain opt-in; the DeepFilterNet GPU test was separately enabled and passed). Web production and native release builds pass. Native development now requires Rust 1.88 or newer for the pinned ONNX Runtime bindings. The normal desktop preview is restored with temporary debugging disabled.
+
+## Dedicated screen-sharing setup
+
+Native sharing now opens a dedicated `#/share` workspace instead of a modal. Applications and entire displays have a searchable, responsive two-column preview gallery, truncated source titles, and clear selection. The Share/Cancel footer remains visible; desktop quality controls sit alongside the independently scrolling gallery. Narrow windows use one scrolling content area without horizontal overflow. Navigation keeps the call mounted and cancels pending native startup when leaving setup.
+
+Visible source cards request local 640×360 JPEG previews through trusted native IPC. Capture is limited to two concurrent jobs, 512 KiB per preview, and a three-second process timeout; images are not persisted. Unsupported sources show an explicit unavailable state. Encoder and bitrate controls remain available under Stream setup. Native video-only sharing and browser audio fallback limitations remain unchanged.
+
+## NVIDIA screen-detail improvement
+
+The native NVIDIA encoder now uses P5 low-latency tuning, spatial adaptive quantization, and quarter-resolution multipass while retaining zero B-frames and zero lookahead. A controlled 1080p60/20 Mbps dark-detail benchmark showed better decoded precision than the former P4 ultra-low-latency profile. This applies to new NVIDIA shares and their copied native recordings; AMD/Intel encoding and existing assets are unchanged. The reproducible GPU benchmark is `scripts/test-native-encoder-quality.ps1`. It does not establish the cause of a user's specific recording artifacts without the original video.
+
+## Native share audio and preview reliability
+
+Desktop sharing now offers system audio with BetterComms and its WebView process tree excluded through the Windows process-loopback API (build 20348+). System audio remains a separate call and recording track. Capture is bounded, uses binary IPC and an AudioWorklet render clock, and stops with the share. Unsupported systems retain video-only sharing and the browser fallback. This shares all other apps, not only the selected application.
+
+Window preview IDs now remain stable across overlapping refreshes. Binary preview responses are validated with one retry and actionable failure text. Controlled Windows tests verified an actual application-window JPEG and exclusion of a child-process tone while retaining an independent process tone.
+
+## Optional capture border
+
+Native screen sharing defaults to `display_border=0`. The Share screen exposes a Show capture border toggle; its preference persists on this device and is applied to each new native capture. Existing callers that omit the new optional IPC argument also default to border off. Windows can still enforce a capture indicator according to its capture-access rules.
+
+## Speaking activity and connection status
+
+Participant tiles show a green outline when their processed microphone audio is active, with a short release delay to prevent flickering between words. Muting, ended tracks, and leaving the call clear activity. Metering does not play or modify the tracks. The outline indicates microphone activity, not delivery acknowledgement.
+
+The call footer now includes connection signal bars and measured ping. Alone in a room it shows authenticated WebSocket server round-trip time; with friends it shows the highest available connected-peer WebRTC round-trip time. A popover includes recent ping history, average, separate server ping, and each friend's direct/relay route. Missing measurements stay unknown rather than displaying zero. Existing detailed media diagnostics remain accessible.
+
+
+## Faster source previews and game discovery
+
+The native share picker only schedules thumbnails for visible cards and removes queued work when cards leave the viewport. A picker-local memory cache reuses recent previews across tab/search changes (30 seconds, at most 32 images / 8 MiB); closing the picker releases that cache. Explicit Refresh clears it. Failed captures no longer automatically retry and occupy a second timeout interval. Native one-shot WGC previews request a 30 FPS capture clock instead of 1 FPS, retaining the two-job limit and bounded process cleanup.
+
+Window enumeration includes minimized applications using their normal window dimensions. Sources are ordered by a lightweight executable/window-class heuristic: games and graphics tools, browsers, regular applications, then utilities. This is not GPU activity telemetry or a guarantee of detecting every renderer. Cards identify minimized apps, and sharing restores the selected minimized window; enumerating sources and loading thumbnails never restore windows. Minimized preview requests fail promptly instead of delaying other cards.
+
+Listing a game does not guarantee capture of every exclusive fullscreen renderer. Native sharing continues to use Windows Graphics Capture, not injected game hooks. Microsoft’s [capture sample](https://github.com/microsoft/Windows.UI.Composition-Win32-Samples/blob/master/cpp/ScreenCaptureforHWND/README.md) also distinguishes enumeration of minimized windows from capture. Actual Minecraft fullscreen gameplay remains a hardware/application acceptance check.
+
+Native acceptance for this change passed with real Windows capture: monitor preview plus process/timeout cleanup (0.45–0.48 s versus 1.34 s for the prior path on the same fixture), static WPF application preview (1.06 s), and minimized WPF discovery/restore/preview (1.14 s). These are local fixture timings, not a guarantee for every application. The thumbnail graph now scales to 640×360 on the GPU before readback and uses a direct filter source instead of lavfi demuxer probing, which stalled the static-window fixture. JPEG output remains bounded and in memory. Build, 42 frontend unit tests, seven relevant browser tests, cargo check, and 36 Rust unit tests passed; native hardware tests were run explicitly in addition to the ordinary ignored-by-default suite.
+
+## Streaming quality at lower bitrates (2026-09-05)
+
+Native sharing now negotiates High/Main/Baseline H.264 with current viewers and offers an explicit Baseline compatibility override. NVIDIA encoding uses P6 low-latency tuning, spatial/temporal AQ and full-resolution multipass, without B-frames or lookahead. Two-second keyframes reduce repeated intra-frame cost while retaining bounded periodic recovery. The picker adds 8/12/16 Mbps choices and preserves the 20 Mbps default. The live stream and local native recording still share one encoder.
+
+The repeatable 1080p60 synthetic benchmark improved VMAF from 91.814 to 94.247 at 8 Mbps and from 95.334 to 96.860 at 12 Mbps, at comparable measured output bitrates. Actual native capture, Chromium decode and MP4 profile/dimension inspection passed all nine combinations of Baseline/Main/High and 8/12/20 Mbps. Baseline8 and Main8 passed induced encoded-frame loss recovery and late joining. This establishes local hardware compatibility, not cross-network or game-content parity with Discord.
+
+Recording finalization drains queued access units and reports bounded muxer diagnostics; a recording stopped before its first IDR explicitly reports that no decodable frame arrived. Final regression checks: production frontend build, 46 web unit tests, 44 Playwright tests (one optional TURN test skipped), and 37 Rust tests (eight opt-in hardware tests ignored). See NATIVE_SHARING.md for benchmark details and limitations.

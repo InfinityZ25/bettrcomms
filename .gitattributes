@@ -1,0 +1,2 @@
+# Pinned model and license hashes must survive checkout byte-for-byte.
+apps/desktop/src-tauri/resources/deepfilter/* -text
