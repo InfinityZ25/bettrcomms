@@ -67,11 +67,15 @@ export async function createSpeexDenoiser(
     }
     source = context.createMediaStreamSource(new MediaStream([rawTrack]));
     denoiser = new SpeexWorkletNode(context, { wasmBinary, maxChannels: 1 });
+    denoiser.channelCount = 1;
+    denoiser.channelCountMode = 'explicit';
+    denoiser.channelInterpretation = 'speakers';
     rawTrack.addEventListener('ended', handleRawEnded, { once: true });
     denoiser.addEventListener('processorerror', handleProcessorError, {
       once: true,
     });
     destination = context.createMediaStreamDestination();
+    destination.channelCount = 1;
     source.connect(denoiser);
     denoiser.connect(destination);
     outputTrack = destination.stream.getAudioTracks()[0];

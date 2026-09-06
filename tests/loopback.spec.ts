@@ -272,7 +272,8 @@ test('live loopback uses the processed microphone, a real one-second delay, moni
         ).__loopback.snapshot(),
       ),
     )
-    .toMatchObject({ contextStates: ['closed'], trackStates: ['ended'] });
+    // The stereo fixture needs a mono conversion context plus the monitor.
+    .toMatchObject({ contextStates: ['closed', 'closed'], trackStates: ['ended'] });
   await page.evaluate(() =>
     (
       window as unknown as { __loopback: { closeSource(): Promise<void> } }
@@ -487,7 +488,7 @@ test('live loopback streams continuously through silence, signal changes, and a 
       }
     ).__loopback.snapshot(),
   );
-  expect(active.contextStates).toEqual(['running']);
+  expect(active.contextStates).toEqual(['closed', 'running']);
   expect(active.delayCount).toBe(1);
   expect(active.recorderCount).toBe(0);
   expect(active.trackStates).toEqual(['ended', 'live']);
@@ -507,7 +508,7 @@ test('live loopback streams continuously through silence, signal changes, and a 
       ),
     )
     .toMatchObject({
-      contextStates: ['closed'],
+      contextStates: ['closed', 'closed'],
       trackStates: ['ended', 'ended'],
     });
   await page.evaluate(() =>

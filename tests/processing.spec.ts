@@ -204,7 +204,7 @@ test('RNNoise capture disables browser suppression and produces decoded processe
     await context.close();
     return { captured, peakRms, state: track.readyState };
   });
-  expect(result.captured?.audio).toMatchObject({ noiseSuppression: false });
+  expect(result.captured?.audio).toMatchObject({ noiseSuppression: false, channelCount: { ideal: 1 } });
   expect(result.peakRms).toBeGreaterThan(0.0001);
   expect(result.state).toBe('ended');
 });

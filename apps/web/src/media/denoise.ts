@@ -71,7 +71,13 @@ export async function createDenoiser(
       wasmBinary,
       maxChannels: 1,
     });
+    // maxChannels limits DSP state, not Web Audio's negotiated channel layout.
+    // Mix both interface inputs before DSP rather than emitting left + silence.
+    denoiser.channelCount = 1;
+    denoiser.channelCountMode = 'explicit';
+    denoiser.channelInterpretation = 'speakers';
     destination = context.createMediaStreamDestination();
+    destination.channelCount = 1;
 
     source.connect(denoiser);
     denoiser.connect(destination);

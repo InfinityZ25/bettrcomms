@@ -1,5 +1,11 @@
 # BetterComms preview release notes
 
+## Microphone channel correction
+
+Microphone capture now prefers mono. RNNoise and Speex explicitly mix stereo input to one channel before their single-channel DSP; the processor's `maxChannels: 1` option alone previously left a silent second channel or discarded an interface's right input. NVIDIA/DeepFilterNet input also explicitly mixes to mono, and processed microphone destinations publish one channel. A stereo microphone returned despite the capture preference is downmixed even when optional effects are off, using a lightweight gain node. This applies to new microphone samples, live monitoring and call microphones. Screen/system audio remains stereo; previously recorded assets are unchanged.
+
+The channel regression uses real RNNoise, Speex and neutral processing with both left-only and right-only stereo inputs. All six cases produced mono tracks and nonzero matched left/right playback, including encoded Opus samples decoded through an audio element. This verifies channel routing with synthetic input; physical earbud/device balance remains a device check. The fix ships through the hosted frontend and does not require a new native installer.
+
 ## 0.1.1 — call playback and native sharing reliability
 
 Remote microphones and shared audio now use one playback context, unlocked synchronously when joining. Windows WebView2 explicitly permits application playback, so ordinary calls should not require an extra Enable audio click. Browsers retain their normal autoplay restrictions and recovery control. Per-person volume and microphone balancing remain playback-only; source recordings are unchanged.

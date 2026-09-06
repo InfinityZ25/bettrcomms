@@ -134,9 +134,13 @@ export async function createNvidiaDenoiser(
       numberOfInputs: 1,
       numberOfOutputs: 1,
       outputChannelCount: [1],
+      channelCount: 1,
+      channelCountMode: 'explicit',
+      channelInterpretation: 'speakers',
       processorOptions: { frameSamples: session.frameSamples },
     });
     destination = context.createMediaStreamDestination();
+    destination.channelCount = 1;
     // Transfer the channel itself: no audio frame or response crosses the UI thread.
     worker.postMessage({ type: 'attach', port: node.port }, [node.port]);
     source.connect(node);

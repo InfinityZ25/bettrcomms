@@ -180,7 +180,7 @@ export class MediaEngine extends EventTarget {
               typeof options.microphone === 'object' &&
               options.microphone.channelCount !== undefined
                 ? options.microphone.channelCount
-                : { ideal: 2 },
+                : { ideal: 1 },
             noiseSuppression:
               denoiser === 'rnnoise' ||
               denoiser === 'speex' ||

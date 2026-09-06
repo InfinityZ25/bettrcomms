@@ -6,17 +6,18 @@ export async function createMicrophoneEffects(
   inputTrack: MediaStreamTrack,
   settings: MicrophoneProcessingSettings,
 ): Promise<DenoisedTrack> {
-  if (
-    settings.highPassHz === 0 &&
-    settings.gainDb === 0 &&
-    !settings.gateEnabled
-  )
+  const needsEffects =
+    settings.highPassHz !== 0 || settings.gainDb !== 0 || settings.gateEnabled;
+  // Some USB interfaces ignore a mono capture preference and return two inputs.
+  // Keep speech centered even with suppression/effects disabled.
+  const needsDownmix = (inputTrack.getSettings?.().channelCount ?? 1) > 1;
+  if (!needsEffects && !needsDownmix)
     return { track: inputTrack, dispose() {} };
   if (inputTrack.kind !== 'audio' || inputTrack.readyState === 'ended')
     throw new Error('Microphone effects require a live audio track');
   const context = new AudioContext({ latencyHint: 'interactive' });
   let source: MediaStreamAudioSourceNode | undefined;
-  let node: AudioWorkletNode | undefined;
+  let node: AudioWorkletNode | GainNode | undefined;
   let destination: MediaStreamAudioDestinationNode | undefined;
   let outputTrack: MediaStreamTrack | undefined;
   let disposed = false;
@@ -30,18 +31,25 @@ export async function createMicrophoneEffects(
     void context.close().catch(() => undefined);
   };
   try {
-    await context.audioWorklet.addModule(effectsWorkletUrl);
+    if (needsEffects) await context.audioWorklet.addModule(effectsWorkletUrl);
     source = context.createMediaStreamSource(new MediaStream([inputTrack]));
-    node = new AudioWorkletNode(context, 'bettercomms-microphone-effects', {
-      numberOfInputs: 1,
-      numberOfOutputs: 1,
-      outputChannelCount: [1],
-      channelCount: 1,
-      channelCountMode: 'explicit',
-      channelInterpretation: 'speakers',
-      processorOptions: settings,
-    });
+    node = needsEffects
+      ? new AudioWorkletNode(context, 'bettercomms-microphone-effects', {
+          numberOfInputs: 1,
+          numberOfOutputs: 1,
+          outputChannelCount: [1],
+          channelCount: 1,
+          channelCountMode: 'explicit',
+          channelInterpretation: 'speakers',
+          processorOptions: settings,
+        })
+      : new GainNode(context, {
+          channelCount: 1,
+          channelCountMode: 'explicit',
+          channelInterpretation: 'speakers',
+        });
     destination = context.createMediaStreamDestination();
+    destination.channelCount = 1;
     source.connect(node);
     node.connect(destination);
     outputTrack = destination.stream.getAudioTracks()[0];
