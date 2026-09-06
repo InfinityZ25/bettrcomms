@@ -62,7 +62,9 @@ test('global output volume scales call playback without altering the source or p
     const track = destination.stream.getAudioTracks()[0];
     const detach = audio.attachRemoteAudio({ track, peerId: 'test-peer', balanceVoice: false });
     const rms = async () => {
-      await new Promise(resolve => setTimeout(resolve, 300));
+      // Let the gain ramp and the 8192-frame analysis window settle on slower audio backends.
+      const settledAt = meter.context.currentTime + 0.5;
+      while (meter.context.currentTime < settledAt) await new Promise(resolve => setTimeout(resolve, 25));
       const samples = new Float32Array(8192); meter.getFloatTimeDomainData(samples);
       return Math.sqrt(samples.reduce((sum, sample) => sum + sample * sample, 0) / samples.length);
     };
