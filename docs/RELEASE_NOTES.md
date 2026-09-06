@@ -1,5 +1,9 @@
 # BetterComms preview release notes
 
+## Browser window-audio preference
+
+Browser sharing now requests `windowAudio: 'window'` when audio is enabled, instead of leaving window-audio scope unspecified. Supporting browsers can offer the selected application's audio; this is a browser/OS-controlled hint, not a guarantee of per-process isolation. Entire-screen audio can still include system sound, and browser-tab audio follows the selected tab. Desktop 0.1.2 provides the explicit native process-tree option. Build, unit and targeted capture-lifecycle checks validate the request and cleanup; physical browser window-audio behavior remains dependent on the browser's picker.
+
 ## 0.1.2 — direct-call audio decoding and application audio
 
 Remote playback retains a muted media element for each audio track to start Chromium's WebRTC decoder. The audible signal still runs exclusively through the existing Web Audio volume, optional microphone balancing and output-device graph. Previously, packets could arrive with live tracks and a running AudioContext while decoded audio energy stayed at zero. A real two-engine regression reproduced that behavior for both microphone and system audio. Decoder consumers are removed when tracks end, playback detaches or the call closes. This hosted frontend correction does not require a new desktop installer; real cross-network confirmation remains pending.

@@ -18,6 +18,7 @@ test('capture ownership stops user media and couples screen with system audio', 
     const microphone = audioDestination.stream.getAudioTracks()[0]!.clone();
     const system = audioDestination.stream.getAudioTracks()[0]!.clone();
     const camera = videoTrack.clone();
+    let requestedCapture: unknown;
 
     const originalUserMedia = navigator.mediaDevices.getUserMedia.bind(
       navigator.mediaDevices,
@@ -32,7 +33,10 @@ test('capture ownership stops user media and couples screen with system audio', 
       },
       getDisplayMedia: {
         configurable: true,
-        value: async () => new MediaStream([videoTrack, system]),
+        value: async (options: unknown) => {
+          requestedCapture = options;
+          return new MediaStream([videoTrack, system]);
+        },
       },
     });
 
@@ -51,6 +55,7 @@ test('capture ownership stops user media and couples screen with system audio', 
       engine.dispose();
       return {
         shareRemoved,
+        requestedCapture,
         systemStopped,
         cameraStopped: camera.readyState === 'ended',
         microphoneStopped: microphone.readyState === 'ended',
@@ -70,6 +75,7 @@ test('capture ownership stops user media and couples screen with system audio', 
 
   expect(result).toEqual({
     shareRemoved: true,
+    requestedCapture: { video: true, audio: true, windowAudio: 'window' },
     systemStopped: true,
     cameraStopped: true,
     microphoneStopped: true,

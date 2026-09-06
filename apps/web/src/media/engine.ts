@@ -372,10 +372,14 @@ export class MediaEngine extends EventTarget {
     isCurrent: () => boolean = () => true,
   ): Promise<void> {
     this.ensureActive();
-    const stream = await navigator.mediaDevices.getDisplayMedia({
+    const captureOptions: DisplayMediaStreamOptions & { windowAudio: 'window' | 'exclude' } = {
       video: options.video ?? true,
       audio: options.systemAudio ?? true,
-    });
+      // Ask supporting browsers to scope window audio to the selected application.
+      // This is a picker hint; the browser/OS still controls available audio sources.
+      windowAudio: options.systemAudio === false ? 'exclude' : 'window',
+    };
+    const stream = await navigator.mediaDevices.getDisplayMedia(captureOptions);
     // A desktop setup screen can be canceled while the OS chooser is pending.
     // Reject its late result before replacing any newer share's tracks.
     if (!isCurrent()) {
