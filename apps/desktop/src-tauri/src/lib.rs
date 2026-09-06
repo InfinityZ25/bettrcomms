@@ -222,7 +222,10 @@ pub fn run() {
                 recording_export::recording_export_begin,
                 recording_export::recording_export_append,
                 recording_export::recording_export_finish,
-                recording_export::recording_export_abort
+                recording_export::recording_export_abort,
+                recording_export::recording_conversion_capabilities,
+                recording_export::recording_conversion_begin,
+                recording_export::recording_conversion_finish
             ];
             handler(invoke)
         })

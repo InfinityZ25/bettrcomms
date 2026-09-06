@@ -14,15 +14,30 @@ test('input volume changes the same processed track live without changing captur
     const raw = destination.stream.getAudioTracks()[0];
     volume.setInputVolume(1);
     const processed = await createMicrophoneEffects(raw, readProcessingSettings());
-    const analyser = new AnalyserNode(context, { fftSize: 8192 });
+    const analyser = new AnalyserNode(context, { fftSize: 2048 });
     context.createMediaStreamSource(new MediaStream([processed.track])).connect(analyser);
-    const rms = async () => {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      const samples = new Float32Array(8192); analyser.getFloatTimeDomainData(samples);
-      return Math.sqrt(samples.reduce((sum, sample) => sum + sample * sample, 0) / samples.length);
+    const rms = async (allowSilence = false) => {
+      // A MediaStream crossing AudioContexts can start several render quanta
+      // after both contexts report running. Measure only once consecutive
+      // windows have converged, so startup silence cannot bias the 1x sample.
+      const readings: number[] = [];
+      const deadline = performance.now() + 2_000;
+      while (performance.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        const samples = new Float32Array(analyser.fftSize);
+        analyser.getFloatTimeDomainData(samples);
+        readings.push(Math.sqrt(samples.reduce((sum, sample) => sum + sample * sample, 0) / samples.length));
+        if (readings.length >= 3) {
+          const recent = readings.slice(-3);
+          const high = Math.max(...recent); const low = Math.min(...recent);
+          if ((allowSilence && high < 0.000001) || (high >= 0.000001 && low / high > 0.97))
+            return recent.reduce((sum, value) => sum + value, 0) / recent.length;
+        }
+      }
+      throw new Error(`Input RMS did not settle: ${readings.map(value => value.toFixed(6)).join(', ')}`);
     };
     const one = await rms(); volume.setInputVolume(2); const two = await rms();
-    volume.setInputVolume(0); const zero = await rms();
+    volume.setInputVolume(0); const zero = await rms(true);
     const live = processed.track.readyState;
     const persisted = readProcessingSettings();
     processed.dispose(); const rawLive = raw.readyState;

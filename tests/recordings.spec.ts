@@ -182,7 +182,7 @@ test('saved multitrack recording reloads, mixes, seeks, and deletes', async ({
   await page.getByLabel('Video source').selectOption({ label: 'Ada · screen' });
   await expect(page.getByLabel('Video source')).toHaveValue('video-2');
   await page.getByLabel('Video source').selectOption({ label: 'Ada · camera' });
-  await page.getByText('Export original tracks & timing manifest').click();
+  await page.getByText('Export tracks & timing manifest').click();
   const cameraDownload = page.getByRole('link', {
     name: 'Download original Ada · camera',
   });
@@ -204,6 +204,21 @@ test('saved multitrack recording reloads, mixes, seeks, and deletes', async ({
   await cameraDownload.click();
   const downloaded = await originalDownload;
   expect(downloaded.suggestedFilename()).toBe('camera.webm');
+  const audioExport = page.locator('.recording-asset').filter({ has: page.getByRole('link', { name: 'Download original Ada · microphone' }) });
+  await audioExport.getByLabel('Export format for Ada · microphone').selectOption('wav');
+  await audioExport.getByRole('button', { name: 'Convert', exact: true }).click();
+  const wavDownload = audioExport.getByRole('link', { name: 'Download WAV' });
+  await expect(wavDownload).toBeVisible();
+  const wavHeader = await wavDownload.evaluate(async (link: HTMLAnchorElement) => {
+    const bytes = new Uint8Array(await (await fetch(link.href)).arrayBuffer());
+    return { container: String.fromCharCode(...bytes.slice(0, 4)), type: String.fromCharCode(...bytes.slice(8, 12)), bytes: bytes.length };
+  });
+  expect(wavHeader).toMatchObject({ container: 'RIFF', type: 'WAVE' });
+  expect(wavHeader.bytes).toBeGreaterThan(10_000);
+  const convertedDownload = page.waitForEvent('download');
+  await wavDownload.click();
+  expect((await convertedDownload).suggestedFilename()).toMatch(/\.wav$/);
+  await page.screenshot({ path: '.local/recording-export-formats.png', fullPage: true });
   await page
     .locator('.workspace-screen__scroll')
     .evaluate((element) => (element.scrollTop = 0));

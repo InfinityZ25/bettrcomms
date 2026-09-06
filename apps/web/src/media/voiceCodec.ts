@@ -30,6 +30,7 @@ export async function createVoiceEncoder(
   const api = webCodecs();
   if (track.kind !== 'audio' || track.readyState === 'ended')
     throw new Error('Voice encoder requires a live processed microphone track');
+  const audioTrack = track as MediaStreamAudioTrack;
   const config = { codec, sampleRate, numberOfChannels: 1, bitrate: 64_000 };
   const support = await api.AudioEncoder.isConfigSupported(config);
   if (!support.supported) throw new Error('WebCodecs Opus encoding is unsupported');
@@ -62,7 +63,7 @@ export async function createVoiceEncoder(
     // connecting to the local speaker. Only the derived track is owned here.
     context = new AudioContext({ sampleRate, latencyHint: 'interactive' });
     if (context.sampleRate !== sampleRate) throw new Error('48 kHz voice encoding is unavailable');
-    source = context.createMediaStreamSource(new MediaStream([track]));
+    source = context.createMediaStreamSource(new MediaStream([audioTrack]));
     destination = context.createMediaStreamDestination();
     source.connect(destination);
     derivedTrack = destination.stream.getAudioTracks()[0];
@@ -77,7 +78,7 @@ export async function createVoiceEncoder(
       error(error: unknown) { if (!disposed) { onError(error); cleanup(); } },
     });
     encoder.configure(config);
-    const processor = new Processor({ track: derivedTrack });
+    const processor = new Processor({ track: derivedTrack as MediaStreamAudioTrack });
     reader = processor.readable.getReader();
     track.addEventListener('ended', cleanup, { once: true });
     silenceTimer = window.setInterval(() => {

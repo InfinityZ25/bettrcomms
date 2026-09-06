@@ -116,16 +116,16 @@ export default function RecordingsLibrary() {
           />
           <details className="recording-exports">
             <summary>
-              <Download size={16} /> Export original tracks & timing manifest
+              <Download size={16} /> Export tracks & timing manifest
             </summary>
             <p>
-              Independent source files for editing. Playback volume changes do
-              not change these originals.
+              Download original tracks or convert a copy to another format. Each track stays separate; playback volume changes do not affect exports.
             </p>
             {selected.result.files.map((file) => (
               <RecordingDownload
                 key={file.name}
                 file={file}
+                mediaKind={selected.result.manifest.tracks.find(track => track.fileName === file.name)?.mediaKind}
                 label={
                   file.name === 'manifest.json'
                     ? 'Timing manifest'

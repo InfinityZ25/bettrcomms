@@ -43,4 +43,7 @@ commands.allow = [
   "recording_export_append",
   "recording_export_finish",
   "recording_export_abort",
+  "recording_conversion_capabilities",
+  "recording_conversion_begin",
+  "recording_conversion_finish",
 ]

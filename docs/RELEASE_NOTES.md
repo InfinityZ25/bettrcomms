@@ -1,5 +1,13 @@
 # BetterComms preview release notes
 
+## 0.1.4 — recording format exports
+
+Recordings offers an Export a copy format selector beside each original track. WebM video can be converted locally to H.264 MP4, and audio to uncompressed WAV. Desktop 0.1.4 additionally supports 256 kbps MP3 through its installed FFmpeg runtime. Browser MP4 requires available H.264/AAC WebCodecs encoders; unsupported codecs produce an actionable error. Conversion code loads only when requested. Older desktop hosts can use the browser conversion path for MP4/WAV.
+
+Exports preserve independent participant tracks and do not apply playback volume adjustments or replace originals. Audio already embedded in a video is retained; separate microphone and system-audio files are not automatically mixed into the video. Native MP4 uses CRF 18 H.264 and optional AAC audio. Progress and cancellation are available, and native exports use a save dialog with atomic completion. Source files are limited to 512 MiB; browser output is limited to 512 MiB and native output to 2 GiB. Native conversion is bounded to two concurrent jobs and 30 minutes per job.
+
+Real synthetic WebM acceptance checks decode exported MP4 video and embedded audio, WAV, and native MP3, verify source preservation, and exercise cancellation. Native conversion was exercised on Windows; macOS uses the browser conversion path where supported.
+
 ## Room lobbies and call presence
 
 Rooms and direct messages have separate navigation groups. A conversation lobby shows the current call roster before joining, rather than presenting a fake local participant and an inactive screenshare stage. Muted and deafened participants are visible both inside the call and to authorized room members outside it. Deafen silences call playback and mutes the microphone, then restores the previous microphone state when disabled. Incoming recordings and saved output preferences are unchanged.

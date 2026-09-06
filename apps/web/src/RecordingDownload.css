@@ -67,6 +67,11 @@
 .recording-asset__status.is-error {
   color: #f1aaa2;
 }
+.recording-asset__convert { display: flex; align-items: end; flex-wrap: wrap; gap: 10px; padding: 12px 14px; border: 1px solid var(--line); border-top: 0; border-radius: 0 0 10px 10px; background: #111713; }
+.recording-asset__convert label { flex: 1; min-width: 160px; color: #b6c7b6; font-size: 11px; }
+.recording-asset__convert select { display: block; width: 100%; margin-top: 6px; }
+.recording-asset__convert small { flex-basis: 100%; color: #a5b2a9; font-size: 11px; }
+.recording-asset:has(.recording-asset__convert) .recording-asset__download { border-radius: 10px 10px 0 0; }
 @media (max-width: 600px) {
   .recording-asset .recording-asset__download {
     flex-wrap: wrap;
