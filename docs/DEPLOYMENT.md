@@ -25,3 +25,5 @@ Windows native capture requires the existing FFmpeg runtime described in NATIVE_
 The hosted Go service relays signaling/chat, not media. STUN assists peer discovery. A production TURN deployment is still needed for restrictive NATs and networks; Railway's HTTP service alone does not supply a UDP media relay. Native congestion adaptation and large-group scaling remain outside this preview.
 
 The public repository has no project-wide reuse license selected yet. Third-party notices retain their individual licenses; publication alone does not license BetterComms source under MIT or another open-source license.
+
+Automatic deployment note: the Railway source is linked to GitHub, but the current connection did not create repository push triggers. The CLI account cannot issue project deployment tokens (`Not Authorized`), so no token-backed GitHub deploy job is installed. Deployment remains `railway up --service bettrcomms --detach` from an authenticated machine until Railway GitHub App access or an environment-scoped deployment token is configured. This does not affect the running app/database.

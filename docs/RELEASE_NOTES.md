@@ -167,7 +167,7 @@ Recording finalization drains queued access units and reports bounded muxer diag
 
 ## Hosted preview and distributable builds (2026-09-05)
 
-The public GitHub repository is InfinityZ25/bettrcomms. Railway hosts the Vite production UI and Go API on one HTTPS origin, with a separate persistent PostgreSQL service and automatic deployments from main. Development authentication is disabled remotely, cookies are Secure/HttpOnly, and WorkOS's existing staging environment retains both localhost and hosted callbacks. No Vercel service is needed.
+The public GitHub repository is InfinityZ25/bettrcomms. Railway hosts the Vite production UI and Go API on one HTTPS origin, with a separate persistent PostgreSQL service. The repository is linked, but deploys currently use the authenticated Railway CLI; automatic push triggers are not active. Development authentication is disabled remotely, cookies are Secure/HttpOnly, and WorkOS's existing staging environment retains both localhost and hosted callbacks. No Vercel service is needed.
 
 Desktop releases load the exact hosted origin and grant only that origin the explicit native command permission. A packaged Windows smoke test verified native capability IPC and WorkOS login initiation, and verified that the external authentication page cannot invoke native commands. This does not establish completion of an interactive user login or a system-browser OAuth return flow. macOS uses browser device permissions rather than Windows-only permission IPC.
 
