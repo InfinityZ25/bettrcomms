@@ -27,7 +27,7 @@ try {
   await mkdir('.local/hosted-smoke', { recursive: true });
   await page.screenshot({ path: '.local/hosted-smoke/home.png', fullPage: true });
   await page.goto(`${origin}/#/settings`);
-  await page.getByLabel('Voice route', { exact: true }).waitFor();
+  await page.getByLabel(/^Voice route/).waitFor();
   await page.goto(origin);
   await page.getByRole('button', { name: /Continue with WorkOS/ }).click();
   await page.waitForURL(url => url.hostname.endsWith('.authkit.app') || url.hostname === 'api.workos.com', { timeout: 30_000 });
