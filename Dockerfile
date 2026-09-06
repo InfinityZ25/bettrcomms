@@ -7,13 +7,12 @@ RUN npm ci
 COPY apps/web apps/web
 RUN npm run build
 
-FROM golang:1.24-alpine AS server-build
+FROM golang:1.26-alpine AS server-build
 WORKDIR /src/server
 COPY server/go.mod server/go.sum ./
 RUN go mod download
 COPY server ./
-RUN \
-    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/bettercomms ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/bettercomms ./cmd/server
 
 FROM alpine:3.22
 RUN apk add --no-cache ca-certificates tzdata \

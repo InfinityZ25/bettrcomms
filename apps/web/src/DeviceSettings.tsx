@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { invoke, isTauri } from '@tauri-apps/api/core';
+import { invoke } from '@tauri-apps/api/core';
 import { applyOutputDevice, followOutputDevice } from './media/output';
 import './DeviceSettings.css';
 import { MediaEngine } from './media/engine';
+import { allowDesktopCapture, isWindowsDesktop } from './media/permissions';
 import {
   microphoneCaptureOptions,
   readProcessingSettings,
@@ -30,8 +31,7 @@ const message = (error: unknown, kind?: PermissionKind) => {
 };
 
 async function ensureDesktopPermission(kind: PermissionKind) {
-  if (isTauri())
-    await invoke('desktop_media_permission_set', { kind, allowed: true });
+  await allowDesktopCapture(kind);
 }
 
 function closeContext(context: AudioContext | null) {
@@ -40,6 +40,7 @@ function closeContext(context: AudioContext | null) {
 }
 
 export default function DeviceSettings() {
+  const [windowsDesktop, setWindowsDesktop] = useState(false);
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [input, setInput] = useState(localStorage.getItem('bc-input') ?? '');
   const [camera, setCamera] = useState(localStorage.getItem('bc-camera') ?? '');
@@ -68,6 +69,10 @@ export default function DeviceSettings() {
   const audioContext = useRef<AudioContext | null>(null);
   const recorder = useRef<MediaRecorder | null>(null);
   const timer = useRef<number | null>(null);
+
+  useEffect(() => {
+    void isWindowsDesktop().then(setWindowsDesktop);
+  }, []);
   const animation = useRef<number | null>(null);
   const playback = useRef<HTMLAudioElement | null>(null);
   const outputContext = useRef<AudioContext | null>(null);
@@ -580,7 +585,7 @@ export default function DeviceSettings() {
             >
               {monitoring ? 'Stop live loopback' : 'Start live loopback'}
             </button>
-            {isTauri() && denied(micStatus) && (
+            {windowsDesktop && denied(micStatus) && (
               <button
                 className="text-button"
                 type="button"
@@ -745,7 +750,7 @@ export default function DeviceSettings() {
             >
               {previewing ? 'Stop preview' : 'Preview camera'}
             </button>
-            {isTauri() && denied(cameraStatus) && (
+            {windowsDesktop && denied(cameraStatus) && (
               <button
                 className="text-button"
                 type="button"

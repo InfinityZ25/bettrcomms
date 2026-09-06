@@ -2,6 +2,10 @@
 
 A browser-first communication app for small groups, with a Go control plane and a Tauri desktop foundation. Direct-first WebRTC media stays separate from persistent messages and room membership.
 
+Hosted preview: [Open BetterComms](https://bettrcomms-production.up.railway.app).
+
+Windows and macOS build artifacts are available from the [desktop build workflow](https://github.com/InfinityZ25/bettrcomms/actions/workflows/desktop.yml). Initial installers are unsigned; macOS has not yet passed physical-device media acceptance. See [deployment details and limitations](docs/DEPLOYMENT.md).
+
 ## Run locally
 
 Prerequisites: Node.js 24, Go 1.26, Docker Desktop, and PowerShell 7 on Windows.
