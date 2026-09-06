@@ -643,7 +643,14 @@ export class MediaEngine extends EventTarget {
     // Keep ordinary WebRTC signaling on its original synchronous path. An
     // unconditional await here lets a later candidate overtake its offer.
     if ('transport' in signal && signal.transport === 'native-screen') {
-      await this.nativeScreen.handle(signal);
+      const key = `native:${signal.from}:${signal.captureId}`;
+      const previous = this.signalQueues.get(key) ?? Promise.resolve();
+      const pending = previous.catch(() => undefined).then(async () => {
+        if (!this.disposed) await this.nativeScreen.handle(signal);
+      });
+      this.signalQueues.set(key, pending);
+      try { await pending; }
+      finally { if (this.signalQueues.get(key) === pending) this.signalQueues.delete(key); }
       return;
     }
     if ('transport' in signal && signal.transport === 'voice-relay') {
@@ -840,12 +847,16 @@ export class MediaEngine extends EventTarget {
                 ([, sender]) =>
                   sender === statsSender || sender.track?.id === trackId,
               )?.[0]
-            : descriptor?.source;
+            : descriptor?.source ?? [...peer.remote.values()].find(remote => remote.track.id === trackId)?.source;
         return {
           direction,
           source: localSource,
           mediaKind: row.kind ?? row.mediaType ?? 'unknown',
           bitrate,
+          bytes,
+          packets: Number(direction === 'inbound' ? row.packetsReceived : row.packetsSent) || 0,
+          ...(typeof row.audioLevel === 'number' ? { audioLevel: row.audioLevel } : {}),
+          ...(typeof row.totalAudioEnergy === 'number' ? { totalAudioEnergy: row.totalAudioEnergy } : {}),
           ...(row.frameWidth ? { width: row.frameWidth } : {}),
           ...(row.frameHeight ? { height: row.frameHeight } : {}),
           ...(row.framesPerSecond
@@ -867,6 +878,7 @@ export class MediaEngine extends EventTarget {
       peerId,
       timestamp: now,
       connectionState: peer.pc.connectionState,
+      nativeScreen: await this.nativeScreen.getReceiverStats(peerId).catch(() => undefined),
       ...(this.relayStates.has(peerId) ? { voiceRelay: {
         ...this.relayStates.get(peerId)!,
         verificationCode: await this.voiceRelay?.getVerificationCode(peerId) ?? undefined,

@@ -25,14 +25,13 @@ import { Button } from './components/ui/button';
 import {
   MediaEngine,
   RoomWebSocketSignaling,
-  AudioLeveler,
   TrackRecordingSession,
   type MediaSourceKind,
   type RemoteTrack,
   type RecordingResult,
 } from './media';
 import { api, type User, type Room } from './api';
-import { followOutputDevice } from './media/output';
+import { attachRemoteAudio, prepareCallPlayback, disposeCallPlayback, readParticipantVolume, getCallPlaybackStatus } from './media/remoteAudio';
 import { allowDesktopCapture } from './media/permissions';
 import { saveRecording } from './media/recordingLibrary';
 import { readRecordingQuality } from './media/recordingQuality';
@@ -115,6 +114,8 @@ export default function CallStage({
     [audioBlocked, setAudioBlocked] = useState(false);
   const [saveStatus, setSaveStatus] = useState('');
   const [serverRtt, setServerRtt] = useState<number | null>(null);
+  const [reportStatus, setReportStatus] = useState('');
+  const [receivingVideo, setReceivingVideo] = useState<string | null>(null);
   const microphone = locals.get('microphone');
   const speaking = useSpeakingActivity(
     [
@@ -173,6 +174,7 @@ export default function CallStage({
       }
   };
   const leave = () => {
+    disposeCallPlayback();
     void finishRecording();
     socket.current?.close();
     socket.current = null;
@@ -196,6 +198,7 @@ export default function CallStage({
       active.current = false;
       socket.current?.close();
       engine.current?.dispose();
+      disposeCallPlayback();
       const metadata = recordingMetadata.current;
       void recorder.current
         ?.stop()
@@ -383,6 +386,7 @@ export default function CallStage({
       onError('Create a room before joining a call.');
       return;
     }
+    prepareCallPlayback();
     await perform(async () => {
       await allowDesktopCapture('microphone');
       const config = await api<{ ice_servers: RTCIceServer[] }>('/ice').catch(
@@ -477,6 +481,7 @@ export default function CallStage({
         if (engine.current === e) {
           void finishRecording();
           e.dispose();
+          disposeCallPlayback();
           engine.current = null;
           setJoined(false);
           setServerRtt(null);
@@ -499,11 +504,13 @@ export default function CallStage({
       } catch (error) {
         s.close();
         e.dispose();
+        disposeCallPlayback();
         engine.current = null;
         socket.current = null;
         throw error;
       }
     });
+    if (!engine.current) disposeCallPlayback();
   }
   async function screen() {
     if (!engine.current) {
@@ -806,7 +813,7 @@ export default function CallStage({
             ) : (
               <span className="stage-badge">
                 {share
-                  ? 'Live'
+                  ? receivingVideo === share.track.id ? 'Live' : 'Waiting for video'
                   : joined
                     ? 'You’re in good company'
                     : 'Ready when you are'}
@@ -840,7 +847,7 @@ export default function CallStage({
                   transform: `translate(${pan.x}px,${pan.y}px) scale(${zoom})`,
                 }}
               >
-                <TrackVideo track={share.track} />
+                <TrackVideo track={share.track} showStatus onReceiving={receiving => setReceivingVideo(receiving ? share.track.id : null)} />
               </div>
             </div>
           ) : (
@@ -989,6 +996,23 @@ export default function CallStage({
       {showStats && (
         <div className="stats-panel">
           <strong>Connection details</strong>
+          <Button variant="secondary" onClick={() => {
+            const report = {
+              version: 1, time: new Date().toISOString(), serverRtt,
+              playback: getCallPlaybackStatus(),
+              peers: stats.map(({ peerId: _peerId, voiceRelay, ...peer }, index) => ({
+                peer: index + 1, ...peer,
+                voiceRelay: voiceRelay ? { state: voiceRelay.state } : undefined,
+              })),
+              localSources: [...locals].map(([source, track]) => ({ source, enabled: track.enabled, muted: track.muted, readyState: track.readyState })),
+              remoteSources: remote.map(({ source, track }) => ({ source, enabled: track.enabled, muted: track.muted, readyState: track.readyState })),
+            };
+            void navigator.clipboard.writeText(JSON.stringify(report, null, 2)).then(
+              () => setReportStatus('Connection report copied. No audio, video, addresses, or credentials included.'),
+              () => setReportStatus('Could not copy. Allow clipboard access and try again.'),
+            );
+          }}>Copy connection report</Button>
+          {reportStatus && <small role="status">{reportStatus}</small>}
           {stats.length ? (
             stats.map((s) => (
               <div key={s.peerId}>
@@ -1012,6 +1036,7 @@ export default function CallStage({
                       : ''}
                   </small>
                 ))}
+                {s.nativeScreen && <small>Native screen: {s.nativeScreen.connectionState} · {s.nativeScreen.framesDecoded} decoded frames · {(s.nativeScreen.bytesReceived / 1024).toFixed(0)} KB received · {s.nativeScreen.codec ?? 'codec pending'}</small>}
               </div>
             ))
           ) : (
@@ -1042,21 +1067,46 @@ export default function CallStage({
 function TrackVideo({
   track,
   self = false,
+  showStatus = false,
+  onReceiving,
 }: {
   track: MediaStreamTrack;
   self?: boolean;
+  showStatus?: boolean;
+  onReceiving?: (receiving: boolean) => void;
 }) {
   const ref = useRef<HTMLVideoElement>(null);
+  const receivingCallback = useRef(onReceiving);
+  receivingCallback.current = onReceiving;
+  const [videoStatus, setVideoStatus] = useState('Waiting for video frames…');
   useEffect(() => {
-    if (ref.current) {
-      ref.current.srcObject = new MediaStream([track]);
-      ref.current.play().catch(() => {});
-    }
+    const video = ref.current;
+    if (!video) return;
+    let active = true;
+    setVideoStatus('Waiting for video frames…');
+    receivingCallback.current?.(false);
+    video.srcObject = new MediaStream([track]);
+    void video.play().catch(() => { if (active) setVideoStatus('Video playback needs another attempt.'); });
+    const started = performance.now();
+    let lastFrame = 0, lastProgress = started;
+    const check = showStatus ? setInterval(() => {
+      const frames = video.getVideoPlaybackQuality?.().totalVideoFrames ?? (video.readyState >= 2 ? 1 : 0);
+      if (frames > lastFrame) {
+        lastFrame = frames; lastProgress = performance.now(); setVideoStatus('');
+        receivingCallback.current?.(true);
+      } else if (performance.now() - lastProgress > 12_000) {
+        setVideoStatus(lastFrame ? 'Screen video has stopped arriving. Ask the sender to restart sharing.' : 'No video frames have arrived. Ask the sender to restart or try browser sharing.');
+        receivingCallback.current?.(false);
+      }
+    }, 1000) : undefined;
     return () => {
-      if (ref.current) ref.current.srcObject = null;
+      active = false;
+      clearInterval(check);
+      video.srcObject = null;
     };
-  }, [track]);
+  }, [track, showStatus]);
   return (
+    <>
     <video
       ref={ref}
       autoPlay
@@ -1064,6 +1114,13 @@ function TrackVideo({
       muted
       className={self ? 'self-video' : ''}
     />
+    {showStatus && videoStatus && <div role="status" style={{ position: 'absolute', left: 16, right: 16, bottom: 16, display: 'grid', placeContent: 'center', gap: 12, padding: 16, borderRadius: 12, textAlign: 'center', background: '#101414e6' }}>
+      <span>{videoStatus}</span>
+      <Button variant="secondary" onClick={() => {
+        void ref.current?.play().catch(() => setVideoStatus('Could not start video playback. Check connection details below.'));
+      }}>Retry playback</Button>
+    </div>}
+    </>
   );
 }
 function PeerVolume({
@@ -1076,7 +1133,7 @@ function PeerVolume({
   balanced: boolean;
 }) {
   const [volume, setVolume] = useState(
-    Number(localStorage.getItem('bc-volume-' + peerId) ?? 1),
+    readParticipantVolume(peerId),
   );
   return (
     <label>
@@ -1117,54 +1174,11 @@ function RemoteAudio({
   balanced: boolean;
 }) {
   useEffect(() => {
-    const context = new AudioContext(),
-      stream = new MediaStream([track]),
-      gain = context.createGain(),
-      limiter = context.createDynamicsCompressor();
-    const stopOutput = followOutputDevice(context, (error) =>
-      window.dispatchEvent(
-        new CustomEvent('bc-output-error', { detail: error.message }),
-      ),
-    );
-    limiter.threshold.value = -3;
-    limiter.knee.value = 0;
-    limiter.ratio.value = 20;
-    gain.connect(limiter).connect(context.destination);
-    gain.gain.value = Number(localStorage.getItem('bc-volume-' + peerId) ?? 1);
-    const leveler =
-      balanced && source === 'microphone'
-        ? new AudioLeveler(stream, gain)
-        : null;
-    const input = leveler ? null : context.createMediaStreamSource(stream);
-    input?.connect(gain);
-    const unlock = () => {
-      void context
-        .resume()
-        .catch(() => window.dispatchEvent(new Event('bc-audio-blocked')));
-    };
-    unlock();
-    const check = setTimeout(() => {
-      if (context.state === 'suspended')
-        window.dispatchEvent(new Event('bc-audio-blocked'));
-    }, 700);
-    window.addEventListener('bc-audio-unlock', unlock);
-    const handler = (event: Event) => {
-      const detail = (event as CustomEvent).detail;
-      if (detail.peerId === peerId)
-        gain.gain.setTargetAtTime(detail.volume, context.currentTime, 0.02);
-    };
-    window.addEventListener('bc-volume', handler);
-    return () => {
-      stopOutput();
-      window.removeEventListener('bc-volume', handler);
-      window.removeEventListener('bc-audio-unlock', unlock);
-      clearTimeout(check);
-      leveler?.dispose();
-      input?.disconnect();
-      gain.disconnect();
-      limiter.disconnect();
-      void context.close();
-    };
+    return attachRemoteAudio({
+      track,
+      peerId,
+      balanceVoice: balanced && source === 'microphone',
+    });
   }, [track, peerId, source, balanced]);
   return null;
 }

@@ -37,6 +37,8 @@ commands.allow = [
   "deepfilter_stream_stop",
   "deepfilter_install_info",
   "deepfilter_install",
+  "ffmpeg_install_info",
+  "ffmpeg_install",
   "recording_export_begin",
   "recording_export_append",
   "recording_export_finish",

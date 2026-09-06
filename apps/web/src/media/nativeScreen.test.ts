@@ -12,6 +12,8 @@ import type { MediaSignal, SignalingAdapter } from './types';
 
 class FakePeerConnection {
   static instances: FakePeerConnection[] = [];
+  static remoteDescriptionGate?: Promise<void>;
+  static stats = new Map<string, Record<string, unknown>>();
   localDescription: RTCSessionDescription | null = null;
   remoteDescription: RTCSessionDescription | null = null;
   connectionState: RTCPeerConnectionState = 'new';
@@ -23,6 +25,7 @@ class FakePeerConnection {
     FakePeerConnection.instances.push(this);
   }
   async setRemoteDescription(description: RTCSessionDescriptionInit) {
+    await FakePeerConnection.remoteDescriptionGate;
     this.remoteDescription = description as RTCSessionDescription;
   }
   async createAnswer() {
@@ -35,6 +38,7 @@ class FakePeerConnection {
     } as RTCSessionDescription;
   }
   addIceCandidate = vi.fn(async () => undefined);
+  getStats = vi.fn(async () => FakePeerConnection.stats as unknown as RTCStatsReport);
 }
 
 function setup(directOnly = false) {
@@ -64,6 +68,8 @@ function setup(directOnly = false) {
 beforeEach(() => {
   vi.unstubAllGlobals();
   FakePeerConnection.instances = [];
+  FakePeerConnection.remoteDescriptionGate = undefined;
+  FakePeerConnection.stats = new Map();
   vi.stubGlobal('RTCPeerConnection', FakePeerConnection);
   mocks.invoke.mockReset();
   mocks.listen.mockClear();
@@ -300,6 +306,50 @@ describe('native screen signaling lifecycle', () => {
     expect(transport.active).toBe(false);
   });
 
+  it('does not signal an outbound offer that resolves after the share stopped', async () => {
+    let resolveOffer!: (value: RTCSessionDescriptionInit) => void;
+    mocks.invoke.mockImplementation(
+      (command: string, args: Record<string, unknown>) => {
+        if (command === 'native_screen_start')
+          return Promise.resolve({ ...args, sessionId: 'capture-1' });
+        if (command === 'native_screen_peer_offer' && args.peerId === 'peer-late')
+          return new Promise((resolve) => { resolveOffer = resolve; });
+        if (command === 'native_screen_peer_offer')
+          return Promise.resolve({ type: 'offer', sdp: `offer-${args.peerId}` });
+        return Promise.resolve(null);
+      },
+    );
+    const { transport, sent } = setup();
+    await transport.start({
+      sourceId: 'monitor:opaque', encoder: 'h264_qsv', width: 1920,
+      height: 1080, fps: 30, bitrateMbps: 20, cursor: false,
+    });
+    const adding = transport.addPeer('peer-late');
+    await Promise.resolve();
+    await transport.stop();
+    resolveOffer({ type: 'offer', sdp: 'stale-offer' });
+    await adding;
+    expect(sent.some((signal) => signal.type === 'offer' && signal.to === 'peer-late')).toBe(false);
+  });
+
+  it('closes a receiver disposed while its asynchronous offer is being applied', async () => {
+    let release!: () => void;
+    FakePeerConnection.remoteDescriptionGate = new Promise<void>((resolve) => { release = resolve; });
+    const { transport, sent, removed } = setup();
+    const handling = transport.handle({
+      type: 'offer', from: 'peer-late', to: 'self', transport: 'native-screen',
+      captureId: 'capture-late', description: { type: 'offer', sdp: 'v=0\r\n' },
+    });
+    await Promise.resolve();
+    const receiver = FakePeerConnection.instances[0];
+    transport.dispose();
+    release();
+    await handling;
+    expect(receiver.close).toHaveBeenCalled();
+    expect(removed).toHaveBeenCalledWith('peer-late');
+    expect(sent.some((signal) => signal.type === 'answer')).toBe(false);
+  });
+
   it('reserves pending peers, enforces the native 7-peer limit, and preserves receivers on local stop', async () => {
     const { transport, removed } = setup();
     await transport.start({
@@ -377,6 +427,42 @@ describe('native screen signaling lifecycle', () => {
         candidate: expect.stringContaining('typ host'),
       }),
     );
+  });
+
+  it('keeps a receiver open for unknown native control signals', async () => {
+    const { transport, removed } = setup();
+    await transport.handle({
+      type: 'offer', from: 'peer-b', to: 'self', transport: 'native-screen',
+      captureId: 'capture-b', description: { type: 'offer', sdp: 'v=0\r\n' },
+    });
+    const receiver = FakePeerConnection.instances[0];
+    await expect(transport.handle({
+      type: 'signal', from: 'peer-b', to: 'self', transport: 'native-screen',
+      captureId: 'capture-b', data: { kind: 'future-native-screen-message' },
+    } as unknown as MediaSignal)).resolves.toBe(true);
+    expect(receiver.close).not.toHaveBeenCalled();
+    expect(removed).not.toHaveBeenCalled();
+  });
+
+  it('reports receiver video counters and codec without exposing the peer connection', async () => {
+    FakePeerConnection.stats = new Map([
+      ['video', {
+        id: 'video', type: 'inbound-rtp', kind: 'video', codecId: 'codec',
+        bytesReceived: 8192, framesDecoded: 37, packetsLost: 2,
+      }],
+      ['codec', { id: 'codec', type: 'codec', mimeType: 'video/H264' }],
+    ]);
+    const { transport } = setup();
+    await transport.handle({
+      type: 'offer', from: 'peer-stats', to: 'self', transport: 'native-screen',
+      captureId: 'capture-stats', description: { type: 'offer', sdp: 'v=0\r\n' },
+    });
+    FakePeerConnection.instances[0].connectionState = 'connected';
+    await expect(transport.getReceiverStats('peer-stats')).resolves.toEqual({
+      connectionState: 'connected', bytesReceived: 8192, framesDecoded: 37,
+      packetsLost: 2, codec: 'video/H264',
+    });
+    await expect(transport.getReceiverStats('unknown')).resolves.toBeUndefined();
   });
 
   it('bounds pending candidates and receive-only peer connections', async () => {

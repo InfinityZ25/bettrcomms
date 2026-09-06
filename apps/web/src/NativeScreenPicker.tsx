@@ -18,6 +18,7 @@ import type {
   NativeScreenStartOptions,
 } from './media/nativeScreen';
 import './NativeScreenPicker.css';
+import NativeFfmpegSetup from './NativeFfmpegSetup';
 import type { NativeSystemAudioCapabilities } from './media/nativeSystemAudio';
 
 const previewQueue: Array<() => Promise<void>> = [];
@@ -231,6 +232,13 @@ export default function NativeScreenPicker({
       if (alive.current && current === generation.current) setRefreshing(false);
     }
   }
+  async function refreshCapabilities() {
+    const caps = await invoke<NativeScreenCapabilities>('native_screen_capabilities');
+    if (!alive.current) return;
+    setCapabilities(caps);
+    setEncoder(caps.encoders.find((item) => item.available)?.id ?? 'libx264');
+    setError('');
+  }
   useEffect(() => {
     alive.current = true;
     let current = true;
@@ -248,14 +256,7 @@ export default function NativeScreenPicker({
           });
       });
     void refreshSources();
-    void invoke<NativeScreenCapabilities>('native_screen_capabilities')
-      .then((caps) => {
-        if (!current) return;
-        setCapabilities(caps);
-        setEncoder(
-          caps.encoders.find((item) => item.available)?.id ?? 'libx264',
-        );
-      })
+    void refreshCapabilities()
       .catch((cause) => {
         if (current) setError(String(cause));
       });
@@ -631,7 +632,23 @@ export default function NativeScreenPicker({
             </div>
           </div>
           {capabilities && !capabilities.available && (
-            <p className="share-error">{capabilities.detail}</p>
+            <>
+              <p className="share-error">{capabilities.detail}</p>
+              <NativeFfmpegSetup
+                onInstalled={async () => {
+                  await Promise.all([refreshCapabilities(), refreshSources(true)]);
+                }}
+                onUseBrowser={() => start(true)}
+              />
+            </>
+          )}
+          {!capabilities && error.toLowerCase().includes('ffmpeg') && (
+            <NativeFfmpegSetup
+              onInstalled={async () => {
+                await Promise.all([refreshCapabilities(), refreshSources(true)]);
+              }}
+              onUseBrowser={() => start(true)}
+            />
           )}
           {error && (
             <p className="share-error" role="alert">

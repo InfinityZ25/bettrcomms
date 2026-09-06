@@ -1,4 +1,18 @@
-# 0.1.0 local development build
+# BetterComms preview release notes
+
+## 0.1.1 — call playback and native sharing reliability
+
+Remote microphones and shared audio now use one playback context, unlocked synchronously when joining. Windows WebView2 explicitly permits application playback, so ordinary calls should not require an extra Enable audio click. Browsers retain their normal autoplay restrictions and recovery control. Per-person volume and microphone balancing remain playback-only; source recordings are unchanged.
+
+Native screen senders queue early ICE candidates until their remote answer exists. Incoming screen signaling is serialized per capture, and disposed or replaced receivers cannot send stale answers. The viewer reports missing or stalled frames instead of labeling a black surface Live. Connection details include native decoded-frame counters and a copyable report without media, IP addresses, peer identifiers or credentials.
+
+Windows x64 has an explicit in-app FFmpeg installer with pinned archive/file hashes and a private runtime directory. No Winget command or PATH change is required. Browser sharing remains available. Both callers should install 0.1.1: hosted UI changes cannot upgrade the Rust backend or WebView configuration in older installers.
+
+Validation includes a real native candidate-before-answer regression, a private FFmpeg download and native thumbnail capture, and native process-loopback retaining an external tone while excluding the app process tree. These tests do not establish that every physical device or cross-network call is fixed. Camera, screen video and system audio still need working WebRTC connectivity; only microphone audio has the WebSocket fallback. Desktop previews remain unsigned, and macOS hardware behavior is unverified.
+
+The Windows 0.1.1 executable passed a fresh-profile hosted smoke: playback starts without a page gesture or test autoplay override, FFmpeg setup IPC is available, and external authentication pages cannot invoke native commands. Frontend build, 62 web unit tests, 40 Rust tests (8 opt-in hardware tests excluded), the 51-test browser pass, and four focused runtime/playback tests passed. The optional TURN browser check remains skipped. The audio test measured nonzero samples through both shared-audio and balanced-microphone playback paths without Chromium's test autoplay bypass.
+
+## Earlier development milestones
 
 This is a working browser vertical slice and native application foundation, not a completed replacement for Discord or a public production release.
 

@@ -28,13 +28,23 @@ try {
   const result = await page.evaluate(async () => {
     const invoke = window.__TAURI_INTERNALS__?.invoke;
     if (!invoke) throw new Error('Tauri IPC bridge is missing');
-    const [boot, screen, media] = await Promise.all([
+    const [boot, screen, media, ffmpeg] = await Promise.all([
       invoke('desktop_boot_config'),
       invoke('native_screen_capabilities'),
       invoke('desktop_media_capabilities'),
+      invoke('ffmpeg_install_info'),
     ]);
+    // No page click, fake permission, or test autoplay flag may unlock this context.
+    const playback = new AudioContext();
+    const autoplayState = await Promise.race([
+      playback.resume().then(() => playback.state),
+      new Promise(resolve => setTimeout(() => resolve('timed-out'), 2000)),
+    ]);
+    await playback.close();
     return {
       boot,
+      autoplayState,
+      ffmpeg: { supported: ffmpeg.supported, installed: ffmpeg.installed },
       screen: { available: screen.available, version: screen.version },
       media,
       mediaDevices: Boolean(navigator.mediaDevices),
@@ -50,6 +60,8 @@ try {
   assert.equal(result.screen.version, 1);
   assert.equal(result.media.platform, 'windows');
   assert.equal(result.mediaDevices, true);
+  assert.equal(result.autoplayState, 'running');
+  assert.equal(result.ffmpeg.supported, true);
   assert.deepEqual(result.voiceCodec, { processor: true, encoder: true, decoder: true });
 
   const nvidiaBridge = await page.evaluate(async () => {
@@ -129,6 +141,8 @@ try {
   console.log('PASS packaged hosted desktop', JSON.stringify({
     origin: expectedOrigin,
     nativeScreenAvailable: result.screen.available,
+    autoplayState: result.autoplayState,
+    ffmpeg: result.ffmpeg,
     mediaDevices: result.mediaDevices,
     authHost,
     externalIpc: rejection === 'bridge-not-exposed' ? rejection : 'rejected',

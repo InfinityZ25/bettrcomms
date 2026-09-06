@@ -119,6 +119,7 @@ export interface PeerMediaStats {
   peerId: string;
   timestamp: number;
   connectionState: RTCPeerConnectionState;
+  nativeScreen?: { connectionState: RTCPeerConnectionState; bytesReceived: number; framesDecoded: number; packetsLost: number; codec?: string };
   voiceRelay?: {
     state: 'connecting' | 'relayed' | 'unavailable';
     message?: string;
@@ -135,6 +136,10 @@ export interface PeerMediaStats {
     source?: MediaSourceKind;
     mediaKind: string;
     bitrate: number;
+    bytes?: number;
+    packets?: number;
+    audioLevel?: number;
+    totalAudioEnergy?: number;
     width?: number;
     height?: number;
     framesPerSecond?: number;

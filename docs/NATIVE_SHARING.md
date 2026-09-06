@@ -4,7 +4,9 @@ The desktop Share screen button opens a dedicated sharing workspace, keeping the
 
 Windows Graphics Capture supplies frames to a native FFmpeg encoder. The native WebRTC sender packetizes its H.264 access units directly; the WebView does not re-encode them. Each viewer uses a separate connection with the call's ICE configuration. Direct-only mode removes TURN and relay candidates. One encoder serves up to seven remote viewers plus the local preview. Uplink use grows with viewer count.
 
-This development implementation uses the machine's existing WinGet `Gyan.FFmpeg` installation. It does not download or bundle that distribution. Its GPL-enabled build and codec distribution requirements need a deliberate packaging decision before shipping an installer. A missing runtime or failed encoder probe leaves browser sharing available.
+On Windows x64, the screen picker can explicitly download the pinned Gyan FFmpeg 8.1 full-build archive from its official GitHub release. BetterComms checks the archive length and SHA-256, extracts only `ffmpeg.exe` and its GPL license into `%LOCALAPPDATA%\Bettercomms\ffmpeg-8.1`, checks the extracted files again, and verifies the `gfxcapture` filter before making the runtime active. Setup does not invoke WinGet, modify PATH, or require a restart. Existing WinGet installations remain a compatibility fallback. A missing runtime or failed encoder probe leaves browser sharing available.
+
+The pinned archive is 247,913,948 bytes with SHA-256 `587B1C37DE29C5003D01CF65DA10001BAC43A58B88E61AF0FC77C61DAFF04761`. The extracted FFmpeg executable is 223,360,000 bytes with SHA-256 `D1E2A156261ECC675081943197A85F08F2868784A0AF499171EDE89353EDAD31`. The runtime is GPL-3.0 licensed; its installed `LICENSE` is retained alongside the executable.
 
 ## Recording
 

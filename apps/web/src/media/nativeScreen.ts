@@ -91,6 +91,7 @@ export class NativeScreenTransport {
   >();
   private outboundPeers = new Set<string>();
   private generation = 0;
+  private disposed = false;
   private unlisten?: UnlistenFn;
   private activeProfile: NativeH264Profile = 'baseline';
   private pendingProfileQueries = new Map<string, PendingProfileQuery>();
@@ -108,6 +109,21 @@ export class NativeScreenTransport {
 
   get active() {
     return Boolean(this.session);
+  }
+
+  async getReceiverStats(peerId: string) {
+    const receiver = this.receivers.get(peerId);
+    if (!receiver) return undefined;
+    const report = await receiver.pc.getStats();
+    const rows = [...report.values()];
+    const video = rows.find(row => row.type === 'inbound-rtp' && (row.kind ?? row.mediaType) === 'video');
+    return {
+      connectionState: receiver.pc.connectionState,
+      bytesReceived: Number(video?.bytesReceived) || 0,
+      framesDecoded: Number(video?.framesDecoded) || 0,
+      packetsLost: Number(video?.packetsLost) || 0,
+      codec: rows.find(row => row.id === video?.codecId)?.mimeType as string | undefined,
+    };
   }
 
   private nativeIceServers() {
@@ -247,6 +263,7 @@ export class NativeScreenTransport {
   }
 
   async handle(signal: MediaSignal): Promise<boolean> {
+    if (this.disposed) return false;
     if (!('transport' in signal) || signal.transport !== 'native-screen')
       return false;
     const peerId = signal.from;
@@ -276,7 +293,8 @@ export class NativeScreenTransport {
         }
         return true;
       }
-      this.closeReceiver(peerId, signal.captureId);
+      if ((signal.data as { kind?: string }).kind === 'native-screen-stop')
+        this.closeReceiver(peerId, signal.captureId);
       return true;
     }
     if (signal.type === 'answer') {
@@ -338,6 +356,7 @@ export class NativeScreenTransport {
       await pc.setRemoteDescription(
         this.allowedDescription(signal.description),
       );
+      if (this.disposed || this.receivers.get(peerId)?.pc !== pc) { pc.close(); return true; }
       const pending = this.pendingReceiverCandidates.get(peerId);
       if (pending && pending.captureId === signal.captureId) {
         this.pendingReceiverCandidates.delete(peerId);
@@ -345,6 +364,7 @@ export class NativeScreenTransport {
           await pc.addIceCandidate(candidate);
       }
       await pc.setLocalDescription(await pc.createAnswer());
+      if (this.disposed || this.receivers.get(peerId)?.pc !== pc) { pc.close(); return true; }
       await this.signaling.send({
         type: 'answer',
         to: peerId,
@@ -387,6 +407,7 @@ export class NativeScreenTransport {
   }
 
   dispose() {
+    this.disposed = true;
     void this.stop();
     for (const peerId of [...this.receivers.keys()]) this.closeReceiver(peerId);
     this.pendingReceiverCandidates.clear();

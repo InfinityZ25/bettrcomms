@@ -98,7 +98,14 @@ struct NativePeer {
     connection: Arc<RTCPeerConnection>,
     rtcp_task: JoinHandle<()>,
     direct_only: bool,
+    signaling: Arc<Mutex<NativePeerSignaling>>,
     _permit: OwnedSemaphorePermit,
+}
+
+#[derive(Default)]
+struct NativePeerSignaling {
+    answered: bool,
+    pending_candidates: Vec<NativeIceCandidate>,
 }
 
 pub struct NativeScreenRtcHub {
@@ -255,6 +262,7 @@ impl NativeScreenRtcHub {
                 connection,
                 rtcp_task,
                 direct_only,
+                signaling: Arc::new(Mutex::new(NativePeerSignaling::default())),
                 _permit: permit,
             },
         );
@@ -262,7 +270,8 @@ impl NativeScreenRtcHub {
     }
 
     pub async fn set_answer(&self, peer_id: &str, sdp: String) -> Result<(), String> {
-        let (connection, direct_only) = self.peer(peer_id).await?;
+        let (connection, direct_only, signaling) = self.peer(peer_id).await?;
+        let mut signaling = signaling.lock().await;
         let sdp = if direct_only {
             without_relay_candidates(&sdp)
         } else {
@@ -271,7 +280,15 @@ impl NativeScreenRtcHub {
         connection
             .set_remote_description(RTCSessionDescription::answer(sdp).map_err(public_error)?)
             .await
-            .map_err(public_error)
+            .map_err(public_error)?;
+        signaling.answered = true;
+        for candidate in std::mem::take(&mut signaling.pending_candidates) {
+            connection
+                .add_ice_candidate(candidate.into())
+                .await
+                .map_err(public_error)?;
+        }
+        Ok(())
     }
 
     pub async fn add_candidate(
@@ -279,17 +296,20 @@ impl NativeScreenRtcHub {
         peer_id: &str,
         candidate: NativeIceCandidate,
     ) -> Result<(), String> {
-        let (connection, direct_only) = self.peer(peer_id).await?;
+        let (connection, direct_only, signaling) = self.peer(peer_id).await?;
         if direct_only && is_relay_candidate(&candidate.candidate) {
             return Err("relay ICE candidates are disabled for this peer".to_owned());
         }
+        let mut signaling = signaling.lock().await;
+        if !signaling.answered {
+            if signaling.pending_candidates.len() >= 256 {
+                return Err("too many pending native screen ICE candidates".to_owned());
+            }
+            signaling.pending_candidates.push(candidate);
+            return Ok(());
+        }
         connection
-            .add_ice_candidate(RTCIceCandidateInit {
-                candidate: candidate.candidate,
-                sdp_mid: candidate.sdp_mid,
-                sdp_mline_index: candidate.sdp_mline_index,
-                username_fragment: candidate.username_fragment,
-            })
+            .add_ice_candidate(candidate.into())
             .await
             .map_err(public_error)
     }
@@ -350,13 +370,40 @@ impl NativeScreenRtcHub {
         self.peers.lock().await.len()
     }
 
-    async fn peer(&self, peer_id: &str) -> Result<(Arc<RTCPeerConnection>, bool), String> {
+    async fn peer(
+        &self,
+        peer_id: &str,
+    ) -> Result<
+        (
+            Arc<RTCPeerConnection>,
+            bool,
+            Arc<Mutex<NativePeerSignaling>>,
+        ),
+        String,
+    > {
         self.peers
             .lock()
             .await
             .get(peer_id)
-            .map(|peer| (Arc::clone(&peer.connection), peer.direct_only))
+            .map(|peer| {
+                (
+                    Arc::clone(&peer.connection),
+                    peer.direct_only,
+                    Arc::clone(&peer.signaling),
+                )
+            })
             .ok_or_else(|| "native screen peer was not found".to_owned())
+    }
+}
+
+impl From<NativeIceCandidate> for RTCIceCandidateInit {
+    fn from(candidate: NativeIceCandidate) -> Self {
+        Self {
+            candidate: candidate.candidate,
+            sdp_mid: candidate.sdp_mid,
+            sdp_mline_index: candidate.sdp_mline_index,
+            username_fragment: candidate.username_fragment,
+        }
     }
 }
 
@@ -564,5 +611,125 @@ mod tests {
         assert!(high_4k.sdp_fmtp_line.contains("profile-level-id=640034"));
         let main_1080 = h264_codec(NativeH264Profile::Main, 1920, 1080, 60, 20).unwrap();
         assert!(main_1080.sdp_fmtp_line.contains("profile-level-id=4d002a"));
+    }
+
+    #[test]
+    fn candidate_before_answer_is_queued_and_drained() -> Result<(), String> {
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .map_err(|error| error.to_string())?
+            .block_on(async {
+                let hub = NativeScreenRtcHub::new(
+                    "candidate-order".to_owned(),
+                    NativeH264Profile::Baseline,
+                    1280,
+                    720,
+                    60,
+                    8,
+                )?;
+                let offer = hub
+                    .create_peer("receiver".to_owned(), vec![], false)
+                    .await?;
+
+                let codec = h264_codec(NativeH264Profile::Baseline, 1280, 720, 60, 8)?;
+                let mut media_engine = MediaEngine::default();
+                media_engine
+                    .register_codec(
+                        RTCRtpCodecParameters {
+                            capability: codec,
+                            payload_type: 125,
+                            ..Default::default()
+                        },
+                        RTPCodecType::Video,
+                    )
+                    .map_err(public_error)?;
+                let registry = register_default_interceptors(Registry::new(), &mut media_engine)
+                    .map_err(public_error)?;
+                let receiver_api = APIBuilder::new()
+                    .with_media_engine(media_engine)
+                    .with_interceptor_registry(registry)
+                    .build();
+                let receiver = receiver_api
+                    .new_peer_connection(RTCConfiguration::default())
+                    .await
+                    .map_err(public_error)?;
+                receiver
+                    .set_remote_description(
+                        RTCSessionDescription::offer(offer.sdp).map_err(public_error)?,
+                    )
+                    .await
+                    .map_err(public_error)?;
+                let answer = receiver.create_answer(None).await.map_err(public_error)?;
+                let mut gathering = receiver.gathering_complete_promise().await;
+                receiver
+                    .set_local_description(answer)
+                    .await
+                    .map_err(public_error)?;
+                tokio::time::timeout(Duration::from_secs(5), gathering.recv())
+                    .await
+                    .map_err(|_| "receiver ICE gathering timed out".to_owned())?;
+                let answer = receiver
+                    .local_description()
+                    .await
+                    .ok_or("receiver produced no answer")?;
+                let candidate = answer
+                    .sdp
+                    .lines()
+                    .find_map(|line| line.strip_prefix("a=candidate:"))
+                    .map(|line| NativeIceCandidate {
+                        candidate: format!("candidate:{line}"),
+                        sdp_mid: Some("0".to_owned()),
+                        sdp_mline_index: Some(0),
+                        username_fragment: None,
+                    })
+                    .ok_or("receiver answer contained no ICE candidate")?;
+
+                hub.add_candidate("receiver", candidate).await?;
+                {
+                    let peers = hub.peers.lock().await;
+                    let signaling = peers["receiver"].signaling.lock().await;
+                    assert!(!signaling.answered);
+                    assert_eq!(signaling.pending_candidates.len(), 1);
+                }
+                hub.set_answer("receiver", answer.sdp).await?;
+                {
+                    let peers = hub.peers.lock().await;
+                    let signaling = peers["receiver"].signaling.lock().await;
+                    assert!(signaling.answered);
+                    assert!(signaling.pending_candidates.is_empty());
+                }
+                hub.remove_peer("receiver").await?;
+                assert_eq!(hub.peer_count().await, 0);
+                assert!(hub.remove_peer("receiver").await.is_err());
+                receiver.close().await.map_err(public_error)?;
+
+                hub.create_peer("bounded".to_owned(), vec![], true).await?;
+                let host = || NativeIceCandidate {
+                    candidate: "candidate:1 1 udp 2122260223 127.0.0.1 50000 typ host".to_owned(),
+                    sdp_mid: Some("0".to_owned()),
+                    sdp_mline_index: Some(0),
+                    username_fragment: None,
+                };
+                for _ in 0..256 {
+                    hub.add_candidate("bounded", host()).await?;
+                }
+                assert!(hub.add_candidate("bounded", host()).await.is_err());
+                assert!(hub
+                    .add_candidate(
+                        "bounded",
+                        NativeIceCandidate {
+                            candidate: "candidate:2 1 udp 1 192.0.2.1 50001 typ relay".to_owned(),
+                            sdp_mid: Some("0".to_owned()),
+                            sdp_mline_index: Some(0),
+                            username_fragment: None,
+                        },
+                    )
+                    .await
+                    .is_err());
+                hub.remove_peer("bounded").await?;
+                hub.close().await;
+                Ok(())
+            })
     }
 }

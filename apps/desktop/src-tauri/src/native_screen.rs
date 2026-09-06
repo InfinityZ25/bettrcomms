@@ -90,16 +90,19 @@ fn token() -> Result<String, String> {
     Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())
 }
 fn ffmpeg() -> Result<PathBuf, String> {
+    if let Some(path) = crate::ffmpeg_setup::runtime_path() {
+        return Ok(path);
+    }
     // Use a known installed distribution, not a frontend-provided executable.
     let local =
         std::env::var_os("LOCALAPPDATA").ok_or("Local application directory is unavailable")?;
     let base = PathBuf::from(local)
         .join("Microsoft/WinGet/Packages/Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe");
-    let mut candidates=std::fs::read_dir(base).map_err(|_|"Native sharing needs the FFmpeg 8.1 Windows runtime installed with winget (Gyan.FFmpeg)")?.filter_map(Result::ok).map(|e|e.path().join("bin/ffmpeg.exe")).filter(|p|p.is_file()).collect::<Vec<_>>();
+    let mut candidates=std::fs::read_dir(base).map_err(|_|"Native sharing needs its FFmpeg 8.1 runtime. Use Install native sharing runtime in the screen picker.")?.filter_map(Result::ok).map(|e|e.path().join("bin/ffmpeg.exe")).filter(|p|p.is_file()).collect::<Vec<_>>();
     candidates.sort();
     candidates
         .pop()
-        .ok_or("FFmpeg runtime was not found".into())
+          .ok_or("Native sharing needs its FFmpeg 8.1 runtime. Use Install native sharing runtime in the screen picker.".into())
 }
 fn command(path: &PathBuf) -> Command {
     let mut c = Command::new(path);
@@ -265,7 +268,6 @@ fn probe() -> Capabilities {
     }
     Capabilities {available:cfg!(windows)&&encoders.iter().any(|e|e.available),detail:"Windows Graphics Capture. H.264 encoder selection controls the outgoing stream. Optional system audio excludes BetterComms and requires Windows build 20348 or newer.".into(),encoders,version:1}
 }
-static CAPS: OnceLock<Capabilities> = OnceLock::new();
 static THUMBNAIL_SLOTS: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
 const MAX_THUMBNAIL_BYTES: usize = 512 * 1024;
 #[cfg(test)]
@@ -273,7 +275,10 @@ static LAST_THUMBNAIL_PID: std::sync::atomic::AtomicU32 = std::sync::atomic::Ato
 #[tauri::command]
 pub async fn native_screen_capabilities(window: WebviewWindow) -> Result<Capabilities, String> {
     trusted(&window)?;
-    tauri::async_runtime::spawn_blocking(|| CAPS.get_or_init(probe).clone())
+    // Probe again after an explicit runtime install or a driver update. A
+    // process-lifetime cache would leave native sharing unavailable until the
+    // app restarts after setup.
+    tauri::async_runtime::spawn_blocking(probe)
         .await
         .map_err(|e| e.to_string())
 }
@@ -712,9 +717,11 @@ pub async fn native_screen_start(
     {
         return Err("Choose 30/60 FPS, up to 4K and 5–80 Mbps".into());
     }
-    let caps = CAPS
-        .get()
-        .ok_or("Check native capture capabilities first")?;
+    // Revalidate at start so an installed runtime or changed GPU driver is
+    // reflected without restarting the desktop app.
+    let caps = tauri::async_runtime::spawn_blocking(probe)
+        .await
+        .map_err(|error| format!("Native encoder probe failed: {error}"))?;
     if !caps.encoders.iter().any(|e| e.id == encoder && e.available) {
         return Err("This encoder is unavailable".into());
     }

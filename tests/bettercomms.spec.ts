@@ -154,6 +154,8 @@ test('two members chat, call, record separate tracks, and transport a screen sha
     await ownerPage.evaluate(syntheticDisplayCapture);
     await ownerPage.getByRole('button', { name: /share screen/i }).click();
     await expectDecodedVideo(guestPage, '.video-viewport video');
+    await expect(guestPage.locator('.stage-badge')).toHaveText('Live');
+    await expect(guestPage.getByText('Waiting for video frames…')).toHaveCount(0);
     await expect(guestPage.getByText(/screen/i).first()).toBeVisible();
     await guestPage.locator('[aria-label="Adjust participant volume"]').click();
     await expect(guestPage.getByText(/4 media tracks/i)).toBeVisible();

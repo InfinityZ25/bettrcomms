@@ -4,6 +4,7 @@ use url::Url;
 mod deepfilter_audio;
 mod deepfilter_runtime;
 mod deepfilter_setup;
+mod ffmpeg_setup;
 mod gpu_devices;
 mod media_permissions;
 mod native_process;
@@ -216,6 +217,8 @@ pub fn run() {
                 deepfilter_audio::deepfilter_stream_stop,
                 deepfilter_setup::deepfilter_install_info,
                 deepfilter_setup::deepfilter_install,
+                ffmpeg_setup::ffmpeg_install_info,
+                ffmpeg_setup::ffmpeg_install,
                 recording_export::recording_export_begin,
                 recording_export::recording_export_append,
                 recording_export::recording_export_finish,

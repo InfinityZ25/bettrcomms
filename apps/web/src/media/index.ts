@@ -1,5 +1,6 @@
 export { MediaEngine, type MediaEngineOptions } from './engine';
 export { AudioLeveler, type AudioLevelerOptions } from './audio';
+export { prepareCallPlayback, disposeCallPlayback } from './remoteAudio';
 export {
   TrackRecordingSession,
   downloadRecording,
