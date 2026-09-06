@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Check, Plus, Search, Users, X } from "lucide-react";
-import { api, type User, type Room, type FriendRequest } from "./api";
+import { api, type User, type Room, type FriendRequest, type CallParticipant } from "./api";
 import { Button } from "./components/ui/button";
 
 export default function FriendsPanel({
@@ -8,11 +8,13 @@ export default function FriendsPanel({
   room,
   onError,
   onOpenRoom,
+  callPresence = {},
 }: {
   user: User;
   room: Room | null;
   onError: (s: string) => void;
   onOpenRoom?: (room: Room) => void;
+  callPresence?: Record<string, CallParticipant[]>;
 }) {
   const [query, setQuery] = useState(""),
     [results, setResults] = useState<User[]>([]),
@@ -193,7 +195,10 @@ export default function FriendsPanel({
         <div className="friend-row" key={f.id}>
           <span>
             <strong>{f.name}</strong>
-            <small>{f.email}</small>
+            <small>{(() => {
+              const state = Object.values(callPresence).flat().find(person => person.user_id === f.id);
+              return state ? `In a shared call${state.deafened ? ' · Deafened' : state.muted ? ' · Muted' : ''}` : f.email;
+            })()}</small>
           </span>
           <Button
             size="sm"
@@ -204,7 +209,7 @@ export default function FriendsPanel({
                 const r = await api<{ room: Room }>("/rooms/direct", {
                   user_id: f.id,
                 });
-                onOpenRoom?.(r.room);
+                onOpenRoom?.({ ...r.room, display_name: r.room.display_name || f.name });
               })
             }
           >

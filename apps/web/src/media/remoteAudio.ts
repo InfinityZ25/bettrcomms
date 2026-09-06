@@ -6,12 +6,23 @@ type PlaybackState = {
   context: AudioContext;
   limiter: DynamicsCompressorNode;
   master: ReturnType<typeof createOutputGain>;
+  deafen: GainNode;
   stopOutput: () => void;
   references: number;
   detach: Set<() => void>;
 };
 
 let playback: PlaybackState | null = null;
+let callDeafened = false;
+const fallbackOutputs = new Set<HTMLAudioElement>();
+const fallbackDetachers = new Set<() => void>();
+
+export function setCallPlaybackDeafened(value: boolean): void {
+  callDeafened = value;
+  if (playback)
+    playback.deafen.gain.setTargetAtTime(value ? 0 : 1, playback.context.currentTime, 0.01);
+  for (const element of fallbackOutputs) element.muted = value;
+}
 
 export function getCallPlaybackStatus() {
   return { state: playback?.context.state ?? 'inactive', tracks: playback?.references ?? 0, customOutputSelected: Boolean(localStorage.getItem('bc-output')) };
@@ -40,11 +51,14 @@ function getPlayback(): PlaybackState {
   limiter.ratio.value = 20;
   limiter.connect(context.destination);
   const master = createOutputGain(context);
-  master.gain.connect(limiter);
+  const deafen = context.createGain();
+  deafen.gain.value = callDeafened ? 0 : 1;
+  master.gain.connect(deafen).connect(limiter);
   playback = {
     context,
     limiter,
     master,
+    deafen,
     references: 0,
     detach: new Set(),
     stopOutput: followOutputDevice(context, (error) =>
@@ -71,12 +85,15 @@ export function prepareCallPlayback(): void {
 
 /** Releases the shared call output graph. Call after leaving a room. */
 export function disposeCallPlayback(): void {
+  callDeafened = false;
+  for (const detach of [...fallbackDetachers]) detach();
   const current = playback;
   playback = null;
   if (!current) return;
   for (const detach of [...current.detach]) detach();
   current.stopOutput();
   current.master.dispose();
+  current.deafen.disconnect();
   current.limiter.disconnect();
   if (current.context.state !== 'closed') void current.context.close();
 }
@@ -200,6 +217,8 @@ function attachElementFallback(track: MediaStreamTrack, peerId: string): () => v
   element.autoplay = true;
   element.setAttribute('playsinline', '');
   element.srcObject = new MediaStream([track]);
+  element.muted = callDeafened;
+  fallbackOutputs.add(element);
   const globalVolume = () => { element.volume = Math.min(1, readParticipantVolume(peerId) * readOutputVolume()); };
   globalVolume();
   element.hidden = true;
@@ -226,7 +245,13 @@ function attachElementFallback(track: MediaStreamTrack, peerId: string): () => v
   window.addEventListener('keydown', play, { capture: true });
   window.addEventListener('bc-volume', volume);
   window.addEventListener('bc-output-volume', globalVolume);
-  return () => {
+  let detached = false;
+  const detach = () => {
+    if (detached) return;
+    detached = true;
+    fallbackDetachers.delete(detach);
+    track.removeEventListener('ended', detach);
+    fallbackOutputs.delete(element);
     stopOutput();
     window.removeEventListener('bc-audio-unlock', play);
     window.removeEventListener('pointerdown', play, { capture: true });
@@ -237,4 +262,7 @@ function attachElementFallback(track: MediaStreamTrack, peerId: string): () => v
     element.srcObject = null;
     element.remove();
   };
+  fallbackDetachers.add(detach);
+  track.addEventListener('ended', detach, { once: true });
+  return detach;
 }

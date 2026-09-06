@@ -91,7 +91,7 @@ export class RoomWebSocketSignaling extends EventTarget implements SignalingAdap
     this.socket.send(JSON.stringify(signal));
   }
 
-  sendPresence(payload: { camera: boolean; microphone: boolean; sharing: boolean; recording?: boolean }): void {
+  sendPresence(payload: { camera: boolean; microphone: boolean; sharing: boolean; recording?: boolean; muted?: boolean; deafened?: boolean }): void {
     if (this.socket?.readyState !== WebSocket.OPEN) throw new Error("Room WebSocket is not open");
     this.socket.send(JSON.stringify({ type: "presence", payload }));
   }

@@ -45,6 +45,16 @@ import { readQuality } from './MediaSettings';
 import type { PeerMediaStats } from './media';
 import { isTauri } from '@tauri-apps/api/core';
 import type { NativeScreenStartOptions } from './media/nativeScreen';
+import { setCallPlaybackDeafened } from './media/remoteAudio';
+import './CallLobby.css';
+
+export interface CallPresence {
+  user_id: string;
+  name?: string;
+  muted: boolean;
+  deafened: boolean;
+}
+const EMPTY_CALL_PRESENCE: CallPresence[] = [];
 
 export interface NativeShareActions {
   onShare(options: NativeScreenStartOptions): Promise<void>;
@@ -62,6 +72,8 @@ export default function CallStage({
   onInvite,
   onRecordings,
   onRequestShare,
+  callPresence = EMPTY_CALL_PRESENCE,
+  presenceKnown = true,
 }: {
   user: User | null;
   room: Room | null;
@@ -72,6 +84,8 @@ export default function CallStage({
   onInvite: () => void;
   onRecordings: () => void;
   onRequestShare: (actions: NativeShareActions) => void;
+  callPresence?: CallPresence[];
+  presenceKnown?: boolean;
 }) {
   const [joined, setJoined] = useState(false),
     [busy, setBusy] = useState(false),
@@ -82,6 +96,7 @@ export default function CallStage({
     [peers, setPeers] = useState<Record<string, string>>({}),
     [names, setNames] = useState<Record<string, string>>({}),
     [muted, setMuted] = useState(false),
+    [deafened, setDeafened] = useState(false),
     [zoom, setZoom] = useState(1),
     [pan, setPan] = useState({ x: 0, y: 0 }),
     [recording, setRecording] = useState(false),
@@ -107,6 +122,8 @@ export default function CallStage({
     ),
     shareRequest = useRef(0),
     active = useRef(true);
+  const mutedBeforeDeafen = useRef(false);
+  const [remotePresence, setRemotePresence] = useState<Record<string, { muted: boolean; deafened: boolean }>>({});
   const [stats, setStats] = useState<PeerMediaStats[]>([]),
     [showStats, setShowStats] = useState(false),
     [remoteRecording, setRemoteRecording] = useState<Record<string, boolean>>(
@@ -158,6 +175,18 @@ export default function CallStage({
     if (recorder.current)
       Object.assign(recordingMetadata.current.labels, names);
   }, [names]);
+  useEffect(() => {
+    const snapshot = Object.fromEntries(callPresence.map((presence) => [
+      presence.user_id, { muted: presence.muted, deafened: presence.deafened },
+    ]));
+    setRemotePresence((current) => {
+      if (!joined) return snapshot;
+      const merged = { ...current };
+      for (const [peerId, value] of Object.entries(snapshot))
+        if (!(peerId in merged)) merged[peerId] = value;
+      return merged;
+    });
+  }, [callPresence, joined]);
   const recordedTracks = useRef(new Set<string>());
   const finishRecording = async () => {
     const current = recorder.current;
@@ -188,7 +217,10 @@ export default function CallStage({
     setRemote([]);
     setPeers({});
     setRemoteRecording({});
+    setRemotePresence({});
     setMuted(false);
+    setDeafened(false);
+    setCallPlaybackDeafened(false);
   };
   useEffect(() => {
     active.current = true;
@@ -261,9 +293,11 @@ export default function CallStage({
           microphone: !muted,
           sharing: locals.has('screen'),
           recording,
+          muted,
+          deafened,
         });
       } catch {}
-  }, [joined, locals, muted, recording, Object.keys(peers).join(',')]);
+  }, [joined, locals, muted, deafened, recording, Object.keys(peers).join(',')]);
   useEffect(() => {
     const handler = () => {
       engine.current
@@ -454,6 +488,11 @@ export default function CallStage({
         setPeers((p) => ({ ...p, [event.detail.peerId]: 'connecting' }));
       });
       s.addEventListener('peer-left', (event) => {
+        setRemotePresence((current) => {
+          const next = { ...current };
+          delete next[event.detail.peerId];
+          return next;
+        });
         setRemoteRecording((r) => {
           const next = { ...r };
           delete next[event.detail.peerId];
@@ -470,7 +509,14 @@ export default function CallStage({
         const p = event.detail.payload as {
           name?: string;
           recording?: boolean;
+          muted?: boolean;
+          deafened?: boolean;
+          microphone?: boolean;
         };
+        setRemotePresence((current) => ({ ...current, [event.detail.peerId]: {
+          muted: typeof p?.muted === 'boolean' ? p.muted : p?.microphone === false,
+          deafened: Boolean(p?.deafened),
+        } }));
         setRemoteRecording((r) => ({
           ...r,
           [event.detail.peerId]: Boolean(p?.recording),
@@ -485,6 +531,9 @@ export default function CallStage({
           disposeCallPlayback();
           engine.current = null;
           setJoined(false);
+          setMuted(false);
+          setDeafened(false);
+          setCallPlaybackDeafened(false);
           setServerRtt(null);
           setStats([]);
           setRemote([]);
@@ -501,7 +550,7 @@ export default function CallStage({
         await s.connect();
         setJoined(true);
         setMuted(false);
-        s.sendPresence({ camera: false, microphone: true, sharing: false });
+        s.sendPresence({ camera: false, microphone: true, sharing: false, muted: false, deafened: false });
       } catch (error) {
         s.close();
         e.dispose();
@@ -589,11 +638,27 @@ export default function CallStage({
     });
   }
   function mic() {
+    if (deafened) return;
     const track = engine.current?.getLocalTracks().get('microphone');
     if (track) {
       track.enabled = !track.enabled;
       setMuted(!track.enabled);
     } else onError('Join a call to use your microphone.');
+  }
+  function toggleDeafen() {
+    const track = engine.current?.getLocalTracks().get('microphone');
+    if (!deafened) {
+      mutedBeforeDeafen.current = muted;
+      if (track) track.enabled = false;
+      setMuted(true);
+      setDeafened(true);
+      setCallPlaybackDeafened(true);
+    } else {
+      if (track) track.enabled = !mutedBeforeDeafen.current;
+      setMuted(mutedBeforeDeafen.current);
+      setDeafened(false);
+      setCallPlaybackDeafened(false);
+    }
   }
   async function toggleRecord() {
     await perform(async () => {
@@ -657,6 +722,51 @@ export default function CallStage({
     drag.current = { x: e.clientX, y: e.clientY, px: pan.x, py: pan.y };
     e.currentTarget.setPointerCapture(e.pointerId);
   }
+  if (!joined) {
+    const lobbyPresence = callPresence.filter((presence) => presence.user_id !== user?.id);
+    return (
+      <>
+      <section className="call-lobby" aria-label="Call lobby">
+        <div className="call-lobby__hero">
+          <span className="call-lobby__eyebrow">Ready to join</span>
+          <h2>{(room as (Room & { display_name?: string }) | null)?.display_name || room?.name || (user ? 'Choose a room' : 'Your call')}</h2>
+          <p>{room ? 'Review who is here, then join with your selected microphone. Your camera stays off until you enable it.' : 'Select a room or direct conversation to see its call and join.'}</p>
+          <Button onClick={join} disabled={busy || Boolean(user && !room)}>
+            <Headphones size={18} /> {busy ? 'Connecting…' : !user ? 'Sign in to join' : room ? 'Join call' : 'Select a room to join'}
+          </Button>
+        </div>
+        <div className="call-lobby__roster">
+          <h3>In this call</h3>
+          {!user ? <p>Sign in to see who’s here.</p> : !room ? <p>Select a room to see its call roster.</p> : !presenceKnown ? <p role="status">Checking who’s here…</p> : lobbyPresence.length === 0 ? (
+            <p>No one has joined yet. You can be the first.</p>
+          ) : (
+            <ul>{lobbyPresence.map((presence) => (
+              <li key={presence.user_id}>
+                <span className="avatar">{(presence.name || names[presence.user_id] || 'Friend').slice(0, 2).toUpperCase()}</span>
+                <strong>{presence.name || names[presence.user_id] || 'Friend'}</strong>
+                <span className="call-lobby__badges">
+                  {presence.muted && <span><MicOff size={14} /> Muted</span>}
+                  {presence.deafened && <span><Headphones size={14} /> Deafened</span>}
+                </span>
+              </li>
+            ))}</ul>
+          )}
+        </div>
+      </section>
+      {result && (
+        <div className="recording-downloads">
+          <strong><Download size={16} /> Your recording</strong>
+          <span>{saveStatus}</span>
+          <Button variant="secondary" onClick={onRecordings}>Open recordings & player</Button>
+          <details>
+            <summary>Download original tracks</summary>
+            {result.files.map((file) => <RecordingDownload key={file.name} file={file} />)}
+          </details>
+        </div>
+      )}
+      </>
+    );
+  }
   return (
     <>
       <div
@@ -693,6 +803,7 @@ export default function CallStage({
                 {user?.name ?? 'You'} {joined ? '· you' : ''}
               </span>
               {muted ? <MicOff size={13} /> : <Mic size={13} />}
+              {deafened && <Headphones size={13} aria-label="Deafened" />}
             </div>
           </div>
           {Object.keys(peers).map((id) => (
@@ -719,6 +830,8 @@ export default function CallStage({
               )}
               <div className="tile-caption">
                 <span>{names[id] ?? 'Friend'}</span>
+                {remotePresence[id]?.muted && <MicOff size={13} aria-label="Muted" />}
+                {remotePresence[id]?.deafened && <Headphones size={13} aria-label="Deafened" />}
                 <span
                   className={
                     peers[id] === 'connected' || stats.some(s => s.peerId === id && s.voiceRelay?.state === 'relayed') ? 'online-dot' : 'connecting-dot'
@@ -938,10 +1051,19 @@ export default function CallStage({
           <Button
             variant={muted ? 'danger' : 'secondary'}
             size="icon"
-            aria-label={muted ? 'Unmute microphone' : 'Mute microphone'}
+            aria-label={deafened ? 'Microphone muted while deafened' : muted ? 'Unmute microphone' : 'Mute microphone'}
             onClick={mic}
+            disabled={deafened}
           >
             {muted ? <MicOff size={19} /> : <Mic size={19} />}
+          </Button>
+          <Button
+            variant={deafened ? 'danger' : 'secondary'}
+            size="icon"
+            aria-label={deafened ? 'Undeafen call' : 'Deafen call'}
+            onClick={toggleDeafen}
+          >
+            <Headphones size={19} />
           </Button>
           <Button
             variant={locals.has('camera') ? 'default' : 'secondary'}

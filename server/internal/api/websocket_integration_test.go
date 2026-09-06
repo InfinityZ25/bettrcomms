@@ -138,6 +138,35 @@ func TestWebSocketSignalIntegration(t *testing.T) {
 	if metadata.From != u2.ID || string(metadata.Tracks) != string(tracks) {
 		t.Fatalf("metadata=%#v tracks=%s", metadata, string(metadata.Tracks))
 	}
+	presencePayload := json.RawMessage(`{"camera":true,"microphone":false,"sharing":false,"muted":true,"deafened":true}`)
+	if err := wsjsonWrite(ctx, c1, wire{Type: "presence", Payload: presencePayload}); err != nil {
+		t.Fatal(err)
+	}
+	presenceEvent := readWire(c2)
+	if presenceEvent.Type != "presence" || presenceEvent.From != u1.ID || string(presenceEvent.Payload) != string(presencePayload) {
+		t.Fatalf("presence broadcast changed: %#v", presenceEvent)
+	}
+	presenceRequest, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/api/v1/call-presence", nil)
+	presenceRequest.AddCookie(cookie1)
+	presenceResponse, err := http.DefaultClient.Do(presenceRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer presenceResponse.Body.Close()
+	var presenceBody struct {
+		Rooms []RoomCallPresence `json:"rooms"`
+	}
+	if err := json.NewDecoder(presenceResponse.Body).Decode(&presenceBody); err != nil {
+		t.Fatal(err)
+	}
+	if len(presenceBody.Rooms) != 1 || len(presenceBody.Rooms[0].Participants) != 2 {
+		t.Fatalf("unexpected live roster: %#v", presenceBody.Rooms)
+	}
+	for _, participant := range presenceBody.Rooms[0].Participants {
+		if participant.UserID == u1.ID && (!participant.Muted || !participant.Deafened || participant.Name != u1.Name) {
+			t.Fatalf("updated participant missing state: %#v", participant)
+		}
+	}
 	dialVoice := func(cookie *http.Cookie) *websocket.Conn {
 		h := http.Header{}
 		h.Set("Cookie", cookie.String())
@@ -277,5 +306,8 @@ func TestRoomManagementAuthorization(t *testing.T) {
 	}
 	if dm1.ID != dm2.ID || dm1.Kind != "direct" {
 		t.Fatalf("direct rooms not idempotent: %#v %#v", dm1, dm2)
+	}
+	if dm1.DisplayName == nil || *dm1.DisplayName != friend.Name || dm2.DisplayName == nil || *dm2.DisplayName != owner.Name {
+		t.Fatalf("direct room display names are not member-specific: %#v %#v", dm1, dm2)
 	}
 }

@@ -72,7 +72,7 @@ func (s *PostgresStore) FindUsers(q, uid string) ([]User, error) {
 	return out, rows.Err()
 }
 func (s *PostgresStore) ListRooms(uid string) ([]Room, error) {
-	rows, e := s.DB.Query(context.Background(), `SELECT r.id::text,r.name,r.owner_id::text,rm.role,r.kind,r.created_at FROM rooms r JOIN room_members rm ON rm.room_id=r.id WHERE rm.user_id=$1 ORDER BY r.created_at DESC`, uid)
+	rows, e := s.DB.Query(context.Background(), `SELECT r.id::text,r.name,r.owner_id::text,rm.role,r.kind,r.created_at,CASE WHEN r.kind='direct' THEN (SELECT u.name FROM room_members other JOIN users u ON u.id=other.user_id WHERE other.room_id=r.id AND other.user_id<>$1 ORDER BY other.joined_at LIMIT 1) END FROM rooms r JOIN room_members rm ON rm.room_id=r.id WHERE rm.user_id=$1 ORDER BY r.created_at DESC`, uid)
 	if e != nil {
 		return nil, e
 	}
@@ -80,7 +80,7 @@ func (s *PostgresStore) ListRooms(uid string) ([]Room, error) {
 	out := []Room{}
 	for rows.Next() {
 		var r Room
-		if e = rows.Scan(&r.ID, &r.Name, &r.OwnerID, &r.Role, &r.Kind, &r.CreatedAt); e != nil {
+		if e = rows.Scan(&r.ID, &r.Name, &r.OwnerID, &r.Role, &r.Kind, &r.CreatedAt, &r.DisplayName); e != nil {
 			return nil, e
 		}
 		out = append(out, r)
@@ -107,7 +107,7 @@ func (s *PostgresStore) CreateRoom(uid, name string) (Room, error) {
 }
 func (s *PostgresStore) RoomForMember(rid, uid string) (Room, error) {
 	var r Room
-	e := s.DB.QueryRow(context.Background(), `SELECT r.id::text,r.name,r.owner_id::text,rm.role,r.kind,r.created_at FROM rooms r JOIN room_members rm ON rm.room_id=r.id WHERE r.id=$1 AND rm.user_id=$2`, rid, uid).Scan(&r.ID, &r.Name, &r.OwnerID, &r.Role, &r.Kind, &r.CreatedAt)
+	e := s.DB.QueryRow(context.Background(), `SELECT r.id::text,r.name,r.owner_id::text,rm.role,r.kind,r.created_at,CASE WHEN r.kind='direct' THEN (SELECT u.name FROM room_members other JOIN users u ON u.id=other.user_id WHERE other.room_id=r.id AND other.user_id<>$2 ORDER BY other.joined_at LIMIT 1) END FROM rooms r JOIN room_members rm ON rm.room_id=r.id WHERE r.id=$1 AND rm.user_id=$2`, rid, uid).Scan(&r.ID, &r.Name, &r.OwnerID, &r.Role, &r.Kind, &r.CreatedAt, &r.DisplayName)
 	return r, norm(e)
 }
 func (s *PostgresStore) CreateDirectRoom(uid, fid string) (Room, error) {

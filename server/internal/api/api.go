@@ -166,6 +166,8 @@ func (a *API) authed(w http.ResponseWriter, r *http.Request) {
 		a.json(w, 200, map[string]any{"user": u})
 	case r.Method == "GET" && p == "ice":
 		a.ice(w, u)
+	case r.Method == "GET" && p == "call-presence":
+		a.callPresence(w, u)
 	case r.Method == "GET" && p == "users":
 		if !a.limiter.allow("search:"+u.ID, 30, time.Minute) {
 			a.fail(w, 429, "rate_limited", "too many searches")
@@ -204,6 +206,22 @@ func (a *API) authed(w http.ResponseWriter, r *http.Request) {
 	default:
 		a.fail(w, 404, "not_found", "route not found")
 	}
+}
+
+func (a *API) callPresence(w http.ResponseWriter, u User) {
+	rooms, err := a.Store.ListRooms(u.ID)
+	if err != nil {
+		a.result(w, nil, err)
+		return
+	}
+	presence := make([]RoomCallPresence, 0, len(rooms))
+	for _, room := range rooms {
+		presence = append(presence, RoomCallPresence{
+			RoomID:       room.ID,
+			Participants: a.Hub.callPresence(room.ID),
+		})
+	}
+	a.json(w, http.StatusOK, map[string]any{"rooms": presence})
 }
 func (a *API) ice(w http.ResponseWriter, u User) {
 	servers := []map[string]any{{"urls": a.Config.ICEURLs}}

@@ -19,6 +19,8 @@ try {
   assert.equal((await config.json()).dev_auth, false);
   const me = await page.request.get(`${origin}/api/v1/me`);
   assert.equal(me.status(), 401);
+  const presence = await page.request.get(`${origin}/api/v1/call-presence`);
+  assert.equal(presence.status(), 401);
   const relay = await page.request.get(`${origin}/api/v1/rooms/00000000-0000-4000-8000-000000000001/voice-relay`);
   assert.equal(relay.status(), 401);
   const worklet = await page.request.get(`${origin}/voicePlayback.worklet.js`);

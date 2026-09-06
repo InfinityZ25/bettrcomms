@@ -1,5 +1,13 @@
 # BetterComms preview release notes
 
+## Room lobbies and call presence
+
+Rooms and direct messages have separate navigation groups. A conversation lobby shows the current call roster before joining, rather than presenting a fake local participant and an inactive screenshare stage. Muted and deafened participants are visible both inside the call and to authorized room members outside it. Deafen silences call playback and mutes the microphone, then restores the previous microphone state when disabled. Incoming recordings and saved output preferences are unchanged.
+
+Presence is ephemeral signaling memory; no mute/deafen rows or updates are written to PostgreSQL. The lobby refreshes one authorized snapshot every two seconds, and failure is shown as unavailable rather than an empty room. This does not expose private calls to friends who are not members. See `CALL_PRESENCE.md` for the single-process deployment constraint and decentralization tradeoffs.
+
+Validation covers two-account room and DM rosters before joining, reciprocal direct-conversation labels, mute/deafen while observing and joined, measured deafen silence/restoration, authorization, lifecycle cleanup, and desktop/mobile layout and accessibility. Build, 65 web unit tests, Go tests with local PostgreSQL, and Go vet passed. The browser pass covered 67 tests, with the optional TURN check skipped; the DM fixture's local origin was corrected and rerun separately. No native IPC or installer change is required for this hosted update.
+
 ## 0.1.3 — call-audio exclusion and centralized volume
 
 Windows system sharing excludes the validated WebView2 browser process tree by default. Excluding the outer Tauri process tree leaked WebView playback in a controlled native test: the app's 770 Hz signal measured 0.192614 before and 0.000003663 after the correction, while an external 660 Hz signal was retained. The native picker now exposes Exclude call audio, checked by default. Explicitly unchecking it uses whole-endpoint loopback and includes the call. Missing or ambiguous WebView ownership stops protected capture rather than silently capturing everything. This correction requires desktop 0.1.3.

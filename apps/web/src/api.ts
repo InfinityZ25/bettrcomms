@@ -10,6 +10,13 @@ export interface Room {
   created_at: string;
   kind?: "channel" | "direct";
   role?: string;
+  display_name?: string;
+}
+export interface CallParticipant {
+  user_id: string;
+  name?: string;
+  muted: boolean;
+  deafened: boolean;
 }
 export interface Message {
   id: string;

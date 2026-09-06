@@ -30,7 +30,7 @@ import {
 } from 'lucide-react';
 import { Button } from './components/ui/button';
 import { Dialog } from './components/ui/dialog';
-import { api, type User, type Room, type Message } from './api';
+import { api, type User, type Room, type Message, type CallParticipant } from './api';
 import CallStage, { type NativeShareActions } from './CallStage';
 import NativeScreenPicker from './NativeScreenPicker';
 import FriendsPanel from './FriendsPanel';
@@ -38,8 +38,11 @@ import MediaSettings from './MediaSettings';
 import RoomSettings from './RoomSettings';
 import RecordingsLibrary from './RecordingsLibrary';
 import WorkspaceScreen from './WorkspaceScreen';
+import RoomNavigation, { roomLabel } from './RoomNavigation';
+import { useCallPresence } from './useCallPresence';
 
 type Screen = 'call' | 'settings' | 'recordings' | 'share';
+const emptyCall: CallParticipant[] = [];
 const readScreen = (): Screen =>
   location.hash === '#/settings'
     ? 'settings'
@@ -72,6 +75,7 @@ export default function App() {
     [room, setRoom] = useState<Room | null>(null),
     [messages, setMessages] = useState<Message[]>([]),
     [draft, setDraft] = useState('');
+  const presence = useCallPresence(user?.id);
   const [create, setCreate] = useState(false),
     [friends, setFriends] = useState(false),
     [chat, setChat] = useState(window.innerWidth > 820),
@@ -263,9 +267,9 @@ export default function App() {
               setRoom(r);
               navigate('call');
             }}
-            title={r.name}
+            title={roomLabel(r)}
           >
-            {initials(r.name)}
+            {initials(roomLabel(r))}
           </button>
         ))}
         <button
@@ -307,33 +311,8 @@ export default function App() {
         <button className="nav-item" onClick={() => setFriends(true)}>
           <Users size={18} /> Friends <span className="nav-arrow">↗</span>
         </button>
-        <div className="section-label">
-          YOUR ROOMS{' '}
-          <button aria-label="Create room" onClick={() => setCreate(true)}>
-            <Plus size={16} />
-          </button>
-        </div>
-        <div className="room-list">
-          {rooms.map((r) => (
-            <button
-              key={r.id}
-              className={'room-item ' + (room?.id === r.id ? 'active' : '')}
-              onClick={() => setRoom(r)}
-            >
-              <Hash size={19} />
-              <span>{r.name}</span>
-              {room?.id === r.id && <span className="room-dot" />}
-            </button>
-          ))}
-          {!rooms.length && (
-            <p className="sidebar-hint">
-              A little space for your favorite people.
-              <button onClick={() => setCreate(true)}>
-                Create your first room <ArrowRight size={14} />
-              </button>
-            </p>
-          )}
-        </div>
+        <RoomNavigation rooms={rooms} selected={room?.id} presence={presence.rooms} known={presence.known}
+          onSelect={(next) => { setRoom(next); navigate('call'); }} onCreate={() => setCreate(true)} />
         <div className="sidebar-note">
           <span className="note-symbol">
             <Headphones size={20} />
@@ -362,10 +341,10 @@ export default function App() {
       <main className="main" aria-label="Call" hidden={screen !== 'call'}>
         <header className="room-header">
           <div className="room-heading">
-            <Hash size={22} />
-            <strong>{room?.name ?? 'The living room'}</strong>
+            {room?.kind === 'direct' ? <MessageSquare size={22} /> : <Hash size={22} />}
+            <strong>{room ? roomLabel(room) : 'The living room'}</strong>
             <span className="header-divider" />
-            <span className="room-description">A place to hang out</span>
+            <span className="room-description">{room?.kind === 'direct' ? 'Direct conversation' : 'A place to hang out'}</span>
           </div>
           <div className="header-actions">
             <Button
@@ -400,7 +379,7 @@ export default function App() {
         </header>
         <div className="room-body">
           <section className="call-area">
-            <div className="call-title">
+            {!user && <div className="call-title">
               <div>
                 <span className="eyebrow">MAKE ROOM FOR YOUR PEOPLE</span>
                 <h1>
@@ -420,13 +399,15 @@ export default function App() {
               >
                 <LayoutPanelTop size={20} />
               </Button>
-            </div>
+            </div>}
             <CallStage
               user={user}
               room={room}
               layout={layout}
               noise={noise}
               balanced={balanced}
+              callPresence={room ? presence.rooms[room.id] ?? emptyCall : emptyCall}
+              presenceKnown={presence.known}
               onError={setError}
               onInvite={() => setFriends(true)}
               onRecordings={() => setRecordingsOpen(true)}
@@ -655,6 +636,7 @@ export default function App() {
                 </div>
               </label>
               <FriendsPanel
+                callPresence={presence.rooms}
                 user={user}
                 room={room}
                 onError={setError}

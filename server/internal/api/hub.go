@@ -3,9 +3,11 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -26,20 +28,24 @@ type wire struct {
 	CaptureID   string          `json:"captureId,omitempty"`
 	Data        json.RawMessage `json:"data,omitempty"`
 	Error       *apiError       `json:"error,omitempty"`
+	Muted       *bool           `json:"muted,omitempty"`
+	Deafened    *bool           `json:"deafened,omitempty"`
 }
 type client struct {
 	user string
+	name string
 	conn *websocket.Conn
 	send chan wire
 }
 type Hub struct {
-	mu     sync.RWMutex
-	rooms  map[string]map[*client]struct{}
-	voices map[string]map[string]*voiceClient
+	mu       sync.RWMutex
+	rooms    map[string]map[*client]struct{}
+	voices   map[string]map[string]*voiceClient
+	presence map[string]map[string]CallParticipant
 }
 
 func NewHub() *Hub {
-	return &Hub{rooms: map[string]map[*client]struct{}{}, voices: map[string]map[string]*voiceClient{}}
+	return &Hub{rooms: map[string]map[*client]struct{}{}, voices: map[string]map[string]*voiceClient{}, presence: map[string]map[string]CallParticipant{}}
 }
 func (h *Hub) add(room string, c *client) []string {
 	h.mu.Lock()
@@ -62,6 +68,10 @@ func (h *Hub) add(room string, c *client) []string {
 		}
 	}
 	h.rooms[room][c] = struct{}{}
+	if h.presence[room] == nil {
+		h.presence[room] = map[string]CallParticipant{}
+	}
+	h.presence[room][c.user] = CallParticipant{UserID: c.user, Name: c.name, Muted: true}
 	// Snapshot and membership must be atomic. Otherwise simultaneous callers
 	// can both receive an empty snapshot and only one learns the other exists.
 	if len(replaced) == 0 {
@@ -104,6 +114,12 @@ func (h *Hub) remove(room string, c *client) {
 		delete(h.rooms, room)
 		delete(h.voices, room)
 	}
+	if !userStillConnected {
+		delete(h.presence[room], c.user)
+	}
+	if len(h.presence[room]) == 0 {
+		delete(h.presence, room)
+	}
 	h.mu.Unlock()
 	if voice != nil {
 		voice.close("signaling connection closed")
@@ -111,6 +127,71 @@ func (h *Hub) remove(room string, c *client) {
 	if !userStillConnected {
 		h.broadcast(room, c, wire{Type: "peer.left", From: c.user})
 	}
+}
+
+type CallParticipant struct {
+	UserID   string `json:"user_id"`
+	Name     string `json:"name,omitempty"`
+	Muted    bool   `json:"muted"`
+	Deafened bool   `json:"deafened"`
+}
+
+type RoomCallPresence struct {
+	RoomID       string            `json:"room_id"`
+	Participants []CallParticipant `json:"participants"`
+}
+
+func (h *Hub) setPresence(room string, sender *client, muted, deafened bool) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if _, active := h.rooms[room][sender]; !active {
+		return false
+	}
+	if h.presence[room] == nil {
+		return false
+	}
+	if _, connected := h.presence[room][sender.user]; !connected {
+		return false
+	}
+	participant := h.presence[room][sender.user]
+	participant.Muted = muted
+	participant.Deafened = deafened
+	h.presence[room][sender.user] = participant
+	return true
+}
+
+func (h *Hub) callPresence(room string) []CallParticipant {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	participants := make([]CallParticipant, 0, len(h.presence[room]))
+	for _, participant := range h.presence[room] {
+		participants = append(participants, participant)
+	}
+	sort.Slice(participants, func(i, j int) bool { return participants[i].UserID < participants[j].UserID })
+	return participants
+}
+
+func decodePresence(payload json.RawMessage) (muted, deafened bool, err error) {
+	var presence struct {
+		Microphone *bool `json:"microphone"`
+		Muted      *bool `json:"muted"`
+		Deafened   *bool `json:"deafened"`
+	}
+	if len(payload) == 0 || json.Unmarshal(payload, &presence) != nil || (presence.Microphone == nil && presence.Muted == nil && presence.Deafened == nil) {
+		return false, false, errors.New("presence requires boolean microphone, muted, or deafened state")
+	}
+	muted = true
+	if presence.Microphone != nil {
+		muted = !*presence.Microphone
+	}
+	if presence.Muted != nil {
+		muted = *presence.Muted
+	}
+	deafened = presence.Deafened != nil && *presence.Deafened
+	if deafened {
+		muted = true
+	}
+	return muted, deafened, nil
 }
 func (h *Hub) broadcast(room string, skip *client, m wire) {
 	h.mu.RLock()
@@ -162,6 +243,7 @@ func (h *Hub) disconnectRoomUser(room, user string) {
 	}
 	voice := h.voices[room][user]
 	delete(h.voices[room], user)
+	delete(h.presence[room], user)
 	h.mu.Unlock()
 	if voice != nil {
 		voice.close("room membership revoked")
@@ -183,6 +265,7 @@ func (h *Hub) disconnectRoom(room string) {
 		voices = append(voices, voice)
 	}
 	delete(h.voices, room)
+	delete(h.presence, room)
 	h.mu.Unlock()
 	for _, voice := range voices {
 		voice.close("room deleted")
@@ -208,6 +291,7 @@ func (h *Hub) disconnectUser(user string) {
 				delete(h.voices, room)
 			}
 		}
+		delete(h.presence[room], user)
 	}
 	h.mu.Unlock()
 	for _, voice := range voices {
@@ -231,7 +315,7 @@ func (a *API) websocket(w http.ResponseWriter, r *http.Request, u User, room str
 		return
 	}
 	conn.SetReadLimit(64 << 10)
-	c := &client{user: u.ID, conn: conn, send: make(chan wire, 32)}
+	c := &client{user: u.ID, name: u.Name, conn: conn, send: make(chan wire, 32)}
 	initialPeers := a.Hub.add(room, c)
 	defer func() { a.Hub.remove(room, c); conn.CloseNow() }()
 	peers, _ := json.Marshal(map[string]any{"peers": initialPeers})
@@ -260,7 +344,10 @@ func (a *API) websocket(w http.ResponseWriter, r *http.Request, u User, room str
 	}()
 	for {
 		var m wire
-		if e := wsjsonRead(ctx, conn, &m); e != nil {
+		readContext, readCancel := context.WithTimeout(ctx, 45*time.Second)
+		e := wsjsonRead(readContext, conn, &m)
+		readCancel()
+		if e != nil {
 			return
 		}
 		switch m.Type {
@@ -277,6 +364,17 @@ func (a *API) websocket(w http.ResponseWriter, r *http.Request, u User, room str
 			default:
 			}
 		case "presence":
+			muted, deafened, presenceError := decodePresence(m.Payload)
+			if presenceError != nil {
+				select {
+				case c.send <- wire{Type: "error", Error: &apiError{Code: "invalid_presence", Message: presenceError.Error()}}:
+				default:
+				}
+				continue
+			}
+			if !a.Hub.setPresence(room, c, muted, deafened) {
+				return
+			}
 			m.From = u.ID
 			a.Hub.broadcast(room, c, m)
 		case "signal", "offer", "answer", "ice-candidate", "track-metadata":

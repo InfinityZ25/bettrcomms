@@ -17,6 +17,14 @@ type testStore struct {
 	user    User
 	roomErr error
 }
+
+type presenceTestStore struct {
+	testStore
+	rooms []Room
+}
+
+func (s presenceTestStore) ListRooms(string) ([]Room, error) { return s.rooms, nil }
+
 type memorySessionStore struct {
 	users   map[string]string
 	expires map[string]time.Time
@@ -81,6 +89,38 @@ func TestSessionCookieSecurityAndTamperDetection(t *testing.T) {
 	r.AddCookie(c)
 	if _, e = s.UserID(r); e == nil {
 		t.Fatal("tampered session accepted")
+	}
+}
+
+func TestCallPresenceReturnsOnlyAuthenticatedUsersRooms(t *testing.T) {
+	u := User{ID: "user-1", Email: "alice@example.test", Name: "Alice"}
+	sessions := newTestSessions(false)
+	store := presenceTestStore{testStore: testStore{user: u}, rooms: []Room{{ID: "allowed", Name: "Allowed"}}}
+	a := New(store, sessions, Config{})
+	a.Hub.add("allowed", &client{user: "friend", name: "Friend", send: make(chan wire, 1)})
+	a.Hub.add("private", &client{user: "outsider", name: "Outsider", send: make(chan wire, 1)})
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/call-presence", nil)
+	cookieRecorder := httptest.NewRecorder()
+	if err := sessions.Set(request, cookieRecorder, u.ID); err != nil {
+		t.Fatal(err)
+	}
+	request.AddCookie(cookieRecorder.Result().Cookies()[0])
+	response := httptest.NewRecorder()
+	a.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("presence status %d: %s", response.Code, response.Body.String())
+	}
+	var body struct {
+		Rooms []RoomCallPresence `json:"rooms"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Rooms) != 1 || body.Rooms[0].RoomID != "allowed" || len(body.Rooms[0].Participants) != 1 || body.Rooms[0].Participants[0].UserID != "friend" {
+		t.Fatalf("unexpected scoped presence: %#v", body.Rooms)
+	}
+	if strings.Contains(response.Body.String(), "outsider") || strings.Contains(response.Body.String(), "private") {
+		t.Fatalf("unauthorized room presence leaked: %s", response.Body.String())
 	}
 }
 
