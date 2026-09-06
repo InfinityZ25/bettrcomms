@@ -8,13 +8,23 @@ async function json<T>(response: APIResponse): Promise<T> {
   return response.json() as Promise<T>;
 }
 async function login(context: BrowserContext, name: string, email: string) {
-  const value = await json<User | { user: User }>(await context.request.post('/api/v1/auth/dev', {
-    headers: { Origin: origin }, data: { name, email },
-  }));
+  // The whole suite shares the real loopback auth limiter. Respect its window.
+  const deadline = Date.now() + 65_000;
+  let response: APIResponse;
+  for (;;) {
+    response = await context.request.post('/api/v1/auth/dev', {
+      headers: { Origin: origin }, data: { name, email },
+    });
+    if (response.status() !== 429 || Date.now() >= deadline) break;
+    await response.dispose();
+    await new Promise(resolve => setTimeout(resolve, 5000));
+  }
+  const value = await json<User | { user: User }>(response);
   return 'user' in value ? value.user : value;
 }
 
 test('direct rooms use the other friend name and share call presence', async ({ browser }) => {
+  test.setTimeout(150_000);
   const adaContext = await browser.newContext({ baseURL });
   const graceContext = await browser.newContext({ baseURL });
   try {
