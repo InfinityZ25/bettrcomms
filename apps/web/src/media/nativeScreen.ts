@@ -38,6 +38,8 @@ export interface NativeScreenStartOptions {
   cursor: boolean;
   displayBorder?: boolean;
   systemAudio?: boolean;
+  /** Restrict shared audio to this selected window; absent means system excluding call. */
+  systemAudioSourceId?: string;
 }
 
 export type NativeH264Profile = 'baseline' | 'main' | 'high';

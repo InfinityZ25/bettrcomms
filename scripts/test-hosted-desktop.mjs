@@ -28,11 +28,12 @@ try {
   const result = await page.evaluate(async () => {
     const invoke = window.__TAURI_INTERNALS__?.invoke;
     if (!invoke) throw new Error('Tauri IPC bridge is missing');
-    const [boot, screen, media, ffmpeg] = await Promise.all([
+    const [boot, screen, media, ffmpeg, applicationAudio] = await Promise.all([
       invoke('desktop_boot_config'),
       invoke('native_screen_capabilities'),
       invoke('desktop_media_capabilities'),
       invoke('ffmpeg_install_info'),
+      invoke('native_system_audio_capabilities'),
     ]);
     // No page click, fake permission, or test autoplay flag may unlock this context.
     const playback = new AudioContext();
@@ -47,6 +48,7 @@ try {
       ffmpeg: { supported: ffmpeg.supported, installed: ffmpeg.installed },
       screen: { available: screen.available, version: screen.version },
       media,
+      applicationAudio,
       mediaDevices: Boolean(navigator.mediaDevices),
       voiceCodec: {
         processor: typeof MediaStreamTrackProcessor === 'function',
@@ -58,6 +60,7 @@ try {
   assert.equal(result.boot.apiOrigin, expectedOrigin);
   assert.equal(result.boot.schemaVersion, 1);
   assert.equal(result.screen.version, 1);
+  assert.equal(result.applicationAudio.applicationAudio, result.applicationAudio.available);
   assert.equal(result.media.platform, 'windows');
   assert.equal(result.mediaDevices, true);
   assert.equal(result.autoplayState, 'running');

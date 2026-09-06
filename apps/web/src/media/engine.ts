@@ -414,7 +414,7 @@ export class MediaEngine extends EventTarget {
       await this.nativeScreen.start(options, [...this.peers.keys()]);
       if (generation !== this.nativeShareGeneration || this.disposed || !this.nativeScreen.active) return;
       if (options.systemAudio) {
-        const audio = await createNativeSystemAudio(abort.signal);
+        const audio = await createNativeSystemAudio(abort.signal, undefined, options.systemAudioSourceId);
         if (generation !== this.nativeShareGeneration || this.disposed) { audio.dispose(); return; }
         this.nativeAudio = audio;
         await this.replaceLocalTrack('system', audio.track, audio.dispose);
@@ -763,6 +763,7 @@ export class MediaEngine extends EventTarget {
         });
         await this.sendMetadata(peerId);
       }
+      await Promise.all([...peer.senders.values()].map(sender => this.applyQuality(sender)));
     } catch (error) {
       this.emit('error', { peerId, operation: `handle-${signal.type}`, error });
       throw error;
@@ -855,6 +856,8 @@ export class MediaEngine extends EventTarget {
                   sender === statsSender || sender.track?.id === trackId,
               )?.[0]
             : descriptor?.source ?? [...peer.remote.values()].find(remote => remote.track.id === trackId)?.source;
+        const audioSource = direction === 'outbound' ? byId.get(row.mediaSourceId) : row;
+        const codec = byId.get(row.codecId);
         return {
           direction,
           source: localSource,
@@ -862,8 +865,11 @@ export class MediaEngine extends EventTarget {
           bitrate,
           bytes,
           packets: Number(direction === 'inbound' ? row.packetsReceived : row.packetsSent) || 0,
-          ...(typeof row.audioLevel === 'number' ? { audioLevel: row.audioLevel } : {}),
-          ...(typeof row.totalAudioEnergy === 'number' ? { totalAudioEnergy: row.totalAudioEnergy } : {}),
+          ...(typeof codec?.mimeType === 'string' ? { codec: codec.mimeType } : {}),
+          ...(typeof audioSource?.audioLevel === 'number' ? { audioLevel: audioSource.audioLevel } : {}),
+          ...(typeof audioSource?.totalAudioEnergy === 'number' ? { totalAudioEnergy: audioSource.totalAudioEnergy } : {}),
+          ...(typeof row.totalSamplesReceived === 'number' ? { totalSamplesReceived: row.totalSamplesReceived } : {}),
+          ...(typeof row.concealedSamples === 'number' ? { concealedSamples: row.concealedSamples } : {}),
           ...(row.frameWidth ? { width: row.frameWidth } : {}),
           ...(row.frameHeight ? { height: row.frameHeight } : {}),
           ...(row.framesPerSecond
@@ -970,6 +976,7 @@ export class MediaEngine extends EventTarget {
     try {
       peer.makingOffer = true;
       await peer.pc.setLocalDescription();
+      await Promise.all([...peer.senders.values()].map(sender => this.applyQuality(sender)));
       await this.send({
         type: 'offer',
         to: peerId,
@@ -1122,20 +1129,32 @@ export class MediaEngine extends EventTarget {
   private async applyQuality(sender: RTCRtpSender): Promise<void> {
     if (!sender.track) return;
     const parameters = sender.getParameters();
-    if (!parameters.encodings?.length) parameters.encodings = [{}];
+    // Encoding entries are owned by WebRTC. A new sender may have none until
+    // negotiation; inventing one makes setParameters reject and can break capture.
+    // Reapply after SDP negotiation when the browser exposes the actual entries.
+    if (!parameters.encodings?.length) return;
+    let changed = false;
     for (const encoding of parameters.encodings) {
       if (sender.track.kind === 'audio') {
-        if (this.quality.maxAudioBitrate !== undefined)
+        if (this.quality.maxAudioBitrate !== undefined && encoding.maxBitrate !== this.quality.maxAudioBitrate) {
           encoding.maxBitrate = this.quality.maxAudioBitrate;
+          changed = true;
+        }
       } else {
-        if (this.quality.maxVideoBitrate !== undefined)
+        if (this.quality.maxVideoBitrate !== undefined && encoding.maxBitrate !== this.quality.maxVideoBitrate) {
           encoding.maxBitrate = this.quality.maxVideoBitrate;
-        if (this.quality.maxFramerate !== undefined)
+          changed = true;
+        }
+        if (this.quality.maxFramerate !== undefined && encoding.maxFramerate !== this.quality.maxFramerate) {
           encoding.maxFramerate = this.quality.maxFramerate;
-        if (this.quality.scaleResolutionDownBy !== undefined)
+          changed = true;
+        }
+        if (this.quality.scaleResolutionDownBy !== undefined && encoding.scaleResolutionDownBy !== this.quality.scaleResolutionDownBy) {
           encoding.scaleResolutionDownBy = this.quality.scaleResolutionDownBy;
+          changed = true;
+        }
       }
     }
-    await sender.setParameters(parameters);
+    if (changed) await sender.setParameters(parameters);
   }
 }

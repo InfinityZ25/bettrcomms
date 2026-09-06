@@ -1,5 +1,13 @@
 # BetterComms preview release notes
 
+## 0.1.2 — direct-call audio decoding and application audio
+
+Remote playback retains a muted media element for each audio track to start Chromium's WebRTC decoder. The audible signal still runs exclusively through the existing Web Audio volume, optional microphone balancing and output-device graph. Previously, packets could arrive with live tracks and a running AudioContext while decoded audio energy stayed at zero. A real two-engine regression reproduced that behavior for both microphone and system audio. Decoder consumers are removed when tracks end, playback detaches or the call closes. This hosted frontend correction does not require a new desktop installer; real cross-network confirmation remains pending.
+
+Sender bitrate configuration now waits for WebRTC-owned encoding entries instead of fabricating them before negotiation, which could reject adding a shared-audio track. Connection statistics include codec, source audio energy, received samples and concealed samples to distinguish capture, transport and decoding failures.
+
+The 0.1.2 native build supports selected-application audio using Windows process-loopback inclusion. Window shares default to that process tree; users can explicitly choose system audio excluding BetterComms. Older installed backends cannot silently substitute all system sound for application audio. A real two-process test captured the selected 660 Hz tone while excluding an unrelated 880 Hz tone. This native change requires an updated binary and is not included in 0.1.1.
+
 ## Speaking indicator sensitivity
 
 The visual speaking threshold defaults to -48 dBFS instead of roughly -29 dBFS. Settings offers a persisted Speaking indicator threshold control that applies during calls, with a lower release threshold to avoid flicker. This only changes the green border; it does not gate, amplify or control transmission of microphone audio. The indicator measures the processed microphone before transport, so it is not a server-delivery acknowledgment. Connection reports now include microphone processing preferences and the indicator threshold to help distinguish low input, optional gating and display sensitivity. Regression checks exercise quiet input, background-level signal, live sensitivity changes, mute, cleanup and setting persistence.

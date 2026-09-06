@@ -53,6 +53,131 @@ pub struct Capabilities {
     encoders: Vec<Encoder>,
     version: u8,
 }
+
+/// Resolve application audio from the latest opaque picker catalog. The web
+/// client never supplies a PID or HWND; resolve the live owner and reject dead windows.
+pub(crate) fn audio_process_for_source(
+    state: &NativeScreenState,
+    source_id: &str,
+) -> Result<Option<u32>, String> {
+    let source = state
+        .sources
+        .lock()
+        .map_err(|_| "Capture source catalog is unavailable")?
+        .get(source_id)
+        .cloned()
+        .ok_or("Refresh screen sources before sharing application audio")?;
+    if source.kind == "monitor" {
+        return Ok(None);
+    }
+    if source.kind != "window" {
+        return Err("The selected source cannot provide application audio".to_owned());
+    }
+    live_window_process(source.handle)
+}
+
+#[cfg(windows)]
+fn live_window_process(handle: usize) -> Result<Option<u32>, String> {
+    use windows::Win32::{
+        Foundation::HWND,
+        UI::WindowsAndMessaging::{GetWindowThreadProcessId, IsWindow},
+    };
+    let window = HWND(handle as *mut _);
+    if !unsafe { IsWindow(Some(window)) }.as_bool() {
+        return Err(
+            "The selected application closed. Refresh sources and choose it again".to_owned(),
+        );
+    }
+    let mut process_id = 0;
+    unsafe { GetWindowThreadProcessId(window, Some(&mut process_id)) };
+    if process_id == 0 {
+        return Err(
+            "Windows could not identify the selected application's audio process".to_owned(),
+        );
+    }
+    if process_id == std::process::id() {
+        return Err(
+            "BetterComms cannot capture its own call audio as application audio".to_owned(),
+        );
+    }
+    if process_descends_from(process_id, std::process::id())? {
+        return Err(
+            "BetterComms cannot capture its own browser or call audio as application audio"
+                .to_owned(),
+        );
+    }
+    Ok(Some(process_id))
+}
+
+#[cfg(windows)]
+fn process_descends_from(mut process_id: u32, ancestor: u32) -> Result<bool, String> {
+    use std::ffi::c_void;
+    use windows::Win32::{
+        Foundation::{CloseHandle, HANDLE},
+        System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION},
+    };
+    #[repr(C)]
+    struct ProcessBasicInformation {
+        reserved1: *mut c_void,
+        peb_base: *mut c_void,
+        reserved2: [*mut c_void; 2],
+        unique_process_id: usize,
+        inherited_from_unique_process_id: usize,
+    }
+    #[link(name = "ntdll")]
+    unsafe extern "system" {
+        fn NtQueryInformationProcess(
+            process: HANDLE,
+            class: u32,
+            information: *mut c_void,
+            information_length: u32,
+            return_length: *mut u32,
+        ) -> i32;
+    }
+    for depth in 0..64 {
+        let process = match unsafe {
+            OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, process_id)
+        } {
+            Ok(process) => process,
+            Err(_) if depth > 0 => return Ok(false),
+            Err(_) => {
+                return Err(
+                    "Windows could not validate the selected application's process tree".to_owned(),
+                )
+            }
+        };
+        let mut information: ProcessBasicInformation = unsafe { std::mem::zeroed() };
+        let status = unsafe {
+            NtQueryInformationProcess(
+                process,
+                0,
+                (&mut information as *mut ProcessBasicInformation).cast(),
+                size_of::<ProcessBasicInformation>() as u32,
+                std::ptr::null_mut(),
+            )
+        };
+        let _ = unsafe { CloseHandle(process) };
+        if status < 0 {
+            return Err(
+                "Windows could not validate the selected application's process tree".to_owned(),
+            );
+        }
+        let parent = information.inherited_from_unique_process_id as u32;
+        if parent == ancestor {
+            return Ok(true);
+        }
+        if parent == 0 || parent == process_id {
+            return Ok(false);
+        }
+        process_id = parent;
+    }
+    Err("The selected application's process tree was too deep to validate".to_owned())
+}
+
+#[cfg(not(windows))]
+fn live_window_process(_: usize) -> Result<Option<u32>, String> {
+    Err("Application audio capture is available on Windows only".to_owned())
+}
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Started {
@@ -1134,6 +1259,74 @@ impl AccessUnits {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn audio_process_resolution_uses_only_the_opaque_current_catalog() {
+        let state = NativeScreenState::default();
+        state.sources.lock().unwrap().insert(
+            "opaque-monitor".into(),
+            Source {
+                id: "opaque-monitor".into(),
+                kind: "monitor".into(),
+                name: "Display".into(),
+                width: 1920,
+                height: 1080,
+                category: "monitor".into(),
+                minimized: false,
+                handle: 0,
+            },
+        );
+        assert_eq!(
+            audio_process_for_source(&state, "opaque-monitor").unwrap(),
+            None
+        );
+        assert!(audio_process_for_source(&state, "1234")
+            .unwrap_err()
+            .contains("Refresh screen sources"));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn stale_window_audio_source_never_falls_back_to_system_audio() {
+        let state = NativeScreenState::default();
+        state.sources.lock().unwrap().insert(
+            "opaque-window".into(),
+            Source {
+                id: "opaque-window".into(),
+                kind: "window".into(),
+                name: "Closed app".into(),
+                width: 1280,
+                height: 720,
+                category: "app".into(),
+                minimized: false,
+                handle: 0,
+            },
+        );
+        assert!(audio_process_for_source(&state, "opaque-window")
+            .unwrap_err()
+            .contains("closed"));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn application_audio_rejects_bettercomms_child_processes() {
+        use std::{
+            os::windows::process::CommandExt,
+            process::{Command, Stdio},
+        };
+        let mut child = Command::new("cmd.exe")
+            .args(["/d", "/c", "ping -n 8 127.0.0.1 >nul"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(0x08000000)
+            .spawn()
+            .unwrap();
+        let result = process_descends_from(child.id(), std::process::id());
+        let _ = child.kill();
+        let _ = child.wait();
+        assert_eq!(result.unwrap(), true);
+    }
 
     #[test]
     fn source_ids_are_stable_only_for_sources_still_in_the_latest_snapshot() {

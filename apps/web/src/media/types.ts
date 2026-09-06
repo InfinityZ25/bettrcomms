@@ -140,6 +140,9 @@ export interface PeerMediaStats {
     packets?: number;
     audioLevel?: number;
     totalAudioEnergy?: number;
+    codec?: string;
+    totalSamplesReceived?: number;
+    concealedSamples?: number;
     width?: number;
     height?: number;
     framesPerSecond?: number;

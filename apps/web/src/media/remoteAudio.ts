@@ -6,6 +6,7 @@ type PlaybackState = {
   limiter: DynamicsCompressorNode;
   stopOutput: () => void;
   references: number;
+  detach: Set<() => void>;
 };
 
 let playback: PlaybackState | null = null;
@@ -40,6 +41,7 @@ function getPlayback(): PlaybackState {
     context,
     limiter,
     references: 0,
+    detach: new Set(),
     stopOutput: followOutputDevice(context, (error) =>
       report('bc-output-error', error.message),
     ),
@@ -67,6 +69,7 @@ export function disposeCallPlayback(): void {
   const current = playback;
   playback = null;
   if (!current) return;
+  for (const detach of [...current.detach]) detach();
   current.stopOutput();
   current.limiter.disconnect();
   if (current.context.state !== 'closed') void current.context.close();
@@ -100,6 +103,22 @@ export function attachRemoteAudio({
   const { context, limiter } = current;
   current.references += 1;
   const stream = new MediaStream([track]);
+  // Chromium's remote WebRTC decoder needs a media-element playout consumer.
+  // A MediaStreamAudioSource alone can receive zero samples despite flowing RTP.
+  // Keep this consumer muted: the shared Web Audio graph is the only audible path.
+  const decoder = document.createElement('audio');
+  decoder.muted = true;
+  decoder.autoplay = true;
+  decoder.hidden = true;
+  decoder.setAttribute('playsinline', '');
+  decoder.srcObject = stream;
+  document.body.append(decoder);
+  let detached = false;
+  const stopDecoder = () => {
+    decoder.pause();
+    decoder.srcObject = null;
+    decoder.remove();
+  };
   const gain = context.createGain();
   gain.gain.value = readParticipantVolume(peerId);
   gain.connect(limiter);
@@ -112,6 +131,7 @@ export function attachRemoteAudio({
       input.connect(gain);
     }
   } catch (error) {
+    stopDecoder();
     gain.disconnect();
     current.references -= 1;
     report(
@@ -121,7 +141,12 @@ export function attachRemoteAudio({
     return attachElementFallback(track, peerId);
   }
 
-  const unlock = () => resume(context);
+  const unlock = () => {
+    resume(context);
+    void decoder.play().catch(() => {
+      if (!detached) report('bc-audio-blocked');
+    });
+  };
   unlock();
   const blockedCheck = setTimeout(() => {
     if (context.state === 'suspended') report('bc-audio-blocked');
@@ -143,7 +168,12 @@ export function attachRemoteAudio({
   };
   window.addEventListener('bc-volume', volume);
 
-  return () => {
+  const detach = () => {
+    if (detached) return;
+    detached = true;
+    current.detach.delete(detach);
+    track.removeEventListener('ended', detach);
+    stopDecoder();
     clearTimeout(blockedCheck);
     window.removeEventListener('bc-volume', volume);
     window.removeEventListener('bc-audio-unlock', unlock);
@@ -154,6 +184,9 @@ export function attachRemoteAudio({
     gain.disconnect();
     current.references = Math.max(0, current.references - 1);
   };
+  current.detach.add(detach);
+  track.addEventListener('ended', detach, { once: true });
+  return detach;
 }
 
 function attachElementFallback(track: MediaStreamTrack, peerId: string): () => void {

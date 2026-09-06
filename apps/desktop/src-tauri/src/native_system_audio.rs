@@ -45,6 +45,7 @@ impl Drop for NativeSystemAudioState {
 #[serde(rename_all = "camelCase")]
 pub struct Capabilities {
     available: bool,
+    application_audio: bool,
     detail: String,
     minimum_windows_build: u32,
 }
@@ -54,6 +55,13 @@ pub struct Started {
     session_id: String,
     sample_rate: u32,
     channels: u16,
+    mode: &'static str,
+}
+
+#[derive(Clone, Copy)]
+enum LoopbackTarget {
+    ExcludeBettercomms,
+    IncludeProcess(u32),
 }
 fn trusted(w: &WebviewWindow) -> Result<(), String> {
     if w.label() != "main" {
@@ -101,17 +109,30 @@ pub fn native_system_audio_capabilities(window: WebviewWindow) -> Result<Capabil
     trusted(&window)?;
     let b = build();
     let available = b.is_some_and(|v| v >= 20348);
-    Ok(Capabilities{available,detail:match b{Some(v)if available=>format!("Process-loopback exclusion is available (Windows build {v}); no audio was captured"),Some(v)=>format!("Windows build {v} is older than required build 20348"),None=>"Process-loopback exclusion is unavailable".into()},minimum_windows_build:20348})
+    Ok(Capabilities{available,application_audio:available,detail:match b{Some(v)if available=>format!("Process-loopback application and system audio are available (Windows build {v}); no audio was captured"),Some(v)=>format!("Windows build {v} is older than required build 20348"),None=>"Process-loopback audio is unavailable".into()},minimum_windows_build:20348})
 }
 #[tauri::command]
 pub async fn native_system_audio_start(
     window: WebviewWindow,
     state: tauri::State<'_, NativeSystemAudioState>,
+    screen_state: tauri::State<'_, crate::native_screen::NativeScreenState>,
+    source_id: Option<String>,
 ) -> Result<Started, String> {
     trusted(&window)?;
     if !build().is_some_and(|v| v >= 20348) {
-        return Err("System audio exclusion requires Windows build 20348 or newer".into());
+        return Err(
+            "Native application and system audio require Windows build 20348 or newer".into(),
+        );
     }
+    let target = match source_id.as_deref() {
+        Some(source_id) => {
+            match crate::native_screen::audio_process_for_source(&screen_state, source_id)? {
+                Some(process_id) => LoopbackTarget::IncludeProcess(process_id),
+                None => LoopbackTarget::ExcludeBettercomms,
+            }
+        }
+        None => LoopbackTarget::ExcludeBettercomms,
+    };
     let permit = Arc::clone(SLOTS.get_or_init(|| Arc::new(tokio::sync::Semaphore::new(2))))
         .try_acquire_owned()
         .map_err(|_| "Too many system audio sessions")?;
@@ -125,7 +146,7 @@ pub async fn native_system_audio_start(
     let worker_failure = failure.clone();
     let fallback = tx.clone();
     let worker = std::thread::spawn(move || {
-        if let Err(error) = platform::capture(s, r, tx) {
+        if let Err(error) = platform::capture(s, r, tx, target) {
             if let Ok(mut slot) = worker_failure.lock() {
                 *slot = Some(error.clone());
             }
@@ -167,6 +188,10 @@ pub async fn native_system_audio_start(
         session_id: id,
         sample_rate: RATE,
         channels: CHANNELS,
+        mode: match target {
+            LoopbackTarget::ExcludeBettercomms => "system",
+            LoopbackTarget::IncludeProcess(_) => "application",
+        },
     })
 }
 #[tauri::command]
@@ -306,6 +331,7 @@ mod platform {
         stop: Arc<AtomicBool>,
         ring: Arc<Mutex<VecDeque<u8>>>,
         ready: std::sync::mpsc::SyncSender<Result<(), String>>,
+        target: LoopbackTarget,
     ) -> Result<(), String> {
         unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }
             .ok()
@@ -320,8 +346,18 @@ mod platform {
             ActivationType: AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK,
             Anonymous: AUDIOCLIENT_ACTIVATION_PARAMS_0 {
                 ProcessLoopbackParams: AUDIOCLIENT_PROCESS_LOOPBACK_PARAMS {
-                    TargetProcessId: std::process::id(),
-                    ProcessLoopbackMode: PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE,
+                    TargetProcessId: match target {
+                        LoopbackTarget::ExcludeBettercomms => std::process::id(),
+                        LoopbackTarget::IncludeProcess(process_id) => process_id,
+                    },
+                    ProcessLoopbackMode: match target {
+                        LoopbackTarget::ExcludeBettercomms => {
+                            PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE
+                        }
+                        LoopbackTarget::IncludeProcess(_) => {
+                            PROCESS_LOOPBACK_MODE_INCLUDE_TARGET_PROCESS_TREE
+                        }
+                    },
                 },
             },
         };
@@ -422,6 +458,7 @@ mod platform {
         _: Arc<AtomicBool>,
         _: Arc<Mutex<VecDeque<u8>>>,
         ready: std::sync::mpsc::SyncSender<Result<(), String>>,
+        _: LoopbackTarget,
     ) -> Result<(), String> {
         let e = "Native system audio is Windows-only".to_owned();
         let _ = ready.send(Err(e.clone()));
@@ -449,8 +486,14 @@ mod tests {
         let (sender, receiver) = std::sync::mpsc::sync_channel(1);
         let worker_stop = stop.clone();
         let worker_ring = ring.clone();
-        let worker =
-            std::thread::spawn(move || platform::capture(worker_stop, worker_ring, sender));
+        let worker = std::thread::spawn(move || {
+            platform::capture(
+                worker_stop,
+                worker_ring,
+                sender,
+                LoopbackTarget::ExcludeBettercomms,
+            )
+        });
         receiver
             .recv_timeout(Duration::from_secs(5))
             .map_err(|_| "Real process-loopback startup timed out".to_owned())??;
@@ -490,8 +533,14 @@ mod tests {
         let (sender, receiver) = std::sync::mpsc::sync_channel(1);
         let worker_stop = stop.clone();
         let worker_ring = ring.clone();
-        let worker =
-            std::thread::spawn(move || platform::capture(worker_stop, worker_ring, sender));
+        let worker = std::thread::spawn(move || {
+            platform::capture(
+                worker_stop,
+                worker_ring,
+                sender,
+                LoopbackTarget::ExcludeBettercomms,
+            )
+        });
         receiver
             .recv_timeout(Duration::from_secs(5))
             .map_err(|_| "Capture startup timed out")??;
@@ -552,6 +601,116 @@ mod tests {
         if excluded > external * 0.15 {
             return Err(format!(
                 "Excluded child 440 Hz leaked: child={excluded:.6}, external={external:.6}"
+            ));
+        }
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "plays a synthetic tone through the real process-loopback device"]
+    #[cfg(windows)]
+    fn real_include_tree_captures_only_the_target_process() -> Result<(), String> {
+        use std::{
+            os::windows::process::CommandExt,
+            process::{Command, Stdio},
+        };
+        let base = std::path::PathBuf::from(
+            std::env::var_os("LOCALAPPDATA").ok_or("LOCALAPPDATA unavailable")?,
+        )
+        .join("Microsoft/WinGet/Packages/Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe");
+        let mut players = std::fs::read_dir(base)
+            .map_err(|_| "FFplay package unavailable")?
+            .filter_map(Result::ok)
+            .map(|entry| entry.path().join("bin/ffplay.exe"))
+            .filter(|path| path.is_file())
+            .collect::<Vec<_>>();
+        players.sort();
+        let player_path = players.pop().ok_or("FFplay unavailable")?;
+        let mut player = Command::new(&player_path)
+            .args([
+                "-nodisp",
+                "-autoexit",
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=660:sample_rate=48000:duration=4",
+                "-af",
+                "volume=0.2",
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(0x08000000)
+            .spawn()
+            .map_err(|error| error.to_string())?;
+        let mut unrelated_player = Command::new(&player_path)
+            .args([
+                "-nodisp",
+                "-autoexit",
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=880:sample_rate=48000:duration=4",
+                "-af",
+                "volume=0.2",
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(0x08000000)
+            .spawn()
+            .map_err(|error| error.to_string())?;
+        let stop = Arc::new(AtomicBool::new(false));
+        let ring = Arc::new(Mutex::new(VecDeque::new()));
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        let worker_stop = stop.clone();
+        let worker_ring = ring.clone();
+        let target_pid = player.id();
+        let worker = std::thread::spawn(move || {
+            platform::capture(
+                worker_stop,
+                worker_ring,
+                sender,
+                LoopbackTarget::IncludeProcess(target_pid),
+            )
+        });
+        receiver
+            .recv_timeout(Duration::from_secs(5))
+            .map_err(|_| "Capture startup timed out")??;
+        std::thread::sleep(Duration::from_millis(900));
+        stop.store(true, Ordering::Release);
+        let _ = player.kill();
+        let _ = player.wait();
+        let _ = unrelated_player.kill();
+        let _ = unrelated_player.wait();
+        worker.join().map_err(|_| "Capture worker panicked")??;
+        let bytes = ring
+            .lock()
+            .map_err(|_| "Audio ring poisoned")?
+            .iter()
+            .copied()
+            .collect::<Vec<_>>();
+        let samples = bytes
+            .chunks_exact(4)
+            .map(|bytes| f32::from_le_bytes(bytes.try_into().unwrap()))
+            .collect::<Vec<_>>();
+        let magnitude = tone_magnitude(&samples, 660.0);
+        if magnitude < 0.005 {
+            return Err(format!(
+                "Selected process tone was not captured ({magnitude:.6})"
+            ));
+        }
+        let unrelated = tone_magnitude(&samples, 880.0);
+        println!(
+            "application audio spectral magnitude: target660={magnitude:.6}, unrelated880={unrelated:.6}"
+        );
+        if unrelated > magnitude * 0.15 {
+            return Err(format!(
+                "Unselected process leaked into application audio: target={magnitude:.6}, unrelated={unrelated:.6}"
             ));
         }
         Ok(())

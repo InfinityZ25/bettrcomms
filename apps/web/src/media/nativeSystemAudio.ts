@@ -3,6 +3,7 @@ import workletUrl from './nativeSystemAudio.worklet.js?url&no-inline';
 
 export interface NativeSystemAudioCapabilities {
   available: boolean;
+  applicationAudio?: boolean;
   detail: string;
 }
 export interface NativeSystemAudioTrack {
@@ -18,6 +19,7 @@ export type SystemAudioInvoke = (
 export async function createNativeSystemAudio(
   signal: AbortSignal,
   nativeInvoke: SystemAudioInvoke = invoke,
+  sourceId?: string,
 ): Promise<NativeSystemAudioTrack> {
   if (!isTauri())
     throw new Error('Native system audio is available only in the desktop app');
@@ -56,14 +58,23 @@ export async function createNativeSystemAudio(
       throw new DOMException('Sharing canceled', 'AbortError');
   };
   try {
-    const session = (await nativeInvoke('native_system_audio_start')) as {
+    if (sourceId) {
+      const capabilities = await nativeInvoke('native_system_audio_capabilities') as NativeSystemAudioCapabilities;
+      check();
+      if (!capabilities.applicationAudio)
+        throw new Error('Update the desktop app to use selected-application audio. This version can only share system audio.');
+    }
+    const session = (await nativeInvoke('native_system_audio_start', sourceId ? { sourceId } : undefined)) as {
       sessionId: string;
       sampleRate: number;
       channels: number;
+      mode?: string;
     };
     sessionId = session.sessionId;
     signal.addEventListener('abort', cleanup, { once: true });
     check();
+    if (sourceId && session.mode !== 'application')
+      throw new Error('The selected application did not provide isolated audio. Choose a window or explicitly select system audio.');
     if (session.sampleRate !== 48000 || session.channels !== 2)
       throw new Error('Native system audio returned an unsupported format');
     context = new AudioContext({

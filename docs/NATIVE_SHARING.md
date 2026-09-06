@@ -16,7 +16,7 @@ Browser/received-screen recording bitrate is separately selectable in Settings. 
 
 ## Current limits
 
-- Native sharing can include system audio on Windows build 20348 or newer. WASAPI process-loopback explicitly excludes BetterComms and its descendants, including WebView call playback. Selecting only the chosen application audio and injected exclusive-fullscreen game hooks remain unimplemented. Browser sharing retains browser-supported capture options.
+- Native sharing can include audio on Windows build 20348 or newer. Application-window sharing uses WASAPI process-loopback include mode for that window's live process tree; other applications are excluded. Windows exposes this at process-tree granularity, so separate windows owned by the same process cannot be isolated. Entire-screen sharing retains system audio with BetterComms and its descendants excluded. A stale or unsupported application selection fails explicitly and never falls back to all system audio. Injected exclusive-fullscreen game hooks remain unimplemented. Browser sharing retains browser-supported capture options.
 - This is H.264 SDR 4:2:0, not AV1/HEVC/HDR or lossless RGB. Some protected, minimized, or exclusive-mode sources cannot be captured.
 - Live bitrate is manually selected; native congestion-driven encoder adaptation and ICE restart are not implemented. Two-second IDR frames allow late joining/recovery; immediate encoder response to PLI is not implemented.
 - Recording preserves the live encoding profile, not a separate OBS-style archival encoder profile. A clean stop finalizes MP4; active-recording crash recovery and continuous rewind remain future work.
@@ -49,7 +49,7 @@ Five-second keyframes offered no useful quality improvement in this comparison, 
 
 ## Native system audio and source previews
 
-The share screen has a Share system audio switch, enabled by default when the OS reports support. Capture starts only after Share. It records all other processes rather than just the chosen window; the call, BetterComms playback, and BetterComms notification sounds are excluded through `PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE`. There is no unrestricted endpoint-loopback fallback. Protected or exclusive audio may not be capturable.
+The share screen has a Share audio switch, enabled by default when the OS reports support. Capture starts only after Share. A selected application resolves its PID from the native picker's opaque, current window catalog and uses `PROCESS_LOOPBACK_MODE_INCLUDE_TARGET_PROCESS_TREE`; JavaScript cannot supply a PID or HWND. Entire-screen sharing uses `PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE`, preserving system sound while excluding the call, BetterComms playback, and BetterComms notification sounds. There is no unrestricted endpoint-loopback fallback. Protected or exclusive audio may not be capturable.
 
 Native PCM is 48 kHz float32 stereo. A bounded 500ms ring returns the newest at most 100ms through binary IPC. An AudioWorklet requests data from its render clock with one request in flight, avoiding window polling timers; its stream is never connected to local speakers. The system track uses the existing WebRTC audio transport and independent recording/mixer path. Stopping sharing, leaving the call, cancellation, and errors release native capture and the system track together. Browser clients keep browser capture.
 

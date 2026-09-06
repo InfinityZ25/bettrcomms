@@ -203,6 +203,7 @@ export default function NativeScreenPicker({
     () => localStorage.getItem('bc-capture-border') === 'true',
   );
   const [systemAudio, setSystemAudio] = useState(true);
+  const [audioScope, setAudioScope] = useState<'application' | 'system'>('application');
   const [audioCaps, setAudioCaps] =
     useState<NativeSystemAudioCapabilities | null>(null);
   const [busy, setBusy] = useState(false);
@@ -285,6 +286,8 @@ export default function NativeScreenPicker({
     [sources, tab, query],
   );
   const selected = sources.find((source) => source.id === sourceId);
+  const applicationAudio = (selected?.kind ?? tab) === 'window' && audioScope === 'application';
+  const audioAvailable = audioCaps?.available === true && (!applicationAudio || audioCaps.applicationAudio === true);
   async function start(browser = false) {
     setBusy(true);
     setError('');
@@ -309,7 +312,8 @@ export default function NativeScreenPicker({
           h264Profile,
           cursor,
           displayBorder,
-          systemAudio: systemAudio && audioCaps?.available === true,
+          systemAudio: systemAudio && audioAvailable,
+          ...(systemAudio && audioAvailable && applicationAudio ? { systemAudioSourceId: sourceId } : {}),
         });
       }
     } catch (cause) {
@@ -611,19 +615,30 @@ export default function NativeScreenPicker({
           <div className="share-audio-note">
             <Volume2 size={17} />
             <div>
+              {(selected?.kind ?? tab) === 'window' && <label>
+                Audio source
+                <select aria-label="Audio source" value={audioScope} disabled={busy} onChange={event => setAudioScope(event.target.value as 'application' | 'system')}>
+                  <option value="application">Selected application</option>
+                  <option value="system">System audio (excluding the call)</option>
+                </select>
+              </label>}
               <label className="share-cursor">
-                Share system audio
+                {applicationAudio ? 'Share application audio' : 'Share system audio'}
                 <input
                   type="checkbox"
-                  aria-label="Share system audio"
-                  checked={systemAudio && audioCaps?.available === true}
-                  disabled={busy || !audioCaps?.available}
+                  aria-label={applicationAudio ? 'Share application audio' : 'Share system audio'}
+                  checked={systemAudio && audioAvailable}
+                  disabled={busy || !audioAvailable}
                   onChange={(event) => setSystemAudio(event.target.checked)}
                 />
               </label>
               <p>
                 {audioCaps?.available
-                  ? 'Other apps’ sound. BetterComms and call audio are excluded.'
+                  ? applicationAudio
+                    ? audioCaps.applicationAudio
+                      ? 'Sound from this application and its child processes. Windows sharing the same process may share audio.'
+                      : 'Update the desktop app for application audio, or explicitly select System audio above.'
+                    : 'Other apps’ sound. BetterComms and call audio are excluded.'
                   : (audioCaps?.detail ?? 'Checking system audio support…')}
               </p>
               <button disabled={busy} onClick={() => void start(true)}>

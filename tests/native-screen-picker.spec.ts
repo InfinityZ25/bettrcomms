@@ -1,8 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
 const baseURL = process.env.E2E_BASE_URL ?? 'http://localhost:5173';
-async function mount(page: Page, systemAudioAvailable = true) {
+async function mount(
+  page: Page,
+  systemAudioAvailable = true,
+  applicationAudioAvailable = true,
+) {
   await page.goto(baseURL);
-  await page.evaluate(async (systemAudioAvailable) => {
+  await page.evaluate(async ({ systemAudioAvailable, applicationAudioAvailable }) => {
     const canvas = document.createElement('canvas');
     canvas.width = 640;
     canvas.height = 360;
@@ -22,6 +26,7 @@ async function mount(page: Page, systemAudioAvailable = true) {
         if (command === 'native_system_audio_capabilities')
           return {
             available: systemAudioAvailable,
+            applicationAudio: applicationAudioAvailable,
             detail: systemAudioAvailable
               ? 'Ready'
               : 'System audio is unavailable on this Windows version.',
@@ -105,7 +110,7 @@ async function mount(page: Page, systemAudioAvailable = true) {
         ),
       );
     (window as any).__rerenderPicker();
-  }, systemAudioAvailable);
+  }, { systemAudioAvailable, applicationAudioAvailable });
   await expect(
     page.getByRole('button', { name: 'Application 1', exact: true }),
   ).toBeVisible();
@@ -167,10 +172,11 @@ test('dedicated sharing screen keeps controls visible and preserves focus and ga
     h264Profile: 'auto',
     encoder: 'h264_amf',
     systemAudio: true,
+    systemAudioSourceId: '1',
     displayBorder: false,
   });
 
-  await page.getByLabel('Share system audio', { exact: true }).uncheck();
+  await page.getByLabel('Share application audio', { exact: true }).uncheck();
   await page.getByLabel('Show capture border', { exact: true }).check();
   await page.evaluate(() => {
     (window as any).__shared = undefined;
@@ -203,7 +209,7 @@ test('unavailable native audio is disabled and keeps browser sharing actionable'
   page,
 }) => {
   await mount(page, false);
-  const audio = page.getByLabel('Share system audio', { exact: true });
+  const audio = page.getByLabel('Share application audio', { exact: true });
   await expect(audio).toBeDisabled();
   await expect(audio).not.toBeChecked();
   await expect(
@@ -216,6 +222,34 @@ test('unavailable native audio is disabled and keeps browser sharing actionable'
   await expect(fallback).toBeEnabled();
   await fallback.click();
   await expect(page.locator('body')).toHaveAttribute('data-browser', 'true');
+});
+
+test('application audio requires the new host capability and never starts implicitly', async ({ page }) => {
+  await mount(page, true, false);
+  await page.getByRole('button', { name: 'Application 1', exact: true }).click();
+  await expect(page.getByLabel('Share application audio', { exact: true })).toBeDisabled();
+  await expect(page.getByText(/Update the desktop app for application audio/)).toBeVisible();
+  await page.getByRole('button', { name: 'Share', exact: true }).click();
+  expect(await page.evaluate(() => (window as any).__shared)).toMatchObject({
+    sourceId: '1',
+    systemAudio: false,
+  });
+  expect(await page.evaluate(() => (window as any).__shared.systemAudioSourceId)).toBeUndefined();
+});
+
+test('window sharing distinguishes selected-application audio from explicit system audio', async ({ page }) => {
+  await mount(page);
+  await page.getByRole('button', { name: 'Application 1', exact: true }).click();
+  await expect(page.getByLabel('Share application audio', { exact: true })).toBeChecked();
+  await page.getByRole('button', { name: 'Share', exact: true }).click();
+  expect(await page.evaluate(() => (window as any).__shared.systemAudioSourceId)).toBe('1');
+
+  await page.getByLabel('Audio source').selectOption('system');
+  await expect(page.getByLabel('Share system audio', { exact: true })).toBeChecked();
+  await page.getByRole('button', { name: 'Share', exact: true }).click();
+  const shared = await page.evaluate(() => (window as any).__shared);
+  expect(shared.systemAudio).toBe(true);
+  expect(shared.systemAudioSourceId).toBeUndefined();
 });
 test('source names never create horizontal scrolling across desktop and mobile widths', async ({
   page,

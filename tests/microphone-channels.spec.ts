@@ -6,37 +6,69 @@ test('mono microphone processing preserves either stereo input and plays centere
   await page.goto(baseURL);
   const results = await page.evaluate(async () => {
     type Processor = 'rnnoise' | 'speex' | 'neutral';
-    const rms = (analyser: AnalyserNode) => {
-      const values = new Float32Array(analyser.fftSize);
-      analyser.getFloatTimeDomainData(values);
-      return Math.sqrt(values.reduce((sum, value) => sum + value * value, 0) / values.length);
-    };
-    const waitForSignal = async (left: AnalyserNode, right: AnalyserNode) => {
-      let pair = { left: 0, right: 0 };
-      const deadline = performance.now() + 4_000;
-      while (performance.now() < deadline && Math.min(pair.left, pair.right) < 0.0002) {
-        pair = { left: rms(left), right: rms(right) };
-        await new Promise((resolve) => setTimeout(resolve, 40));
-      }
-      return pair;
-    };
     const inspectStereoPlayback = async (context: AudioContext, node: AudioNode) => {
+      const probeName = `channel-probe-${crypto.randomUUID()}`;
+      const module = URL.createObjectURL(new Blob([`
+        class ChannelProbe extends AudioWorkletProcessor {
+          frames = 0;
+          leftEnergy = 0;
+          rightEnergy = 0;
+          samples = 0;
+          process(inputs) {
+            const input = inputs[0];
+            if (input.length < 2) return true;
+            let left = 0, right = 0;
+            for (let index = 0; index < input[0].length; index += 1) {
+              left += input[0][index] * input[0][index];
+              right += input[1][index] * input[1][index];
+            }
+            if (left > 0.000001 && right > 0.000001) {
+              this.leftEnergy += left;
+              this.rightEnergy += right;
+              this.samples += input[0].length;
+              this.frames += 1;
+              if (this.frames === 8) this.port.postMessage({
+                left: Math.sqrt(this.leftEnergy / this.samples),
+                right: Math.sqrt(this.rightEnergy / this.samples),
+              });
+            }
+            return true;
+          }
+        }
+        registerProcessor('${probeName}', ChannelProbe);
+      `], { type: 'text/javascript' }));
+      try {
+        await context.audioWorklet.addModule(module);
+      } finally {
+        URL.revokeObjectURL(module);
+      }
       const upmix = new GainNode(context, {
         gain: 1,
         channelCount: 2,
         channelCountMode: 'explicit',
         channelInterpretation: 'speakers',
       });
-      const splitter = context.createChannelSplitter(2);
-      const left = new AnalyserNode(context, { fftSize: 2048, smoothingTimeConstant: 0 });
-      const right = new AnalyserNode(context, { fftSize: 2048, smoothingTimeConstant: 0 });
+      const probe = new AudioWorkletNode(context, probeName, {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        outputChannelCount: [1],
+        channelCount: 2,
+        channelCountMode: 'explicit',
+        channelInterpretation: 'speakers',
+      });
       const silent = new GainNode(context, { gain: 0 });
-      node.connect(upmix).connect(splitter);
-      splitter.connect(left, 0).connect(silent).connect(context.destination);
-      splitter.connect(right, 1).connect(silent);
-      return { ...(await waitForSignal(left, right)), disconnect: () => {
-        node.disconnect(); upmix.disconnect(); splitter.disconnect();
-        left.disconnect(); right.disconnect(); silent.disconnect();
+      node.connect(upmix).connect(probe).connect(silent).connect(context.destination);
+      const pair = await new Promise<{ left: number; right: number }>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('Timed out sampling stereo playback')), 4_000);
+        probe.port.onmessage = ({ data }) => {
+          clearTimeout(timer);
+          resolve(data as { left: number; right: number });
+        };
+      });
+      return { ...pair, disconnect: () => {
+        probe.port.onmessage = null;
+        node.disconnect(); upmix.disconnect(); probe.disconnect();
+        silent.disconnect();
       } };
     };
 
