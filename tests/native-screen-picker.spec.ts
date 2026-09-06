@@ -27,6 +27,7 @@ async function mount(
           return {
             available: systemAudioAvailable,
             applicationAudio: applicationAudioAvailable,
+            callAudioControl: true,
             detail: systemAudioAvailable
               ? 'Ready'
               : 'System audio is unavailable on this Windows version.',
@@ -250,6 +251,19 @@ test('window sharing distinguishes selected-application audio from explicit syst
   const shared = await page.evaluate(() => (window as any).__shared);
   expect(shared.systemAudio).toBe(true);
   expect(shared.systemAudioSourceId).toBeUndefined();
+});
+
+test('whole-screen audio excludes the call by default and includes it only after an explicit choice', async ({ page }) => {
+  await mount(page);
+  await page.getByRole('button', { name: 'Entire screen', exact: true }).click();
+  await page.getByRole('button', { name: 'Main monitor', exact: true }).click();
+  await expect(page.getByLabel('Exclude call audio', { exact: true })).toBeChecked();
+  await page.getByRole('button', { name: 'Share', exact: true }).click();
+  expect(await page.evaluate(() => (window as any).__shared.excludeCallAudio)).toBe(true);
+  await page.getByLabel('Exclude call audio', { exact: true }).uncheck();
+  await expect(page.getByText(/Other people may hear themselves/)).toBeVisible();
+  await page.getByRole('button', { name: 'Share', exact: true }).click();
+  expect(await page.evaluate(() => (window as any).__shared.excludeCallAudio)).toBe(false);
 });
 test('source names never create horizontal scrolling across desktop and mobile widths', async ({
   page,

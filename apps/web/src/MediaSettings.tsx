@@ -110,6 +110,8 @@ export default function MediaSettings() {
   }
   return (
     <>
+      <h3><Headphones size={17} /> Voice & devices</h3>
+      <DeviceSettings />
       <label>
         Speaking indicator threshold · {speakingThreshold} dBFS
         <input type="range" min="-65" max="-20" step="1"
@@ -233,10 +235,6 @@ export default function MediaSettings() {
         />
       )}
       <ProcessingControls engine={denoiser} />
-      <h3>
-        <Headphones size={17} /> Devices
-      </h3>
-      <DeviceSettings />
       <h3><Monitor size={17} /> Recording quality</h3>
       <label>Screen recording bitrate<select value={recordingRate} onChange={(event) => {
         const value = Number(event.target.value); setRecordingRate(value);

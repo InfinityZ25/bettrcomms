@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { applyOutputDevice, followOutputDevice } from './media/output';
+import { applyOutputDevice, followElementOutput, followOutputDevice } from './media/output';
+import {
+  createOutputGain,
+  readInputVolume,
+  readOutputVolume,
+  setInputVolume,
+  setOutputVolume,
+} from './media/volumeSettings';
 import './DeviceSettings.css';
 import { MediaEngine } from './media/engine';
 import { allowDesktopCapture, isWindowsDesktop } from './media/permissions';
@@ -51,6 +58,8 @@ export default function DeviceSettings() {
     null,
   );
   const [output, setOutput] = useState(localStorage.getItem('bc-output') ?? '');
+  const [inputVolume, setInputVolumeState] = useState(readInputVolume);
+  const [outputVolume, setOutputVolumeState] = useState(readOutputVolume);
   const [micStatus, setMicStatus] = useState('');
   const [cameraStatus, setCameraStatus] = useState('');
   const [outputStatus, setOutputStatus] = useState('');
@@ -84,6 +93,7 @@ export default function DeviceSettings() {
   }, []);
   const animation = useRef<number | null>(null);
   const playback = useRef<HTMLAudioElement | null>(null);
+  const playbackOutputCleanup = useRef<(() => void) | null>(null);
   const outputContext = useRef<AudioContext | null>(null);
   const blobUrl = useRef<string | null>(null);
   const alive = useRef(true);
@@ -119,6 +129,8 @@ export default function DeviceSettings() {
   }, []);
   const stopPlayback = useCallback(() => {
     playbackRequest.current += 1;
+    playbackOutputCleanup.current?.();
+    playbackOutputCleanup.current = null;
     if (playback.current) {
       playback.current.pause();
       playback.current.removeAttribute('src');
@@ -410,9 +422,10 @@ export default function DeviceSettings() {
         const delay = context.createDelay(1.1);
         delay.delayTime.value = 1;
         const gain = context.createGain();
+        const master = createOutputGain(context);
         gain.gain.value = monitorVolumeRef.current;
         monitorGain.current = gain;
-        analyser.connect(delay).connect(gain).connect(context.destination);
+        analyser.connect(delay).connect(gain).connect(master.gain).connect(context.destination);
         const failed = (error: Error) => {
           if (!alive.current || request !== micRequest.current) return;
           stopMic();
@@ -461,6 +474,7 @@ export default function DeviceSettings() {
           analyser.disconnect();
           delay.disconnect();
           gain.disconnect();
+          master.dispose();
         };
         setMicStatus(liveStatus());
         await refresh();
@@ -484,7 +498,10 @@ export default function DeviceSettings() {
         playback.current = audio;
         const playbackId = ++playbackRequest.current;
         try {
-          await applyOutputDevice(audio);
+          playbackOutputCleanup.current = followElementOutput(audio, (error: Error) => {
+            if (alive.current && playback.current === audio)
+              setMicStatus(message(error));
+          });
           if (
             !alive.current ||
             playbackId !== playbackRequest.current ||
@@ -588,6 +605,7 @@ export default function DeviceSettings() {
   async function testOutput() {
     setOutputStatus('');
     let context: AudioContext | null = null;
+    let master: ReturnType<typeof createOutputGain> | null = null;
     try {
       closeContext(outputContext.current);
       context = new AudioContext();
@@ -604,6 +622,7 @@ export default function DeviceSettings() {
       }
       const oscillator = context.createOscillator(),
         gain = context.createGain();
+      master = createOutputGain(context);
       oscillator.frequency.value = 440;
       gain.gain.setValueAtTime(0.0001, context.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.16, context.currentTime + 0.03);
@@ -611,15 +630,17 @@ export default function DeviceSettings() {
         0.0001,
         context.currentTime + 0.55,
       );
-      oscillator.connect(gain).connect(context.destination);
+      oscillator.connect(gain).connect(master.gain).connect(context.destination);
       oscillator.start();
       oscillator.stop(context.currentTime + 0.6);
       oscillator.onended = () => {
+        master?.dispose();
         if (outputContext.current === context) outputContext.current = null;
         closeContext(context);
       };
       setOutputStatus('Test tone played through the selected output.');
     } catch (error) {
+      master?.dispose();
       closeContext(context);
       if (outputContext.current === context) outputContext.current = null;
       if (alive.current) setOutputStatus(message(error));
@@ -659,6 +680,23 @@ export default function DeviceSettings() {
                   </option>
                 ))}
             </select>
+          </label>
+          <label className="device-volume">
+            <span>Input volume <output>{Math.round(inputVolume * 100)}%</output></span>
+            <input
+              aria-label="Input volume"
+              aria-valuetext={`${Math.round(inputVolume * 100)} percent`}
+              type="range"
+              min="0"
+              max="2"
+              step="0.01"
+              value={inputVolume}
+              onChange={(event) => {
+                const value = Number(event.target.value);
+                setInputVolumeState(value);
+                setInputVolume(value);
+              }}
+            />
           </label>
           <div className="device-settings__actions">
             <button
@@ -777,6 +815,66 @@ export default function DeviceSettings() {
               role="status"
             >
               {micStatus}
+            </p>
+          )}
+        </div>
+        <div className="device-settings__card">
+          <label>
+            Output device
+            <select
+              value={output}
+              onChange={(e) => {
+                stopPlayback();
+                closeContext(outputContext.current);
+                outputContext.current = null;
+                setOutput(e.target.value);
+                localStorage.setItem('bc-output', e.target.value);
+                window.dispatchEvent(new Event('bc-output'));
+              }}
+            >
+              <option value="">System default</option>
+              {devices
+                .filter((d) => d.kind === 'audiooutput' && d.deviceId)
+                .map((d, i) => (
+                  <option key={d.deviceId} value={d.deviceId}>
+                    {d.label || `Speaker ${i + 1}`}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <label className="device-volume">
+            <span>Output volume <output>{Math.round(outputVolume * 100)}%</output></span>
+            <input
+              aria-label="Output volume"
+              aria-valuetext={`${Math.round(outputVolume * 100)} percent`}
+              type="range"
+              min="0"
+              max="2"
+              step="0.01"
+              value={outputVolume}
+              onChange={(event) => {
+                const value = Number(event.target.value);
+                setOutputVolumeState(value);
+                setOutputVolume(value);
+              }}
+            />
+          </label>
+          <div className="device-settings__actions">
+            <button
+              className="text-button"
+              type="button"
+              onClick={() => void testOutput()}
+            >
+              Play test tone
+            </button>
+          </div>
+          {outputStatus && (
+            <p
+              className="device-settings__status"
+              data-error={/cannot|failed|error/i.test(outputStatus)}
+              role="status"
+            >
+              {outputStatus}
             </p>
           )}
         </div>
@@ -911,49 +1009,6 @@ export default function DeviceSettings() {
               role="status"
             >
               {cameraStatus}
-            </p>
-          )}
-        </div>
-        <div className="device-settings__card">
-          <label>
-            Output device
-            <select
-              value={output}
-              onChange={(e) => {
-                stopPlayback();
-                closeContext(outputContext.current);
-                outputContext.current = null;
-                setOutput(e.target.value);
-                localStorage.setItem('bc-output', e.target.value);
-                window.dispatchEvent(new Event('bc-output'));
-              }}
-            >
-              <option value="">System default</option>
-              {devices
-                .filter((d) => d.kind === 'audiooutput' && d.deviceId)
-                .map((d, i) => (
-                  <option key={d.deviceId} value={d.deviceId}>
-                    {d.label || `Speaker ${i + 1}`}
-                  </option>
-                ))}
-            </select>
-          </label>
-          <div className="device-settings__actions">
-            <button
-              className="text-button"
-              type="button"
-              onClick={() => void testOutput()}
-            >
-              Play test tone
-            </button>
-          </div>
-          {outputStatus && (
-            <p
-              className="device-settings__status"
-              data-error={/cannot|failed|error/i.test(outputStatus)}
-              role="status"
-            >
-              {outputStatus}
             </p>
           )}
         </div>

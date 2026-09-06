@@ -40,6 +40,7 @@ export interface NativeScreenStartOptions {
   systemAudio?: boolean;
   /** Restrict shared audio to this selected window; absent means system excluding call. */
   systemAudioSourceId?: string;
+  excludeCallAudio?: boolean;
 }
 
 export type NativeH264Profile = 'baseline' | 'main' | 'high';

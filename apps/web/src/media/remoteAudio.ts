@@ -1,9 +1,11 @@
 import { AudioLeveler } from './audio';
 import { followOutputDevice } from './output';
+import { createOutputGain, readOutputVolume } from './volumeSettings';
 
 type PlaybackState = {
   context: AudioContext;
   limiter: DynamicsCompressorNode;
+  master: ReturnType<typeof createOutputGain>;
   stopOutput: () => void;
   references: number;
   detach: Set<() => void>;
@@ -37,9 +39,12 @@ function getPlayback(): PlaybackState {
   limiter.knee.value = 0;
   limiter.ratio.value = 20;
   limiter.connect(context.destination);
+  const master = createOutputGain(context);
+  master.gain.connect(limiter);
   playback = {
     context,
     limiter,
+    master,
     references: 0,
     detach: new Set(),
     stopOutput: followOutputDevice(context, (error) =>
@@ -71,6 +76,7 @@ export function disposeCallPlayback(): void {
   if (!current) return;
   for (const detach of [...current.detach]) detach();
   current.stopOutput();
+  current.master.dispose();
   current.limiter.disconnect();
   if (current.context.state !== 'closed') void current.context.close();
 }
@@ -100,7 +106,7 @@ export function attachRemoteAudio({
     return attachElementFallback(track, peerId);
   }
 
-  const { context, limiter } = current;
+  const { context } = current;
   current.references += 1;
   const stream = new MediaStream([track]);
   // Chromium's remote WebRTC decoder needs a media-element playout consumer.
@@ -121,7 +127,7 @@ export function attachRemoteAudio({
   };
   const gain = context.createGain();
   gain.gain.value = readParticipantVolume(peerId);
-  gain.connect(limiter);
+  gain.connect(current.master.gain);
   let input: MediaStreamAudioSourceNode | null = null;
   let leveler: AudioLeveler | null = null;
   try {
@@ -194,7 +200,8 @@ function attachElementFallback(track: MediaStreamTrack, peerId: string): () => v
   element.autoplay = true;
   element.setAttribute('playsinline', '');
   element.srcObject = new MediaStream([track]);
-  element.volume = Math.min(1, readParticipantVolume(peerId));
+  const globalVolume = () => { element.volume = Math.min(1, readParticipantVolume(peerId) * readOutputVolume()); };
+  globalVolume();
   element.hidden = true;
   document.body.append(element);
   const stopOutput = followOutputDevice(element, (error) =>
@@ -210,20 +217,22 @@ function attachElementFallback(track: MediaStreamTrack, peerId: string): () => v
     if (detail?.peerId !== peerId) return;
     const value = Number(detail.volume);
     element.volume = Number.isFinite(value)
-      ? Math.min(1, Math.max(0, value))
-      : 1;
+      ? Math.min(1, Math.max(0, value) * readOutputVolume())
+      : Math.min(1, readOutputVolume());
   };
   play();
   window.addEventListener('bc-audio-unlock', play);
   window.addEventListener('pointerdown', play, { capture: true });
   window.addEventListener('keydown', play, { capture: true });
   window.addEventListener('bc-volume', volume);
+  window.addEventListener('bc-output-volume', globalVolume);
   return () => {
     stopOutput();
     window.removeEventListener('bc-audio-unlock', play);
     window.removeEventListener('pointerdown', play, { capture: true });
     window.removeEventListener('keydown', play, { capture: true });
     window.removeEventListener('bc-volume', volume);
+    window.removeEventListener('bc-output-volume', globalVolume);
     element.pause();
     element.srcObject = null;
     element.remove();

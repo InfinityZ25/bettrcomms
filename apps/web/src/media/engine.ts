@@ -418,7 +418,7 @@ export class MediaEngine extends EventTarget {
       await this.nativeScreen.start(options, [...this.peers.keys()]);
       if (generation !== this.nativeShareGeneration || this.disposed || !this.nativeScreen.active) return;
       if (options.systemAudio) {
-        const audio = await createNativeSystemAudio(abort.signal, undefined, options.systemAudioSourceId);
+        const audio = await createNativeSystemAudio(abort.signal, undefined, options.systemAudioSourceId, options.excludeCallAudio);
         if (generation !== this.nativeShareGeneration || this.disposed) { audio.dispose(); return; }
         this.nativeAudio = audio;
         await this.replaceLocalTrack('system', audio.track, audio.dispose);

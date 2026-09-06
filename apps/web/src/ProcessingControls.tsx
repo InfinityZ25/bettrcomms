@@ -19,7 +19,6 @@ export default function ProcessingControls({ engine }: { engine: string }) {
     key:
       | 'nvidiaIntensity'
       | 'deepfilterAttenuationDb'
-      | 'gainDb'
       | 'gateThresholdDb'
       | 'gateAttackMs'
       | 'gateHoldMs'
@@ -121,6 +120,8 @@ export default function ProcessingControls({ engine }: { engine: string }) {
           </p>
         </div>
       )}
+      <details className="processing-advanced">
+        <summary>Advanced audio controls</summary>
       <div className="processing-options">
         <label className="switch-row">
           <div>
@@ -136,7 +137,7 @@ export default function ProcessingControls({ engine }: { engine: string }) {
         <label className="switch-row">
           <div>
             <strong>Automatic microphone gain</strong>
-            <p>Let the capture backend adjust input loudness.</p>
+            <p>Let the capture backend automatically level changing speech. This is separate from Input volume.</p>
           </div>
           <input
             type="checkbox"
@@ -160,7 +161,6 @@ export default function ProcessingControls({ engine }: { engine: string }) {
             ))}
           </select>
         </label>
-        {slider('gainDb', 'Microphone gain', -12, 12, 1, ' dB')}
       </div>
       <label className="switch-row">
         <div>
@@ -184,11 +184,17 @@ export default function ProcessingControls({ engine }: { engine: string }) {
           {slider('gateReleaseMs', 'Gate release', 20, 500, 10, ' ms')}
         </div>
       )}
+      </details>
       <div className="processing-apply">
         <Button
           variant="secondary"
           onClick={() => {
-            const { engine: _engine, ...tuning } = draft;
+            const {
+              engine: _engine,
+              gainDb: _gainDb,
+              inputVolume: _inputVolume,
+              ...tuning
+            } = draft;
             setDraft(saveProcessingSettings(tuning));
             setStatus('Applied to calls and microphone tests.');
           }}

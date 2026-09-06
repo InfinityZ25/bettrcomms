@@ -203,6 +203,7 @@ export default function NativeScreenPicker({
     () => localStorage.getItem('bc-capture-border') === 'true',
   );
   const [systemAudio, setSystemAudio] = useState(true);
+  const [excludeCallAudio, setExcludeCallAudio] = useState(true);
   const [audioScope, setAudioScope] = useState<'application' | 'system'>('application');
   const [audioCaps, setAudioCaps] =
     useState<NativeSystemAudioCapabilities | null>(null);
@@ -314,6 +315,7 @@ export default function NativeScreenPicker({
           displayBorder,
           systemAudio: systemAudio && audioAvailable,
           ...(systemAudio && audioAvailable && applicationAudio ? { systemAudioSourceId: sourceId } : {}),
+          excludeCallAudio: applicationAudio || excludeCallAudio,
         });
       }
     } catch (cause) {
@@ -619,7 +621,7 @@ export default function NativeScreenPicker({
                 Audio source
                 <select aria-label="Audio source" value={audioScope} disabled={busy} onChange={event => setAudioScope(event.target.value as 'application' | 'system')}>
                   <option value="application">Selected application</option>
-                  <option value="system">System audio (excluding the call)</option>
+                  <option value="system">System audio</option>
                 </select>
               </label>}
               <label className="share-cursor">
@@ -632,15 +634,25 @@ export default function NativeScreenPicker({
                   onChange={(event) => setSystemAudio(event.target.checked)}
                 />
               </label>
+              {!applicationAudio && <label className="share-cursor">
+                Exclude call audio
+                <input type="checkbox" aria-label="Exclude call audio" checked={excludeCallAudio}
+                  disabled={busy || !systemAudio || !audioCaps?.callAudioControl}
+                  onChange={event => setExcludeCallAudio(event.target.checked)} />
+              </label>}
               <p>
                 {audioCaps?.available
                   ? applicationAudio
                     ? audioCaps.applicationAudio
                       ? 'Sound from this application and its child processes. Windows sharing the same process may share audio.'
                       : 'Update the desktop app for application audio, or explicitly select System audio above.'
-                    : 'Other apps’ sound. BetterComms and call audio are excluded.'
+                    : excludeCallAudio
+                      ? 'Share other apps’ sound while excluding BetterComms playback.'
+                      : 'All system sound, including the call. Other people may hear themselves.'
                   : (audioCaps?.detail ?? 'Checking system audio support…')}
               </p>
+              {!applicationAudio && audioCaps?.available && !audioCaps.callAudioControl &&
+                <p>Update the desktop app for improved call-audio exclusion and this control.</p>}
               <button disabled={busy} onClick={() => void start(true)}>
                 Use browser sharing
               </button>

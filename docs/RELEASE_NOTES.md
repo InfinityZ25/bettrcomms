@@ -1,5 +1,11 @@
 # BetterComms preview release notes
 
+## 0.1.3 — call-audio exclusion and centralized volume
+
+Windows system sharing excludes the validated WebView2 browser process tree by default. Excluding the outer Tauri process tree leaked WebView playback in a controlled native test: the app's 770 Hz signal measured 0.192614 before and 0.000003663 after the correction, while an external 660 Hz signal was retained. The native picker now exposes Exclude call audio, checked by default. Explicitly unchecking it uses whole-endpoint loopback and includes the call. Missing or ambiguous WebView ownership stops protected capture rather than silently capturing everything. This correction requires desktop 0.1.3.
+
+Settings places Input volume and Output volume beside the devices and microphone tests. Both default to 100%, range from 0–200%, persist locally and update active audio without reacquiring devices. Input volume replaces the old dB gain control, retaining its equivalent value within the new range until changed. Automatic gain, echo cancellation and filters remain in Advanced audio controls. Output volume applies to call playback, recorded samples, loopback, test tones and the recording player; participant/track volumes stay independent and original recording assets remain unchanged. Real signal tests cover live input/output scaling, silence, element playback, per-track volume and cleanup.
+
 ## Browser window-audio preference
 
 Browser sharing now requests `windowAudio: 'window'` when audio is enabled, instead of leaving window-audio scope unspecified. Supporting browsers can offer the selected application's audio; this is a browser/OS-controlled hint, not a guarantee of per-process isolation. Entire-screen audio can still include system sound, and browser-tab audio follows the selected tab. Desktop 0.1.2 provides the explicit native process-tree option. Build, unit and targeted capture-lifecycle checks validate the request and cleanup; physical browser window-audio behavior remains dependent on the browser's picker.

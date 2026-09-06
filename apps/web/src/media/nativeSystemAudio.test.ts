@@ -14,6 +14,13 @@ beforeEach(() => {
   mocks.invoke.mockReset();
 });
 
+it('requires a capable native host before opting into call audio', async () => {
+  mocks.invoke.mockResolvedValueOnce({ available: true, applicationAudio: true });
+  await expect(createNativeSystemAudio(new AbortController().signal, mocks.invoke, undefined, false))
+    .rejects.toThrow(/include call audio explicitly/);
+  expect(mocks.invoke).toHaveBeenCalledTimes(1);
+});
+
 it('requires explicit application-audio capability before forwarding a source ID', async () => {
   mocks.invoke.mockResolvedValueOnce({
     available: true,

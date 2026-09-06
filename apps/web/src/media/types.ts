@@ -88,6 +88,7 @@ export interface MicrophoneProcessingSettings {
   deepfilterAttenuationDb: number;
   highPassHz: number;
   gainDb: number;
+  inputVolume?: number;
   gateEnabled: boolean;
   gateThresholdDb: number;
   gateAttackMs: number;

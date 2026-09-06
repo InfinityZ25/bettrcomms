@@ -46,6 +46,7 @@ impl Drop for NativeSystemAudioState {
 pub struct Capabilities {
     available: bool,
     application_audio: bool,
+    call_audio_control: bool,
     detail: String,
     minimum_windows_build: u32,
 }
@@ -60,8 +61,61 @@ pub struct Started {
 
 #[derive(Clone, Copy)]
 enum LoopbackTarget {
-    ExcludeBettercomms,
+    ExcludeProcess(u32),
     IncludeProcess(u32),
+    WholeSystem,
+}
+
+#[cfg(windows)]
+fn webview_browser_process() -> Result<u32, String> {
+    if cfg!(debug_assertions)
+        && std::env::var("BETTERCOMMS_AUDIO_EXCLUSION_TARGET").as_deref() == Ok("root")
+    {
+        return Ok(std::process::id());
+    }
+    use windows::Win32::{
+        Foundation::CloseHandle,
+        System::Diagnostics::ToolHelp::{
+            CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+            TH32CS_SNAPPROCESS,
+        },
+    };
+    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) }
+        .map_err(|_| "Could not inspect the BetterComms WebView process tree")?;
+    let mut entry = PROCESSENTRY32W {
+        dwSize: size_of::<PROCESSENTRY32W>() as u32,
+        ..Default::default()
+    };
+    let mut candidates = Vec::new();
+    if unsafe { Process32FirstW(snapshot, &mut entry) }.is_ok() {
+        loop {
+            let length = entry
+                .szExeFile
+                .iter()
+                .position(|character| *character == 0)
+                .unwrap_or(entry.szExeFile.len());
+            let executable = String::from_utf16_lossy(&entry.szExeFile[..length]);
+            if entry.th32ParentProcessID == std::process::id()
+                && executable.eq_ignore_ascii_case("msedgewebview2.exe")
+            {
+                candidates.push(entry.th32ProcessID);
+            }
+            if unsafe { Process32NextW(snapshot, &mut entry) }.is_err() {
+                break;
+            }
+        }
+    }
+    let _ = unsafe { CloseHandle(snapshot) };
+    match candidates.as_slice() {
+        [process_id] => Ok(*process_id),
+        [] => Err("BetterComms could not find its WebView audio process. Restart the app before sharing system audio".to_owned()),
+        _ => Err("BetterComms found multiple WebView process trees and cannot safely exclude call audio. Restart the app".to_owned()),
+    }
+}
+
+#[cfg(not(windows))]
+fn webview_browser_process() -> Result<u32, String> {
+    Err("Call-audio exclusion is available on Windows only".to_owned())
 }
 fn trusted(w: &WebviewWindow) -> Result<(), String> {
     if w.label() != "main" {
@@ -109,7 +163,7 @@ pub fn native_system_audio_capabilities(window: WebviewWindow) -> Result<Capabil
     trusted(&window)?;
     let b = build();
     let available = b.is_some_and(|v| v >= 20348);
-    Ok(Capabilities{available,application_audio:available,detail:match b{Some(v)if available=>format!("Process-loopback application and system audio are available (Windows build {v}); no audio was captured"),Some(v)=>format!("Windows build {v} is older than required build 20348"),None=>"Process-loopback audio is unavailable".into()},minimum_windows_build:20348})
+    Ok(Capabilities{available,application_audio:available,call_audio_control:available,detail:match b{Some(v)if available=>format!("Process-loopback application and call-audio exclusion modes are available (Windows build {v}); no audio was captured"),Some(v)=>format!("Windows build {v} is older than required build 20348"),None=>"Process-loopback audio is unavailable".into()},minimum_windows_build:20348})
 }
 #[tauri::command]
 pub async fn native_system_audio_start(
@@ -117,6 +171,7 @@ pub async fn native_system_audio_start(
     state: tauri::State<'_, NativeSystemAudioState>,
     screen_state: tauri::State<'_, crate::native_screen::NativeScreenState>,
     source_id: Option<String>,
+    exclude_call_audio: Option<bool>,
 ) -> Result<Started, String> {
     trusted(&window)?;
     if !build().is_some_and(|v| v >= 20348) {
@@ -128,10 +183,12 @@ pub async fn native_system_audio_start(
         Some(source_id) => {
             match crate::native_screen::audio_process_for_source(&screen_state, source_id)? {
                 Some(process_id) => LoopbackTarget::IncludeProcess(process_id),
-                None => LoopbackTarget::ExcludeBettercomms,
+                None if exclude_call_audio == Some(false) => LoopbackTarget::WholeSystem,
+                None => LoopbackTarget::ExcludeProcess(webview_browser_process()?),
             }
         }
-        None => LoopbackTarget::ExcludeBettercomms,
+        None if exclude_call_audio == Some(false) => LoopbackTarget::WholeSystem,
+        None => LoopbackTarget::ExcludeProcess(webview_browser_process()?),
     };
     let permit = Arc::clone(SLOTS.get_or_init(|| Arc::new(tokio::sync::Semaphore::new(2))))
         .try_acquire_owned()
@@ -189,8 +246,9 @@ pub async fn native_system_audio_start(
         sample_rate: RATE,
         channels: CHANNELS,
         mode: match target {
-            LoopbackTarget::ExcludeBettercomms => "system",
+            LoopbackTarget::ExcludeProcess(_) => "system",
             LoopbackTarget::IncludeProcess(_) => "application",
+            LoopbackTarget::WholeSystem => "whole-system",
         },
     })
 }
@@ -287,7 +345,10 @@ mod platform {
                 Com::StructuredStorage::{
                     PROPVARIANT, PROPVARIANT_0, PROPVARIANT_0_0, PROPVARIANT_0_0_0,
                 },
-                Com::{CoInitializeEx, CoUninitialize, BLOB, COINIT_MULTITHREADED},
+                Com::{
+                    CoCreateInstance, CoInitializeEx, CoUninitialize, BLOB, CLSCTX_ALL,
+                    COINIT_MULTITHREADED,
+                },
                 Variant::VT_BLOB,
             },
         },
@@ -337,67 +398,80 @@ mod platform {
             .ok()
             .map_err(|e| e.to_string())?;
         let _com = Com;
-        let (tx, rx) = std::sync::mpsc::sync_channel(1);
-        let handler: IActivateAudioInterfaceCompletionHandler = Handler {
-            sender: Mutex::new(Some(tx)),
-        }
-        .into();
-        let mut params = AUDIOCLIENT_ACTIVATION_PARAMS {
-            ActivationType: AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK,
-            Anonymous: AUDIOCLIENT_ACTIVATION_PARAMS_0 {
-                ProcessLoopbackParams: AUDIOCLIENT_PROCESS_LOOPBACK_PARAMS {
-                    TargetProcessId: match target {
-                        LoopbackTarget::ExcludeBettercomms => std::process::id(),
-                        LoopbackTarget::IncludeProcess(process_id) => process_id,
-                    },
-                    ProcessLoopbackMode: match target {
-                        LoopbackTarget::ExcludeBettercomms => {
-                            PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE
-                        }
-                        LoopbackTarget::IncludeProcess(_) => {
-                            PROCESS_LOOPBACK_MODE_INCLUDE_TARGET_PROCESS_TREE
-                        }
-                    },
-                },
-            },
-        };
-        // VT_BLOB points at stack-owned activation parameters. Do not run
-        // PropVariantClear: it would attempt to free memory COM did not allocate.
-        let variant = ManuallyDrop::new(PROPVARIANT {
-            Anonymous: PROPVARIANT_0 {
-                Anonymous: ManuallyDrop::new(PROPVARIANT_0_0 {
-                    vt: VT_BLOB,
-                    wReserved1: 0,
-                    wReserved2: 0,
-                    wReserved3: 0,
-                    Anonymous: PROPVARIANT_0_0_0 {
-                        blob: BLOB {
-                            cbSize: size_of::<AUDIOCLIENT_ACTIVATION_PARAMS>() as u32,
-                            pBlobData: (&mut params as *mut AUDIOCLIENT_ACTIVATION_PARAMS).cast(),
+        let client = if matches!(target, LoopbackTarget::WholeSystem) {
+            let enumerator: IMMDeviceEnumerator =
+                unsafe { CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL) }
+                    .map_err(|error| error.to_string())?;
+            let endpoint = unsafe { enumerator.GetDefaultAudioEndpoint(eRender, eConsole) }
+                .map_err(|error| error.to_string())?;
+            unsafe { endpoint.Activate::<IAudioClient>(CLSCTX_ALL, None) }
+                .map_err(|error| error.to_string())?
+        } else {
+            let (tx, rx) = std::sync::mpsc::sync_channel(1);
+            let handler: IActivateAudioInterfaceCompletionHandler = Handler {
+                sender: Mutex::new(Some(tx)),
+            }
+            .into();
+            let mut params = AUDIOCLIENT_ACTIVATION_PARAMS {
+                ActivationType: AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK,
+                Anonymous: AUDIOCLIENT_ACTIVATION_PARAMS_0 {
+                    ProcessLoopbackParams: AUDIOCLIENT_PROCESS_LOOPBACK_PARAMS {
+                        TargetProcessId: match target {
+                            LoopbackTarget::ExcludeProcess(process_id) => process_id,
+                            LoopbackTarget::IncludeProcess(process_id) => process_id,
+                            LoopbackTarget::WholeSystem => unreachable!(),
+                        },
+                        ProcessLoopbackMode: match target {
+                            LoopbackTarget::ExcludeProcess(_) => {
+                                PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE
+                            }
+                            LoopbackTarget::IncludeProcess(_) => {
+                                PROCESS_LOOPBACK_MODE_INCLUDE_TARGET_PROCESS_TREE
+                            }
+                            LoopbackTarget::WholeSystem => unreachable!(),
                         },
                     },
-                }),
-            },
-        });
-        let _op = unsafe {
-            ActivateAudioInterfaceAsync(
-                VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK,
-                &IAudioClient::IID,
-                Some(&*variant),
-                &handler,
-            )
-        }
-        .map_err(|e| e.to_string())?;
-        let client = match rx.recv_timeout(Duration::from_secs(4)) {
-            Ok(Ok(c)) => c,
-            Ok(Err(e)) => {
-                let _ = ready.send(Err(e.clone()));
-                return Err(e);
+                },
+            };
+            // VT_BLOB points at stack-owned activation parameters. Do not run
+            // PropVariantClear: it would attempt to free memory COM did not allocate.
+            let variant = ManuallyDrop::new(PROPVARIANT {
+                Anonymous: PROPVARIANT_0 {
+                    Anonymous: ManuallyDrop::new(PROPVARIANT_0_0 {
+                        vt: VT_BLOB,
+                        wReserved1: 0,
+                        wReserved2: 0,
+                        wReserved3: 0,
+                        Anonymous: PROPVARIANT_0_0_0 {
+                            blob: BLOB {
+                                cbSize: size_of::<AUDIOCLIENT_ACTIVATION_PARAMS>() as u32,
+                                pBlobData: (&mut params as *mut AUDIOCLIENT_ACTIVATION_PARAMS)
+                                    .cast(),
+                            },
+                        },
+                    }),
+                },
+            });
+            let _op = unsafe {
+                ActivateAudioInterfaceAsync(
+                    VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK,
+                    &IAudioClient::IID,
+                    Some(&*variant),
+                    &handler,
+                )
             }
-            Err(_) => {
-                let e = "System audio activation timed out".to_owned();
-                let _ = ready.send(Err(e.clone()));
-                return Err(e);
+            .map_err(|error| error.to_string())?;
+            match rx.recv_timeout(Duration::from_secs(4)) {
+                Ok(Ok(client)) => client,
+                Ok(Err(error)) => {
+                    let _ = ready.send(Err(error.clone()));
+                    return Err(error);
+                }
+                Err(_) => {
+                    let error = "System audio activation timed out".to_owned();
+                    let _ = ready.send(Err(error.clone()));
+                    return Err(error);
+                }
             }
         };
         let format = WAVEFORMATEX {
@@ -491,7 +565,7 @@ mod tests {
                 worker_stop,
                 worker_ring,
                 sender,
-                LoopbackTarget::ExcludeBettercomms,
+                LoopbackTarget::ExcludeProcess(std::process::id()),
             )
         });
         receiver
@@ -538,7 +612,7 @@ mod tests {
                 worker_stop,
                 worker_ring,
                 sender,
-                LoopbackTarget::ExcludeBettercomms,
+                LoopbackTarget::ExcludeProcess(std::process::id()),
             )
         });
         receiver
@@ -711,6 +785,85 @@ mod tests {
         if unrelated > magnitude * 0.15 {
             return Err(format!(
                 "Unselected process leaked into application audio: target={magnitude:.6}, unrelated={unrelated:.6}"
+            ));
+        }
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "plays a synthetic tone through the real endpoint-loopback device"]
+    #[cfg(windows)]
+    fn real_whole_system_opt_in_captures_bettercomms_child_audio() -> Result<(), String> {
+        use std::{
+            os::windows::process::CommandExt,
+            process::{Command, Stdio},
+        };
+        let base = std::path::PathBuf::from(
+            std::env::var_os("LOCALAPPDATA").ok_or("LOCALAPPDATA unavailable")?,
+        )
+        .join("Microsoft/WinGet/Packages/Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe");
+        let mut players = std::fs::read_dir(base)
+            .map_err(|_| "FFplay package unavailable")?
+            .filter_map(Result::ok)
+            .map(|entry| entry.path().join("bin/ffplay.exe"))
+            .filter(|path| path.is_file())
+            .collect::<Vec<_>>();
+        players.sort();
+        let mut player = Command::new(players.pop().ok_or("FFplay unavailable")?)
+            .args([
+                "-nodisp",
+                "-autoexit",
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=770:sample_rate=48000:duration=4",
+                "-af",
+                "volume=0.2",
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(0x08000000)
+            .spawn()
+            .map_err(|error| error.to_string())?;
+        let stop = Arc::new(AtomicBool::new(false));
+        let ring = Arc::new(Mutex::new(VecDeque::new()));
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        let worker_stop = stop.clone();
+        let worker_ring = ring.clone();
+        let worker = std::thread::spawn(move || {
+            platform::capture(
+                worker_stop,
+                worker_ring,
+                sender,
+                LoopbackTarget::WholeSystem,
+            )
+        });
+        receiver
+            .recv_timeout(Duration::from_secs(5))
+            .map_err(|_| "Capture startup timed out")??;
+        std::thread::sleep(Duration::from_millis(900));
+        stop.store(true, Ordering::Release);
+        let _ = player.kill();
+        let _ = player.wait();
+        worker.join().map_err(|_| "Capture worker panicked")??;
+        let bytes = ring
+            .lock()
+            .map_err(|_| "Audio ring poisoned")?
+            .iter()
+            .copied()
+            .collect::<Vec<_>>();
+        let samples = bytes
+            .chunks_exact(4)
+            .map(|bytes| f32::from_le_bytes(bytes.try_into().unwrap()))
+            .collect::<Vec<_>>();
+        let magnitude = tone_magnitude(&samples, 770.0);
+        println!("whole-system spectral magnitude: child770={magnitude:.6}");
+        if magnitude < 0.005 {
+            return Err(format!(
+                "Whole-system opt-in did not capture child tone ({magnitude:.6})"
             ));
         }
         Ok(())

@@ -59,6 +59,7 @@ function normalizedTuning(
     ),
     highPassHz: clamp(input.highPassHz, defaults.highPassHz, 0, 2_000),
     gainDb: clamp(input.gainDb, defaults.gainDb, -24, 24),
+    ...(typeof input.inputVolume === 'number' ? { inputVolume: clamp(input.inputVolume, 1, 0, 2) } : {}),
     gateEnabled:
       typeof input.gateEnabled === 'boolean'
         ? input.gateEnabled

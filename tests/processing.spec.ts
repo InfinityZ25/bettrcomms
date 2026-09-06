@@ -10,10 +10,11 @@ test('processing controls apply tuning to calls and identify an RNNoise micropho
   );
   await page.goto(baseURL);
   await page.getByRole('button', { name: /audio and video settings/i }).click();
+  await page.getByText('Advanced audio controls', { exact: true }).click();
   await page.getByLabel('Echo cancellation').uncheck();
   await page.getByLabel('Automatic microphone gain').check();
   await page.getByLabel('Low-cut filter').selectOption('100');
-  await page.getByRole('slider', { name: 'Microphone gain' }).fill('4');
+  await page.getByRole('slider', { name: 'Input volume' }).fill('1.5');
   await page.getByLabel('Quiet-sound gate').check();
   await page.getByRole('slider', { name: 'Gate threshold' }).fill('-38');
   await page.getByRole('button', { name: 'Apply microphone settings' }).click();
@@ -34,7 +35,8 @@ test('processing controls apply tuning to calls and identify an RNNoise micropho
       echoCancellation: false,
       autoGainControl: true,
       highPassHz: 100,
-      gainDb: 4,
+      gainDb: 0,
+      inputVolume: 1.5,
       gateEnabled: true,
       gateThresholdDb: -38,
     });
@@ -59,6 +61,32 @@ test('processing controls apply tuning to calls and identify an RNNoise micropho
     noiseSuppression: false,
   });
   await page.keyboard.press('Escape');
+});
+
+test('central input and output volume controls are bounded and persist', async ({ page }) => {
+  await page.goto(baseURL);
+  await page.getByRole('button', { name: /audio and video settings/i }).click();
+  const input = page.getByRole('slider', { name: 'Input volume' });
+  const output = page.getByRole('slider', { name: 'Output volume' });
+  await expect(input).toHaveAttribute('min', '0');
+  await expect(input).toHaveAttribute('max', '2');
+  await expect(output).toHaveAttribute('min', '0');
+  await expect(output).toHaveAttribute('max', '2');
+  await expect(input).toHaveValue('1');
+  await expect(output).toHaveValue('1');
+  await input.fill('1.5');
+  await output.fill('0.65');
+  await page.screenshot({ path: '.local/central-audio-settings-1280.png', fullPage: true });
+  await page.reload();
+  await page.getByRole('button', { name: /audio and video settings/i }).click();
+  await expect(page.getByRole('slider', { name: 'Input volume' })).toHaveValue('1.5');
+  await expect(page.getByRole('slider', { name: 'Output volume' })).toHaveValue('0.65');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: '.local/central-audio-settings-mobile.png', fullPage: true });
+  await expect.poll(() => page.evaluate(() => ({
+    input: JSON.parse(localStorage.getItem('bc-processing') ?? '{}').inputVolume,
+    output: Number(localStorage.getItem('bc-output-volume')),
+  }))).toEqual({ input: 1.5, output: 0.65 });
 });
 
 test('stored microphone processing drives browser capture and rejects stale browser NVIDIA selection', async ({

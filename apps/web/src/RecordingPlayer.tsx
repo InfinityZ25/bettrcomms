@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import type { RecordingResult, RecordingTrackManifest } from './media/types';
 import './RecordingPlayer.css';
-import { followOutputDevice } from './media/output';
+import { followElementOutput } from './media/output';
 
 export interface RecordingPlayerProps {
   result: RecordingResult;
@@ -265,7 +265,7 @@ export function RecordingPlayer({ result, labels }: RecordingPlayerProps) {
         }
         const stopOutput =
           track.mediaKind === 'audio'
-            ? followOutputDevice(nextElement, (error) => {
+            ? followElementOutput(nextElement, (error) => {
                 setError(error.message);
                 setPlaying(false);
                 nextElement.pause();

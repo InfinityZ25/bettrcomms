@@ -4,6 +4,7 @@ import workletUrl from './nativeSystemAudio.worklet.js?url&no-inline';
 export interface NativeSystemAudioCapabilities {
   available: boolean;
   applicationAudio?: boolean;
+  callAudioControl?: boolean;
   detail: string;
 }
 export interface NativeSystemAudioTrack {
@@ -20,6 +21,7 @@ export async function createNativeSystemAudio(
   signal: AbortSignal,
   nativeInvoke: SystemAudioInvoke = invoke,
   sourceId?: string,
+  excludeCallAudio = true,
 ): Promise<NativeSystemAudioTrack> {
   if (!isTauri())
     throw new Error('Native system audio is available only in the desktop app');
@@ -58,13 +60,20 @@ export async function createNativeSystemAudio(
       throw new DOMException('Sharing canceled', 'AbortError');
   };
   try {
+    if (!excludeCallAudio) {
+      const capabilities = await nativeInvoke('native_system_audio_capabilities') as NativeSystemAudioCapabilities;
+      check();
+      if (!capabilities.callAudioControl)
+        throw new Error('Update the desktop app to include call audio explicitly.');
+    }
     if (sourceId) {
       const capabilities = await nativeInvoke('native_system_audio_capabilities') as NativeSystemAudioCapabilities;
       check();
       if (!capabilities.applicationAudio)
         throw new Error('Update the desktop app to use selected-application audio. This version can only share system audio.');
     }
-    const session = (await nativeInvoke('native_system_audio_start', sourceId ? { sourceId } : undefined)) as {
+    const args = sourceId || !excludeCallAudio ? { ...(sourceId ? { sourceId } : {}), ...(!excludeCallAudio ? { excludeCallAudio: false } : {}) } : undefined;
+    const session = (await nativeInvoke('native_system_audio_start', args)) as {
       sessionId: string;
       sampleRate: number;
       channels: number;

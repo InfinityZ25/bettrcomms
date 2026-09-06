@@ -58,6 +58,18 @@
   border-radius: 10px;
   margin: 18px 0;
 }
+.processing-advanced {
+  margin: 18px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding: 14px 0;
+}
+.processing-advanced > summary {
+  cursor: pointer;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
 .processing-apply {
   display: flex;
   gap: 14px;
