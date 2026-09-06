@@ -62,6 +62,7 @@ export class MediaEngine extends EventTarget {
     { timestamp: number; bytes: number }
   >();
   private disposed = false;
+  private microphoneInput?: MediaStreamTrack;
   private readonly nativeRemote = new Map<string, RemoteTrack>();
   private readonly signalQueues = new Map<string, Promise<void>>();
   private readonly nativeScreen: NativeScreenTransport;
@@ -357,6 +358,7 @@ export class MediaEngine extends EventTarget {
           throw error;
         }
       }
+      if (microphone) this.microphoneInput = microphone;
     } catch (error) {
       for (const track of stream.getTracks()) {
         if (![...this.localTracks.values()].includes(track)) track.stop();
@@ -533,6 +535,11 @@ export class MediaEngine extends EventTarget {
 
   getLocalTracks(): ReadonlyMap<MediaSourceKind, MediaStreamTrack> {
     return new Map(this.localTracks);
+  }
+
+  /** Borrowed for local diagnostics only. Capture retains ownership. */
+  getMicrophoneInput(): MediaStreamTrack | undefined {
+    return this.microphoneInput?.readyState === 'live' ? this.microphoneInput : undefined;
   }
 
   getRemoteTracks(peerId?: string): RemoteTrack[] {
@@ -934,6 +941,7 @@ export class MediaEngine extends EventTarget {
     for (const cleanup of this.trackCleanup.values()) cleanup();
     this.trackCleanup.clear();
     this.localTracks.clear();
+    this.microphoneInput = undefined;
   }
 
   private setNativePreview(track: MediaStreamTrack | null) {

@@ -200,6 +200,36 @@ async function openSettings(page: Page): Promise<void> {
   await expect(page.getByRole('main', { name: 'Settings' })).toBeVisible();
 }
 
+test('microphone diagnostics separate captured and processed levels without copying device identifiers', async ({ page }) => {
+  await installLoopbackHarness(page);
+  await page.addInitScript(() => {
+    localStorage.setItem('bc-denoiser', 'off');
+    localStorage.setItem('bc-processing', JSON.stringify({ gainDb: -12, echoCancellation: false, autoGainControl: false }));
+    Object.defineProperty(navigator.clipboard, 'writeText', {
+      value: async (text: string) => { (window as any).__copiedMicDiagnostics = JSON.parse(text); },
+    });
+  });
+  await openSettings(page);
+  await page.getByRole('button', { name: 'Start live loopback' }).click();
+  await expect.poll(async () => {
+    await page.getByRole('button', { name: 'Copy microphone diagnostics' }).click();
+    return page.evaluate(() => (window as any).__copiedMicDiagnostics?.levelsDbfs.processedPeak ?? -120);
+  }).toBeGreaterThan(-40);
+  const report = await page.evaluate(() => (window as any).__copiedMicDiagnostics);
+  expect(report.inputAvailable).toBe(true);
+  expect(report.inputFormat.channelCount).toBe(2);
+  expect(report.inputChannelsDbfs).toHaveLength(2);
+  expect(report.inputChannelsDbfs[0].peak).toBeGreaterThan(-30);
+  expect(report.inputChannelsDbfs[1].peak).toBeCloseTo(report.inputChannelsDbfs[0].peak, 0);
+  expect(report.processedFormat.channelCount).toBe(1);
+  expect(report.requestedProcessing.gainDb).toBe(-12);
+  expect(report.levelsDbfs.processedPeak - report.levelsDbfs.inputPeak).toBeCloseTo(-12, 0);
+  expect(JSON.stringify(report)).not.toMatch(/deviceId|groupId|label|token|credential/i);
+  await page.getByRole('button', { name: 'Stop live loopback' }).click();
+  await expect.poll(() => page.evaluate(() => (window as any).__loopback.snapshot().contextStates)).toEqual(['closed', 'closed']);
+  await page.evaluate(() => (window as any).__loopback.closeSource());
+});
+
 test('live loopback uses the processed microphone, a real one-second delay, monitor gain, and selected output', async ({
   page,
 }) => {

@@ -1,5 +1,11 @@
 # BetterComms preview release notes
 
+## Speaking indicator sensitivity
+
+The visual speaking threshold defaults to -48 dBFS instead of roughly -29 dBFS. Settings offers a persisted Speaking indicator threshold control that applies during calls, with a lower release threshold to avoid flicker. This only changes the green border; it does not gate, amplify or control transmission of microphone audio. The indicator measures the processed microphone before transport, so it is not a server-delivery acknowledgment. Connection reports now include microphone processing preferences and the indicator threshold to help distinguish low input, optional gating and display sensitivity. Regression checks exercise quiet input, background-level signal, live sensitivity changes, mute, cleanup and setting persistence.
+
+Explicit microphone tests also measure input and processed RMS levels with floating-point samples, replacing the byte-quantized level display. Copy microphone diagnostics includes capture formats, browser engine versions, processing preferences, per-input-channel levels and the loudest observed levels, without audio or device identifiers. Raw microphone analysis stays local, shares the existing test context and is disconnected on stop. A synthetic -12 dB gain test confirms the diagnostic readings distinguish input from processed output. The reported desktop-versus-browser loudness difference is not yet reproduced on the user's physical microphone; visual sensitivity is not presented as a fix for that difference.
+
 ## Microphone channel correction
 
 Microphone capture now prefers mono. RNNoise and Speex explicitly mix stereo input to one channel before their single-channel DSP; the processor's `maxChannels: 1` option alone previously left a silent second channel or discarded an interface's right input. NVIDIA/DeepFilterNet input also explicitly mixes to mono, and processed microphone destinations publish one channel. A stereo microphone returned despite the capture preference is downmixed even when optional effects are off, using a lightweight gain node. This applies to new microphone samples, live monitoring and call microphones. Screen/system audio remains stereo; previously recorded assets are unchanged.

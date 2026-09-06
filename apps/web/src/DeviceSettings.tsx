@@ -55,6 +55,15 @@ export default function DeviceSettings() {
   const [cameraStatus, setCameraStatus] = useState('');
   const [outputStatus, setOutputStatus] = useState('');
   const [level, setLevel] = useState(0);
+  const [micLevels, setMicLevels] = useState<{
+    input: number;
+    processed: number;
+    inputPeak: number;
+    processedPeak: number;
+  } | null>(null);
+  const micDiagnostic = useRef<Record<string, unknown> | null>(null);
+  const [diagnosticStatus, setDiagnosticStatus] = useState('');
+  const inputMeterCleanup = useRef<(() => void) | null>(null);
   const [recording, setRecording] = useState(false);
   const [monitoring, setMonitoring] = useState(false);
   const [monitorVolume, setMonitorVolume] = useState(0.5);
@@ -88,6 +97,8 @@ export default function DeviceSettings() {
   }, []);
   const stopMic = useCallback(() => {
     micRequest.current += 1;
+    inputMeterCleanup.current?.();
+    inputMeterCleanup.current = null;
     monitorCleanup.current?.();
     monitorCleanup.current = null;
     monitorGain.current = null;
@@ -211,6 +222,9 @@ export default function DeviceSettings() {
   async function testMicrophone(mode: 'sample' | 'live' = 'sample') {
     stopMic();
     stopPlayback();
+    setMicLevels(null);
+    micDiagnostic.current = null;
+    setDiagnosticStatus('');
     setMicStatus(mode === 'live' ? 'Starting live loopback…' : '');
     setMonitoring(mode === 'live');
     const request = ++micRequest.current;
@@ -293,12 +307,102 @@ export default function DeviceSettings() {
       micStream.current = currentStream;
       let source = context.createMediaStreamSource(currentStream);
       source.connect(analyser);
-      const values = new Uint8Array(analyser.frequencyBinCount);
+      const rawTrack = capture.getMicrophoneInput();
+      const rawAnalyser = context.createAnalyser();
+      rawAnalyser.fftSize = 1024;
+      const rawSource = rawTrack
+        ? context.createMediaStreamSource(new MediaStream([rawTrack]))
+        : null;
+      rawSource?.connect(rawAnalyser);
+      const rawSettings = rawTrack?.getSettings() ?? {};
+      const channelCount = Math.min(8, Math.max(1, rawSettings.channelCount ?? 1));
+      const splitter = context.createChannelSplitter(channelCount);
+      const channelMeters = Array.from({ length: channelCount }, (_, channel) => {
+        const meter = context.createAnalyser();
+        meter.fftSize = 1024;
+        splitter.connect(meter, channel);
+        return { meter, samples: new Float32Array(meter.fftSize), peak: -120 };
+      });
+      rawSource?.connect(splitter);
+      inputMeterCleanup.current = () => {
+        rawSource?.disconnect();
+        rawAnalyser.disconnect();
+        splitter.disconnect();
+        channelMeters.forEach(({ meter }) => meter.disconnect());
+      };
+      const format = ({
+        channelCount,
+        sampleRate,
+        sampleSize,
+        autoGainControl,
+        echoCancellation,
+        noiseSuppression,
+      }: MediaTrackSettings) => ({
+        channelCount,
+        sampleRate,
+        sampleSize,
+        autoGainControl,
+        echoCancellation,
+        noiseSuppression,
+      });
+      const values = new Float32Array(analyser.fftSize);
+      const rawValues = new Float32Array(rawAnalyser.fftSize);
+      let lastMeterUpdate = 0,
+        inputPeak = -120,
+        processedPeak = -120;
+      const db = (samples: Float32Array) =>
+        Math.max(
+          -120,
+          20 *
+            Math.log10(
+              Math.sqrt(
+                samples.reduce((sum, value) => sum + value * value, 0) /
+                  samples.length,
+              ) || 1e-6,
+            ),
+        );
       const draw = () => {
-        analyser.getByteTimeDomainData(values);
-        let peak = 0;
-        for (const v of values) peak = Math.max(peak, Math.abs(v - 128));
-        setLevel(Math.min(100, peak * 2.2));
+        analyser.getFloatTimeDomainData(values);
+        rawAnalyser.getFloatTimeDomainData(rawValues);
+        const processed = db(values),
+          raw = db(rawValues);
+        inputPeak = Math.max(inputPeak, raw);
+        processedPeak = Math.max(processedPeak, processed);
+        const now = performance.now();
+        if (now - lastMeterUpdate >= 100) {
+          lastMeterUpdate = now;
+          const inputChannels = channelMeters.map(entry => {
+            entry.meter.getFloatTimeDomainData(entry.samples);
+            const current = db(entry.samples);
+            entry.peak = Math.max(entry.peak, current);
+            return { current, peak: entry.peak };
+          });
+          setLevel(Math.max(0, Math.min(100, ((processed + 72) / 72) * 100)));
+          const levels = { input: raw, processed, inputPeak, processedPeak };
+          setMicLevels(levels);
+          micDiagnostic.current = {
+            version: 1,
+            runtime: windowsDesktop ? 'windows-webview' : 'browser',
+            test: mode,
+            inputAvailable: Boolean(rawTrack),
+            browserVersion: navigator.userAgent.match(
+              /(?:Chrome|Edg)\/[\d.]+/g,
+            ),
+            requestedProcessing: {
+              ...settings,
+              echoCancellation:
+                options.echoCancellation ?? settings.echoCancellation,
+            },
+            activeEngine: engineLabel(),
+            // Read the current processed track so a denoiser fallback is reflected.
+            inputFormat: format(rawSettings),
+            processedFormat: format(
+              capture.getLocalTracks().get('microphone')?.getSettings() ?? {},
+            ),
+            levelsDbfs: levels,
+            inputChannelsDbfs: inputChannels,
+          };
+        }
         animation.current = requestAnimationFrame(draw);
       };
       draw();
@@ -633,6 +737,39 @@ export default function DeviceSettings() {
           >
             <span style={{ '--level': `${level}%` } as React.CSSProperties} />
           </div>
+          {micLevels && (
+            <div className="device-settings__status">
+              <p>
+                Last measured: input {micLevels.input.toFixed(1)} dBFS ·
+                processed {micLevels.processed.toFixed(1)} dBFS
+              </p>
+              <p>
+                Loudest level: input {micLevels.inputPeak.toFixed(1)} dBFS ·
+                processed {micLevels.processedPeak.toFixed(1)} dBFS
+              </p>
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => {
+                  void navigator.clipboard
+                    .writeText(JSON.stringify(micDiagnostic.current, null, 2))
+                    .then(
+                      () =>
+                        setDiagnosticStatus(
+                          'Microphone diagnostics copied. No audio or device identifiers included.',
+                        ),
+                      () =>
+                        setDiagnosticStatus(
+                          'Could not copy diagnostics. Allow clipboard access and try again.',
+                        ),
+                    );
+                }}
+              >
+                Copy microphone diagnostics
+              </button>
+              {diagnosticStatus && <p role="status">{diagnosticStatus}</p>}
+            </div>
+          )}
           {micStatus && (
             <p
               className="device-settings__status"
@@ -824,4 +961,3 @@ export default function DeviceSettings() {
     </section>
   );
 }
-

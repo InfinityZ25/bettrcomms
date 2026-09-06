@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { readSpeakingThreshold } from './speakingSensitivity';
 
 export interface SpeakingActivityTrack {
   id: string;
@@ -18,8 +19,6 @@ type Meter = {
 const ATTACK_MS = 50;
 const RELEASE_MS = 200;
 const EMIT_MS = 50;
-const START_RMS = 0.035;
-const STOP_RMS = 0.018;
 
 export function useSpeakingActivity(
   tracks: SpeakingActivityTrack[],
@@ -31,6 +30,18 @@ export function useSpeakingActivity(
   const timer = useRef<number | undefined>(undefined);
   const lastEmit = useRef(0);
   const published = useRef(new Set<string>());
+  const [initialThreshold] = useState(readSpeakingThreshold);
+  const thresholdDb = useRef(initialThreshold);
+
+  useEffect(() => {
+    const update = () => { thresholdDb.current = readSpeakingThreshold(); };
+    window.addEventListener('bc-speaking-threshold', update);
+    window.addEventListener('storage', update);
+    return () => {
+      window.removeEventListener('bc-speaking-threshold', update);
+      window.removeEventListener('storage', update);
+    };
+  }, []);
 
   const publish = (next: Set<string>, now: number, force = false) => {
     const previous = published.current;
@@ -63,6 +74,8 @@ export function useSpeakingActivity(
   const sample = () => {
     const now = performance.now();
     const next = new Set<string>();
+    const startRms = 10 ** (thresholdDb.current / 20);
+    const stopRms = 10 ** ((thresholdDb.current - 6) / 20);
     for (const [id, meter] of meters.current) {
       const unavailable =
         !meter.track.enabled || meter.track.muted || meter.track.readyState !== 'live';
@@ -78,13 +91,13 @@ export function useSpeakingActivity(
       const rms = Math.sqrt(energy / meter.samples.length);
       if (!meter.speaking) {
         meter.belowSince = null;
-        if (rms >= START_RMS) {
+        if (rms >= startRms) {
           meter.aboveSince ??= now;
           if (now - meter.aboveSince >= ATTACK_MS) meter.speaking = true;
         } else meter.aboveSince = null;
       } else {
         meter.aboveSince = null;
-        if (rms <= STOP_RMS) {
+        if (rms <= stopRms) {
           meter.belowSince ??= now;
           if (now - meter.belowSince >= RELEASE_MS) meter.speaking = false;
         } else meter.belowSince = null;

@@ -35,7 +35,8 @@ import { attachRemoteAudio, prepareCallPlayback, disposeCallPlayback, readPartic
 import { allowDesktopCapture } from './media/permissions';
 import { saveRecording } from './media/recordingLibrary';
 import { readRecordingQuality } from './media/recordingQuality';
-import { microphoneCaptureOptions } from './media/processingSettings';
+import { microphoneCaptureOptions, readProcessingSettings } from './media/processingSettings';
+import { readSpeakingThreshold } from './media/speakingSensitivity';
 import {
   cameraCaptureConstraints,
   readCameraSettings,
@@ -1000,6 +1001,8 @@ export default function CallStage({
             const report = {
               version: 1, time: new Date().toISOString(), serverRtt,
               playback: getCallPlaybackStatus(),
+              microphoneSettings: readProcessingSettings(),
+              speakingIndicatorThresholdDb: readSpeakingThreshold(),
               peers: stats.map(({ peerId: _peerId, voiceRelay, ...peer }, index) => ({
                 peer: index + 1, ...peer,
                 voiceRelay: voiceRelay ? { state: voiceRelay.state } : undefined,

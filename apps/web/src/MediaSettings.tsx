@@ -3,6 +3,7 @@ import { Headphones, Monitor, Radio } from 'lucide-react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import DeviceSettings from './DeviceSettings';
 import ProcessingControls from './ProcessingControls';
+import { readSpeakingThreshold, saveSpeakingThreshold } from './media/speakingSensitivity';
 import { readRecordingQuality } from './media/recordingQuality';
 import NativeDeepfilterSetup, {
   type DeepfilterStatus,
@@ -40,6 +41,7 @@ export function readQuality() {
   }
 }
 export default function MediaSettings() {
+  const [speakingThreshold, setSpeakingThreshold] = useState(readSpeakingThreshold);
   const [voiceRoute, setVoiceRoute] = useState(() => localStorage.getItem('bc-voice-route') === 'relay' ? 'relay' : 'automatic');
   const [recordingRate, setRecordingRate] = useState(() => readRecordingQuality().screenVideoBitsPerSecond / 1_000_000);
   const desktop = isTauri();
@@ -108,6 +110,17 @@ export default function MediaSettings() {
   }
   return (
     <>
+      <label>
+        Speaking indicator threshold · {speakingThreshold} dBFS
+        <input type="range" min="-65" max="-20" step="1"
+          aria-label="Speaking indicator threshold"
+          aria-describedby="speaking-threshold-help"
+          value={speakingThreshold}
+          onChange={event => setSpeakingThreshold(saveSpeakingThreshold(Number(event.target.value)))} />
+      </label>
+      <p id="speaking-threshold-help" className="friend-status">
+        Lower values detect quieter voices. This changes the green border only, not microphone volume or what others hear.
+      </p>
       <label>
         Noise suppression engine
         <select

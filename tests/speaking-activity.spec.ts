@@ -12,7 +12,8 @@ test('processed microphone activity uses hysteresis and releases meters without 
     const gain = sourceContext.createGain();
     const destination = sourceContext.createMediaStreamDestination();
     oscillator.frequency.value = 440;
-    gain.gain.value = 0.15;
+    // Quiet but audible speech level (~-43 dBFS), below the old -29 dBFS threshold.
+    gain.gain.value = 0.01;
     oscillator.connect(gain).connect(destination);
     oscillator.start();
     await sourceContext.resume();
@@ -62,7 +63,8 @@ test('processed microphone activity uses hysteresis and releases meters without 
     Object.assign(window as any, {
       __speakingFixture: {
         silence: () => (gain.gain.value = 0),
-        tone: () => (gain.gain.value = 0.15),
+        tone: () => (gain.gain.value = 0.01),
+        background: () => (gain.gain.value = 0.001),
         disableTrack: () => (track.enabled = false),
         enableTrack: () => (track.enabled = true),
         rerender: () => render(true),
@@ -90,6 +92,23 @@ test('processed microphone activity uses hysteresis and releases meters without 
   const output = page.locator('output');
   await expect(output).toHaveAttribute('data-speaking', 'yes', { timeout: 2_000 });
 
+  await page.evaluate(async () => {
+    const { saveSpeakingThreshold } = await import('/src/media/speakingSensitivity.ts');
+    saveSpeakingThreshold(-35);
+  });
+  await expect(output).toHaveAttribute('data-speaking', 'no');
+  await page.evaluate(async () => {
+    const { saveSpeakingThreshold } = await import('/src/media/speakingSensitivity.ts');
+    saveSpeakingThreshold(-48);
+  });
+  await expect(output).toHaveAttribute('data-speaking', 'yes');
+  await page.evaluate(() => (window as any).__speakingFixture.background());
+  await expect(output).toHaveAttribute('data-speaking', 'no');
+  await page.waitForTimeout(300);
+  await expect(output).toHaveAttribute('data-speaking', 'no');
+  await page.evaluate(() => (window as any).__speakingFixture.tone());
+  await expect(output).toHaveAttribute('data-speaking', 'yes');
+
   await page.evaluate(() => (window as any).__speakingFixture.rerender());
   await page.waitForTimeout(100);
   await page.evaluate(() => (window as any).__speakingFixture.silence());
@@ -113,4 +132,15 @@ test('processed microphone activity uses hysteresis and releases meters without 
     contextStates: ['closed'],
   });
   await page.evaluate(() => (window as any).__speakingFixture.cleanup());
+});
+
+test('speaking threshold is adjustable and persists without opening a device', async ({ page }) => {
+  await page.goto(`${baseURL}/#/settings`);
+  const threshold = page.getByRole('slider', { name: 'Speaking indicator threshold', exact: true });
+  await expect(threshold).toHaveValue('-48');
+  await threshold.fill('-55');
+  await expect(page.getByText('Speaking indicator threshold · -55 dBFS')).toBeVisible();
+  await page.reload();
+  await expect(threshold).toHaveValue('-55');
+  expect(await page.evaluate(() => localStorage.getItem('bc-processing'))).toBeNull();
 });
