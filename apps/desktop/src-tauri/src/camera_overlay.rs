@@ -11,7 +11,8 @@ use tauri::{
 const MAX_WIDTH: u32 = 640;
 const MAX_HEIGHT: u32 = 900;
 const MAX_FRAME_BYTES: usize = MAX_WIDTH as usize * MAX_HEIGHT as usize * 4;
-const MIN_FRAME_INTERVAL: Duration = Duration::from_millis(100);
+const MAX_FPS: u8 = 24;
+const MIN_FRAME_INTERVAL: Duration = Duration::from_nanos(1_000_000_000 / MAX_FPS as u64);
 
 #[derive(Default)]
 pub struct CameraOverlayState {
@@ -84,7 +85,7 @@ fn info(o: &Overlay) -> OverlayInfo {
         max_width: MAX_WIDTH,
         max_height: MAX_HEIGHT,
         max_frame_bytes: MAX_FRAME_BYTES,
-        max_fps: 10,
+        max_fps: MAX_FPS,
     }
 }
 
@@ -226,7 +227,7 @@ pub async fn camera_overlay_frame(
         InvokeBody::Raw(_) => return Err("Camera overlay RGBA frame length is invalid".into()),
         _ => return Err("Camera overlay frames require a binary IPC body".into()),
     };
-    let (hwnd, position, target_width, target_height, click) = {
+    let (hwnd, position, target_width, target_height, click, delay) = {
         let mut guard = state
             .overlay
             .lock()
@@ -238,15 +239,31 @@ pub async fn camera_overlay_frame(
         if width != o.width || height != o.height {
             return Err("Camera overlay frame dimensions do not match the current layout".into());
         }
-        let now = Instant::now();
-        if o.last_frame
-            .is_some_and(|last| now.duration_since(last) < MIN_FRAME_INTERVAL)
-        {
-            return Ok(());
-        }
-        o.last_frame = Some(now);
-        (o.hwnd, o.position, o.width, o.height, o.click_through)
+        let delay = o.last_frame.map_or(Duration::ZERO, |last| {
+            MIN_FRAME_INTERVAL.saturating_sub(last.elapsed())
+        });
+        (
+            o.hwnd,
+            o.position,
+            o.width,
+            o.height,
+            o.click_through,
+            delay,
+        )
     };
+    // Pace early frames instead of discarding them. The frontend sends only one
+    // frame at a time; keep the lifecycle grant held while waiting asynchronously.
+    if !delay.is_zero() {
+        tokio::time::sleep(delay).await;
+    }
+    if let Some(overlay) = state
+        .overlay
+        .lock()
+        .map_err(|_| "Camera overlay state unavailable")?
+        .as_mut()
+    {
+        overlay.last_frame = Some(Instant::now());
+    }
     let bgra = rgba_to_bgra_scaled(&rgba, width, height, target_width, target_height)?;
     let target_height = (bgra.len() / 4 / target_width as usize) as u32;
     let ui_window = window.clone();

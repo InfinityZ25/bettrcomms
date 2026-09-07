@@ -1,5 +1,9 @@
 # BetterComms preview release notes
 
+## 0.1.7 — 24 FPS camera overlay
+
+The Windows camera overlay now targets 24 FPS instead of 10. Rust paces early frames rather than silently dropping them, preventing the frontend and native limits from reducing the visible cadence twice. Frame submission remains sequential with no stale-frame backlog. Actual cadence depends on source cameras and local rendering load. An updated native 0.1.7 binary is required; older hosts retain their advertised 10 FPS limit.
+
 ## 0.1.6 — native camera overlay
 
 Windows calls offer Camera overlay in the call layout toolbar. The optional Rust-owned, always-on-top window shows up to four camera previews, participant labels and mute/deafen/speaking state. Corner and size presets, click-through by default, and optional self-view are available. The overlay uses the display containing BetterComms and fits its work area. Leaving the call closes it; a native watchdog also closes it after missing frontend frames. It requests exclusion from screen capture to avoid recapturing the overlay into shared content.

@@ -11,7 +11,7 @@ try {
     const source = document.createElement('canvas'); source.width = 320; source.height = 180;
     const graphics = source.getContext('2d');
     graphics.fillStyle = '#62884b'; graphics.fillRect(0, 0, 320, 180);
-    const track = source.captureStream(10).getVideoTracks()[0];
+    const track = source.captureStream(24).getVideoTracks()[0];
     const compositor = new CameraOverlayCanvas();
     let session;
     const send = async (rgba, id = session.overlayId) => invoke('camera_overlay_frame', rgba, { headers: {
@@ -22,13 +22,14 @@ try {
     const rejected = async operation => { try { await operation(); return false; } catch { return true; } };
     try {
       session = await invoke('camera_overlay_open', { position: 'top-right', size: 'small', clickThrough: true, rows: 2 });
+      if (session.maxFps !== 24) throw new Error('Expected the 24 FPS native host');
       const cameras = [1, 2].map(n => ({ id: String(n), name: 'Synthetic camera ' + n, track, speaking: n === 1, muted: n === 2 }));
       const samples = [];
       for (let n = 0; n < 20; n++) {
         const time = performance.now();
         await send(compositor.render(cameras, session.width, session.height));
         samples.push(performance.now() - time);
-        await new Promise(resolve => setTimeout(resolve, 110));
+        await new Promise(resolve => setTimeout(resolve, Math.max(0, Math.ceil(1000 / session.maxFps - (performance.now() - time)))));
       }
       const badTokenRejected = await rejected(() => send(new Uint8Array(session.width * session.height * 4), 'invalid'));
       const badFrameRejected = await rejected(() => send(new Uint8Array(8)));
@@ -50,7 +51,7 @@ try {
   assert.equal(result.closedRejected, true);
   assert.equal(result.sourceStillLive, true);
   assert.ok(result.resized.height <= 900);
-  assert.ok(result.meanFrameMs < 100, 'Overlay must sustain its 10fps budget');
+  assert.ok(result.meanFrameMs < 1000 / 24 + 10, 'Overlay must stay near its 24fps frame budget');
   console.log(JSON.stringify(result, null, 2));
   await page.evaluate(async () => {
     const main = await fetch('/src/main.tsx').then(response => response.text());

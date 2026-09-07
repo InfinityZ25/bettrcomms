@@ -59,7 +59,7 @@ export default function CameraOverlay({ cameras }: { cameras: OverlayCamera[] })
           'x-bettercomms-frame-width': String(session.width),
           'x-bettercomms-frame-height': String(session.height),
         } });
-        if (!stopped) timer = setTimeout(() => void tick(), Math.max(0, 1000 / Math.min(10, session.maxFps || 10) - (performance.now() - started)));
+        if (!stopped) timer = setTimeout(() => void tick(), Math.max(0, Math.ceil(1000 / Math.min(24, session.maxFps || 10) - (performance.now() - started))));
       } catch (error) {
         close();
         if (!stopped) {
