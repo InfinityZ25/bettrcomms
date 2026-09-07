@@ -32,7 +32,7 @@ try {
         throw 'Runtime setup metadata is missing'
     }
 } catch {
-    $work = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) "Bettercomms/ffmpeg-bundle-$([Guid]::NewGuid().ToString('N'))"
+    $work = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) "Bettercomms/ffmpeg-install-$([Guid]::NewGuid().ToString('N'))"
     & (Join-Path $scriptRoot 'install-ffmpeg-runtime.ps1') -Destination $privateRoot -WorkingDirectory $work
     Assert-File $privateFfmpeg $ffmpegBytes $ffmpegHash
     Assert-File $privateLicense $licenseBytes $licenseHash
