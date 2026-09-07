@@ -566,7 +566,45 @@
   bottom: 0;
   min-height: 76px;
   padding: 24px 16px 12px;
+  justify-content: center;
   background: linear-gradient(transparent, #080c0bea 55%);
+}
+
+.call-workspace:fullscreen > .call-footer > .connection-status {
+  position: absolute;
+  left: 16px;
+  bottom: 12px;
+}
+
+.call-workspace:fullscreen > .call-footer > .call-controls {
+  margin-inline: auto;
+}
+
+/* Two cameras read as one centered conversation, rather than a row pinned to the ceiling. */
+.call-workspace:fullscreen > .stage[data-has-share='false'][data-gallery='adaptive'][data-camera-count='2'] .camera-strip {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: minmax(0, 1fr);
+  align-content: center;
+  align-items: center;
+  gap: clamp(8px, .7vw, 14px);
+  padding: clamp(8px, .7vw, 14px);
+}
+
+.call-workspace:fullscreen > .stage[data-has-share='false'][data-gallery='adaptive'][data-camera-count='2'] .camera-tile {
+  width: 100%;
+  height: auto;
+  max-height: calc(100dvh - 28px);
+}
+
+.call-workspace:fullscreen > .stats-panel,
+.call-workspace:fullscreen > .call-recording-notice {
+  display: none;
+}
+
+@media (max-width: 700px) {
+  .call-workspace:fullscreen > .call-footer > .connection-status {
+    display: none;
+  }
 }
 
 .call-workspace:fullscreen[data-controls-visible='false'] > .call-layout-toolbar,

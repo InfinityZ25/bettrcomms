@@ -171,9 +171,40 @@ test('two members chat, call, record separate tracks, and transport a screen sha
       guestPage.getByRole('button', { name: /turn on camera/i }).click(),
     ]);
     await Promise.all([
+      expectDecodedVideo(ownerPage, '.camera-tile.self video'),
       expectDecodedVideo(ownerPage, '.camera-tile:not(.self) video'),
       expectDecodedVideo(guestPage, '.camera-tile:not(.self) video'),
     ]);
+
+    await ownerPage.getByRole('button', { name: 'Fullscreen call' }).click();
+    const fullscreenWorkspace = ownerPage.locator('.call-workspace');
+    const fullscreenStage = fullscreenWorkspace.locator('.stage');
+    await expect.poll(() => ownerPage.evaluate(() => document.fullscreenElement?.classList.contains('call-workspace'))).toBe(true);
+    await expect(fullscreenStage).toHaveAttribute('data-has-share', 'false');
+    await expect(fullscreenStage).toHaveAttribute('data-gallery', 'adaptive');
+    await expect(fullscreenStage).toHaveAttribute('data-camera-count', '2');
+    const fullscreenGeometry = await fullscreenWorkspace.evaluate((workspace) => {
+      const tiles = [...workspace.querySelectorAll<HTMLElement>('.camera-tile:not(.invite)')].map((tile) => tile.getBoundingClientRect());
+      const controls = workspace.querySelector<HTMLElement>('.call-controls')?.getBoundingClientRect();
+      return {
+        viewport: { width: innerWidth, height: innerHeight },
+        tiles: tiles.map(({ x, y, width, height }) => ({ x, y, width, height })),
+        controls: controls && { x: controls.x, width: controls.width },
+      };
+    });
+    expect(fullscreenGeometry.tiles).toHaveLength(2);
+    const [leftCamera, rightCamera] = fullscreenGeometry.tiles;
+    expect(leftCamera.width).toBeGreaterThan(fullscreenGeometry.viewport.width * .43);
+    expect(rightCamera.width).toBeGreaterThan(fullscreenGeometry.viewport.width * .43);
+    expect(Math.abs(leftCamera.width - rightCamera.width)).toBeLessThan(3);
+    expect(Math.abs(leftCamera.height - rightCamera.height)).toBeLessThan(3);
+    expect(rightCamera.x).toBeGreaterThan(leftCamera.x + leftCamera.width);
+    expect(Math.abs((leftCamera.y + leftCamera.height / 2) - fullscreenGeometry.viewport.height / 2)).toBeLessThan(4);
+    expect(fullscreenGeometry.controls).toBeTruthy();
+    expect(Math.abs((fullscreenGeometry.controls!.x + fullscreenGeometry.controls!.width / 2) - fullscreenGeometry.viewport.width / 2)).toBeLessThan(4);
+    await ownerPage.screenshot({ path: '.local/two-camera-fullscreen.png', fullPage: true });
+    await ownerPage.mouse.move(20, 450);
+    await ownerPage.getByRole('button', { name: 'Exit fullscreen call' }).click();
 
     await ownerPage.evaluate(syntheticDisplayCapture);
     await ownerPage.getByRole('button', { name: /share screen/i }).click();
