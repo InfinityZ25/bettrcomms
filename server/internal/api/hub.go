@@ -355,7 +355,8 @@ func (a *API) websocket(w http.ResponseWriter, r *http.Request, u User, room str
 		_ = conn.Close(websocket.StatusPolicyViolation, addError.Error())
 		return
 	}
-	defer func() { a.Hub.remove(room, c); conn.CloseNow() }()
+	a.publishCallPresence(room)
+	defer func() { a.Hub.remove(room, c); a.publishCallPresence(room); conn.CloseNow() }()
 	peers, _ := json.Marshal(map[string]any{"peers": initialPeers, "identities": identities})
 	if e = wsjsonWrite(r.Context(), conn, wire{Type: "peers", Payload: peers}); e != nil {
 		conn.CloseNow()
@@ -413,6 +414,7 @@ func (a *API) websocket(w http.ResponseWriter, r *http.Request, u User, room str
 			if !a.Hub.setPresence(room, c, muted, deafened) {
 				return
 			}
+			a.publishCallPresence(room)
 			m.From = c.peer
 			m.UserID = c.user
 			m.Name = c.name

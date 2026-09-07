@@ -34,6 +34,7 @@ type API struct {
 	Store          Store
 	Sessions       Sessions
 	Hub            *Hub
+	Realtime       *RealtimeHub
 	Config         Config
 	AllowedOrigins []string
 	HTTP           *http.Client
@@ -54,7 +55,7 @@ func New(store Store, s Sessions, c Config) *API {
 	if c.DevAuth {
 		origins = append(origins, "localhost:*", "127.0.0.1:*")
 	}
-	return &API{Store: store, Sessions: s, Hub: NewHub(), Config: c, AllowedOrigins: origins, HTTP: http.DefaultClient, states: map[string]time.Time{}, limiter: newRateLimiter()}
+	return &API{Store: store, Sessions: s, Hub: NewHub(), Realtime: NewRealtimeHub(), Config: c, AllowedOrigins: origins, HTTP: http.DefaultClient, states: map[string]time.Time{}, limiter: newRateLimiter()}
 }
 func (a *API) Handler() http.Handler {
 	m := http.NewServeMux()
@@ -74,6 +75,7 @@ func (a *API) Handler() http.Handler {
 		a.Sessions.Clear(w)
 		if uid != "" {
 			a.Hub.disconnectUser(uid)
+			a.Realtime.disconnectUser(uid)
 		}
 		a.json(w, 200, map[string]bool{"ok": true})
 	})
@@ -168,6 +170,8 @@ func (a *API) authed(w http.ResponseWriter, r *http.Request) {
 		a.ice(w, u)
 	case r.Method == "GET" && p == "call-presence":
 		a.callPresence(w, u)
+	case r.Method == "GET" && p == "events":
+		a.realtimeWebsocket(w, r, u)
 	case r.Method == "GET" && p == "users":
 		if !a.limiter.allow("search:"+u.ID, 30, time.Minute) {
 			a.fail(w, 429, "rate_limited", "too many searches")
@@ -190,6 +194,12 @@ func (a *API) authed(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		v, e := a.Store.CreateDirectRoom(u.ID, in.UserID)
+		if e == nil {
+			a.Realtime.subscribeUser(v.ID, u.ID)
+			a.Realtime.subscribeUser(v.ID, in.UserID)
+			a.Realtime.publishUser(u.ID, wire{Type: "rooms.changed"})
+			a.Realtime.publishUser(in.UserID, wire{Type: "rooms.changed"})
+		}
 		a.resultStatus(w, map[string]any{"room": v}, e, 201)
 	case strings.HasPrefix(p, "rooms/"):
 		a.room(w, r, u, strings.Split(p, "/"))
@@ -199,10 +209,39 @@ func (a *API) authed(w http.ResponseWriter, r *http.Request) {
 		a.friendRequest(w, r, u)
 	case strings.HasPrefix(p, "friends/requests/") && strings.HasSuffix(p, "/accept"):
 		parts := strings.Split(p, "/")
-		e := a.Store.AcceptFriendRequest(parts[2], u.ID)
+		requestID := parts[2]
+		_, requests, lookupErr := a.Store.ListFriends(u.ID)
+		if lookupErr != nil {
+			a.result(w, nil, lookupErr)
+			return
+		}
+		var senderID string
+		for _, request := range requests {
+			if request.ID == requestID && request.Receiver.ID == u.ID {
+				senderID = request.Sender.ID
+				break
+			}
+		}
+		e := a.Store.AcceptFriendRequest(requestID, u.ID)
+		if e == nil {
+			a.Realtime.publishUser(u.ID, wire{Type: "friends.changed"})
+			if senderID != "" {
+				a.Realtime.subscribeContacts(u.ID, senderID)
+				a.Realtime.publishUser(senderID, wire{Type: "friends.changed"})
+				a.Realtime.publishContactState(u.ID, senderID)
+				a.Realtime.publishContactState(senderID, u.ID)
+			}
+		}
 		a.result(w, map[string]bool{"ok": true}, e)
 	case strings.HasPrefix(p, "friends/") && r.Method == "DELETE":
-		a.result(w, map[string]bool{"ok": true}, a.Store.DeleteFriendship(u.ID, strings.TrimPrefix(p, "friends/")))
+		otherID := strings.TrimPrefix(p, "friends/")
+		e := a.Store.DeleteFriendship(u.ID, otherID)
+		if e == nil {
+			a.Realtime.publishUser(u.ID, wire{Type: "friends.changed"})
+			a.Realtime.publishUser(otherID, wire{Type: "friends.changed"})
+			a.Realtime.unsubscribeContacts(u.ID, otherID)
+		}
+		a.result(w, map[string]bool{"ok": true}, e)
 	default:
 		a.fail(w, 404, "not_found", "route not found")
 	}
@@ -252,6 +291,10 @@ func (a *API) rooms(w http.ResponseWriter, r *http.Request, u User) {
 		return
 	}
 	v, e := a.Store.CreateRoom(u.ID, strings.TrimSpace(in.Name))
+	if e == nil {
+		a.Realtime.subscribeUser(v.ID, u.ID)
+		a.Realtime.publishUser(u.ID, wire{Type: "rooms.changed"})
+	}
 	a.resultStatus(w, map[string]any{"room": v}, e, 201)
 }
 func (a *API) room(w http.ResponseWriter, r *http.Request, u User, p []string) {
@@ -285,12 +328,17 @@ func (a *API) room(w http.ResponseWriter, r *http.Request, u User, p []string) {
 			return
 		}
 		v, e := a.Store.RenameRoom(rid, u.ID, strings.TrimSpace(in.Name))
+		if e == nil {
+			a.Realtime.publishRoom(rid, wire{Type: "rooms.changed"})
+		}
 		a.result(w, map[string]any{"room": v}, e)
 		return
 	}
 	if len(p) == 2 && r.Method == "DELETE" {
 		e := a.Store.DeleteRoom(rid, u.ID)
 		if e == nil {
+			a.Realtime.publishRoom(rid, wire{Type: "rooms.changed"})
+			a.Realtime.unsubscribeRoom(rid)
 			a.Hub.disconnectRoom(rid)
 		}
 		a.result(w, map[string]bool{"ok": true}, e)
@@ -331,6 +379,7 @@ func (a *API) room(w http.ResponseWriter, r *http.Request, u User, p []string) {
 		if e == nil {
 			b, _ := json.Marshal(v)
 			a.Hub.broadcast(rid, nil, wire{Type: "chat.message", From: u.ID, Payload: b})
+			a.Realtime.publishRoom(rid, wire{Type: "chat.message", From: u.ID, Payload: b})
 		}
 		a.resultStatus(w, map[string]any{"message": v}, e, 201)
 		return
@@ -342,13 +391,20 @@ func (a *API) room(w http.ResponseWriter, r *http.Request, u User, p []string) {
 		if !a.decode(w, r, &in) {
 			return
 		}
-		a.resultStatus(w, map[string]bool{"ok": true}, a.Store.AddRoomMember(rid, u.ID, in.UserID), 201)
+		e := a.Store.AddRoomMember(rid, u.ID, in.UserID)
+		if e == nil {
+			a.Realtime.subscribeUser(rid, in.UserID)
+			a.Realtime.publishRoom(rid, wire{Type: "rooms.changed"})
+		}
+		a.resultStatus(w, map[string]bool{"ok": true}, e, 201)
 		return
 	}
 	if len(p) == 4 && p[2] == "members" && r.Method == "DELETE" {
 		target := p[3]
 		e := a.Store.RemoveRoomMember(rid, u.ID, target)
 		if e == nil {
+			a.Realtime.publishRoom(rid, wire{Type: "rooms.changed"})
+			a.Realtime.unsubscribeUser(rid, target)
 			a.Hub.disconnectRoomUser(rid, target)
 		}
 		a.result(w, map[string]bool{"ok": true}, e)
@@ -373,6 +429,10 @@ func (a *API) friendRequest(w http.ResponseWriter, r *http.Request, u User) {
 		return
 	}
 	v, e := a.Store.CreateFriendRequest(u.ID, in.UserID)
+	if e == nil {
+		a.Realtime.publishUser(u.ID, wire{Type: "friends.changed"})
+		a.Realtime.publishUser(in.UserID, wire{Type: "friends.changed"})
+	}
 	a.resultStatus(w, map[string]any{"request": v}, e, 201)
 }
 func (a *API) login(w http.ResponseWriter, r *http.Request) {

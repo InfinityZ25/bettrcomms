@@ -106,7 +106,7 @@ test('two members chat, call, record separate tracks, and transport a screen sha
     const message = `persistent message ${Date.now()}`;
     await ownerPage.getByRole('textbox', { name: /message your room/i }).fill(message);
     await ownerPage.getByRole('button', { name: /send message/i }).click();
-    await expect(guestPage.getByText(message)).toBeVisible({ timeout: 8_000 });
+    await expect(guestPage.getByText(message)).toBeVisible({ timeout: 3_000 });
     await guestPage.reload();
     await expect(guestPage.getByText(message)).toBeVisible();
 

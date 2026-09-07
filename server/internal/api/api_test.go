@@ -20,10 +20,14 @@ type testStore struct {
 
 type presenceTestStore struct {
 	testStore
-	rooms []Room
+	rooms   []Room
+	friends []User
 }
 
 func (s presenceTestStore) ListRooms(string) ([]Room, error) { return s.rooms, nil }
+func (s presenceTestStore) ListFriends(string) ([]User, []FriendRequest, error) {
+	return s.friends, nil, nil
+}
 
 type memorySessionStore struct {
 	users   map[string]string

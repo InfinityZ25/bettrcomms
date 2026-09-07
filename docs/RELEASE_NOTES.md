@@ -1,5 +1,13 @@
 # BetterComms preview release notes
 
+## Unreleased — realtime conversations and presence
+
+Signed-in web and desktop clients now keep one authenticated app-level WebSocket open while the user browses. New messages arrive as complete message records, and call rosters update immediately when a participant joins, leaves, mutes, deafens, reconnects, or adds another device. Room creation, renames, membership changes, direct conversations, friend requests, and friendship changes send targeted invalidation events to affected accounts. Online/offline friend state follows authenticated event-stream connections and is aggregated across multiple open devices.
+
+PostgreSQL remains authoritative for history, rooms, membership, and friendships. Clients load those records through HTTP on first load and reconcile them after a WebSocket reconnect or a targeted change event; the former 3-second message, 2-second call-presence, and 10-second room polling loops are removed. Message sends append the returned record locally and deduplicate the corresponding pushed event instead of downloading the entire history again. Server-side subscriptions are derived from authorized room membership and friendships, so clients cannot subscribe themselves to another room.
+
+The realtime hub remains process-local, matching the existing single signaling-process deployment. A future multi-replica deployment must add shared fanout such as PostgreSQL `LISTEN/NOTIFY` or Redis before enabling more than one API replica.
+
 ## 0.1.11 — high-refresh native screen sharing
 
 Windows native sharing adds a 720p output option, a 120 FPS preset, custom whole-number frame rates from 15–240 FPS, and custom whole-number bitrates from 1–200 Mbps. The selected rate flows through Windows Graphics Capture, FFmpeg hardware encoding, H.264 negotiation, native RTP pacing, diagnostics, and local native recording. Invalid inputs and combinations above H.264 Level 5.2 are rejected before capture; actual delivered FPS can be lower when the source, encoder, receiver, or network cannot sustain the request.

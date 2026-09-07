@@ -9,12 +9,16 @@ export default function FriendsPanel({
   onError,
   onOpenRoom,
   callPresence = {},
+  refreshRevision = 0,
+  onlineUsers = {},
 }: {
   user: User;
   room: Room | null;
   onError: (s: string) => void;
   onOpenRoom?: (room: Room) => void;
   callPresence?: Record<string, CallParticipant[]>;
+  refreshRevision?: number;
+  onlineUsers?: Record<string, boolean>;
 }) {
   const [query, setQuery] = useState(""),
     [results, setResults] = useState<User[]>([]),
@@ -31,7 +35,7 @@ export default function FriendsPanel({
   }
   useEffect(() => {
     refresh().catch((e) => onError(e.message));
-  }, []);
+  }, [refreshRevision]);
   async function action(fn: () => Promise<void>) {
     setBusy(true);
     try {
@@ -197,7 +201,9 @@ export default function FriendsPanel({
             <strong>{f.name}</strong>
             <small>{(() => {
               const state = Object.values(callPresence).flat().find(person => person.user_id === f.id);
-              return state ? `In a shared call${state.deafened ? ' · Deafened' : state.muted ? ' · Muted' : ''}` : f.email;
+              return state
+                ? `In a shared call${state.deafened ? ' · Deafened' : state.muted ? ' · Muted' : ''}`
+                : `${onlineUsers[f.id] ? 'Online' : 'Offline'} · ${f.email}`;
             })()}</small>
           </span>
           <Button

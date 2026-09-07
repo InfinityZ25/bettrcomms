@@ -43,6 +43,13 @@ import { useCallPresence } from './useCallPresence';
 
 type Screen = 'call' | 'settings' | 'recordings' | 'share';
 const emptyCall: CallParticipant[] = [];
+const mergeMessages = (...groups: Message[][]) => {
+  const byId = new Map<string, Message>();
+  for (const group of groups) for (const message of group) byId.set(message.id, message);
+  return [...byId.values()].sort(
+    (left, right) => new Date(left.created_at).getTime() - new Date(right.created_at).getTime(),
+  );
+};
 const readScreen = (): Screen =>
   location.hash === '#/settings'
     ? 'settings'
@@ -182,9 +189,7 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     loadRooms().catch((e) => setError(e.message));
-    const timer = setInterval(() => loadRooms().catch(() => {}), 10000);
-    return () => clearInterval(timer);
-  }, [user]);
+  }, [user?.id, presence.roomsRevision, presence.syncRevision]);
   useEffect(() => {
     setMessages([]);
     if (!room) return;
@@ -192,18 +197,23 @@ export default function App() {
     const refresh = () =>
       api<{ messages: Message[] }>('/rooms/' + room.id + '/messages')
         .then((r) => {
-          if (active) setMessages(r.messages ?? []);
+          if (active) setMessages((current) => mergeMessages(r.messages ?? [], current));
         })
         .catch((e) => {
           if (active) setError(e.message);
         });
     refresh();
-    const timer = setInterval(refresh, 3000);
     return () => {
       active = false;
-      clearInterval(timer);
     };
-  }, [room?.id]);
+  }, [room?.id, presence.syncRevision]);
+  useEffect(() => {
+    const incoming = presence.messages
+      .map((event) => event.value)
+      .filter((message) => message.room_id === room?.id);
+    if (!incoming.length) return;
+    setMessages((current) => mergeMessages(current, incoming));
+  }, [presence.messages, room?.id]);
   useEffect(() => {
     messagesEnd.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
@@ -227,12 +237,9 @@ export default function App() {
     e.preventDefault();
     if (!draft.trim() || !room) return;
     await run(async () => {
-      await api('/rooms/' + room.id + '/messages', { body: draft });
+      const result = await api<{ message: Message }>('/rooms/' + room.id + '/messages', { body: draft });
       setDraft('');
-      const r = await api<{ messages: Message[] }>(
-        '/rooms/' + room.id + '/messages',
-      );
-      setMessages(r.messages ?? []);
+      setMessages((current) => mergeMessages(current, [result.message]));
     });
   }
   const login = async (e: FormEvent) => {
@@ -590,6 +597,7 @@ export default function App() {
         onOpenChange={setRoomSettings}
         onChanged={() => loadRooms().catch((e) => setError(e.message))}
         onError={setError}
+        refreshRevision={presence.roomsRevision + presence.syncRevision}
       />
       <Dialog
         open={create}
@@ -659,6 +667,8 @@ export default function App() {
               </label>
               <FriendsPanel
                 callPresence={presence.rooms}
+                onlineUsers={presence.onlineUsers}
+                refreshRevision={presence.friendsRevision + presence.syncRevision}
                 user={user}
                 room={room}
                 onError={setError}
