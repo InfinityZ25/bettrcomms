@@ -2,6 +2,15 @@
 
 ## Unreleased — realtime conversations and presence
 
+Mezon's `deepfilternet3-noise-filter` 1.3.0 is now available as an experimental
+browser and desktop-WebView microphone engine. Its SIMD WASM and DeepFilterNet3
+model are pinned and self-hosted, the package loads only when selected, and
+surfaced startup/runtime failures recover to RNNoise. RNNoise is now the default for new
+clients. The WASM engine is not promoted as recommended: it passed realtime
+data-flow and cleanup checks but reproduced its input exactly on the pinned
+noisy-speech quality fixture. Evidence and asset hashes are recorded in
+[`DEEPFILTER_WASM_FINDINGS.md`](DEEPFILTER_WASM_FINDINGS.md).
+
 Signed-in web and desktop clients now keep one authenticated app-level WebSocket open while the user browses. New messages arrive as complete message records, and call rosters update immediately when a participant joins, leaves, mutes, deafens, reconnects, or adds another device. Room creation, renames, membership changes, direct conversations, friend requests, and friendship changes send targeted invalidation events to affected accounts. Online/offline friend state follows authenticated event-stream connections and is aggregated across multiple open devices.
 
 PostgreSQL remains authoritative for history, rooms, membership, and friendships. Clients load those records through HTTP on first load and reconcile them after a WebSocket reconnect or a targeted change event; the former 3-second message, 2-second call-presence, and 10-second room polling loops are removed. Message sends append the returned record locally and deduplicate the corresponding pushed event instead of downloading the entire history again. Server-side subscriptions are derived from authorized room membership and friendships, so clients cannot subscribe themselves to another room.

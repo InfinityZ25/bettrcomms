@@ -35,6 +35,16 @@ Run these tests in a real Chromium browser or Tauri WebView2 because jsdom canno
 
 For quality acceptance, use timestamped clean speech mixed with repeatable fan, keyboard, and broadband-noise fixtures. Compare bypass, browser-standard suppression, and RNNoise for speech intelligibility, attenuation, clipping, artifacts, CPU, and end-to-end latency. RNNoise remains optional and must fall back to the caller's raw/browser-processed track if creation fails.
 
+## Experimental DeepFilterNet3 WebAssembly processing
+
+The web and desktop UI expose Mezon's `deepfilternet3-noise-filter` 1.3.0 as an
+experimental opt-in engine. Its 48 kHz AudioWorklet and pinned model assets are
+self-hosted, lazy-loaded, and cleaned up with the capture graph. It is not the
+default because the published runtime did not alter the pinned noisy-speech
+fixture during acceptance, even though it produced a live delayed track. See
+[the WebAssembly evaluation](DEEPFILTER_WASM_FINDINGS.md) for hashes, evidence,
+and the promotion gate. RNNoise remains the cross-platform default.
+
 ## Native GPU processing
 
 The Windows desktop integrates the NVIDIA Audio Effects SDK directly; see [NVIDIA setup](NVIDIA_SETUP.md). It also offers DeepFilterNet3 through DirectML on AMD/Intel graphics. Both share a bounded, authenticated loopback Worker/AudioWorklet transport and use explicit RNNoise fallback when a native engine cannot keep up. Browser clients retain standard, RNNoise and Speex processing and never invoke native GPU commands.

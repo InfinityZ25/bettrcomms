@@ -19,6 +19,7 @@ import { createDenoiser } from './denoise';
 import { createSpeexDenoiser } from './speexDenoise';
 import { createNvidiaDenoiser } from './nvidiaDenoise';
 import { createDeepfilterDenoiser } from './deepfilterDenoise';
+import { createDeepfilterWasmDenoiser } from './deepfilterWasmDenoise';
 import { createMicrophoneEffects } from './microphoneEffects';
 import { isTauri } from '@tauri-apps/api/core';
 import { createNativeSystemAudio, type NativeSystemAudioTrack } from './nativeSystemAudio';
@@ -188,6 +189,7 @@ export class MediaEngine extends EventTarget {
             noiseSuppression:
               denoiser === 'rnnoise' ||
               denoiser === 'speex' ||
+              denoiser === 'deepfilter-wasm' ||
               denoiser === 'nvidia' ||
               denoiser === 'deepfilter' ||
               denoiser === 'off'
@@ -211,13 +213,18 @@ export class MediaEngine extends EventTarget {
         microphone &&
         (denoiser === 'rnnoise' ||
           denoiser === 'speex' ||
+          denoiser === 'deepfilter-wasm' ||
           denoiser === 'nvidia' ||
           denoiser === 'deepfilter')
       ) {
         let denoised: DenoisedTrack;
         let effects: DenoisedTrack | undefined;
         let rawOwnershipTransferred = false;
-        if (denoiser === 'nvidia' || denoiser === 'deepfilter') {
+        if (
+          denoiser === 'nvidia' ||
+          denoiser === 'deepfilter' ||
+          denoiser === 'deepfilter-wasm'
+        ) {
           try {
             denoised =
               denoiser === 'nvidia'
@@ -225,11 +232,16 @@ export class MediaEngine extends EventTarget {
                     intensity: processing.nvidiaIntensity,
                     vad: processing.nvidiaVad,
                   })
-                : await createDeepfilterDenoiser(
-                    microphone,
-                    undefined,
-                    processing.deepfilterAttenuationDb,
-                  );
+                : denoiser === 'deepfilter'
+                  ? await createDeepfilterDenoiser(
+                      microphone,
+                      undefined,
+                      processing.deepfilterAttenuationDb,
+                    )
+                  : await createDeepfilterWasmDenoiser(
+                      microphone,
+                      processing.deepfilterAttenuationDb,
+                    );
           } catch (error) {
             denoised = await createDenoiser(microphone);
             const reason =
@@ -237,7 +249,7 @@ export class MediaEngine extends EventTarget {
             this.emit('denoiser-status', {
               requested: denoiser,
               active: 'rnnoise',
-              message: `${denoiser === 'nvidia' ? 'NVIDIA' : 'DeepFilterNet'} noise removal was unavailable (${reason}). RNNoise is active.`,
+              message: `${denoiser === 'nvidia' ? 'NVIDIA' : 'DeepFilterNet3'} noise removal was unavailable (${reason}). RNNoise is active.`,
             });
           }
         } else if (denoiser === 'speex') {
@@ -290,7 +302,9 @@ export class MediaEngine extends EventTarget {
           });
         }
         if (
-          (denoiser === 'nvidia' || denoiser === 'deepfilter') &&
+          (denoiser === 'nvidia' ||
+            denoiser === 'deepfilter' ||
+            denoiser === 'deepfilter-wasm') &&
           denoised.failure
         ) {
           void denoised.failure.then(async (error) => {
@@ -336,7 +350,7 @@ export class MediaEngine extends EventTarget {
               this.emit('denoiser-status', {
                 requested: denoiser,
                 active: 'rnnoise',
-                message: `${denoiser === 'nvidia' ? 'NVIDIA' : 'DeepFilterNet'} noise removal stopped (${reason}). RNNoise is active.`,
+                message: `${denoiser === 'nvidia' ? 'NVIDIA' : 'DeepFilterNet3'} noise removal stopped (${reason}). RNNoise is active.`,
               });
             } catch (fallbackError) {
               microphone.stop();

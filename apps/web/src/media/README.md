@@ -64,7 +64,12 @@ double processing. `denoiser: "speex"` similarly runs the SpeexDSP preprocessor
 locally in an AudioWorklet/WASM graph. The packaged Speex worklet does not expose
 a suppression-strength control. `denoiser: "nvidia"` uses the native desktop SDK
 pipeline and falls back explicitly to RNNoise; browsers resolve stale NVIDIA
-preferences to standard processing without native IPC. Krisp is deferred.
+preferences to standard processing without native IPC. `denoiser:
+"deepfilter-wasm"` lazy-loads Mezon's self-hosted DeepFilterNet3 WASM worklet in
+both browsers and the desktop WebView. It remains experimental after failing the
+pinned noisy-speech quality comparison, so RNNoise is the default. The native
+`deepfilter` option remains the separately validated DirectML path. Krisp is
+deferred.
 
 Recording uses one `MediaRecorder` per currently selected local and remote track.
 All recorders share a monotonic epoch, and `manifest.json` records each actual

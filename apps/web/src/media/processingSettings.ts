@@ -3,7 +3,7 @@ import type { CaptureOptions, MicrophoneProcessingSettings } from './types';
 export type { MicrophoneProcessingSettings } from './types';
 
 const defaults: MicrophoneProcessingSettings = {
-  engine: 'standard',
+  engine: 'rnnoise',
   echoCancellation: true,
   autoGainControl: false,
   nvidiaIntensity: 1,
@@ -59,7 +59,9 @@ function normalizedTuning(
     ),
     highPassHz: clamp(input.highPassHz, defaults.highPassHz, 0, 2_000),
     gainDb: clamp(input.gainDb, defaults.gainDb, -24, 24),
-    ...(typeof input.inputVolume === 'number' ? { inputVolume: clamp(input.inputVolume, 1, 0, 2) } : {}),
+    ...(typeof input.inputVolume === 'number'
+      ? { inputVolume: clamp(input.inputVolume, 1, 0, 2) }
+      : {}),
     gateEnabled:
       typeof input.gateEnabled === 'boolean'
         ? input.gateEnabled
@@ -98,13 +100,14 @@ export function readProcessingSettings(): MicrophoneProcessingSettings {
   else if (
     selected === 'rnnoise' ||
     selected === 'speex' ||
+    selected === 'deepfilter-wasm' ||
     selected === 'off' ||
     selected === 'standard'
   )
     engine = selected;
   else if (selected === 'nvidia' || selected === 'deepfilter')
     engine = isTauri() ? selected : 'standard';
-  else engine = 'standard';
+  else engine = 'rnnoise';
   return { engine, ...normalizedTuning(tuning) };
 }
 

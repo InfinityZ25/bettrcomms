@@ -252,6 +252,7 @@ export default function DeviceSettings() {
           standard: 'Browser',
           rnnoise: 'RNNoise',
           speex: 'Speex',
+          'deepfilter-wasm': 'DeepFilterNet3',
           nvidia: 'NVIDIA',
           deepfilter: 'DeepFilterNet',
           off: 'Suppression off',

@@ -75,12 +75,12 @@ export interface CaptureOptions {
   noiseSuppression?: boolean;
   echoCancellation?: boolean;
   autoGainControl?: boolean;
-  denoiser?: 'standard' | 'rnnoise' | 'speex' | 'nvidia' | 'deepfilter' | 'off';
+  denoiser?: 'standard' | 'rnnoise' | 'speex' | 'deepfilter-wasm' | 'nvidia' | 'deepfilter' | 'off';
   processing?: MicrophoneProcessingSettings;
 }
 
 export interface MicrophoneProcessingSettings {
-  engine: 'standard' | 'rnnoise' | 'speex' | 'nvidia' | 'deepfilter' | 'off';
+  engine: 'standard' | 'rnnoise' | 'speex' | 'deepfilter-wasm' | 'nvidia' | 'deepfilter' | 'off';
   echoCancellation: boolean;
   autoGainControl: boolean;
   nvidiaIntensity: number;
@@ -165,8 +165,8 @@ export type MediaEngineEventMap = {
   'peer-state': CustomEvent<{ peerId: string; state: RTCPeerConnectionState }>;
   error: CustomEvent<{ peerId?: string; operation: string; error: unknown }>;
   'denoiser-status': CustomEvent<{
-    requested: 'nvidia' | 'deepfilter';
-    active: 'nvidia' | 'deepfilter' | 'rnnoise';
+    requested: 'nvidia' | 'deepfilter' | 'deepfilter-wasm';
+    active: 'nvidia' | 'deepfilter' | 'deepfilter-wasm' | 'rnnoise';
     message: string;
   }>;
 };
