@@ -66,7 +66,7 @@ test('camera dock resizes, snaps, focuses, and preserves the active share', asyn
     const stage = page.locator('.call-workspace .stage');
     await expect(stage).toHaveAttribute('data-has-share', 'false');
     await expect(stage).toHaveAttribute('data-gallery', 'adaptive');
-    const galleryLayout = page.getByLabel('Camera gallery layout');
+    const galleryLayout = page.getByLabel('Call layout', { exact: true });
     await galleryLayout.selectOption('grid');
     await expect(stage).toHaveAttribute('data-gallery', 'grid');
     expect(await page.evaluate(() => localStorage.getItem('bc-gallery-layout'))).toBe('grid');
@@ -186,6 +186,22 @@ test('camera dock resizes, snaps, focuses, and preserves the active share', asyn
       (video.srcObject as MediaStream).getVideoTracks()[0]?.id,
     )).toBe(originalTrackId);
     await page.screenshot({ path: '.local/call-layout-mobile.png', fullPage: true });
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await galleryLayout.selectOption('all');
+    await expect(stage).toHaveAttribute('data-gallery', 'all');
+    await expect(stage).toHaveAttribute('data-has-share', 'false');
+    const shareTile = page.locator('.screen-share-tile');
+    await expect(shareTile).toBeVisible();
+    await expect(shareTile.locator('video')).toBeVisible();
+    await shareTile.hover();
+    await page.getByRole('button', { name: 'Stop watching Your screen' }).click();
+    await expect(shareTile.locator('video')).toHaveCount(0);
+    const frozenPreview = shareTile.locator('.frozen-track-preview');
+    await expect(frozenPreview).toHaveAttribute('data-preview-ready', 'true');
+    expect(await frozenPreview.locator('canvas').evaluate((canvas: HTMLCanvasElement) => ({ width: canvas.width, height: canvas.height }))).toEqual({ width: 640, height: 360 });
+    await expect(page.getByRole('button', { name: 'Watch Your screen' })).toBeVisible();
+    await page.screenshot({ path: '.local/call-layout-all-media.png', fullPage: true });
   } finally {
     await context.close();
   }

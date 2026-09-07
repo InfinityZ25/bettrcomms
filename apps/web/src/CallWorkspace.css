@@ -440,6 +440,32 @@
   grid-auto-rows: minmax(220px, 1fr);
 }
 
+/* A unified media gallery gives people, cameras, and shares equal visual weight. */
+.call-workspace .stage[data-has-share='false'][data-gallery='all'] .camera-strip {
+  grid-auto-flow: row;
+  grid-auto-rows: minmax(150px, 1fr);
+}
+
+.call-workspace .stage[data-has-share='false'][data-gallery='all'][data-camera-count='3'] .camera-strip {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+}
+
+.call-workspace .stage[data-has-share='false'][data-gallery='all'][data-camera-count='3'] .camera-tile {
+  grid-column: auto;
+  grid-row: auto;
+}
+
+.call-workspace .stage[data-has-share='false'][data-gallery='all']:is([data-camera-count='7'], [data-camera-count='8'], [data-camera-count='9']) .camera-strip {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(3, minmax(0, 1fr));
+}
+
+.call-workspace .stage[data-has-share='false'][data-gallery='all']:is([data-camera-count='10'], [data-camera-count='11'], [data-camera-count='12'], [data-camera-count='13'], [data-camera-count='14'], [data-camera-count='15'], [data-camera-count='16']) .camera-strip {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-rows: repeat(4, minmax(0, 1fr));
+}
+
 .call-workspace .stage[data-has-share='false'][data-gallery='grid'] .camera-tile,
 .call-workspace .stage[data-has-share='false'][data-gallery='focus'] .camera-tile {
   grid-row: auto;
@@ -687,6 +713,39 @@
 .screen-share-tile {
   border-color: #647b58;
   background: #090d0a;
+}
+
+.frozen-track-preview {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  color: #9eada1;
+  background: #090d0a;
+  font-size: 12px;
+}
+
+.frozen-track-preview canvas {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.stage[data-camera-fit='contain'] .frozen-track-preview canvas {
+  object-fit: contain;
+}
+
+.frozen-track-preview:not([data-preview-ready='true']) canvas {
+  display: none;
+}
+
+.frozen-track-preview video {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .screen-share-actions {

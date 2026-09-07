@@ -63,7 +63,7 @@ export interface CallPresence {
   deafened: boolean;
 }
 const EMPTY_CALL_PRESENCE: CallPresence[] = [];
-type GalleryLayout = 'adaptive' | 'grid' | 'focus';
+type GalleryLayout = 'adaptive' | 'grid' | 'focus' | 'all';
 type StageItem = {
   key: string;
   kind: 'screen' | 'camera';
@@ -75,7 +75,7 @@ type StageItem = {
 function readGalleryLayout(): GalleryLayout {
   try {
     const value = localStorage.getItem('bc-gallery-layout');
-    return value === 'grid' || value === 'focus' ? value : 'adaptive';
+    return value === 'grid' || value === 'focus' || value === 'all' ? value : 'adaptive';
   } catch { return 'adaptive'; }
 }
 
@@ -816,7 +816,8 @@ export default function CallStage({
   const watchedScreens = availableStageItems.filter(item =>
     item.kind === 'screen' && watchedShareIds.includes(item.key.slice('screen:'.length)),
   );
-  const stageItems = focusedStageItem ? [focusedStageItem] : watchedScreens;
+  const unifiedGrid = galleryLayout === 'all' && !focusedStageItem;
+  const stageItems = focusedStageItem ? [focusedStageItem] : unifiedGrid ? [] : watchedScreens;
   const hasStageContent = stageItems.length > 0;
   const visibleTileCount = cameraParticipants.length + shares.length;
   const toggleWatchedShare = (id: string) => {
@@ -835,6 +836,7 @@ export default function CallStage({
       : cameraParticipants[0]?.id;
   const changeGalleryLayout = (value: GalleryLayout) => {
     setGalleryLayout(value);
+    if (value === 'all') setFocusedStageKey(null);
     try { localStorage.setItem('bc-gallery-layout', value); } catch { /* Session-only when storage is unavailable. */ }
   };
   const toggleGalleryFit = () => {
@@ -901,20 +903,24 @@ export default function CallStage({
                         .join(', ') + ' IS RECORDING'}
                 </span>
               )}
-        {hasStageContent ? <>
+        <div className="gallery-layout-tools" role="group" aria-label="Call layout controls">
+          <label>View <select aria-label="Call layout" value={galleryLayout} onChange={e => changeGalleryLayout(e.target.value as GalleryLayout)}>
+            <option value="adaptive">Adaptive</option><option value="grid">Equal cameras</option><option value="focus">Focus camera</option><option value="all">Everyone + screens</option>
+          </select></label>
+          {!hasStageContent && <button onClick={toggleGalleryFit} aria-pressed={galleryFit === 'contain'}>{galleryFit === 'cover' ? 'Fill tiles' : 'Fit video'}</button>}
+        </div>
+        {hasStageContent && <>
           <label>Camera position <select aria-label="Camera position" value={docking.dock} onChange={e => docking.setDock(e.target.value as 'top' | 'left' | 'right')}>
             <option value="top">Top row</option><option value="left">Left side</option><option value="right">Right side</option>
           </select></label>
+          {galleryLayout === 'all' && focusedStageItem && (
+            <button onClick={() => setFocusedStageKey(null)}><LayoutGrid size={15} /> Back to all media</button>
+          )}
           {focusedStageItem && watchedScreens.length > 1 && (
             <button onClick={() => setFocusedStageKey(null)}><LayoutGrid size={15} /> Show {watchedScreens.length} screens</button>
           )}
           <button onClick={docking.reset}>Reset layout</button>
-        </> : <div className="gallery-layout-tools" role="group" aria-label="Camera gallery controls">
-          <label>View <select aria-label="Camera gallery layout" value={galleryLayout} onChange={e => changeGalleryLayout(e.target.value as GalleryLayout)}>
-            <option value="adaptive">Adaptive</option><option value="grid">Equal grid</option><option value="focus">Focus</option>
-          </select></label>
-          <button onClick={toggleGalleryFit} aria-pressed={galleryFit === 'contain'}>{galleryFit === 'cover' ? 'Fill tiles' : 'Fit video'}</button>
-        </div>}
+        </>}
         <CameraOverlay cameras={[
           ...(locals.get('camera') ? [{ id: 'self', name: 'You', track: locals.get('camera')!, speaking: speaking.has('self'), muted, deafened }] : []),
           ...remote.filter(track => track.source === 'camera').map(track => ({ id: track.peerId, name: names[track.peerId] ?? 'Friend', track: track.track, speaking: speaking.has(track.peerId), muted: remotePresence[track.peerId]?.muted, deafened: remotePresence[track.peerId]?.deafened })),
@@ -1000,14 +1006,15 @@ export default function CallStage({
               </details>
             </div>
           ))}
-          {shares.filter(screenShare => !watchedShareIds.includes(screenShare.id)).map((screenShare) => {
+          {shares.filter(screenShare => unifiedGrid || !watchedShareIds.includes(screenShare.id)).map((screenShare) => {
+            const watching = watchedShareIds.includes(screenShare.id);
             return (
-              <div className="camera-tile screen-share-tile" data-watching="false" key={`screen-preview:${screenShare.id}`}>
-                <TrackVideo track={screenShare.track} />
+              <div className="camera-tile screen-share-tile" data-watching={watching} key={`screen-preview:${screenShare.id}`}>
+                {watching ? <TrackVideo track={screenShare.track} /> : <FrozenTrackPreview track={screenShare.track} name={screenShare.name} />}
                 <button className="camera-focus-button" aria-label={`Focus ${screenShare.name}`} aria-pressed={focusedStageKey === `screen:${screenShare.id}`} onClick={() => focusShare(screenShare.id)}><Pin size={14} /></button>
                 <div className="screen-share-actions">
-                  <button aria-label={`Watch ${screenShare.name}`} onClick={() => toggleWatchedShare(screenShare.id)}>
-                    <MonitorUp size={14} /> Watch
+                  <button aria-label={`${watching ? 'Stop watching' : 'Watch'} ${screenShare.name}`} onClick={() => toggleWatchedShare(screenShare.id)}>
+                    <MonitorUp size={14} /> {watching ? 'Stop watching' : 'Watch'}
                   </button>
                 </div>
                 <div className="tile-caption"><span>{screenShare.name}</span><MonitorUp size={13} /></div>
@@ -1357,6 +1364,59 @@ function ZoomableStageItem({
         </div>
       </div>
     </section>
+  );
+}
+
+function FrozenTrackPreview({ track, name }: { track: MediaStreamTrack; name: string }) {
+  const video = useRef<HTMLVideoElement>(null);
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const [status, setStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading');
+
+  useEffect(() => {
+    const source = video.current;
+    const target = canvas.current;
+    if (!source || !target) return;
+    let active = true;
+    let captured = false;
+    let frameRequest: number | undefined;
+    const fallbackTimer = window.setTimeout(() => {
+      if (active && !captured) setStatus('unavailable');
+    }, 8_000);
+    const capture = () => {
+      if (!active || captured || !source.videoWidth || !source.videoHeight) return;
+      captured = true;
+      const scale = Math.min(1, 720 / source.videoWidth, 405 / source.videoHeight);
+      target.width = Math.max(1, Math.round(source.videoWidth * scale));
+      target.height = Math.max(1, Math.round(source.videoHeight * scale));
+      target.getContext('2d', { alpha: false })?.drawImage(source, 0, 0, target.width, target.height);
+      source.pause();
+      source.srcObject = null;
+      setStatus('ready');
+    };
+    const queueCapture = () => {
+      if (source.requestVideoFrameCallback) frameRequest = source.requestVideoFrameCallback(capture);
+      else window.setTimeout(capture, 0);
+    };
+    source.srcObject = new MediaStream([track]);
+    source.addEventListener('loadeddata', queueCapture, { once: true });
+    void source.play().catch(() => { if (active) setStatus('unavailable'); });
+    return () => {
+      active = false;
+      clearTimeout(fallbackTimer);
+      if (frameRequest !== undefined && source.cancelVideoFrameCallback) source.cancelVideoFrameCallback(frameRequest);
+      source.removeEventListener('loadeddata', queueCapture);
+      source.pause();
+      source.srcObject = null;
+    };
+  }, [track]);
+
+  return (
+    <div className="frozen-track-preview" data-preview-ready={status === 'ready'}>
+      <canvas ref={canvas} aria-label={`Preview of ${name}`} />
+      {status === 'loading' && <span>Preparing preview…</span>}
+      {status === 'unavailable' && <span>Preview unavailable</span>}
+      {status !== 'ready' && <video ref={video} muted playsInline aria-hidden="true" />}
+    </div>
   );
 }
 
