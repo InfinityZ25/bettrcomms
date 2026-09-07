@@ -53,6 +53,7 @@ function setup(directOnly = false) {
   const remote = vi.fn();
   const removed = vi.fn();
   const ended = vi.fn();
+  const fallback = vi.fn(async () => undefined);
   const transport = new NativeScreenTransport(
     signaling,
     [{ urls: 'stun:example.test' }],
@@ -61,8 +62,9 @@ function setup(directOnly = false) {
     remote,
     removed,
     ended,
+    fallback,
   );
-  return { transport, sent, preview, remote, removed };
+  return { transport, sent, preview, remote, removed, fallback };
 }
 
 beforeEach(() => {
@@ -274,6 +276,58 @@ describe('native screen signaling lifecycle', () => {
     });
     expect(receiver.close).toHaveBeenCalledOnce();
     expect(removed).toHaveBeenCalledWith('peer-b');
+  });
+
+  it('requests the ordinary WebRTC fallback after five seconds with no native RTP', async () => {
+    vi.useFakeTimers();
+    const { transport, sent } = setup();
+    await transport.handle({
+      type: 'offer', from: 'peer-b', to: 'self', transport: 'native-screen',
+      captureId: 'remote-capture', description: { type: 'offer', sdp: 'v=0\r\n' },
+    });
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(sent.at(-1)).toMatchObject({
+      type: 'signal', to: 'peer-b', transport: 'native-screen',
+      captureId: 'remote-capture',
+      data: { kind: 'native-screen-fallback-request', captureId: 'remote-capture' },
+    });
+    vi.useRealTimers();
+  });
+
+  it('keeps a native receiver that has begun receiving RTP', async () => {
+    vi.useFakeTimers();
+    FakePeerConnection.stats = new Map([['video', {
+      id: 'video', type: 'inbound-rtp', kind: 'video',
+      bytesReceived: 4096, framesDecoded: 2,
+    }]]);
+    const { transport, sent } = setup();
+    await transport.handle({
+      type: 'offer', from: 'peer-b', to: 'self', transport: 'native-screen',
+      captureId: 'remote-capture', description: { type: 'offer', sdp: 'v=0\r\n' },
+    });
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(sent.some(signal => signal.type === 'signal'
+      && signal.transport === 'native-screen'
+      && signal.data.kind === 'native-screen-fallback-request')).toBe(false);
+    vi.useRealTimers();
+  });
+
+  it('publishes a requested compatibility fallback and removes the failed native sender peer', async () => {
+    const { transport, fallback } = setup();
+    await transport.start({
+      sourceId: 'window:opaque', encoder: 'h264_nvenc', width: 1920,
+      height: 1080, fps: 60, bitrateMbps: 20, cursor: true,
+    });
+    await transport.addPeer('peer-b');
+    await transport.handle({
+      type: 'signal', from: 'peer-b', to: 'self', transport: 'native-screen',
+      captureId: 'capture-1',
+      data: { kind: 'native-screen-fallback-request', captureId: 'capture-1' },
+    });
+    expect(fallback).toHaveBeenCalledWith('peer-b');
+    expect(mocks.invoke).toHaveBeenCalledWith('native_screen_peer_remove', {
+      sessionId: 'capture-1', peerId: 'peer-b',
+    });
   });
 
   it('cleans up a native session that resolves after cancellation', async () => {

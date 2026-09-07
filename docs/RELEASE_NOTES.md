@@ -2,6 +2,8 @@
 
 ## Unreleased — adaptive call gallery
 
+Native screen receivers now request an automatic compatibility path when the dedicated native connection delivers no video bytes for five seconds or fails. The sender republishes its already-decoded native preview through that viewer's established call peer connection, then closes only the failed native sender leg. Healthy viewers retain the direct Rust-to-WebRTC hardware-encoded path. Diagnostics record fallback requests and activation. This hosted frontend recovery works with existing 0.1.9 desktop apps; it does not fix the underlying separate native ICE path or make FFmpeg unnecessary for sending native captures.
+
 Fullscreen calls now clip their outer canvas to the dynamic viewport and hide WebView scrollbar gutters, removing the stray bar that could appear along the bottom edge in the Windows desktop app.
 
 Shared content now zooms from 50% to 500% with small button steps, ordinary mouse-wheel scrolling, and trackpad pinch/scroll gestures. Wheel zoom is anchored under the pointer, animated without adding a frame loop, and bounded so dragged content cannot be lost completely off-canvas. Each watched item keeps its own zoom and pan while it remains mounted.
