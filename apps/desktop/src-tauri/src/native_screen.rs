@@ -853,13 +853,7 @@ pub async fn native_screen_start(
     h264_profile: Option<NativeH264Profile>,
 ) -> Result<Started, String> {
     trusted(&window)?;
-    if ![30, 60].contains(&fps)
-        || !(5..=80).contains(&bitrate_mbps)
-        || width > 3840
-        || height > 2160
-    {
-        return Err("Choose 30/60 FPS, up to 4K and 5–80 Mbps".into());
-    }
+    validate_capture_settings(width, height, fps, bitrate_mbps)?;
     // Revalidate at start so an installed runtime or changed GPU driver is
     // reflected without restarting the desktop app.
     let caps = tauri::async_runtime::spawn_blocking(probe)
@@ -1123,6 +1117,23 @@ pub async fn native_screen_start(
     }
 }
 
+fn validate_capture_settings(
+    width: u32,
+    height: u32,
+    fps: u32,
+    bitrate_mbps: u32,
+) -> Result<(), String> {
+    if !(15..=240).contains(&fps)
+        || !(1..=200).contains(&bitrate_mbps)
+        || width > 3840
+        || height > 2160
+    {
+        Err("Choose 15–240 FPS, up to 4K and 1–200 Mbps".into())
+    } else {
+        Ok(())
+    }
+}
+
 #[tauri::command]
 pub async fn native_screen_diagnostics(
     state: tauri::State<'_, NativeScreenState>,
@@ -1314,6 +1325,16 @@ impl AccessUnits {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn custom_capture_limits_include_high_refresh_rates() {
+        assert!(validate_capture_settings(1280, 720, 240, 12).is_ok());
+        assert!(validate_capture_settings(1920, 1080, 120, 200).is_ok());
+        assert!(validate_capture_settings(1280, 720, 14, 12).is_err());
+        assert!(validate_capture_settings(1280, 720, 241, 12).is_err());
+        assert!(validate_capture_settings(1280, 720, 120, 0).is_err());
+        assert!(validate_capture_settings(1280, 720, 120, 201).is_err());
+    }
 
     #[test]
     fn audio_process_resolution_uses_only_the_opaque_current_catalog() {

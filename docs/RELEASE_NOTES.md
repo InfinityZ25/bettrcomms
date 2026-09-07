@@ -1,5 +1,11 @@
 # BetterComms preview release notes
 
+## 0.1.11 — high-refresh native screen sharing
+
+Windows native sharing adds a 720p output option, a 120 FPS preset, custom whole-number frame rates from 15–240 FPS, and custom whole-number bitrates from 1–200 Mbps. The selected rate flows through Windows Graphics Capture, FFmpeg hardware encoding, H.264 negotiation, native RTP pacing, diagnostics, and local native recording. Invalid inputs and combinations above H.264 Level 5.2 are rejected before capture; actual delivered FPS can be lower when the source, encoder, receiver, or network cannot sustain the request.
+
+Actual Windows acceptance passed 1280×720 at 120 FPS/12 Mbps and 240 FPS/20 Mbps through both an RTX 4070 SUPER NVENC path and Ryzen integrated-graphics AMF path. Chromium decoded approximately 120.5–120.7 FPS and 240.9–241.4 FPS respectively, and the frontend recording path produced a playable native-copy MP4. The browser fallback continues to use browser capture and its runtime limits.
+
 ## 0.1.10 — bundled native sharing, multiple devices, and adaptive call gallery
 
 Windows installers now include the pinned FFmpeg 8.1 native-sharing runtime, its GPL license, setup metadata, and source/build references. A fresh install can start native window or display sharing without WinGet or a separate 236 MiB first-run download. Rust resolves the packaged resource before the older private app-data runtime; the in-app downloader remains available as a repair fallback if the packaged files are missing. This requires the 0.1.10 Windows app. macOS remains on browser-supported screen capture and does not receive the Windows runtime.
@@ -195,7 +201,6 @@ Settings and Recordings now occupy the main workspace instead of modal dialogs. 
 
 Screen acceptance: fifteen browser tests pass (opt-in TURN skipped), including dedicated-screen desktop/mobile accessibility audits, browser history/reload, Escape/focus restoration, pending device-test cleanup, and a two-member call remaining connected through both screens. Nine web unit tests and the desktop release build pass. Device-settings tests no longer create unnecessary accounts, keeping the full suite within the unchanged authentication rate limit.
 
-
 ## Shared microphone processing and tuning
 
 Calls and microphone tests now use the same capture options and MediaEngine processing chain. Tests label the actual engine, honor the suppression master switch, apply saved tuning, and report NVIDIA fallback rather than claiming NVIDIA processing. Browser sessions resolve stale NVIDIA preferences to standard browser processing without invoking native IPC; RNNoise remains an explicit browser-compatible WebAssembly option. Native permission and NVIDIA SDK actions remain gated to Tauri.
@@ -277,7 +282,6 @@ Native screen sharing defaults to `display_border=0`. The Share screen exposes a
 Participant tiles show a green outline when their processed microphone audio is active, with a short release delay to prevent flickering between words. Muting, ended tracks, and leaving the call clear activity. Metering does not play or modify the tracks. The outline indicates microphone activity, not delivery acknowledgement.
 
 The call footer now includes connection signal bars and measured ping. Alone in a room it shows authenticated WebSocket server round-trip time; with friends it shows the highest available connected-peer WebRTC round-trip time. A popover includes recent ping history, average, separate server ping, and each friend's direct/relay route. Missing measurements stay unknown rather than displaying zero. Existing detailed media diagnostics remain accessible.
-
 
 ## Faster source previews and game discovery
 

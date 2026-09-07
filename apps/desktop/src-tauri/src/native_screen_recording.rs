@@ -20,7 +20,8 @@ use tempfile::{Builder as TempFileBuilder, NamedTempFile};
 
 const MAX_ASSET_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_READ_BYTES: usize = 256 * 1024;
-const ACCESS_UNIT_QUEUE: usize = 8;
+const MIN_ACCESS_UNIT_QUEUE: usize = 8;
+const MAX_ACCESS_UNIT_QUEUE: usize = 32;
 const MAX_FINISHED_ASSETS: usize = 8;
 const MAX_MUXER_DIAGNOSTIC_BYTES: usize = 16 * 1024;
 
@@ -96,7 +97,7 @@ fn staging_root() -> Result<PathBuf, String> {
 
 /// Called once after a native capture process starts. No frontend path is used.
 pub fn register_session(session_id: &str, fps: u32, ffmpeg: PathBuf) -> Result<(), String> {
-    if !matches!(fps, 30 | 60) || !ffmpeg.is_file() {
+    if !(15..=240).contains(&fps) || !ffmpeg.is_file() {
         return Err("Native recording received an invalid capture registration".to_owned());
     }
     store()
@@ -196,7 +197,8 @@ pub fn native_screen_recording_start(
             return Err("This native screen capture is already being recorded".to_owned());
         }
         let recording_id = token()?;
-        let (sender, receiver) = mpsc::sync_channel(ACCESS_UNIT_QUEUE);
+        let queue = (capture.fps as usize / 10).clamp(MIN_ACCESS_UNIT_QUEUE, MAX_ACCESS_UNIT_QUEUE);
+        let (sender, receiver) = mpsc::sync_channel(queue);
         let stop = Arc::new(AtomicBool::new(false));
         let failure = Arc::new(Mutex::new(None));
         let requested_at = Instant::now();

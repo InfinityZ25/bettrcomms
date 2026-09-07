@@ -32,8 +32,10 @@ export interface NativeScreenStartOptions {
   encoder: NativeScreenEncoder['id'];
   width: number;
   height: number;
-  fps: 30 | 60;
-  bitrateMbps: 8 | 10 | 12 | 16 | 20 | 40 | 80;
+  /** Native capture accepts whole-frame rates from 15 through 240 FPS. */
+  fps: number;
+  /** Per-viewer native video bitrate, from 1 through 200 Mbps. */
+  bitrateMbps: number;
   /** High requires every current receiver to advertise the matching 6400 profile. */
   h264Profile?: 'auto' | NativeH264Profile;
   cursor: boolean;

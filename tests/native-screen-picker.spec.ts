@@ -225,6 +225,36 @@ test('unavailable native audio is disabled and keeps browser sharing actionable'
   await expect(page.locator('body')).toHaveAttribute('data-browser', 'true');
 });
 
+test('offers 120 FPS and bounded custom frame rate and bitrate', async ({ page }) => {
+  await mount(page);
+  await page.getByRole('button', { name: 'Application 1', exact: true }).click();
+  await page.getByLabel('Resolution', { exact: true }).selectOption('720p');
+  await page.getByLabel('Frame rate', { exact: true }).selectOption('120');
+  await page.getByText('Encoder & bitrate', { exact: true }).click();
+  await page.getByLabel('Bitrate', { exact: true }).selectOption('custom');
+  await page.getByLabel('Custom bitrate', { exact: true }).fill('12');
+  await page.getByRole('button', { name: 'Share', exact: true }).click();
+  expect(await page.evaluate(() => (window as any).__shared)).toMatchObject({
+    width: 1280,
+    height: 720,
+    fps: 120,
+    bitrateMbps: 12,
+  });
+
+  await page.getByLabel('Frame rate', { exact: true }).selectOption('custom');
+  await page.getByLabel('Custom frame rate', { exact: true }).fill('240');
+  await page.getByLabel('Custom bitrate', { exact: true }).fill('20');
+  await page.getByRole('button', { name: 'Share', exact: true }).click();
+  expect(await page.evaluate(() => (window as any).__shared)).toMatchObject({
+    fps: 240,
+    bitrateMbps: 20,
+  });
+
+  await page.getByLabel('Custom frame rate', { exact: true }).fill('241');
+  await expect(page.getByRole('button', { name: 'Share', exact: true })).toBeDisabled();
+  await expect(page.getByRole('alert')).toContainText('15 to 240 FPS');
+});
+
 test('application audio requires the new host capability and never starts implicitly', async ({ page }) => {
   await mount(page, true, false);
   await page.getByRole('button', { name: 'Application 1', exact: true }).click();

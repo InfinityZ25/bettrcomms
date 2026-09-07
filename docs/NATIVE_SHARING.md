@@ -1,6 +1,6 @@
 # Native Windows sharing
 
-The desktop Share screen button opens a dedicated sharing workspace, keeping the active call mounted. Its searchable application/display gallery loads local thumbnails only as cards approach the visible area; titles truncate without widening the layout. Share and Cancel remain in a fixed footer. It probes installed encoders before offering NVIDIA NVENC, AMD AMF, Intel Quick Sync, or software x264. Controls select H.264 encoding, resolution (up to 4K), 30/60 FPS, bitrate (8/10/12/16/20/40/80 Mbps; default 20), and cursor visibility. Browser sharing remains available explicitly and remains the browser client's default.
+The desktop Share screen button opens a dedicated sharing workspace, keeping the active call mounted. Its searchable application/display gallery loads local thumbnails only as cards approach the visible area; titles truncate without widening the layout. Share and Cancel remain in a fixed footer. It probes installed encoders before offering NVIDIA NVENC, AMD AMF, Intel Quick Sync, or software x264. Controls select H.264 encoding, resolution (720p through 4K or source-native), 30/60/120 FPS presets, custom 15–240 FPS, preset bitrates, custom 1–200 Mbps, and cursor visibility. Browser sharing remains available explicitly and remains the browser client's default.
 
 Windows Graphics Capture supplies frames to a native FFmpeg encoder. The native WebRTC sender packetizes its H.264 access units directly; the WebView does not re-encode them. Each viewer uses a separate connection with the call's ICE configuration. Direct-only mode removes TURN and relay candidates. One encoder serves up to seven remote viewers plus the local preview. Uplink use grows with viewer count.
 
@@ -28,24 +28,25 @@ Browser/received-screen recording bitrate is separately selectable in Settings. 
 
 Use `scripts/start-desktop.ps1` for ordinary development. It runs the Tauri Rust watcher and reuses this workspace's existing Vite server when one is already listening. After native changes, a directly launched old executable can otherwise keep serving new frontend code with an old IPC command registry.
 
-
 ## Encoding efficiency and compatibility
 
 Automatic video compatibility selects the best common H.264 profile (High, Main, then Baseline) reported by the local decoder and current peers. Unknown or nonresponding peers select Baseline. An empty room uses the local decoder capabilities. Capability checks distinguish High 4:2:0 from High 4:4:4; the latter does not establish support for the former. A later incompatible viewer receives an explicit compatibility error; restart sharing with Compatibility / H.264 Baseline for that viewer. There is no automatic midstream profile downgrade.
 
-NVENC uses P6 low-latency tuning, spatial AQ strength 8, temporal AQ, and full-resolution multipass. It retains zero B-frames and zero lookahead, CBR with a half-second VBV, and two-second keyframes. Encoder and SDP levels match the actual dimensions, frame rate, and bitrate. Recording copies these same encoded access units. Stop drains pending recording frames before finalization; stopping before the first IDR produces an actionable error instead of an unusable asset.
+NVENC uses P6 low-latency tuning, spatial AQ strength 8, temporal AQ, and full-resolution multipass. It retains zero B-frames and zero lookahead, CBR with a half-second VBV, and two-second keyframes. Encoder and SDP levels match the actual dimensions, frame rate, and bitrate. Unsupported dimension/rate combinations above H.264 Level 5.2, including 1440p240, are rejected before capture instead of advertising an invalid stream. Recording copies these same encoded access units and scales its bounded queue for high-refresh input. Stop drains pending recording frames before finalization; stopping before the first IDR produces an actionable error instead of an unusable asset.
 
 Run `scripts/benchmark-nvenc-quality.ps1` for the reproducible synthetic 1080p60 motion/grid/text comparison. The six-second RTX 4070 SUPER result compared the previous Baseline/P5/one-second GOP against Main/P6/two-second GOP:
 
 | Target Mbps | Previous VMAF | Current VMAF | Current actual Mbps | Current encode FPS |
-| --- | --- | --- | --- | --- |
-| 8 | 91.814 | 94.247 | 8.243 | 122.1 |
-| 12 | 95.334 | 96.860 | 12.141 | 116.9 |
-| 20 | 98.401 | 98.626 | 20.146 | 123.5 |
+| ----------- | ------------- | ------------ | ------------------- | ------------------ |
+| 8           | 91.814        | 94.247       | 8.243               | 122.1              |
+| 12          | 95.334        | 96.860       | 12.141              | 116.9              |
+| 20          | 98.401        | 98.626       | 20.146              | 123.5              |
 
 Five-second keyframes offered no useful quality improvement in this comparison, so the recovery interval stays at two seconds. These controlled scores do not establish Discord parity, end-to-end latency, or performance while a game saturates the GPU. Existing recordings cannot regain lost detail. H.264 remains 8-bit YUV 4:2:0, so gradient quantization and repeated self-capture can still show bands.
 
 `scripts/test-native-stream-quality.mjs` passed actual Windows Graphics Capture, native RTP decoding in Chromium, and native-copy MP4 inspection for Baseline/Main/High at each of 8/12/20 Mbps, all 1920x1080 at a requested 60 FPS. Baseline and Main at 8 Mbps also passed encoded-frame loss recovery with a new decoded keyframe and late joining. The test captures only its synthetic source window and uses a temporary loopback debugging endpoint. Receiver support varies by browser; unsupported High is skipped explicitly by the harness. Older P4/P5 checks remain in `scripts/test-native-encoder-quality.ps1` as historical comparisons.
+
+The parameterized `scripts/test-native-screen.mjs` also passed 1280×720 at 120 FPS/12 Mbps and 240 FPS/20 Mbps through actual Windows Graphics Capture, NVENC and AMF, native RTP, Chromium decoding, and native MP4 recording. Measured decode rates on the development machine were approximately 120.5–120.7 FPS and 240.9–241.4 FPS. Those results establish the pipeline and tested hardware path; a static or slower-refresh source, encoder saturation, receiver decode limits, or network capacity can reduce the delivered rate.
 
 ## Native system audio and source previews
 

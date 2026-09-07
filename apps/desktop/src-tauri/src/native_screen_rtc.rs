@@ -936,6 +936,15 @@ mod tests {
         assert!(high_4k.sdp_fmtp_line.contains("profile-level-id=640034"));
         let main_1080 = h264_codec(NativeH264Profile::Main, 1920, 1080, 60, 20).unwrap();
         assert!(main_1080.sdp_fmtp_line.contains("profile-level-id=4d002a"));
+        let high_720_240 = h264_codec(NativeH264Profile::High, 1280, 720, 240, 20).unwrap();
+        assert!(high_720_240
+            .sdp_fmtp_line
+            .contains("profile-level-id=640033"));
+        let high_1080_120 = h264_codec(NativeH264Profile::High, 1920, 1080, 120, 20).unwrap();
+        assert!(high_1080_120
+            .sdp_fmtp_line
+            .contains("profile-level-id=640033"));
+        assert!(h264_codec(NativeH264Profile::High, 2560, 1440, 240, 20).is_err());
     }
 
     #[test]
