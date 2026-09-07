@@ -1,8 +1,10 @@
 # BetterComms preview release notes
 
-## 0.1.8 — 24 FPS camera overlay
+## 0.1.9 — 24 FPS camera overlay
 
-The Windows camera overlay now targets 24 FPS instead of 10. Rust paces frames against absolute deadlines rather than silently dropping early frames or accumulating timer drift. The frontend submits one frame at a time without adding a competing timer on modern hosts. Frame submission remains sequential with no stale-frame backlog. Actual cadence depends on source cameras and local rendering load. An updated native 0.1.8 binary is required; older hosts retain their advertised 10 FPS limit. The unpublished 0.1.7 candidate was superseded after its native timing check measured drift.
+The Windows camera overlay now targets 24 FPS instead of 10. Rust paces frames against absolute deadlines rather than silently dropping early frames or accumulating timer drift. Native painting reuses its bitmap and avoids per-frame window positioning. The frontend submits one frame at a time without adding a competing timer on modern hosts. Frame submission remains sequential with no stale-frame backlog. Actual cadence depends on source cameras and local rendering load. An updated native 0.1.9 binary is required; older hosts retain their advertised 10 FPS limit. The unpublished 0.1.7 and 0.1.8 candidates were superseded after timing and multi-camera validation.
+
+Validation: web build, 72 unit tests and two overlay/layout browser tests passed. Rust passed 52 tests with 11 hardware checks ignored. Optimized Windows live-camera checks measured 23.18 FPS for one camera and 8.01 FPS for four synthetic sources. Multi-camera throughput remains a known limitation.
 
 ## 0.1.6 — native camera overlay
 

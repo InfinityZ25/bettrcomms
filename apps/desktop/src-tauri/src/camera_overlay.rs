@@ -27,6 +27,7 @@ struct Overlay {
     height: u32,
     click_through: bool,
     rows: u8,
+    shown: bool,
     last_frame: Option<Instant>,
     next_frame_at: Instant,
 }
@@ -129,6 +130,7 @@ pub async fn camera_overlay_open(
         height,
         click_through,
         rows,
+        shown: false,
         last_frame: Some(now),
         next_frame_at: now,
     };
@@ -230,7 +232,7 @@ pub async fn camera_overlay_frame(
         InvokeBody::Raw(_) => return Err("Camera overlay RGBA frame length is invalid".into()),
         _ => return Err("Camera overlay frames require a binary IPC body".into()),
     };
-    let (hwnd, position, target_width, target_height, click, delay) = {
+    let (hwnd, target_width, target_height, delay, show) = {
         let mut guard = state
             .overlay
             .lock()
@@ -243,14 +245,7 @@ pub async fn camera_overlay_frame(
             return Err("Camera overlay frame dimensions do not match the current layout".into());
         }
         let delay = o.next_frame_at.saturating_duration_since(Instant::now());
-        (
-            o.hwnd,
-            o.position,
-            o.width,
-            o.height,
-            o.click_through,
-            delay,
-        )
+        (o.hwnd, o.width, o.height, delay, !o.shown)
     };
     // Pace early frames instead of discarding them. The frontend sends only one
     // frame at a time; keep the lifecycle grant held while waiting asynchronously.
@@ -267,21 +262,24 @@ pub async fn camera_overlay_frame(
         overlay.last_frame = Some(now);
         overlay.next_frame_at = advance_frame_deadline(overlay.next_frame_at, now);
     }
-    let bgra = rgba_to_bgra_scaled(&rgba, width, height, target_width, target_height)?;
-    let target_height = (bgra.len() / 4 / target_width as usize) as u32;
-    let ui_window = window.clone();
     on_main(&window, move || {
-        platform::paint(
-            &ui_window,
-            hwnd,
-            target_width,
-            target_height,
-            position,
-            click,
-            &bgra,
-        )
+        let bgra = rgba_to_bgra_scaled(&rgba, width, height, target_width, target_height)?;
+        platform::paint(hwnd, target_width, target_height, &bgra, show)
     })
-    .await??;
+    .await
+    .map_err(|error| format!("Camera overlay paint task failed: {error}"))??;
+    if show {
+        if let Some(overlay) = state
+            .overlay
+            .lock()
+            .map_err(|_| "Camera overlay state unavailable")?
+            .as_mut()
+        {
+            if overlay.id == id {
+                overlay.shown = true;
+            }
+        }
+    }
     Ok(())
 }
 
@@ -404,6 +402,10 @@ fn rgba_to_bgra_scaled(
 #[cfg(windows)]
 mod platform {
     use super::OverlayPosition;
+    use std::{
+        collections::HashMap,
+        sync::{Mutex, OnceLock},
+    };
     use tauri::WebviewWindow;
     use windows::{
         core::w,
@@ -418,11 +420,84 @@ mod platform {
             UI::WindowsAndMessaging::{
                 CreateWindowExW, DestroyWindow, GetWindowLongPtrW, SetWindowDisplayAffinity,
                 SetWindowLongPtrW, SetWindowPos, UpdateLayeredWindow, GWL_EXSTYLE, HWND_TOPMOST,
-                SWP_NOACTIVATE, SWP_SHOWWINDOW, ULW_ALPHA, WDA_EXCLUDEFROMCAPTURE, WS_EX_LAYERED,
-                WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
+                SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, ULW_ALPHA,
+                WDA_EXCLUDEFROMCAPTURE, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+                WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
             },
         },
     };
+    struct PaintSurface {
+        screen: windows::Win32::Graphics::Gdi::HDC,
+        memory: windows::Win32::Graphics::Gdi::HDC,
+        bitmap: windows::Win32::Graphics::Gdi::HBITMAP,
+        old: windows::Win32::Graphics::Gdi::HGDIOBJ,
+        bits: *mut u8,
+        width: u32,
+        height: u32,
+    }
+    // The public platform operations are dispatched to the main thread, as
+    // required by ReleaseDC for a DC obtained with GetDC. The mutex provides
+    // bounded process cleanup without permitting concurrent handle access.
+    unsafe impl Send for PaintSurface {}
+    static SURFACES: OnceLock<Mutex<HashMap<isize, PaintSurface>>> = OnceLock::new();
+
+    fn surfaces() -> &'static Mutex<HashMap<isize, PaintSurface>> {
+        SURFACES.get_or_init(|| Mutex::new(HashMap::new()))
+    }
+
+    fn release_surface(surface: PaintSurface) {
+        unsafe {
+            SelectObject(surface.memory, surface.old);
+            let _ = DeleteObject(surface.bitmap.into());
+            let _ = DeleteDC(surface.memory);
+            ReleaseDC(None, surface.screen);
+        }
+    }
+
+    fn create_surface(w: u32, h: u32) -> Result<PaintSurface, String> {
+        let screen = unsafe { GetDC(None) };
+        if screen.is_invalid() {
+            return Err("Could not access display for camera overlay".into());
+        }
+        let memory = unsafe { CreateCompatibleDC(Some(screen)) };
+        if memory.is_invalid() {
+            unsafe { ReleaseDC(None, screen) };
+            return Err("Could not create camera overlay buffer".into());
+        }
+        let mut info = BITMAPINFO::default();
+        info.bmiHeader = BITMAPINFOHEADER {
+            biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+            biWidth: w as i32,
+            biHeight: -(h as i32),
+            biPlanes: 1,
+            biBitCount: 32,
+            biCompression: BI_RGB.0,
+            ..Default::default()
+        };
+        let mut bits = std::ptr::null_mut();
+        let bitmap = match unsafe {
+            CreateDIBSection(Some(memory), &info, DIB_RGB_COLORS, &mut bits, None, 0)
+        } {
+            Ok(bitmap) => bitmap,
+            Err(error) => {
+                unsafe {
+                    let _ = DeleteDC(memory);
+                    ReleaseDC(None, screen);
+                }
+                return Err(error.to_string());
+            }
+        };
+        let old = unsafe { SelectObject(memory, bitmap.into()) };
+        Ok(PaintSurface {
+            screen,
+            memory,
+            bitmap,
+            old,
+            bits: bits.cast(),
+            width: w,
+            height: h,
+        })
+    }
     fn overlay_style(click: bool) -> windows::Win32::UI::WindowsAndMessaging::WINDOW_EX_STYLE {
         let mut style = WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST;
         if click {
@@ -541,43 +616,25 @@ mod platform {
         .map_err(|e| e.to_string())?;
         Ok((w, h))
     }
-    pub fn paint(
-        main: &WebviewWindow,
-        raw: isize,
-        w: u32,
-        h: u32,
-        p: OverlayPosition,
-        click: bool,
-        pixels: &[u8],
-    ) -> Result<(), String> {
-        let _ = configure(main, raw, w, h, p, click)?;
+    pub fn paint(raw: isize, w: u32, h: u32, pixels: &[u8], show: bool) -> Result<(), String> {
         let hwnd = HWND(raw as *mut _);
-        let screen = unsafe { GetDC(None) };
-        if screen.is_invalid() {
-            return Err("Could not access display for camera overlay".into());
+        let mut guard = surfaces()
+            .lock()
+            .map_err(|_| "Camera overlay paint buffer unavailable")?;
+        let needs_new = guard
+            .get(&raw)
+            .is_none_or(|surface| surface.width != w || surface.height != h);
+        if needs_new {
+            if let Some(old) = guard.remove(&raw) {
+                release_surface(old);
+            }
+            guard.insert(raw, create_surface(w, h)?);
         }
-        let memory = unsafe { CreateCompatibleDC(Some(screen)) };
-        if memory.is_invalid() {
-            unsafe { ReleaseDC(None, screen) };
-            return Err("Could not create camera overlay buffer".into());
-        }
-        let mut info = BITMAPINFO::default();
-        info.bmiHeader = BITMAPINFOHEADER {
-            biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-            biWidth: w as i32,
-            biHeight: -(h as i32),
-            biPlanes: 1,
-            biBitCount: 32,
-            biCompression: BI_RGB.0,
-            ..Default::default()
-        };
-        let mut bits = std::ptr::null_mut();
-        let bitmap =
-            unsafe { CreateDIBSection(Some(memory), &info, DIB_RGB_COLORS, &mut bits, None, 0) }
-                .map_err(|e| e.to_string())?;
+        let surface = guard
+            .get_mut(&raw)
+            .ok_or("Camera overlay paint buffer unavailable")?;
         unsafe {
-            std::ptr::copy_nonoverlapping(pixels.as_ptr(), bits.cast(), pixels.len());
-            let old = SelectObject(memory, bitmap.into());
+            std::ptr::copy_nonoverlapping(pixels.as_ptr(), surface.bits, pixels.len());
             let blend = BLENDFUNCTION {
                 BlendOp: AC_SRC_OVER as u8,
                 BlendFlags: 0,
@@ -591,23 +648,37 @@ mod platform {
             };
             let result = UpdateLayeredWindow(
                 hwnd,
-                Some(screen),
+                Some(surface.screen),
                 None,
                 Some(&size),
-                Some(memory),
+                Some(surface.memory),
                 Some(&point),
                 COLORREF(0),
                 Some(&blend),
                 ULW_ALPHA,
             );
-            SelectObject(memory, old);
-            let _ = DeleteObject(bitmap.into());
-            let _ = DeleteDC(memory);
-            ReleaseDC(None, screen);
-            result.map_err(|e| e.to_string())
+            result.map_err(|e| e.to_string())?;
+            if show {
+                SetWindowPos(
+                    hwnd,
+                    Some(HWND_TOPMOST),
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
+                )
+                .map_err(|e| e.to_string())?;
+            }
+            Ok(())
         }
     }
     pub fn destroy(raw: isize) -> Result<(), String> {
+        if let Ok(mut guard) = surfaces().lock() {
+            if let Some(surface) = guard.remove(&raw) {
+                release_surface(surface);
+            }
+        }
         unsafe { DestroyWindow(HWND(raw as *mut _)) }.map_err(|e| e.to_string())
     }
 
@@ -639,15 +710,7 @@ mod platform {
     ) -> Result<(u32, u32), String> {
         Err("Native camera overlay is available on Windows only".into())
     }
-    pub fn paint(
-        _: &WebviewWindow,
-        _: isize,
-        _: u32,
-        _: u32,
-        _: OverlayPosition,
-        _: bool,
-        _: &[u8],
-    ) -> Result<(), String> {
+    pub fn paint(_: isize, _: u32, _: u32, _: &[u8], _: bool) -> Result<(), String> {
         Err("Native camera overlay is available on Windows only".into())
     }
     pub fn destroy(_: isize) -> Result<(), String> {
