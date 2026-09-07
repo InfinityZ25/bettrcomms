@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent } from 'react';
+import { useEffect, useRef, useState, type PointerEvent, type CSSProperties } from 'react';
 import { RecordingDownload } from './RecordingDownload';
 import ConnectionStatus from './ConnectionStatus';
 import { useSpeakingActivity } from './media/useSpeakingActivity';
@@ -47,6 +47,8 @@ import { isTauri } from '@tauri-apps/api/core';
 import type { NativeScreenStartOptions } from './media/nativeScreen';
 import { setCallPlaybackDeafened } from './media/remoteAudio';
 import './CallLobby.css';
+import './CallWorkspace.css';
+import { useCallLayout } from './useCallLayout';
 
 export interface CallPresence {
   user_id: string;
@@ -66,6 +68,10 @@ export default function CallStage({
   user,
   room,
   layout,
+  onLayout,
+  onJoinedChange,
+  focused = false,
+  onFocus,
   noise,
   balanced,
   onError,
@@ -78,6 +84,10 @@ export default function CallStage({
   user: User | null;
   room: Room | null;
   layout: string;
+  onLayout?: (layout: string) => void;
+  onJoinedChange?: (joined: boolean) => void;
+  focused?: boolean;
+  onFocus?: () => void;
   noise: boolean;
   balanced: boolean;
   onError: (s: string) => void;
@@ -101,19 +111,20 @@ export default function CallStage({
     [pan, setPan] = useState({ x: 0, y: 0 }),
     [recording, setRecording] = useState(false),
     [result, setResult] = useState<RecordingResult | null>(null),
-    [selected, setSelected] = useState(''),
-    [cameraHeight, setCameraHeight] = useState(
-      Math.max(
-        72,
-        Math.min(
-          220,
-          Number(
-            localStorage.getItem('bc-camera-height') ??
-              (window.innerHeight < 800 ? 100 : 134),
-          ),
-        ),
-      ),
-    );
+    [selected, setSelected] = useState('');
+  const workspace = useRef<HTMLDivElement>(null);
+  const docking = useCallLayout(layout, onLayout, joined);
+  const [fullscreen, setFullscreen] = useState(false);
+  useEffect(() => { onJoinedChange?.(joined); }, [joined, onJoinedChange]);
+  useEffect(() => {
+    const update = () => setFullscreen(document.fullscreenElement === workspace.current && Boolean(workspace.current));
+    document.addEventListener('fullscreenchange', update);
+    return () => document.removeEventListener('fullscreenchange', update);
+  }, []);
+  const toggleFullscreen = () => {
+    const action = document.fullscreenElement ? document.exitFullscreen() : workspace.current?.requestFullscreen();
+    void action?.catch(error => onError(error.message));
+  };
   const engine = useRef<MediaEngine | null>(null),
     socket = useRef<RoomWebSocketSignaling | null>(null),
     recorder = useRef<TrackRecordingSession | null>(null),
@@ -768,22 +779,31 @@ export default function CallStage({
     );
   }
   return (
-    <>
-      <div
-        data-joined={joined}
-        className={
-          'stage ' +
-          (layout === 'focus'
-            ? 'focus-layout'
-            : layout === 'side'
-              ? 'side-layout'
-              : '')
-        }
-      >
-        <div
-          className="camera-strip"
-          style={layout === 'top' ? { height: cameraHeight } : undefined}
-        >
+    <div className="call-workspace" ref={workspace}>
+      <div className="call-layout-toolbar">
+              {(recording || Object.values(remoteRecording).some(Boolean)) && (
+                <span className="recording-badge">
+                  <Circle size={9} fill="currentColor" />{' '}
+                  {recording
+                    ? 'RECORDING'
+                    : Object.entries(remoteRecording)
+                        .filter(([, value]) => value)
+                        .map(([id]) => names[id] ?? 'Friend')
+                        .join(', ') + ' IS RECORDING'}
+                </span>
+              )}
+        <label>Camera position <select aria-label="Camera position" value={docking.dock} onChange={e => docking.setDock(e.target.value as 'top' | 'left' | 'right')}>
+          <option value="top">Top row</option><option value="left">Left side</option><option value="right">Right side</option>
+        </select></label>
+        <button onClick={docking.reset}>Reset layout</button>
+        <button onClick={() => { if (document.fullscreenElement) void document.exitFullscreen().then(onInvite); else onInvite(); }} aria-label="Invite to call"><Plus size={16} /> Invite</button>
+        <button onClick={onFocus} aria-pressed={focused}>{focused ? 'Show navigation' : 'Focus call'}</button>
+        <button onClick={toggleFullscreen} aria-label={fullscreen ? 'Exit fullscreen call' : 'Fullscreen call'}><Maximize2 size={16} /></button>
+      </div>
+      <div ref={docking.stage} data-joined={joined} className="stage" data-dock={docking.dock} data-has-share={Boolean(share)} style={{ '--camera-size': docking.size + 'px' } as CSSProperties}>
+        <div className="camera-dock">
+          <button className="camera-dock-handle" aria-label="Drag cameras to dock" {...docking.moveHandlers}>⠿ Cameras · drag to dock</button>
+          <div className="camera-strip">
           <div
             className={`camera-tile self${speaking.has('self') ? ' is-speaking' : ''}`}
             data-speaking={speaking.has('self')}
@@ -846,29 +866,10 @@ export default function CallStage({
               </details>
             </div>
           ))}
-          <button className="camera-tile invite" onClick={onInvite}>
-            <span className="invite-circle">
-              <Plus size={22} />
-            </span>
-            <span>Bring someone along</span>
-          </button>
+          </div>
         </div>
-        {layout === 'top' && (
-          <input
-            className="camera-resize"
-            aria-label="Camera row height"
-            title="Resize camera row"
-            type="range"
-            min={72}
-            max={220}
-            step={4}
-            value={cameraHeight}
-            onChange={(e) => {
-              setCameraHeight(Number(e.target.value));
-              localStorage.setItem('bc-camera-height', e.target.value);
-            }}
-          />
-        )}
+        {share && <div className="camera-divider" role="separator" tabIndex={0} aria-label="Resize cameras" aria-orientation={docking.dock === 'top' ? 'horizontal' : 'vertical'} aria-valuemin={docking.minimum} aria-valuemax={docking.maximum} aria-valuenow={Math.round(docking.size)} {...docking.resizeHandlers} onKeyDown={docking.resizeKey} />}
+        {docking.target && <div className="dock-targets" aria-hidden="true"><span data-active={docking.target === 'left'}>Left</span><span data-active={docking.target === 'top'}>Top</span><span data-active={docking.target === 'right'}>Right</span></div>}
         {remote
           .filter((t) => t.track.kind === 'audio')
           .map((t) => (
@@ -896,17 +897,7 @@ export default function CallStage({
             <span>
               <MonitorUp size={15} />
               {share ? share.name.toUpperCase() : 'YOUR SHARED SPACE'}
-              {(recording || Object.values(remoteRecording).some(Boolean)) && (
-                <span className="recording-badge">
-                  <Circle size={9} fill="currentColor" />{' '}
-                  {recording
-                    ? 'RECORDING'
-                    : Object.entries(remoteRecording)
-                        .filter(([, value]) => value)
-                        .map(([id]) => names[id] ?? 'Friend')
-                        .join(', ') + ' IS RECORDING'}
-                </span>
-              )}
+
             </span>
             {shares.length > 1 ? (
               <select
@@ -1023,14 +1014,7 @@ export default function CallStage({
               <span />
               <button
                 aria-label="Fullscreen shared content"
-                onClick={(e) => {
-                  const target = e.currentTarget.closest('.content-stage');
-                  if (document.fullscreenElement) document.exitFullscreen();
-                  else
-                    target
-                      ?.requestFullscreen()
-                      .catch((error) => onError(error.message));
-                }}
+                onClick={toggleFullscreen}
               >
                 <Maximize2 size={16} />
               </button>
@@ -1169,24 +1153,13 @@ export default function CallStage({
           )}
         </div>
       )}
-      {result && (
-        <div className="recording-downloads">
-          <strong>
-            <Download size={16} /> Your recording
-          </strong>
-          <span>{saveStatus}</span>
-          <Button variant="secondary" onClick={onRecordings}>
-            Open recordings & player
-          </Button>
-          <details>
-            <summary>Download original tracks</summary>
-            {result.files.map((f) => (
-              <RecordingDownload key={f.name} file={f} />
-            ))}
-          </details>
-        </div>
-      )}
-    </>
+      {result && <div className="recording-downloads call-recording-notice">
+        <span>{saveStatus}</span>
+        <button onClick={() => { if (document.fullscreenElement) void document.exitFullscreen().then(onRecordings); else onRecordings(); }}>Open recordings & player</button>
+        <details><summary>Download original tracks</summary>{result.files.map(file => <RecordingDownload key={file.name} file={file} />)}</details>
+      </div>}
+
+    </div>
   );
 }
 function TrackVideo({

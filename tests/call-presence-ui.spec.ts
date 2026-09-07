@@ -8,13 +8,19 @@ const json = async <T>(response: APIResponse) => {
   return response.json() as Promise<T>;
 };
 const login = async (context: BrowserContext, name: string, email: string) => {
-  const value = await json<User | { user: User }>(await context.request.post('/api/v1/auth/dev', {
-    headers: { Origin: origin }, data: { name, email },
-  }));
+  const deadline = Date.now() + 65_000;
+  let response: APIResponse;
+  do {
+    response = await context.request.post('/api/v1/auth/dev', { headers: { Origin: origin }, data: { name, email } });
+    if (response.status() !== 429 || Date.now() >= deadline) break;
+    await new Promise(resolve => setTimeout(resolve, 5000));
+  } while (true);
+  const value = await json<User | { user: User }>(response);
   return 'user' in value ? value.user : value;
 };
 
 test('lobby and navigation show live mute and deafen presence', async ({ browser }) => {
+  test.setTimeout(160_000);
   const ownerContext = await browser.newContext({ baseURL });
   const guestContext = await browser.newContext({ baseURL });
   try {
@@ -55,7 +61,7 @@ test('lobby and navigation show live mute and deafen presence', async ({ browser
     await expect(guestPage.locator('.conversation-navigation')).toContainText('Lobby Ada');
     await ownerPage.screenshot({ path: 'tests/screenshots/call-presence-incall-desktop.png', fullPage: true });
     await ownerPage.setViewportSize({ width: 390, height: 844 });
-    await ownerPage.getByRole('button', { name: 'Close chat' }).click();
+    if (await ownerPage.getByRole('button', { name: 'Close chat' }).isVisible()) await ownerPage.getByRole('button', { name: 'Close chat' }).click();
     await ownerPage.screenshot({ path: 'tests/screenshots/call-presence-incall-mobile.png', fullPage: true });
     await ownerPage.setViewportSize({ width: 1280, height: 900 });
 

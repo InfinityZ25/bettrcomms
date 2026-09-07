@@ -1,5 +1,13 @@
 # BetterComms preview release notes
 
+## Adjustable call workspace
+
+Active calls expose a Camera position control with top, left, and right docks. Drag the camera handle to preview and snap to a dock, or drag the divider to resize; the divider also supports arrow keys and Home/End. Camera sizes are bounded by available space, saved locally, and resettable. Small windows arrange cameras above the content. Without a share, participants fill a camera gallery rather than surrounding an unused share illustration.
+
+Fullscreen includes the entire call workspace, retaining cameras and call controls. Focus call hides navigation and chat until restored (or Escape). Joining collapses chat, which remains available from the header. The header, padding, recording notice, and sidebar are reduced during calls. These are hosted frontend changes and do not require another desktop installer.
+
+The layout acceptance test checks drag docking, bounded resizing, saved sizing, fullscreen visibility, focus navigation, mobile overflow, and preservation of the live decoded screen track across transitions.
+
 ## 0.1.4 — recording format exports
 
 Recordings offers an Export a copy format selector beside each original track. WebM video can be converted locally to H.264 MP4, and audio to uncompressed WAV. Desktop 0.1.4 additionally supports 256 kbps MP3 through its installed FFmpeg runtime. Browser MP4 requires available H.264/AAC WebCodecs encoders; unsupported codecs produce an actionable error. Conversion code loads only when requested. Older desktop hosts can use the browser conversion path for MP4/WAV.

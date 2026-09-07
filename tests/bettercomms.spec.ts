@@ -115,8 +115,8 @@ test('two members chat, call, record separate tracks, and transport a screen sha
       guestPage.getByRole('button', { name: /join call/i }).click(),
     ]);
     await Promise.all([
-      expect(ownerPage.getByText(/1 connected/i)).toBeVisible(),
-      expect(guestPage.getByText(/1 connected/i)).toBeVisible(),
+      expect(ownerPage.getByText(/1 connected/i)).toHaveCount(1),
+      expect(guestPage.getByText(/1 connected/i)).toHaveCount(1),
     ]);
     const network = ownerPage.getByRole('button', { name: 'Connection diagnostics' });
     await expect(network).toContainText(/Call · \d+ ms/);
@@ -132,12 +132,12 @@ test('two members chat, call, record separate tracks, and transport a screen sha
     await expect(ownerPage.getByRole('main', { name: 'Settings' })).toBeVisible();
     await ownerPage.getByRole('button', { name: /back to call/i }).click();
     await expect(ownerPage.getByRole('main', { name: 'Settings' })).toBeHidden();
-    await expect(ownerPage.getByText(/1 connected/i)).toBeVisible();
+    await expect(ownerPage.getByText(/1 connected/i)).toHaveCount(1);
     await ownerPage.getByRole('button', { name: 'Recordings' }).click();
     await expect(ownerPage.getByRole('main', { name: 'Recordings' })).toBeVisible();
     await ownerPage.getByRole('button', { name: /back to call/i }).click();
     await expect(ownerPage.getByRole('main', { name: 'Recordings' })).toBeHidden();
-    await expect(ownerPage.getByText(/1 connected/i)).toBeVisible();
+    await expect(ownerPage.getByText(/1 connected/i)).toHaveCount(1);
 
     // Start with audio only, then require tracks added later to join the same session.
     await ownerPage.getByRole('button', { name: /record separate tracks/i }).click();

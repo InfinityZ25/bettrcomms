@@ -83,7 +83,9 @@ export default function App() {
     [name, setName] = useState(''),
     [email, setEmail] = useState('');
   const [roomSettings, setRoomSettings] = useState(false),
-    [layout, setLayout] = useState(localStorage.getItem('bc-layout') ?? 'top'),
+    [callJoined, setCallJoined] = useState(false),
+    [callFocused, setCallFocused] = useState(false),
+    [layout, setLayout] = useState(localStorage.getItem('bc-layout') === 'focus' ? 'top' : localStorage.getItem('bc-layout') ?? 'top'),
     [copied, setCopied] = useState(false),
     [busy, setBusy] = useState(false);
   const [noise, setNoise] = useState(
@@ -148,6 +150,11 @@ export default function App() {
       setError((event as CustomEvent<string>).detail);
     window.addEventListener('bc-output-error', failed);
     return () => window.removeEventListener('bc-output-error', failed);
+  }, []);
+  useEffect(() => { if (callJoined) setChat(false); }, [callJoined]);
+  useEffect(() => {
+    const restore = (event: KeyboardEvent) => { if (event.key === 'Escape' && !document.fullscreenElement && !document.querySelector('[role="dialog"]')) setCallFocused(false); };
+    window.addEventListener('keydown', restore); return () => window.removeEventListener('keydown', restore);
   }, []);
   const messagesEnd = useRef<HTMLDivElement>(null);
   async function loadRooms() {
@@ -242,7 +249,7 @@ export default function App() {
       </div>
     );
   return (
-    <div className="app-shell">
+    <div className={`app-shell${callJoined ? " is-in-call" : ""}${callJoined && callFocused && screen === "call" ? " is-call-focused" : ""}`}>
       <nav
         className="space-rail"
         aria-label="Spaces"
@@ -404,6 +411,10 @@ export default function App() {
               user={user}
               room={room}
               layout={layout}
+              onLayout={setLayout}
+              onJoinedChange={setCallJoined}
+              focused={callFocused}
+              onFocus={() => setCallFocused(value => !value)}
               noise={noise}
               balanced={balanced}
               callPresence={room ? presence.rooms[room.id] ?? emptyCall : emptyCall}
@@ -412,6 +423,7 @@ export default function App() {
               onInvite={() => setFriends(true)}
               onRecordings={() => setRecordingsOpen(true)}
               onRequestShare={(actions) => {
+                if (document.fullscreenElement) void document.exitFullscreen();
                 shareActionsRef.current = actions;
                 setShareActions(actions);
                 navigate('share');
@@ -707,7 +719,7 @@ export default function App() {
               >
                 <option value="top">Cameras on top</option>
                 <option value="side">Cameras on the side</option>
-                <option value="focus">Focus on content</option>
+                <option value="right">Cameras on the right</option>
               </select>
             </label>
             {user && (
