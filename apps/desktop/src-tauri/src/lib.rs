@@ -147,7 +147,7 @@ fn desktop_media_capabilities() -> DesktopMediaCapabilities {
             detail: "Native local screen recording remuxes the live H.264 stream to MP4. Other independent tracks use browser recording. Continuous rewind and active-recording crash recovery remain unavailable.",
         },
         notes: vec![
-            "native Windows sharing requires the separately installed FFmpeg runtime and a successful encoder probe",
+            "native Windows sharing requires the bundled FFmpeg runtime and a successful encoder probe",
             "the web client must fall back to browser media whenever a native capability is not implemented",
         ],
     }
@@ -163,6 +163,9 @@ pub fn run() {
         .manage(native_system_audio::NativeSystemAudioState::default())
         .setup(|app| {
             use tauri::Manager;
+            if let Ok(resource_dir) = app.path().resource_dir() {
+                ffmpeg_setup::configure_bundled_runtime(resource_dir);
+            }
             let webview = app
                 .get_webview_window("main")
                 .ok_or_else(|| "BetterComms main webview was not created".to_owned())?;

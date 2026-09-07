@@ -1,6 +1,8 @@
 # BetterComms preview release notes
 
-## Unreleased — push-to-talk and adaptive call gallery
+## 0.1.10 — bundled native sharing, multiple devices, and adaptive call gallery
+
+Windows installers now include the pinned FFmpeg 8.1 native-sharing runtime, its GPL license, setup metadata, and source/build references. A fresh install can start native window or display sharing without WinGet or a separate 236 MiB first-run download. Rust resolves the packaged resource before the older private app-data runtime; the in-app downloader remains available as a repair fallback if the packaged files are missing. This requires the 0.1.10 Windows app. macOS remains on browser-supported screen capture and does not receive the Windows runtime.
 
 One account can now join the same call from several devices. Each call endpoint receives an opaque device peer ID for WebRTC and optional voice-relay routing while room presence remains grouped under the account with a device count. A device entering an active call sees explicit choices to move the call with **Reconnect from here** or preserve the existing endpoint with **Connect second device**. Reconnecting closes every older call endpoint for that account; adding a device lets each endpoint independently publish or consume microphone, camera, screen, and system audio.
 

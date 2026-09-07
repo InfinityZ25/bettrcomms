@@ -1,0 +1,11 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "resources": {
+      "generated/ffmpeg/windows-x64/ffmpeg.exe": "ffmpeg/ffmpeg.exe",
+      "generated/ffmpeg/windows-x64/LICENSE": "ffmpeg/LICENSE",
+      "generated/ffmpeg/windows-x64/setup.json": "ffmpeg/setup.json",
+      "generated/ffmpeg/windows-x64/SOURCE.txt": "ffmpeg/SOURCE.txt"
+    }
+  }
+}

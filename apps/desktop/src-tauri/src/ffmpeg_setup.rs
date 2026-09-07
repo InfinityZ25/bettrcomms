@@ -2,7 +2,7 @@ use serde::Serialize;
 use std::{
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    sync::{Mutex, TryLockError},
+    sync::{Mutex, OnceLock, TryLockError},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
@@ -11,6 +11,7 @@ const DOWNLOAD_BYTES: u64 = 247_913_948;
 const FFMPEG_BYTES: u64 = 223_360_000;
 const LICENSE_BYTES: u64 = 35_147;
 static INSTALL_LOCK: Mutex<()> = Mutex::new(());
+static BUNDLED_RUNTIME_ROOT: OnceLock<PathBuf> = OnceLock::new();
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -56,11 +57,24 @@ fn installed_with_sizes(root: &Path, ffmpeg_bytes: u64, license_bytes: u64) -> b
         && root.join("setup.json").is_file()
 }
 
-pub(crate) fn runtime_path() -> Option<PathBuf> {
-    install_root()
-        .ok()
+pub(crate) fn configure_bundled_runtime(resource_dir: PathBuf) {
+    let _ = BUNDLED_RUNTIME_ROOT.set(resource_dir.join("ffmpeg"));
+}
+
+fn bundled_runtime_path() -> Option<PathBuf> {
+    BUNDLED_RUNTIME_ROOT
+        .get()
         .filter(|root| installed(root))
         .map(|root| root.join("ffmpeg.exe"))
+}
+
+pub(crate) fn runtime_path() -> Option<PathBuf> {
+    bundled_runtime_path().or_else(|| {
+        install_root()
+            .ok()
+            .filter(|root| installed(root))
+            .map(|root| root.join("ffmpeg.exe"))
+    })
 }
 
 fn trusted(webview: &tauri::Webview) -> Result<(), String> {
@@ -76,13 +90,16 @@ fn trusted(webview: &tauri::Webview) -> Result<(), String> {
 pub fn ffmpeg_install_info(webview: tauri::Webview) -> Result<FfmpegInstallInfo, String> {
     trusted(&webview)?;
     let supported = cfg!(all(target_os = "windows", target_arch = "x86_64"));
-    let installed = install_root().is_ok_and(|root| self::installed(&root));
+    let bundled = bundled_runtime_path().is_some();
+    let installed = bundled || install_root().is_ok_and(|root| self::installed(&root));
     Ok(FfmpegInstallInfo {
         supported,
         installed,
         download_bytes: DOWNLOAD_BYTES,
         installed_bytes: FFMPEG_BYTES + LICENSE_BYTES,
-        detail: if installed {
+        detail: if bundled {
+            "Native sharing is ready. FFmpeg 8.1 is included with BetterComms"
+        } else if installed {
             "The private FFmpeg 8.1 runtime is ready for native sharing"
         } else if supported {
             "Install the verified FFmpeg 8.1 runtime privately for BetterComms; Windows and other apps are not changed"
@@ -109,6 +126,12 @@ fn install_impl() -> Result<FfmpegInstallResult, String> {
     };
     if !cfg!(all(target_os = "windows", target_arch = "x86_64")) {
         return Err("FFmpeg setup is available on Windows x64 only".to_owned());
+    }
+    if runtime_path().is_some() {
+        return Ok(FfmpegInstallResult {
+            installed: true,
+            restart_required: false,
+        });
     }
     let destination = install_root()?;
     if installed(&destination) {
