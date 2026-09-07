@@ -187,6 +187,24 @@ pub struct Started {
     fps: u32,
     encoder: String,
     h264_profile: NativeH264Profile,
+    bitrate_mbps: u32,
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeScreenDiagnostics {
+    encoder: String,
+    h264_profile: NativeH264Profile,
+    width: u32,
+    height: u32,
+    fps: u32,
+    bitrate_mbps: u32,
+    access_units: u64,
+    keyframes: u64,
+    encoded_bytes: u64,
+    sps_profile_idc: Option<String>,
+    sps_constraint_flags: Option<String>,
+    sps_level_idc: Option<String>,
+    peers: Vec<crate::native_screen_rtc::NativePeerDiagnostics>,
 }
 struct Session {
     info: Started,
@@ -970,6 +988,7 @@ pub async fn native_screen_start(
         fps,
         encoder,
         h264_profile,
+        bitrate_mbps,
     };
     let session = Arc::new(Session {
         info: info.clone(),
@@ -1102,6 +1121,42 @@ pub async fn native_screen_start(
             }
         }
     }
+}
+
+#[tauri::command]
+pub async fn native_screen_diagnostics(
+    state: tauri::State<'_, NativeScreenState>,
+    window: WebviewWindow,
+    session_id: String,
+) -> Result<NativeScreenDiagnostics, String> {
+    trusted(&window)?;
+    let session = {
+        let slot = state
+            .session
+            .lock()
+            .map_err(|_| "Capture state unavailable")?;
+        let session = slot.as_ref().ok_or("No native screen share is active")?;
+        if session.info.session_id != session_id {
+            return Err("Native screen session is no longer active".to_owned());
+        }
+        Arc::clone(session)
+    };
+    let rtc = session.hub.diagnostics().await;
+    Ok(NativeScreenDiagnostics {
+        encoder: session.info.encoder.clone(),
+        h264_profile: session.info.h264_profile,
+        width: session.info.width,
+        height: session.info.height,
+        fps: session.info.fps,
+        bitrate_mbps: session.info.bitrate_mbps,
+        access_units: rtc.access_units,
+        keyframes: rtc.keyframes,
+        encoded_bytes: rtc.encoded_bytes,
+        sps_profile_idc: rtc.sps_profile_idc,
+        sps_constraint_flags: rtc.sps_constraint_flags,
+        sps_level_idc: rtc.sps_level_idc,
+        peers: rtc.peers,
+    })
 }
 fn session(state: &NativeScreenState, id: &str) -> Result<Arc<Session>, String> {
     state

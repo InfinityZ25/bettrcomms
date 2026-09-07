@@ -46,6 +46,7 @@ import type { PeerMediaStats } from './media';
 import { isTauri } from '@tauri-apps/api/core';
 import type { NativeScreenStartOptions } from './media/nativeScreen';
 import { setCallPlaybackDeafened } from './media/remoteAudio';
+import { saveRecordingAsset } from './media/recordingExport';
 import './CallLobby.css';
 import './CallWorkspace.css';
 import { useCallLayout } from './useCallLayout';
@@ -145,6 +146,21 @@ export default function CallStage({
   const [serverRtt, setServerRtt] = useState<number | null>(null);
   const [reportStatus, setReportStatus] = useState('');
   const [receivingVideo, setReceivingVideo] = useState<string | null>(null);
+  async function downloadDiagnostics() {
+    try {
+      const nativeVersion = isTauri() ? await import('@tauri-apps/api/app').then(api => api.getVersion()).catch(() => 'unknown') : undefined;
+      const report = {
+        version: 2, time: new Date().toISOString(), client: { native: isTauri(), nativeVersion, userAgent: navigator.userAgent },
+        serverRtt, playback: getCallPlaybackStatus(), screen: await engine.current?.getScreenDiagnostics(),
+        peers: stats.map(({ peerId: _id, voiceRelay, ...peer }, index) => ({ peer: index + 1, ...peer, voiceRelay: voiceRelay ? { state: voiceRelay.state } : undefined })),
+        videoElements: [...(workspace.current?.querySelectorAll('video') ?? [])].map(video => ({ self: video.classList.contains('self-video'), readyState: video.readyState, paused: video.paused, width: video.videoWidth, height: video.videoHeight, currentTime: video.currentTime, errorCode: video.error?.code })),
+      };
+      const file = { name: 'bettercomms-diagnostics-' + Date.now() + '.json', blob: new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' }) };
+      if (isTauri()) await saveRecordingAsset(file, new AbortController().signal, () => {});
+      else { const url = URL.createObjectURL(file.blob); const link = document.createElement('a'); link.href = url; link.download = file.name; link.click(); setTimeout(() => URL.revokeObjectURL(url), 30_000); }
+      setReportStatus('Diagnostics exported. No call content, addresses, or credentials included.');
+    } catch { setReportStatus('Could not export diagnostics. Try again while the call is open.'); }
+  }
   const microphone = locals.get('microphone');
   const speaking = useSpeakingActivity(
     [
@@ -1103,6 +1119,7 @@ export default function CallStage({
       {showStats && (
         <div className="stats-panel">
           <strong>Connection details</strong>
+          <Button variant="secondary" onClick={() => void downloadDiagnostics()}>Download diagnostic report</Button>
           <Button variant="secondary" onClick={() => {
             const report = {
               version: 1, time: new Date().toISOString(), serverRtt,

@@ -8,7 +8,7 @@
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
     },
     time::Duration,
@@ -43,11 +43,13 @@ use webrtc::{
         rtp_codec::{RTCRtpCodecCapability, RTCRtpCodecParameters, RTPCodecType},
         RTCPFeedback,
     },
+    stats::StatsReportType,
     track::track_local::{track_local_static_sample::TrackLocalStaticSample, TrackLocal},
 };
 
 const MAX_PEERS: usize = 8;
 const MAX_ACCESS_UNIT_BYTES: usize = 16 * 1024 * 1024;
+const MAX_PARAMETER_SET_BYTES: usize = 64 * 1024;
 const ICE_GATHER_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -115,6 +117,10 @@ pub struct NativeScreenRtcHub {
     peers: Mutex<HashMap<String, NativePeer>>,
     peer_slots: Arc<Semaphore>,
     idr_requested: Arc<AtomicBool>,
+    access_units: AtomicU64,
+    keyframes: AtomicU64,
+    encoded_bytes: AtomicU64,
+    parameter_sets: Mutex<ParameterSets>,
     closed: AtomicBool,
 }
 
@@ -158,6 +164,10 @@ impl NativeScreenRtcHub {
             peers: Mutex::new(HashMap::new()),
             peer_slots: Arc::new(Semaphore::new(MAX_PEERS)),
             idr_requested: Arc::new(AtomicBool::new(false)),
+            access_units: AtomicU64::new(0),
+            keyframes: AtomicU64::new(0),
+            encoded_bytes: AtomicU64::new(0),
+            parameter_sets: Mutex::new(ParameterSets::default()),
             closed: AtomicBool::new(false),
         }))
     }
@@ -350,6 +360,16 @@ impl NativeScreenRtcHub {
         if !has_annex_b_start_code(&annex_b) {
             return Err("native screen H.264 access unit is not Annex-B".to_owned());
         }
+        let annex_b = {
+            let mut parameter_sets = self.parameter_sets.lock().await;
+            prepare_access_unit(annex_b, &mut parameter_sets)?
+        };
+        self.access_units.fetch_add(1, Ordering::Relaxed);
+        self.encoded_bytes
+            .fetch_add(annex_b.len() as u64, Ordering::Relaxed);
+        if annex_b_has_idr(&annex_b) {
+            self.keyframes.fetch_add(1, Ordering::Relaxed);
+        }
         self.track
             .write_sample(&Sample {
                 data: annex_b.into(),
@@ -368,6 +388,72 @@ impl NativeScreenRtcHub {
 
     pub async fn peer_count(&self) -> usize {
         self.peers.lock().await.len()
+    }
+
+    pub async fn diagnostics(&self) -> NativeRtcDiagnostics {
+        let parameter_sets = self.parameter_sets.lock().await;
+        let sps = parameter_sets.sps_descriptor();
+        drop(parameter_sets);
+        let peers = self.peers.lock().await;
+        let mut ordered = peers.iter().collect::<Vec<_>>();
+        ordered.sort_by_key(|(peer_id, _)| *peer_id);
+        let mut peer_diagnostics = Vec::with_capacity(ordered.len());
+        for (index, (peer_id, peer)) in ordered.into_iter().enumerate() {
+            let reports = peer.connection.get_stats().await;
+            let mut packets_sent = 0;
+            let mut bytes_sent = 0;
+            let mut nack_count = 0;
+            let mut pli_count = 0;
+            let mut fir_count = 0;
+            let mut packets_received = 0;
+            let mut packets_lost = 0;
+            let mut round_trip_time_ms = None;
+            for report in reports.reports.values() {
+                match report {
+                    StatsReportType::OutboundRTP(stats) if stats.kind == "video" => {
+                        packets_sent += stats.packets_sent;
+                        bytes_sent += stats.bytes_sent;
+                        nack_count += stats.nack_count;
+                        pli_count += stats.pli_count.unwrap_or_default();
+                        fir_count += stats.fir_count.unwrap_or_default();
+                    }
+                    StatsReportType::RemoteInboundRTP(stats) if stats.kind == "video" => {
+                        packets_received += stats.packets_received;
+                        packets_lost += stats.packets_lost;
+                        round_trip_time_ms = stats.round_trip_time.map(|value| value * 1_000.0);
+                    }
+                    _ => {}
+                }
+            }
+            let signaling = peer.signaling.lock().await;
+            peer_diagnostics.push(NativePeerDiagnostics {
+                slot: (index + 1) as u8,
+                preview: peer_id.as_str() == "__preview",
+                connection_state: peer.connection.connection_state().to_string(),
+                ice_connection_state: peer.connection.ice_connection_state().to_string(),
+                signaling_state: peer.connection.signaling_state().to_string(),
+                answer_applied: signaling.answered,
+                pending_candidates: signaling.pending_candidates.len(),
+                direct_only: peer.direct_only,
+                packets_sent,
+                bytes_sent,
+                packets_received,
+                packets_lost,
+                nack_count,
+                pli_count,
+                fir_count,
+                round_trip_time_ms,
+            });
+        }
+        NativeRtcDiagnostics {
+            access_units: self.access_units.load(Ordering::Relaxed),
+            keyframes: self.keyframes.load(Ordering::Relaxed),
+            encoded_bytes: self.encoded_bytes.load(Ordering::Relaxed),
+            sps_profile_idc: sps.map(|value| format!("{:02x}", value[0])),
+            sps_constraint_flags: sps.map(|value| format!("{:02x}", value[1])),
+            sps_level_idc: sps.map(|value| format!("{:02x}", value[2])),
+            peers: peer_diagnostics,
+        }
     }
 
     async fn peer(
@@ -394,6 +480,57 @@ impl NativeScreenRtcHub {
             })
             .ok_or_else(|| "native screen peer was not found".to_owned())
     }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeRtcDiagnostics {
+    pub access_units: u64,
+    pub keyframes: u64,
+    pub encoded_bytes: u64,
+    pub sps_profile_idc: Option<String>,
+    pub sps_constraint_flags: Option<String>,
+    pub sps_level_idc: Option<String>,
+    pub peers: Vec<NativePeerDiagnostics>,
+}
+
+#[derive(Default)]
+struct ParameterSets {
+    sps: Option<Vec<u8>>,
+    pps: Option<Vec<u8>>,
+}
+
+impl ParameterSets {
+    fn sps_descriptor(&self) -> Option<[u8; 3]> {
+        let unit = self.sps.as_deref()?;
+        let header = nal_header_offset(unit)?;
+        Some([
+            *unit.get(header + 1)?,
+            *unit.get(header + 2)?,
+            *unit.get(header + 3)?,
+        ])
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativePeerDiagnostics {
+    slot: u8,
+    preview: bool,
+    connection_state: String,
+    ice_connection_state: String,
+    signaling_state: String,
+    answer_applied: bool,
+    pending_candidates: usize,
+    direct_only: bool,
+    packets_sent: u64,
+    bytes_sent: u64,
+    packets_received: u64,
+    packets_lost: i64,
+    nack_count: u64,
+    pli_count: u64,
+    fir_count: u64,
+    round_trip_time_ms: Option<f64>,
 }
 
 impl From<NativeIceCandidate> for RTCIceCandidateInit {
@@ -561,6 +698,119 @@ fn has_annex_b_start_code(bytes: &[u8]) -> bool {
     bytes.starts_with(&[0, 0, 1]) || bytes.starts_with(&[0, 0, 0, 1])
 }
 
+fn nal_header_offset(unit: &[u8]) -> Option<usize> {
+    if unit.starts_with(&[0, 0, 0, 1]) {
+        Some(4)
+    } else if unit.starts_with(&[0, 0, 1]) {
+        Some(3)
+    } else {
+        None
+    }
+}
+
+fn annex_b_units(bytes: &[u8]) -> Vec<(usize, usize, usize, u8)> {
+    let mut starts = Vec::new();
+    let mut index = 0;
+    while index + 3 <= bytes.len() {
+        let length = if bytes[index..].starts_with(&[0, 0, 0, 1]) {
+            4
+        } else if bytes[index..].starts_with(&[0, 0, 1]) {
+            3
+        } else {
+            index += 1;
+            continue;
+        };
+        if index + length < bytes.len() {
+            starts.push((index, index + length));
+        }
+        index += length;
+    }
+    starts
+        .iter()
+        .enumerate()
+        .map(|(position, &(start, header))| {
+            let end = starts.get(position + 1).map_or(bytes.len(), |next| next.0);
+            (start, header, end, bytes[header] & 0x1f)
+        })
+        .collect()
+}
+
+fn prepare_access_unit(annex_b: Vec<u8>, cache: &mut ParameterSets) -> Result<Vec<u8>, String> {
+    let units = annex_b_units(&annex_b);
+    let has_sps = units.iter().any(|unit| unit.3 == 7);
+    let has_pps = units.iter().any(|unit| unit.3 == 8);
+    let has_idr = units.iter().any(|unit| unit.3 == 5);
+    let incoming_sps = units
+        .iter()
+        .find(|unit| unit.3 == 7)
+        .map(|unit| &annex_b[unit.1..unit.2]);
+    let cached_sps = cache
+        .sps
+        .as_deref()
+        .and_then(|unit| nal_header_offset(unit).map(|header| &unit[header..]));
+    if has_sps && !has_pps && incoming_sps != cached_sps {
+        // A changed SPS can invalidate the old PPS. Wait for its matching PPS
+        // rather than attaching stale decoder configuration to an IDR.
+        cache.pps = None;
+    }
+    for &(start, _, end, kind) in &units {
+        if kind != 7 && kind != 8 {
+            continue;
+        }
+        let length = end - start;
+        if length > MAX_PARAMETER_SET_BYTES {
+            return Err("native screen H.264 parameter set exceeded 64 KiB".to_owned());
+        }
+        let value = annex_b[start..end].to_vec();
+        if kind == 7 {
+            cache.sps = Some(value);
+        } else {
+            cache.pps = Some(value);
+        }
+    }
+    if !has_idr || (has_sps && has_pps) {
+        return Ok(annex_b);
+    }
+    let mut prefix = Vec::new();
+    if !has_sps {
+        if let Some(sps) = &cache.sps {
+            prefix.extend_from_slice(sps);
+        }
+    }
+    if !has_pps {
+        if let Some(pps) = &cache.pps {
+            prefix.extend_from_slice(pps);
+        }
+    }
+    if prefix.is_empty() {
+        return Ok(annex_b);
+    }
+    if prefix.len() + annex_b.len() > MAX_ACCESS_UNIT_BYTES {
+        return Err(
+            "native screen H.264 access unit exceeded its size after configuration".to_owned(),
+        );
+    }
+    let insertion = units
+        .iter()
+        .find(|unit| {
+            if !has_sps {
+                unit.3 != 9
+            } else {
+                unit.3 == 8 || matches!(unit.3, 1..=5)
+            }
+        })
+        .map_or(annex_b.len(), |unit| unit.0);
+    let mut configured = Vec::with_capacity(prefix.len() + annex_b.len());
+    configured.extend_from_slice(&annex_b[..insertion]);
+    configured.extend_from_slice(&prefix);
+    configured.extend_from_slice(&annex_b[insertion..]);
+    Ok(configured)
+}
+
+fn annex_b_has_idr(bytes: &[u8]) -> bool {
+    annex_b_units(bytes).iter().any(|unit| unit.3 == 5)
+}
+
 fn validate_identifier(label: &str, value: &str) -> Result<(), String> {
     if value.is_empty()
         || value.len() > 128
@@ -595,6 +845,81 @@ mod tests {
     fn annex_b_validation_is_bounded() {
         assert!(has_annex_b_start_code(&[0, 0, 0, 1, 0x65]));
         assert!(!has_annex_b_start_code(&[0, 0, 2, 1]));
+        assert!(annex_b_has_idr(&[0, 0, 0, 1, 0x67, 1, 0, 0, 1, 0x65]));
+        assert!(!annex_b_has_idr(&[0, 0, 1, 0x41, 1, 2, 3]));
+    }
+
+    #[test]
+    fn parameter_sets_are_cached_and_precede_late_idr_after_aud() {
+        let mut cache = ParameterSets::default();
+        let configured = vec![
+            0, 0, 0, 1, 0x67, 0x42, 0xe0, 0x1f, 0xaa, 0, 0, 1, 0x68, 0xbb, 0, 0, 1, 0x65, 0xcc,
+        ];
+        assert_eq!(
+            prepare_access_unit(configured.clone(), &mut cache).unwrap(),
+            configured
+        );
+        assert_eq!(cache.sps_descriptor(), Some([0x42, 0xe0, 0x1f]));
+
+        let late_idr = vec![0, 0, 1, 0x09, 0xf0, 0, 0, 0, 1, 0x65, 0xdd];
+        let prepared = prepare_access_unit(late_idr, &mut cache).unwrap();
+        assert_eq!(
+            prepared,
+            vec![
+                0, 0, 1, 0x09, 0xf0, 0, 0, 0, 1, 0x67, 0x42, 0xe0, 0x1f, 0xaa, 0, 0, 1, 0x68, 0xbb,
+                0, 0, 0, 1, 0x65, 0xdd,
+            ]
+        );
+
+        let delta = vec![0, 0, 1, 0x41, 1, 2, 3];
+        assert_eq!(
+            prepare_access_unit(delta.clone(), &mut cache).unwrap(),
+            delta
+        );
+    }
+
+    #[test]
+    fn changed_sps_does_not_reuse_an_old_pps() {
+        let mut cache = ParameterSets {
+            sps: Some(vec![0, 0, 1, 0x67, 0x42, 0xe0, 0x1f]),
+            pps: Some(vec![0, 0, 1, 0x68, 1]),
+        };
+        let changed = vec![0, 0, 1, 0x67, 0x4d, 0x00, 0x2a, 0, 0, 1, 0x65, 0xaa];
+        assert_eq!(
+            prepare_access_unit(changed.clone(), &mut cache).unwrap(),
+            changed
+        );
+        assert!(cache.pps.is_none());
+        assert_eq!(cache.sps_descriptor(), Some([0x4d, 0x00, 0x2a]));
+    }
+
+    #[test]
+    fn identical_sps_with_different_start_code_retains_matching_pps() {
+        let mut cache = ParameterSets {
+            sps: Some(vec![0, 0, 0, 1, 0x67, 0x42, 0xe0, 0x1f]),
+            pps: Some(vec![0, 0, 1, 0x68, 0xbb]),
+        };
+        let repeated = vec![
+            0, 0, 1, 0x09, 0xf0, 0, 0, 1, 0x67, 0x42, 0xe0, 0x1f, 0, 0, 0, 1, 0x65, 0xaa,
+        ];
+        assert_eq!(
+            prepare_access_unit(repeated, &mut cache).unwrap(),
+            vec![
+                0, 0, 1, 0x09, 0xf0, 0, 0, 1, 0x67, 0x42, 0xe0, 0x1f, 0, 0, 1, 0x68, 0xbb, 0, 0, 0,
+                1, 0x65, 0xaa,
+            ]
+        );
+        assert!(cache.pps.is_some());
+
+        let mut cache = ParameterSets {
+            sps: Some(vec![0, 0, 1, 0x67, 0x42, 0xe0, 0x1f]),
+            pps: None,
+        };
+        let pps_idr = vec![0, 0, 0, 1, 0x68, 0xcc, 0, 0, 1, 0x65, 0xdd];
+        assert_eq!(
+            prepare_access_unit(pps_idr, &mut cache).unwrap(),
+            vec![0, 0, 1, 0x67, 0x42, 0xe0, 0x1f, 0, 0, 0, 1, 0x68, 0xcc, 0, 0, 1, 0x65, 0xdd,]
+        );
     }
 
     #[test]
@@ -611,6 +936,34 @@ mod tests {
         assert!(high_4k.sdp_fmtp_line.contains("profile-level-id=640034"));
         let main_1080 = h264_codec(NativeH264Profile::Main, 1920, 1080, 60, 20).unwrap();
         assert!(main_1080.sdp_fmtp_line.contains("profile-level-id=4d002a"));
+    }
+
+    #[test]
+    fn diagnostic_peer_is_anonymous_and_bounded_to_transport_metrics() {
+        let peer = NativePeerDiagnostics {
+            slot: 1,
+            preview: false,
+            connection_state: "connected".to_owned(),
+            ice_connection_state: "connected".to_owned(),
+            signaling_state: "stable".to_owned(),
+            answer_applied: true,
+            pending_candidates: 0,
+            direct_only: false,
+            packets_sent: 12,
+            bytes_sent: 3_456,
+            packets_received: 11,
+            packets_lost: 1,
+            nack_count: 2,
+            pli_count: 1,
+            fir_count: 0,
+            round_trip_time_ms: Some(25.0),
+        };
+        let json = serde_json::to_value(peer).unwrap();
+        assert_eq!(json["slot"], 1);
+        assert_eq!(json["bytesSent"], 3_456);
+        for sensitive in ["peerId", "sdp", "candidate", "address", "url", "credential"] {
+            assert!(json.get(sensitive).is_none());
+        }
     }
 
     #[test]

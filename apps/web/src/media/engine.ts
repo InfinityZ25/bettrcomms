@@ -649,6 +649,8 @@ export class MediaEngine extends EventTarget {
       this.emit('remote-track-removed', { peerId, source });
   }
 
+  async getScreenDiagnostics() { return this.nativeScreen.getDiagnostics(); }
+
   async handleSignal(signal: MediaSignal): Promise<void> {
     this.ensureActive();
     // Keep ordinary WebRTC signaling on its original synchronous path. An
@@ -657,7 +659,10 @@ export class MediaEngine extends EventTarget {
       const key = `native:${signal.from}:${signal.captureId}`;
       const previous = this.signalQueues.get(key) ?? Promise.resolve();
       const pending = previous.catch(() => undefined).then(async () => {
-        if (!this.disposed) await this.nativeScreen.handle(signal);
+        if (!this.disposed) {
+          try { await this.nativeScreen.handle(signal); }
+          catch (error) { this.nativeScreen.noteSignalFailure(signal); throw error; }
+        }
       });
       this.signalQueues.set(key, pending);
       try { await pending; }

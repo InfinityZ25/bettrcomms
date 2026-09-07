@@ -124,9 +124,33 @@ test('two members chat, call, record separate tracks, and transport a screen sha
     const connection = ownerPage.getByRole('region', { name: 'Connection details' });
     await expect(connection.locator('dl > div').filter({ hasText: 'Signaling server' })).toContainText(/\d+ ms/);
     await expect(connection).toContainText('Grace E2E');
+    await connection.getByRole('button', { name: 'Advanced diagnostics' }).click();
+    const advanced = ownerPage.locator('.stats-panel');
+    await expect(advanced).toBeVisible();
+    await ownerPage.evaluate(() => {
+      const original = URL.createObjectURL.bind(URL);
+      URL.createObjectURL = (object) => {
+        if (object instanceof Blob && object.type === 'application/json')
+          void object.text().then(text => { (window as unknown as { __diagnosticText?: string }).__diagnosticText = text; });
+        return original(object);
+      };
+    });
+    const diagnosticDownload = ownerPage.waitForEvent('download');
+    await advanced.getByRole('button', { name: 'Download diagnostic report' }).click();
+    const diagnostic = await diagnosticDownload;
+    expect(diagnostic.suggestedFilename()).toMatch(/^bettercomms-diagnostics-\d+\.json$/);
+    await expect.poll(() => ownerPage.evaluate(() => (window as unknown as { __diagnosticText?: string }).__diagnosticText)).toBeTruthy();
+    const diagnosticText = (await ownerPage.evaluate(() => (window as unknown as { __diagnosticText: string }).__diagnosticText));
+    const diagnosticJson = JSON.parse(diagnosticText) as Record<string, unknown>;
+    expect(diagnosticJson.version).toBe(2);
+    expect(diagnosticJson.client).toMatchObject({ native: false });
+    expect(diagnosticJson.screen).toBeTruthy();
+    const diagnosticKeys = [...diagnosticText.matchAll(/"([^"\\]+)"\s*:/g)].map(match => match[1].toLowerCase());
+    for (const forbidden of ['sdp', 'candidate', 'address', 'ip', 'token', 'credential', 'usernamefragment', 'deviceid'])
+      expect(diagnosticKeys).not.toContain(forbidden);
+    expect(diagnosticText).not.toContain('127.0.0.1');
+    expect(diagnosticText).not.toContain('ice-pwd');
     await ownerPage.screenshot({ path: 'tests/screenshots/call-connection.png', fullPage: true });
-    await ownerPage.keyboard.press('Escape');
-    await expect(connection).toBeHidden();
 
     await ownerPage.getByRole('button', { name: /audio and video settings/i }).click();
     await expect(ownerPage.getByRole('main', { name: 'Settings' })).toBeVisible();

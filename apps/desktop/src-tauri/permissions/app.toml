@@ -8,6 +8,7 @@ commands.allow = [
   "native_screen_thumbnail",
   "native_screen_start",
   "native_screen_stop",
+  "native_screen_diagnostics",
   "native_screen_peer_offer",
   "native_screen_peer_answer",
   "native_screen_peer_candidate",

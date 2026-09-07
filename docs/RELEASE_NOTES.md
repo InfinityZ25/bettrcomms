@@ -1,5 +1,13 @@
 # BetterComms preview release notes
 
+## 0.1.5 — native screen diagnostics and decoder initialization
+
+Connection details offers Download diagnostic report. The JSON includes client/runtime version, bounded native-screen signaling events and receive samples, separate screen ICE/connection states, negotiated H.264 profile identifiers, selected candidate types/protocol (without addresses), packet/frame/decode counters, and video-element readiness. Native 0.1.5 adds sender encoder settings, encoded frame/keyframe/byte counts, actual SPS profile bytes, and anonymous per-connection state/RTP/feedback counters. Older hosts report that native sender diagnostics are unavailable. Export while the call and problematic share are still active; these diagnostics stay local until explicitly exported.
+
+The sender retains bounded SPS/PPS initialization data and supplies it with later IDR frames when absent, so a receiver joining after the initial headers can initialize its H.264 decoder. Existing parameter sets are not duplicated. This addresses a concrete recovery gap, but does not establish the cause of the reported Windows-native-only viewing failure. Browser sharing and native sharing use separate peer connections; a working direct call does not prove the native screen connection is healthy. Immediate encoder keyframe generation in response to PLI/FIR remains unsupported; periodic IDRs still govern recovery.
+
+Reports exclude call media, raw SDP/candidates, IP addresses, authentication/TURN credentials, window titles, device identifiers, and participant IDs. They use local peer aliases; aliases are not identities shared between reports.
+
 ## Adjustable call workspace
 
 Active calls expose a Camera position control with top, left, and right docks. Drag the camera handle to preview and snap to a dock, or drag the divider to resize; the divider also supports arrow keys and Home/End. Camera sizes are bounded by available space, saved locally, and resettable. Small windows arrange cameras above the content. Without a share, participants fill a camera gallery rather than surrounding an unused share illustration.

@@ -1,3 +1,4 @@
+import { screenReceiverDiagnostics, videoCapabilities } from './screenDiagnostics';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { MediaSignal, SignalingAdapter } from './types';
@@ -86,6 +87,25 @@ const isRelay = (candidate: RTCIceCandidateInit) =>
 
 export class NativeScreenTransport {
   private session?: Session;
+  private diagnosticEvents: { at: number; peer: number; event: string; detail?: string }[] = [];
+  private diagnosticPeers = new Map<string, number>();
+  private diagnosticStarted = performance.now();
+  private samples: { at: number; peer: number; bytes: number; frames: number; packets: number; state: string }[] = [];
+  private log(peerId: string, event: string, detail?: string) {
+    if (!this.diagnosticPeers.has(peerId) && this.diagnosticPeers.size < 64) this.diagnosticPeers.set(peerId, this.diagnosticPeers.size + 1);
+    this.diagnosticEvents.push({ at: Math.round(performance.now() - this.diagnosticStarted), peer: this.diagnosticPeers.get(peerId) ?? 0, event, detail });
+    if (this.diagnosticEvents.length > 200) this.diagnosticEvents.shift();
+  }
+  noteSignalFailure(signal: MediaSignal) { this.log(signal.from ?? 'unknown', 'signal-failed', signal.type); }
+  async getDiagnostics() {
+    return {
+      iceConfiguration: { stun: this.nativeIceServers().some(server => server.urls.some(url => /^stuns?:/i.test(url))), turn: this.nativeIceServers().some(server => server.urls.some(url => /^turns?:/i.test(url))) },
+      directOnly: this.directOnly, activeProfile: this.activeProfile, sending: Boolean(this.session),
+      outboundPeers: this.outboundPeers.size, capabilities: videoCapabilities(), events: [...this.diagnosticEvents], samples: [...this.samples],
+      sender: this.session ? await invoke('native_screen_diagnostics', { sessionId: this.session.sessionId }).catch(() => ({ unavailable: true, requiresDesktop: '0.1.5' })) : undefined,
+      receivers: await Promise.all([...this.receivers].map(async ([id, receiver]) => ({ peer: this.diagnosticPeers.get(id) ?? 0, ...await screenReceiverDiagnostics(receiver.pc).catch(() => ({ unavailable: true })) }))),
+    };
+  }
   private preview?: RTCPeerConnection;
   private receivers = new Map<string, Receiver>();
   private pendingReceiverCandidates = new Map<
@@ -120,6 +140,8 @@ export class NativeScreenTransport {
     const report = await receiver.pc.getStats();
     const rows = [...report.values()];
     const video = rows.find(row => row.type === 'inbound-rtp' && (row.kind ?? row.mediaType) === 'video');
+    this.samples.push({ at: Math.round(performance.now() - this.diagnosticStarted), peer: this.diagnosticPeers.get(peerId) ?? 0, bytes: Number(video?.bytesReceived) || 0, frames: Number(video?.framesDecoded) || 0, packets: Number(video?.packetsReceived) || 0, state: receiver.pc.connectionState });
+    if (this.samples.length > 120) this.samples.shift();
     return {
       connectionState: receiver.pc.connectionState,
       bytesReceived: Number(video?.bytesReceived) || 0,
@@ -186,6 +208,7 @@ export class NativeScreenTransport {
     }
     this.session = session;
     this.activeProfile = h264Profile;
+    this.log('self', 'capture-started', h264Profile);
     try {
       const unlisten = await listen<{ sessionId: string; reason: string }>(
         'native-screen-ended',
@@ -217,6 +240,7 @@ export class NativeScreenTransport {
     )
       return;
     this.outboundPeers.add(peerId);
+    this.log(peerId, 'sender-peer-start');
     if (this.outboundPeers.size > 7) {
       this.outboundPeers.delete(peerId);
       throw new Error('Native screen sharing supports up to 7 other people');
@@ -249,6 +273,7 @@ export class NativeScreenTransport {
     } catch (error) {
       if (session === this.session && generation === this.generation)
         this.outboundPeers.delete(peerId);
+      this.log(peerId, 'sender-peer-failed', error instanceof DOMException ? error.name : 'Error');
       throw error;
     }
   }
@@ -271,6 +296,7 @@ export class NativeScreenTransport {
       return false;
     const peerId = signal.from;
     if (!peerId) throw new Error('Native screen signal requires a sender');
+    if (signal.type !== 'ice-candidate') this.log(peerId, 'signal-' + signal.type);
     if (signal.type === 'signal') {
       const data = signal.data as unknown as Partial<ProfileMessage> | null;
       const validNonce = typeof data?.nonce === 'string' && data.nonce.length > 0 && data.nonce.length <= 128;
@@ -301,6 +327,7 @@ export class NativeScreenTransport {
       return true;
     }
     if (signal.type === 'answer') {
+      this.log(peerId, 'answer-video', /^m=video 0 /m.test(signal.description.sdp ?? '') ? 'rejected' : 'accepted');
       const session = this.session;
       if (session && session.sessionId === signal.captureId)
         await invoke('native_screen_peer_answer', {
@@ -348,6 +375,7 @@ export class NativeScreenTransport {
     }
     if (signal.type === 'offer') {
       const offeredProfile = offeredNativeProfile(signal.description.sdp);
+      this.log(peerId, 'offered-profile', offeredProfile);
       if (!nativeH264ProfileSupported(offeredProfile)) {
         throw new Error(`This native screen share requires H.264 ${offeredProfile} profile. Ask the sender to restart in baseline compatibility mode.`);
       }
@@ -367,6 +395,7 @@ export class NativeScreenTransport {
           await pc.addIceCandidate(candidate);
       }
       await pc.setLocalDescription(await pc.createAnswer());
+      this.log(peerId, 'receiver-answer-video', /^m=video 0 /m.test(pc.localDescription?.sdp ?? '') ? 'rejected' : 'accepted');
       if (this.disposed || this.receivers.get(peerId)?.pc !== pc) { pc.close(); return true; }
       await this.signaling.send({
         type: 'answer',
@@ -470,6 +499,8 @@ export class NativeScreenTransport {
   private makeReceiver(peerId: string, captureId: string) {
     const pc = new RTCPeerConnection({ iceServers: this.nativeIceServers() });
     pc.ontrack = ({ track }) => {
+      this.log(peerId, 'track-received', track.kind);
+      track.addEventListener('unmute', () => this.log(peerId, 'track-unmuted'), { once: true });
       this.onRemote(peerId, track);
       track.addEventListener(
         'ended',
@@ -478,9 +509,13 @@ export class NativeScreenTransport {
       );
     };
     pc.onconnectionstatechange = () => {
+      this.log(peerId, 'connection', pc.connectionState);
       if (pc.connectionState === 'failed')
         this.closeReceiver(peerId, captureId);
     };
+    pc.oniceconnectionstatechange = () => this.log(peerId, 'ice', pc.iceConnectionState);
+    pc.onsignalingstatechange = () => this.log(peerId, 'signaling', pc.signalingState);
+    pc.onicecandidateerror = event => this.log(peerId, 'ice-server-error', String(event.errorCode));
     pc.onicecandidate = ({ candidate }) => {
       const serialized = candidate?.toJSON() ?? null;
       if (serialized && this.directOnly && isRelay(serialized)) return;
@@ -500,6 +535,7 @@ export class NativeScreenTransport {
   private closeReceiver(peerId: string, captureId?: string) {
     const receiver = this.receivers.get(peerId);
     if (!receiver || (captureId && receiver.captureId !== captureId)) return;
+    this.log(peerId, 'receiver-closed', receiver.pc.connectionState);
     receiver.pc.close();
     this.receivers.delete(peerId);
     this.pendingReceiverCandidates.delete(peerId);

@@ -188,6 +188,7 @@ pub fn run() {
                 native_screen::native_screen_thumbnail,
                 native_screen::native_screen_start,
                 native_screen::native_screen_stop,
+                native_screen::native_screen_diagnostics,
                 native_screen::native_screen_peer_offer,
                 native_screen::native_screen_peer_answer,
                 native_screen::native_screen_peer_candidate,

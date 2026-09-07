@@ -491,3 +491,12 @@ describe('native screen signaling lifecycle', () => {
     })).rejects.toThrow(/Too many native screen receivers/);
   });
 });
+
+it('bounds retained diagnostics and replaces peer identifiers with local aliases', async () => {
+  const { transport } = setup();
+  for (let index = 0; index < 300; index++) transport.noteSignalFailure({ type: 'offer', from: 'private-peer-id', to: 'self', transport: 'native-screen', captureId: 'private-capture', description: { type: 'offer', sdp: 'private-sdp-with-ip' } });
+  const report = await transport.getDiagnostics();
+  expect(report.events).toHaveLength(200);
+  expect(report.events.every(event => event.peer === 1 && event.event === 'signal-failed')).toBe(true);
+  expect(JSON.stringify(report)).not.toMatch(/private-peer|private-capture|private-sdp|example.test/);
+});

@@ -136,7 +136,8 @@ pub async fn recording_conversion_capabilities(
             use std::os::windows::process::CommandExt;
             command.creation_flags(0x0800_0000);
         }
-        let output = command.args(["-hide_banner", "-encoders"])
+        let output = command
+            .args(["-hide_banner", "-encoders"])
             .stdin(Stdio::null())
             .output()
             .map_err(|error| format!("Could not inspect the conversion runtime: {error}"))?;
