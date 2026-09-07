@@ -1,5 +1,5 @@
 import { screenReceiverDiagnostics, videoCapabilities } from './screenDiagnostics';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { MediaSignal, SignalingAdapter } from './types';
 import { isRelayCandidate } from './utils';
@@ -79,6 +79,7 @@ type ProfileMessage = {
   kind: 'native-screen-profile-query' | 'native-screen-profile-reply';
   nonce: string;
   profiles?: NativeH264Profile[];
+  runtime?: 'browser' | 'desktop';
 };
 type PendingProfileQuery = {
   peers: Set<string>;
@@ -124,6 +125,7 @@ export class NativeScreenTransport {
   private activeProfile: NativeH264Profile = 'baseline';
   private pendingProfileQueries = new Map<string, PendingProfileQuery>();
   private peerProfiles = new Map<string, Set<NativeH264Profile>>();
+  private peerRuntimes = new Map<string, 'browser' | 'desktop'>();
 
   constructor(
     private signaling: SignalingAdapter,
@@ -252,8 +254,18 @@ export class NativeScreenTransport {
       throw new Error('Native screen sharing supports up to 7 other people');
     }
     try {
+      let profiles = this.peerProfiles.get(peerId);
+      if (!profiles || !this.peerRuntimes.has(peerId)) {
+        profiles = (await this.queryProfiles([peerId])).get(peerId);
+      }
+      if (this.peerRuntimes.get(peerId) === 'desktop') {
+        this.log(peerId, 'desktop-viewer-compatibility');
+        await this.onFallbackRequested(peerId);
+        this.outboundPeers.delete(peerId);
+        this.log(peerId, 'fallback-sender-active', 'desktop-viewer');
+        return;
+      }
       if (this.activeProfile !== 'baseline') {
-        const profiles = this.peerProfiles.get(peerId) ?? (await this.queryProfiles([peerId])).get(peerId);
         if (!profiles?.has(this.activeProfile)) {
           throw new Error(`This participant cannot decode H.264 ${this.activeProfile}. Restart the share in baseline compatibility mode.`);
         }
@@ -294,6 +306,7 @@ export class NativeScreenTransport {
       }).catch(() => undefined);
     this.outboundPeers.delete(peerId);
     this.peerProfiles.delete(peerId);
+    this.peerRuntimes.delete(peerId);
   }
 
   async handle(signal: MediaSignal): Promise<boolean> {
@@ -313,7 +326,12 @@ export class NativeScreenTransport {
         await this.signaling.send({
           type: 'signal', to: peerId, transport: 'native-screen',
           captureId: signal.captureId,
-          data: { kind: 'native-screen-profile-reply', nonce: data.nonce, profiles },
+          data: {
+            kind: 'native-screen-profile-reply',
+            nonce: data.nonce,
+            profiles,
+            runtime: isTauri() ? 'desktop' : 'browser',
+          },
         } as unknown as MediaSignal);
         return true;
       }
@@ -324,6 +342,8 @@ export class NativeScreenTransport {
           const profiles = new Set(advertised.filter((profile): profile is NativeH264Profile => ['baseline', 'main', 'high'].includes(profile)));
           pending.replies.set(peerId, profiles);
           this.peerProfiles.set(peerId, profiles);
+          if (data.runtime === 'browser' || data.runtime === 'desktop')
+            this.peerRuntimes.set(peerId, data.runtime);
           if (pending.replies.size === pending.peers.size) pending.finish();
         }
         return true;
@@ -440,6 +460,7 @@ export class NativeScreenTransport {
     this.session = undefined;
     this.activeProfile = 'baseline';
     this.peerProfiles.clear();
+    this.peerRuntimes.clear();
     this.unlisten?.();
     this.unlisten = undefined;
     this.preview?.close();

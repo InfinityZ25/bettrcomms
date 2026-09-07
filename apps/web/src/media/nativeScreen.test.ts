@@ -2,9 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
+  isTauri: vi.fn(() => false),
   listen: vi.fn(async () => vi.fn()),
 }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke, isTauri: mocks.isTauri }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: mocks.listen }));
 
 import { NativeScreenTransport } from './nativeScreen';
@@ -74,6 +75,8 @@ beforeEach(() => {
   FakePeerConnection.stats = new Map();
   vi.stubGlobal('RTCPeerConnection', FakePeerConnection);
   mocks.invoke.mockReset();
+  mocks.isTauri.mockReset();
+  mocks.isTauri.mockReturnValue(false);
   mocks.listen.mockClear();
   mocks.invoke.mockImplementation(
     async (command: string, args: Record<string, unknown>) => {
@@ -130,6 +133,49 @@ describe('native screen signaling lifecycle', () => {
     expect(sent).toEqual([]);
     expect(mocks.invoke).toHaveBeenCalledWith('native_screen_start',
       expect.objectContaining({ h264Profile: 'main' }));
+  });
+
+  it('publishes through the ordinary call connection immediately for a desktop viewer', async () => {
+    vi.stubGlobal('RTCRtpReceiver', {
+      getCapabilities: () => ({ codecs: [
+        { mimeType: 'video/H264', sdpFmtpLine: 'packetization-mode=1;profile-level-id=42e01f' },
+      ] }),
+    });
+    const { transport, sent, fallback } = setup();
+    const starting = transport.start({
+      sourceId: 'window:opaque', encoder: 'h264_nvenc', width: 1920,
+      height: 1080, fps: 60, bitrateMbps: 20, cursor: true,
+      h264Profile: 'auto',
+    }, ['peer-desktop']);
+    await Promise.resolve();
+    const query = sent.find(signal => signal.type === 'signal'
+      && signal.transport === 'native-screen')!;
+    await transport.handle({
+      type: 'signal', from: 'peer-desktop', to: 'self', transport: 'native-screen',
+      captureId: query.captureId,
+      data: {
+        kind: 'native-screen-profile-reply', nonce: query.captureId,
+        profiles: ['baseline'], runtime: 'desktop',
+      },
+    });
+    await starting;
+    await transport.addPeer('peer-desktop');
+    expect(fallback).toHaveBeenCalledWith('peer-desktop');
+    expect(mocks.invoke).not.toHaveBeenCalledWith('native_screen_peer_offer',
+      expect.objectContaining({ peerId: 'peer-desktop' }));
+  });
+
+  it('advertises whether the receiver is a desktop WebView', async () => {
+    mocks.isTauri.mockReturnValue(true);
+    const { transport, sent } = setup();
+    await transport.handle({
+      type: 'signal', from: 'peer-a', to: 'self', transport: 'native-screen',
+      captureId: 'profile-query',
+      data: { kind: 'native-screen-profile-query', nonce: 'profile-query' },
+    });
+    expect(sent.at(-1)).toMatchObject({
+      data: { kind: 'native-screen-profile-reply', runtime: 'desktop' },
+    });
   });
 
   it('rejects more peers than can be validated instead of truncating negotiation', async () => {
@@ -361,6 +407,7 @@ describe('native screen signaling lifecycle', () => {
   });
 
   it('does not signal an outbound offer that resolves after the share stopped', async () => {
+    vi.useFakeTimers();
     let resolveOffer!: (value: RTCSessionDescriptionInit) => void;
     mocks.invoke.mockImplementation(
       (command: string, args: Record<string, unknown>) => {
@@ -379,11 +426,12 @@ describe('native screen signaling lifecycle', () => {
       height: 1080, fps: 30, bitrateMbps: 20, cursor: false,
     });
     const adding = transport.addPeer('peer-late');
-    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(1_000);
     await transport.stop();
     resolveOffer({ type: 'offer', sdp: 'stale-offer' });
     await adding;
     expect(sent.some((signal) => signal.type === 'offer' && signal.to === 'peer-late')).toBe(false);
+    vi.useRealTimers();
   });
 
   it('closes a receiver disposed while its asynchronous offer is being applied', async () => {
@@ -405,6 +453,7 @@ describe('native screen signaling lifecycle', () => {
   });
 
   it('reserves pending peers, enforces the native 7-peer limit, and preserves receivers on local stop', async () => {
+    vi.useFakeTimers();
     const { transport, removed } = setup();
     await transport.start({
       sourceId: 'window:opaque',
@@ -423,24 +472,30 @@ describe('native screen signaling lifecycle', () => {
       captureId: 'incoming',
       description: { type: 'offer', sdp: 'v=0\r\n' },
     });
-    await Promise.all([
+    const duplicate = Promise.all([
       transport.addPeer('peer-1'),
       transport.addPeer('peer-1'),
     ]);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await duplicate;
     expect(
       mocks.invoke.mock.calls.filter(
         ([command, args]) =>
           command === 'native_screen_peer_offer' && args.peerId === 'peer-1',
       ),
     ).toHaveLength(1);
-    for (let number = 2; number <= 7; number++)
-      await transport.addPeer(`peer-${number}`);
+    for (let number = 2; number <= 7; number++) {
+      const adding = transport.addPeer(`peer-${number}`);
+      await vi.advanceTimersByTimeAsync(1_000);
+      await adding;
+    }
     await expect(transport.addPeer('peer-8')).rejects.toThrow(/up to 7/);
 
     const receiver = FakePeerConnection.instances[1];
     await transport.stop();
     expect(receiver.close).not.toHaveBeenCalled();
     expect(removed).not.toHaveBeenCalledWith('viewer');
+    vi.useRealTimers();
   });
 
   it('queues receiver ICE before its offer and removes relay routes in direct-only mode', async () => {
