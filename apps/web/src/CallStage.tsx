@@ -20,6 +20,7 @@ import {
   ZoomIn,
   ZoomOut,
   Plus,
+  Pin,
 } from 'lucide-react';
 import { Button } from './components/ui/button';
 import {
@@ -59,6 +60,14 @@ export interface CallPresence {
   deafened: boolean;
 }
 const EMPTY_CALL_PRESENCE: CallPresence[] = [];
+type GalleryLayout = 'adaptive' | 'grid' | 'focus';
+
+function readGalleryLayout(): GalleryLayout {
+  try {
+    const value = localStorage.getItem('bc-gallery-layout');
+    return value === 'grid' || value === 'focus' ? value : 'adaptive';
+  } catch { return 'adaptive'; }
+}
 
 export interface NativeShareActions {
   onShare(options: NativeScreenStartOptions): Promise<void>;
@@ -117,6 +126,12 @@ export default function CallStage({
   const workspace = useRef<HTMLDivElement>(null);
   const docking = useCallLayout(layout, onLayout, joined);
   const [fullscreen, setFullscreen] = useState(false);
+  const [galleryLayout, setGalleryLayout] = useState<GalleryLayout>(readGalleryLayout);
+  const [galleryFit, setGalleryFit] = useState<'cover' | 'contain'>(() => {
+    try { return localStorage.getItem('bc-gallery-fit') === 'contain' ? 'contain' : 'cover'; }
+    catch { return 'cover'; }
+  });
+  const [featuredCamera, setFeaturedCamera] = useState('self');
   useEffect(() => { onJoinedChange?.(joined); }, [joined, onJoinedChange]);
   useEffect(() => {
     const update = () => setFullscreen(document.fullscreenElement === workspace.current && Boolean(workspace.current));
@@ -745,6 +760,30 @@ export default function CallStage({
   const connected = Object.entries(peers).filter(
     ([id, state]) => state === 'connected' || stats.some(s => s.peerId === id && s.voiceRelay?.state === 'relayed'),
   ).length;
+  const cameraParticipants = [
+    { id: 'self', name: user?.name ?? 'You', track: locals.get('camera'), self: true },
+    ...Object.keys(peers).map(id => ({
+      id,
+      name: names[id] ?? 'Friend',
+      track: remote.find(t => t.peerId === id && t.source === 'camera')?.track,
+      self: false,
+    })),
+  ];
+  const activeSpeakerCamera = cameraParticipants.find(camera => speaking.has(camera.id))?.id;
+  const activeFeaturedCamera = galleryLayout === 'adaptive' && activeSpeakerCamera
+    ? activeSpeakerCamera
+    : cameraParticipants.some(camera => camera.id === featuredCamera)
+      ? featuredCamera
+      : cameraParticipants[0]?.id;
+  const changeGalleryLayout = (value: GalleryLayout) => {
+    setGalleryLayout(value);
+    try { localStorage.setItem('bc-gallery-layout', value); } catch { /* Session-only when storage is unavailable. */ }
+  };
+  const toggleGalleryFit = () => {
+    const next = galleryFit === 'cover' ? 'contain' : 'cover';
+    setGalleryFit(next);
+    try { localStorage.setItem('bc-gallery-fit', next); } catch { /* Session-only when storage is unavailable. */ }
+  };
   function pointerDown(e: PointerEvent) {
     if (zoom <= 1) return;
     drag.current = { x: e.clientX, y: e.clientY, px: pan.x, py: pan.y };
@@ -809,10 +848,17 @@ export default function CallStage({
                         .join(', ') + ' IS RECORDING'}
                 </span>
               )}
-        <label>Camera position <select aria-label="Camera position" value={docking.dock} onChange={e => docking.setDock(e.target.value as 'top' | 'left' | 'right')}>
-          <option value="top">Top row</option><option value="left">Left side</option><option value="right">Right side</option>
-        </select></label>
-        <button onClick={docking.reset}>Reset layout</button>
+        {share ? <>
+          <label>Camera position <select aria-label="Camera position" value={docking.dock} onChange={e => docking.setDock(e.target.value as 'top' | 'left' | 'right')}>
+            <option value="top">Top row</option><option value="left">Left side</option><option value="right">Right side</option>
+          </select></label>
+          <button onClick={docking.reset}>Reset layout</button>
+        </> : <div className="gallery-layout-tools" role="group" aria-label="Camera gallery controls">
+          <label>View <select aria-label="Camera gallery layout" value={galleryLayout} onChange={e => changeGalleryLayout(e.target.value as GalleryLayout)}>
+            <option value="adaptive">Adaptive</option><option value="grid">Equal grid</option><option value="focus">Focus</option>
+          </select></label>
+          <button onClick={toggleGalleryFit} aria-pressed={galleryFit === 'contain'}>{galleryFit === 'cover' ? 'Fill tiles' : 'Fit video'}</button>
+        </div>}
         <CameraOverlay cameras={[
           ...(locals.get('camera') ? [{ id: 'self', name: 'You', track: locals.get('camera')!, speaking: speaking.has('self'), muted, deafened }] : []),
           ...remote.filter(track => track.source === 'camera').map(track => ({ id: track.peerId, name: names[track.peerId] ?? 'Friend', track: track.track, speaking: speaking.has(track.peerId), muted: remotePresence[track.peerId]?.muted, deafened: remotePresence[track.peerId]?.deafened })),
@@ -821,14 +867,15 @@ export default function CallStage({
         <button onClick={onFocus} aria-pressed={focused}>{focused ? 'Show navigation' : 'Focus call'}</button>
         <button onClick={toggleFullscreen} aria-label={fullscreen ? 'Exit fullscreen call' : 'Fullscreen call'}><Maximize2 size={16} /></button>
       </div>
-      <div ref={docking.stage} data-joined={joined} className="stage" data-dock={docking.dock} data-has-share={Boolean(share)} style={{ '--camera-size': docking.size + 'px' } as CSSProperties}>
+      <div ref={docking.stage} data-joined={joined} className="stage" data-dock={docking.dock} data-has-share={Boolean(share)} data-gallery={galleryLayout} data-camera-fit={galleryFit} data-camera-count={cameraParticipants.length} style={{ '--camera-size': docking.size + 'px' } as CSSProperties}>
         <div className="camera-dock">
           <button className="camera-dock-handle" aria-label="Drag cameras to dock" {...docking.moveHandlers}>⠿ Cameras · drag to dock</button>
           <div className="camera-strip">
           <div
-            className={`camera-tile self${speaking.has('self') ? ' is-speaking' : ''}`}
+            className={`camera-tile self${speaking.has('self') ? ' is-speaking' : ''}${activeFeaturedCamera === 'self' ? ' is-featured' : ''}`}
             data-speaking={speaking.has('self')}
           >
+            {!share && cameraParticipants.length > 1 && <button className="camera-focus-button" aria-label="Focus You" aria-pressed={galleryLayout === 'focus' && activeFeaturedCamera === 'self'} onClick={() => { setFeaturedCamera('self'); changeGalleryLayout('focus'); }}><Pin size={14} /></button>}
             {speaking.has('self') && (
               <span className="speaking-label">Microphone active</span>
             )}
@@ -849,10 +896,11 @@ export default function CallStage({
           </div>
           {Object.keys(peers).map((id) => (
             <div
-              className={`camera-tile${speaking.has(id) ? ' is-speaking' : ''}`}
+              className={`camera-tile${speaking.has(id) ? ' is-speaking' : ''}${activeFeaturedCamera === id ? ' is-featured' : ''}`}
               key={id}
               data-speaking={speaking.has(id)}
             >
+              {!share && cameraParticipants.length > 1 && <button className="camera-focus-button" aria-label={`Focus ${names[id] ?? 'Friend'}`} aria-pressed={galleryLayout === 'focus' && activeFeaturedCamera === id} onClick={() => { setFeaturedCamera(id); changeGalleryLayout('focus'); }}><Pin size={14} /></button>}
               {speaking.has(id) && (
                 <span className="speaking-label">Speaking</span>
               )}

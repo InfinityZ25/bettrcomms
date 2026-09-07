@@ -54,9 +54,26 @@ test('camera dock resizes, snaps, focuses, and preserves the active share', asyn
     await page.getByRole('button', { name: room.name }).click();
     await page.getByRole('button', { name: 'Join call' }).click();
     await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
-    await page.getByRole('button', { name: 'Share screen' }).click();
 
     const stage = page.locator('.call-workspace .stage');
+    await expect(stage).toHaveAttribute('data-has-share', 'false');
+    await expect(stage).toHaveAttribute('data-gallery', 'adaptive');
+    const galleryLayout = page.getByLabel('Camera gallery layout');
+    await galleryLayout.selectOption('grid');
+    await expect(stage).toHaveAttribute('data-gallery', 'grid');
+    expect(await page.evaluate(() => localStorage.getItem('bc-gallery-layout'))).toBe('grid');
+    const fit = page.getByRole('button', { name: 'Fill tiles' });
+    await fit.click();
+    await expect(stage).toHaveAttribute('data-camera-fit', 'contain');
+    expect(await page.evaluate(() => localStorage.getItem('bc-gallery-fit'))).toBe('contain');
+    const stageBoxBeforeShare = await stage.boundingBox();
+    const soloTileBox = await page.locator('.camera-tile.self').boundingBox();
+    if (!stageBoxBeforeShare || !soloTileBox) throw new Error('Gallery has no layout box');
+    expect(soloTileBox.height).toBeGreaterThan(stageBoxBeforeShare.height * .8);
+    await page.screenshot({ path: '.local/call-gallery-desktop.png', fullPage: true });
+
+    await page.getByRole('button', { name: 'Share screen' }).click();
+
     const sharedVideo = page.locator('.content-stage video');
     await expect(stage).toHaveAttribute('data-has-share', 'true');
     await expect(sharedVideo).toBeVisible();

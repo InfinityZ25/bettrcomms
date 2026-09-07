@@ -1,5 +1,11 @@
 # BetterComms preview release notes
 
+## Unreleased — adaptive call gallery
+
+Calls without a screen share now use the full stage as a responsive camera gallery instead of leaving a shallow camera strip above unused space. Adaptive view gives the active speaker more room in three-person calls; Equal grid keeps every tile the same size; Focus lets the user pin any participant. A local fit/fill preference controls whether cameras are cropped to use the tile or shown in full. Gallery preferences persist on the device, and shared-content calls keep the existing resizable top/side camera docks.
+
+The gallery toolbar only presents controls that apply to the current state. Pin controls appear on hover or keyboard focus, the layout collapses cleanly for narrow windows, and fullscreen retains the selected gallery. The call-layout browser acceptance test now covers gallery sizing, saved view/fit preferences, screen-share docking, fullscreen, focus mode, and mobile overflow.
+
 ## 0.1.9 — 24 FPS camera overlay
 
 The Windows camera overlay now targets 24 FPS instead of 10. Rust paces frames against absolute deadlines rather than silently dropping early frames or accumulating timer drift. Native painting reuses its bitmap and avoids per-frame window positioning. The frontend submits one frame at a time without adding a competing timer on modern hosts. Frame submission remains sequential with no stale-frame backlog. Actual cadence depends on source cameras and local rendering load. An updated native 0.1.9 binary is required; older hosts retain their advertised 10 FPS limit. The unpublished 0.1.7 and 0.1.8 candidates were superseded after timing and multi-camera validation.
