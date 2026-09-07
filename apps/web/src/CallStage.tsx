@@ -126,6 +126,14 @@ export default function CallStage({
   const workspace = useRef<HTMLDivElement>(null);
   const docking = useCallLayout(layout, onLayout, joined);
   const [fullscreen, setFullscreen] = useState(false);
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const controlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastControlsPointer = useRef({ x: Number.NaN, y: Number.NaN });
+  const [cameraAspects, setCameraAspects] = useState<Record<string, number>>({});
+  const [contentFit, setContentFit] = useState<'fit' | 'fill'>(() => {
+    try { return localStorage.getItem('bc-content-fit') === 'fill' ? 'fill' : 'fit'; }
+    catch { return 'fit'; }
+  });
   const [galleryLayout, setGalleryLayout] = useState<GalleryLayout>(readGalleryLayout);
   const [galleryFit, setGalleryFit] = useState<'cover' | 'contain'>(() => {
     try { return localStorage.getItem('bc-gallery-fit') === 'contain' ? 'contain' : 'cover'; }
@@ -134,10 +142,30 @@ export default function CallStage({
   const [featuredCamera, setFeaturedCamera] = useState('self');
   useEffect(() => { onJoinedChange?.(joined); }, [joined, onJoinedChange]);
   useEffect(() => {
-    const update = () => setFullscreen(document.fullscreenElement === workspace.current && Boolean(workspace.current));
+    const update = () => {
+      setFullscreen(document.fullscreenElement === workspace.current && Boolean(workspace.current));
+      setControlsVisible(true);
+    };
     document.addEventListener('fullscreenchange', update);
     return () => document.removeEventListener('fullscreenchange', update);
   }, []);
+  useEffect(() => () => { if (controlsTimer.current) clearTimeout(controlsTimer.current); }, []);
+  const revealControls = () => {
+    setControlsVisible(true);
+    if (controlsTimer.current) clearTimeout(controlsTimer.current);
+    if (fullscreen) controlsTimer.current = setTimeout(() => setControlsVisible(false), 2400);
+  };
+  const pointerActivity = (event: PointerEvent<HTMLDivElement>) => {
+    const previous = lastControlsPointer.current;
+    if (previous.x === event.clientX && previous.y === event.clientY) return;
+    lastControlsPointer.current = { x: event.clientX, y: event.clientY };
+    revealControls();
+  };
+  useEffect(() => {
+    if (!fullscreen) return;
+    revealControls();
+    return () => { if (controlsTimer.current) clearTimeout(controlsTimer.current); };
+  }, [fullscreen]);
   const toggleFullscreen = () => {
     const action = document.fullscreenElement ? document.exitFullscreen() : workspace.current?.requestFullscreen();
     void action?.catch(error => onError(error.message));
@@ -835,7 +863,7 @@ export default function CallStage({
     );
   }
   return (
-    <div className="call-workspace" ref={workspace}>
+    <div className="call-workspace" ref={workspace} data-controls-visible={!fullscreen || controlsVisible} onPointerMove={pointerActivity} onKeyDown={() => revealControls()}>
       <div className="call-layout-toolbar">
               {(recording || Object.values(remoteRecording).some(Boolean)) && (
                 <span className="recording-badge">
@@ -874,13 +902,14 @@ export default function CallStage({
           <div
             className={`camera-tile self${speaking.has('self') ? ' is-speaking' : ''}${activeFeaturedCamera === 'self' ? ' is-featured' : ''}`}
             data-speaking={speaking.has('self')}
+            style={{ '--media-aspect': cameraAspects.self ?? 16 / 9 } as CSSProperties}
           >
             {!share && cameraParticipants.length > 1 && <button className="camera-focus-button" aria-label="Focus You" aria-pressed={galleryLayout === 'focus' && activeFeaturedCamera === 'self'} onClick={() => { setFeaturedCamera('self'); changeGalleryLayout('focus'); }}><Pin size={14} /></button>}
             {speaking.has('self') && (
               <span className="speaking-label">Microphone active</span>
             )}
             {locals.has('camera') ? (
-              <TrackVideo track={locals.get('camera')!} self />
+              <TrackVideo track={locals.get('camera')!} self onAspectRatio={ratio => setCameraAspects(current => current.self === ratio ? current : { ...current, self: ratio })} />
             ) : (
               <span className="avatar avatar-large">
                 {(user?.name ?? 'You').slice(0, 2).toUpperCase()}
@@ -899,6 +928,7 @@ export default function CallStage({
               className={`camera-tile${speaking.has(id) ? ' is-speaking' : ''}${activeFeaturedCamera === id ? ' is-featured' : ''}`}
               key={id}
               data-speaking={speaking.has(id)}
+              style={{ '--media-aspect': cameraAspects[id] ?? 16 / 9 } as CSSProperties}
             >
               {!share && cameraParticipants.length > 1 && <button className="camera-focus-button" aria-label={`Focus ${names[id] ?? 'Friend'}`} aria-pressed={galleryLayout === 'focus' && activeFeaturedCamera === id} onClick={() => { setFeaturedCamera(id); changeGalleryLayout('focus'); }}><Pin size={14} /></button>}
               {speaking.has(id) && (
@@ -911,6 +941,7 @@ export default function CallStage({
                       (t) => t.peerId === id && t.source === 'camera',
                     )!.track
                   }
+                  onAspectRatio={ratio => setCameraAspects(current => current[id] === ratio ? current : { ...current, [id]: ratio })}
                 />
               ) : (
                 <span className="avatar avatar-large">
@@ -961,7 +992,7 @@ export default function CallStage({
             <Volume2 size={17} /> Enable call audio
           </Button>
         )}
-        <div className={'content-stage ' + (share ? 'has-share' : '')}>
+        <div className={'content-stage ' + (share ? 'has-share' : '')} data-content-fit={contentFit}>
           <div className="stage-topline">
             <span>
               <MonitorUp size={15} />
@@ -1074,6 +1105,13 @@ export default function CallStage({
               >
                 {Math.round(zoom * 100)}%
               </button>
+              {share && <button aria-label={contentFit === 'fit' ? 'Fill available space' : 'Fit entire shared screen'} onClick={() => {
+                const next = contentFit === 'fit' ? 'fill' : 'fit';
+                setContentFit(next);
+                setZoom(1);
+                setPan({ x: 0, y: 0 });
+                try { localStorage.setItem('bc-content-fit', next); } catch { /* Session-only when storage is unavailable. */ }
+              }}>{contentFit === 'fit' ? 'Fit' : 'Fill'}</button>}
               <button
                 aria-label="Zoom in"
                 onClick={() => setZoom((z) => Math.min(5, z + 0.25))}
@@ -1237,15 +1275,19 @@ function TrackVideo({
   self = false,
   showStatus = false,
   onReceiving,
+  onAspectRatio,
 }: {
   track: MediaStreamTrack;
   self?: boolean;
   showStatus?: boolean;
   onReceiving?: (receiving: boolean) => void;
+  onAspectRatio?: (ratio: number) => void;
 }) {
   const ref = useRef<HTMLVideoElement>(null);
   const receivingCallback = useRef(onReceiving);
   receivingCallback.current = onReceiving;
+  const aspectCallback = useRef(onAspectRatio);
+  aspectCallback.current = onAspectRatio;
   const [videoStatus, setVideoStatus] = useState('Waiting for video frames…');
   useEffect(() => {
     const video = ref.current;
@@ -1254,6 +1296,12 @@ function TrackVideo({
     setVideoStatus('Waiting for video frames…');
     receivingCallback.current?.(false);
     video.srcObject = new MediaStream([track]);
+    const metadata = () => {
+      if (video.videoWidth && video.videoHeight)
+        aspectCallback.current?.(Math.max(.4, Math.min(2.4, video.videoWidth / video.videoHeight)));
+    };
+    video.addEventListener('loadedmetadata', metadata);
+    video.addEventListener('resize', metadata);
     void video.play().catch(() => { if (active) setVideoStatus('Video playback needs another attempt.'); });
     const started = performance.now();
     let lastFrame = 0, lastProgress = started;
@@ -1270,6 +1318,8 @@ function TrackVideo({
     return () => {
       active = false;
       clearInterval(check);
+      video.removeEventListener('loadedmetadata', metadata);
+      video.removeEventListener('resize', metadata);
       video.srcObject = null;
     };
   }, [track, showStatus]);

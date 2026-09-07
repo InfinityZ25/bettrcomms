@@ -49,11 +49,19 @@ test('camera dock resizes, snaps, focuses, and preserves the active share', asyn
     const room = (await json<{ room: Room }>(await context.request.post('/api/v1/rooms', {
       headers: { Origin: origin }, data: { name: 'Layout studio' },
     }))).room;
+    const otherRoom = (await json<{ room: Room }>(await context.request.post('/api/v1/rooms', {
+      headers: { Origin: origin }, data: { name: 'Browse without leaving' },
+    }))).room;
     const page = await context.newPage();
     await page.goto('/');
     await page.getByRole('button', { name: room.name }).click();
     await page.getByRole('button', { name: 'Join call' }).click();
     await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
+
+    await page.getByRole('button', { name: otherRoom.name }).click();
+    await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
+    await expect(page.locator('.room-heading strong')).toHaveText(otherRoom.name);
+    await page.getByRole('button', { name: `Return to ${room.name}` }).click();
 
     const stage = page.locator('.call-workspace .stage');
     await expect(stage).toHaveAttribute('data-has-share', 'false');
@@ -69,7 +77,14 @@ test('camera dock resizes, snaps, focuses, and preserves the active share', asyn
     const stageBoxBeforeShare = await stage.boundingBox();
     const soloTileBox = await page.locator('.camera-tile.self').boundingBox();
     if (!stageBoxBeforeShare || !soloTileBox) throw new Error('Gallery has no layout box');
-    expect(soloTileBox.height).toBeGreaterThan(stageBoxBeforeShare.height * .8);
+    expect(soloTileBox.width / soloTileBox.height).toBeCloseTo(16 / 9, 1);
+    expect(soloTileBox.height).toBeGreaterThan(stageBoxBeforeShare.height * .65);
+    await page.getByRole('button', { name: 'Turn on camera' }).click();
+    const cameraVideo = page.locator('.camera-tile.self video');
+    await expect.poll(() => cameraVideo.evaluate((video: HTMLVideoElement) => video.videoWidth)).toBeGreaterThan(0);
+    const sourceAspect = await cameraVideo.evaluate((video: HTMLVideoElement) => video.videoWidth / video.videoHeight);
+    const tileAspect = await page.locator('.camera-tile.self').evaluate(element => Number(getComputedStyle(element).getPropertyValue('--media-aspect')));
+    expect(tileAspect).toBeCloseTo(sourceAspect, 2);
     await page.screenshot({ path: '.local/call-gallery-desktop.png', fullPage: true });
 
     await page.getByRole('button', { name: 'Share screen' }).click();
@@ -122,7 +137,13 @@ test('camera dock resizes, snaps, focuses, and preserves the active share', asyn
     await expect.poll(() => page.evaluate(() => document.fullscreenElement?.classList.contains('call-workspace'))).toBe(true);
     await expect(page.locator('.call-workspace .camera-dock')).toBeVisible();
     await expect(page.locator('.call-workspace .call-controls')).toBeVisible();
+    await expect(page.locator('.call-workspace')).toHaveAttribute('data-controls-visible', 'false', { timeout: 4000 });
+    const fullscreenStageBox = await stage.boundingBox();
+    expect(fullscreenStageBox?.height).toBeGreaterThan(880);
+    await page.waitForTimeout(220);
     await page.screenshot({ path: '.local/call-layout-fullscreen.png', fullPage: true });
+    await page.mouse.move(20, 450);
+    await expect(page.locator('.call-workspace')).toHaveAttribute('data-controls-visible', 'true');
     await page.getByRole('button', { name: 'Exit fullscreen call' }).click();
 
     await page.getByRole('button', { name: 'Focus call' }).click();

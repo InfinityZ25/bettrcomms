@@ -198,6 +198,10 @@
   max-height: min(42vh, 360px);
 }
 
+.call-workspace .stage[data-has-share='true'] .camera-tile {
+  aspect-ratio: var(--media-aspect, 16 / 9);
+}
+
 .call-workspace .stage[data-has-share='false'] .camera-divider,
 .call-workspace .stage[data-has-share='false'] .camera-dock-handle,
 .call-workspace .stage[data-has-share='false'] .content-stage {
@@ -360,6 +364,15 @@
 
 .gallery-layout-tools label { margin: 0; }
 .gallery-layout-tools button { padding-block: 6px; }
+.return-to-call {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #d8edc9;
+  border-color: #43543d;
+  background: #263323;
+}
 
 .call-workspace .stage[data-has-share='false'] {
   min-height: 0;
@@ -505,4 +518,107 @@
     grid-auto-rows: minmax(180px, 1fr);
   }
   .camera-focus-button { opacity: 1; }
+}
+
+.call-workspace .stage[data-has-share='false'] .camera-strip {
+  align-items: center;
+  justify-items: center;
+}
+
+.call-workspace .stage[data-has-share='false'] .camera-tile {
+  aspect-ratio: var(--media-aspect, 16 / 9);
+  height: auto;
+  max-height: 100%;
+}
+
+/* Fullscreen media owns the canvas; chrome floats above it and gets out of the way. */
+.call-workspace:fullscreen {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+}
+
+.call-workspace:fullscreen > .stage {
+  position: absolute;
+  inset: 0;
+}
+
+.call-workspace:fullscreen > .call-layout-toolbar,
+.call-workspace:fullscreen > .call-footer {
+  position: absolute;
+  z-index: 30;
+  left: 0;
+  right: 0;
+  opacity: 1;
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.call-workspace:fullscreen > .call-layout-toolbar {
+  top: 0;
+  min-height: 62px;
+  padding: 12px 16px 22px;
+  background: linear-gradient(#080c0bea 45%, transparent);
+}
+
+.call-workspace:fullscreen > .call-footer {
+  bottom: 0;
+  min-height: 76px;
+  padding: 24px 16px 12px;
+  background: linear-gradient(transparent, #080c0bea 55%);
+}
+
+.call-workspace:fullscreen[data-controls-visible='false'] > .call-layout-toolbar,
+.call-workspace:fullscreen[data-controls-visible='false'] > .call-footer {
+  opacity: 0;
+  pointer-events: none;
+}
+.call-workspace:fullscreen[data-controls-visible='false'] > .call-layout-toolbar { transform: translateY(-10px); }
+.call-workspace:fullscreen[data-controls-visible='false'] > .call-footer { transform: translateY(10px); }
+
+.call-workspace:fullscreen > .call-layout-toolbar:hover,
+.call-workspace:fullscreen > .call-footer:hover {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.call-workspace:fullscreen .stage[data-has-share='true'] .content-stage {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+}
+
+.call-workspace .content-stage[data-content-fit='fill'] .zoom-surface video {
+  object-fit: cover;
+}
+
+.call-workspace:fullscreen .content-stage .stage-topline,
+.call-workspace:fullscreen .content-stage .stage-bottomline {
+  position: absolute;
+  z-index: 31;
+  left: 0;
+  right: 0;
+  opacity: 1;
+  transition: opacity 180ms ease;
+}
+.call-workspace:fullscreen .content-stage .stage-topline {
+  top: 0;
+  padding: 16px;
+  background: linear-gradient(#080c0bc7, transparent);
+}
+.call-workspace:fullscreen .content-stage .stage-bottomline {
+  bottom: 0;
+  padding: 18px 16px;
+  background: linear-gradient(transparent, #080c0bc7);
+}
+.call-workspace:fullscreen .content-stage .video-viewport {
+  position: absolute;
+  inset: 0;
+}
+.call-workspace:fullscreen[data-controls-visible='false'] .content-stage .stage-topline,
+.call-workspace:fullscreen[data-controls-visible='false'] .content-stage .stage-bottomline {
+  opacity: 0;
+  pointer-events: none;
 }

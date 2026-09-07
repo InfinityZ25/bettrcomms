@@ -84,6 +84,7 @@ export default function App() {
     [email, setEmail] = useState('');
   const [roomSettings, setRoomSettings] = useState(false),
     [callJoined, setCallJoined] = useState(false),
+    [callRoom, setCallRoom] = useState<Room | null>(null),
     [callFocused, setCallFocused] = useState(false),
     [layout, setLayout] = useState(localStorage.getItem('bc-layout') === 'focus' ? 'top' : localStorage.getItem('bc-layout') ?? 'top'),
     [copied, setCopied] = useState(false),
@@ -354,6 +355,11 @@ export default function App() {
             <span className="room-description">{room?.kind === 'direct' ? 'Direct conversation' : 'A place to hang out'}</span>
           </div>
           <div className="header-actions">
+            {callJoined && callRoom && room?.id !== callRoom.id && (
+              <Button variant="secondary" className="return-to-call" onClick={() => setRoom(callRoom)}>
+                <Headphones size={15} /> Return to {roomLabel(callRoom)}
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="icon"
@@ -409,15 +415,19 @@ export default function App() {
             </div>}
             <CallStage
               user={user}
-              room={room}
+              room={callJoined ? callRoom : room}
               layout={layout}
               onLayout={setLayout}
-              onJoinedChange={setCallJoined}
+              onJoinedChange={(joined) => {
+                setCallJoined(joined);
+                if (joined) setCallRoom(current => current ?? room);
+                else setCallRoom(null);
+              }}
               focused={callFocused}
               onFocus={() => setCallFocused(value => !value)}
               noise={noise}
               balanced={balanced}
-              callPresence={room ? presence.rooms[room.id] ?? emptyCall : emptyCall}
+              callPresence={(callJoined ? callRoom : room) ? presence.rooms[(callJoined ? callRoom : room)!.id] ?? emptyCall : emptyCall}
               presenceKnown={presence.known}
               onError={setError}
               onInvite={() => setFriends(true)}
