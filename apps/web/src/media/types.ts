@@ -6,6 +6,7 @@ export interface TrackDescriptor {
   mediaKind: 'audio' | 'video';
   enabled: boolean;
   streamId?: string;
+  screenTransport?: 'browser' | 'native-compatibility';
 }
 
 export type SessionDescriptionSignal = {
@@ -149,6 +150,7 @@ export interface PeerMediaStats {
     framesPerSecond?: number;
     packetsLost?: number;
     jitterMs?: number;
+    screenTransport?: 'browser' | 'native-compatibility';
   }>;
 }
 

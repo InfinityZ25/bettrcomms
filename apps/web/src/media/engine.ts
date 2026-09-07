@@ -918,6 +918,9 @@ export class MediaEngine extends EventTarget {
             ? { packetsLost: row.packetsLost }
             : {}),
           ...(row.jitter !== undefined ? { jitterMs: row.jitter * 1000 } : {}),
+          ...(localSource === 'screen' && descriptor?.screenTransport
+            ? { screenTransport: descriptor.screenTransport }
+            : {}),
         };
       });
     const local = selectedPair
@@ -995,6 +998,9 @@ export class MediaEngine extends EventTarget {
     const previous = this.localTracks.get('screen');
     if (previous && previous !== track) previous.stop();
     if (track) {
+      // This decoded native track is also used by the compatibility sender.
+      // Prefer preserving text/detail instead of silently scaling the picture.
+      track.contentHint = 'detail';
       this.localTracks.set('screen', track);
       track.addEventListener('ended', () => {
         if (this.localTracks.get('screen') !== track) return;
@@ -1141,6 +1147,11 @@ export class MediaEngine extends EventTarget {
         mediaKind: track.kind as 'audio' | 'video',
         enabled: track.enabled,
         streamId: peer?.streams.get(source)?.id,
+        ...(source === 'screen' ? {
+          screenTransport: this.nativeScreen.active
+            ? 'native-compatibility' as const
+            : 'browser' as const,
+        } : {}),
       }),
     );
     await this.send({ type: 'track-metadata', to: peerId, tracks });
@@ -1205,24 +1216,38 @@ export class MediaEngine extends EventTarget {
     // negotiation; inventing one makes setParameters reject and can break capture.
     // Reapply after SDP negotiation when the browser exposes the actual entries.
     if (!parameters.encodings?.length) return;
+    const nativeCompatibility =
+      sender.track.kind === 'video' &&
+      sender.track === this.localTracks.get('screen') &&
+      this.nativeScreen.active;
+    const quality = nativeCompatibility
+      ? this.nativeScreen.compatibilityQuality ?? this.quality
+      : this.quality;
     let changed = false;
+    if (
+      nativeCompatibility &&
+      parameters.degradationPreference !== 'maintain-resolution'
+    ) {
+      parameters.degradationPreference = 'maintain-resolution';
+      changed = true;
+    }
     for (const encoding of parameters.encodings) {
       if (sender.track.kind === 'audio') {
-        if (this.quality.maxAudioBitrate !== undefined && encoding.maxBitrate !== this.quality.maxAudioBitrate) {
-          encoding.maxBitrate = this.quality.maxAudioBitrate;
+        if (quality.maxAudioBitrate !== undefined && encoding.maxBitrate !== quality.maxAudioBitrate) {
+          encoding.maxBitrate = quality.maxAudioBitrate;
           changed = true;
         }
       } else {
-        if (this.quality.maxVideoBitrate !== undefined && encoding.maxBitrate !== this.quality.maxVideoBitrate) {
-          encoding.maxBitrate = this.quality.maxVideoBitrate;
+        if (quality.maxVideoBitrate !== undefined && encoding.maxBitrate !== quality.maxVideoBitrate) {
+          encoding.maxBitrate = quality.maxVideoBitrate;
           changed = true;
         }
-        if (this.quality.maxFramerate !== undefined && encoding.maxFramerate !== this.quality.maxFramerate) {
-          encoding.maxFramerate = this.quality.maxFramerate;
+        if (quality.maxFramerate !== undefined && encoding.maxFramerate !== quality.maxFramerate) {
+          encoding.maxFramerate = quality.maxFramerate;
           changed = true;
         }
-        if (this.quality.scaleResolutionDownBy !== undefined && encoding.scaleResolutionDownBy !== this.quality.scaleResolutionDownBy) {
-          encoding.scaleResolutionDownBy = this.quality.scaleResolutionDownBy;
+        if (quality.scaleResolutionDownBy !== undefined && encoding.scaleResolutionDownBy !== quality.scaleResolutionDownBy) {
+          encoding.scaleResolutionDownBy = quality.scaleResolutionDownBy;
           changed = true;
         }
       }

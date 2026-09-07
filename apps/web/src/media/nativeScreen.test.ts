@@ -159,6 +159,11 @@ describe('native screen signaling lifecycle', () => {
       },
     });
     await starting;
+    expect(transport.compatibilityQuality).toEqual({
+      maxVideoBitrate: 20_000_000,
+      maxFramerate: 60,
+      scaleResolutionDownBy: 1,
+    });
     await transport.addPeer('peer-desktop');
     expect(fallback).toHaveBeenCalledWith('peer-desktop');
     expect(mocks.invoke).not.toHaveBeenCalledWith('native_screen_peer_offer',

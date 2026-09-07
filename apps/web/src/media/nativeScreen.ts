@@ -1,7 +1,7 @@
 import { screenReceiverDiagnostics, videoCapabilities } from './screenDiagnostics';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { MediaSignal, SignalingAdapter } from './types';
+import type { MediaQualityOptions, MediaSignal, SignalingAdapter } from './types';
 import { isRelayCandidate } from './utils';
 import { registerNativeScreenTrack } from './nativeCaptureRegistry';
 export { nativeScreenSessionForTrack } from './nativeCaptureRegistry';
@@ -142,6 +142,17 @@ export class NativeScreenTransport {
 
   get active() {
     return Boolean(this.session);
+  }
+
+  get compatibilityQuality(): MediaQualityOptions | undefined {
+    const session = this.session;
+    return session
+      ? {
+          maxVideoBitrate: session.bitrateMbps * 1_000_000,
+          maxFramerate: session.fps,
+          scaleResolutionDownBy: 1,
+        }
+      : undefined;
   }
 
   async getReceiverStats(peerId: string) {

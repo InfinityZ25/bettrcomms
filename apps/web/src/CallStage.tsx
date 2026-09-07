@@ -1231,7 +1231,10 @@ export default function CallStage({
                 {s.tracks.map((t, i) => (
                   <small key={i}>
                     {t.direction === 'outbound' ? 'Sending' : 'Receiving'}{' '}
-                    {t.source ?? t.mediaKind}: {(t.bitrate / 1000).toFixed(0)}{' '}
+                    {t.source ?? t.mediaKind}
+                    {t.source === 'screen' && t.screenTransport
+                      ? ` (${t.screenTransport === 'native-compatibility' ? 'native compatibility' : 'browser WebRTC'})`
+                      : ''}: {(t.bitrate / 1000).toFixed(0)}{' '}
                     kbps{' '}
                     {t.width
                       ? `· ${t.width}×${t.height} · ${t.framesPerSecond ?? '—'} FPS`

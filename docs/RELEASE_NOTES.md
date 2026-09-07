@@ -1,5 +1,20 @@
 # BetterComms preview release notes
 
+## Unreleased — native compatibility quality
+
+The desktop-viewer compatibility path now carries the native screen picker's
+selected bitrate and frame-rate ceiling into its WebRTC sender instead of
+silently reusing the global browser defaults of 20 Mbps and 60 FPS. It also
+requests resolution-preserving adaptation and marks the native preview as
+detail content, so WebView2 drops frames before reducing a 1080p source to
+640×360 when local encoding load is too high. Connection details identify
+ordinary browser screen tracks and native compatibility tracks separately.
+
+Configured bitrate remains a ceiling rather than constant padding. Actual
+bitrate varies with frame complexity and WebRTC congestion control, while
+actual frame rate remains bounded by capture, decode, re-encode, receiver, and
+network capacity.
+
 ## Unreleased — realtime conversations and presence
 
 Mezon's `deepfilternet3-noise-filter` 1.3.0 is now available as an experimental
