@@ -25,11 +25,11 @@ try {
       if (session.maxFps !== 24) throw new Error('Expected the 24 FPS native host');
       const cameras = [1, 2].map(n => ({ id: String(n), name: 'Synthetic camera ' + n, track, speaking: n === 1, muted: n === 2 }));
       const samples = [];
-      for (let n = 0; n < 20; n++) {
+      for (let n = 0; n < 48; n++) {
         const time = performance.now();
         await send(compositor.render(cameras, session.width, session.height));
         samples.push(performance.now() - time);
-        await new Promise(resolve => setTimeout(resolve, Math.max(0, Math.ceil(1000 / session.maxFps - (performance.now() - time)))));
+        await new Promise(resolve => setTimeout(resolve, 0));
       }
       const badTokenRejected = await rejected(() => send(new Uint8Array(session.width * session.height * 4), 'invalid'));
       const badFrameRejected = await rejected(() => send(new Uint8Array(8)));
@@ -60,7 +60,7 @@ try {
     const [{ default: React }, { default: ReactDOM }, { default: CameraOverlay }] = await Promise.all([import(reactUrl), import(domUrl), import('/src/CameraOverlay.tsx')]);
     const canvas = document.createElement('canvas'); canvas.width = 320; canvas.height = 180;
     const graphics = canvas.getContext('2d'); graphics.fillStyle = '#607f47'; graphics.fillRect(0, 0, 320, 180);
-    const track = canvas.captureStream(10).getVideoTracks()[0];
+    const track = canvas.captureStream(24).getVideoTracks()[0];
     const container = document.createElement('div'); container.style.cssText = 'position:fixed;right:50px;top:80px;z-index:99999'; document.body.append(container);
     const root = ReactDOM.createRoot(container);
     root.render(React.createElement(CameraOverlay, { cameras: [{ id: 'synthetic', name: 'Synthetic friend', track }] }));

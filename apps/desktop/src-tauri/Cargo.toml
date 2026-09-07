@@ -1,6 +1,6 @@
 [package]
 name = "bettercomms-desktop"
-version = "0.1.7"
+version = "0.1.8"
 description = "BetterComms desktop host"
 authors = ["BetterComms contributors"]
 edition = "2021"

@@ -59,7 +59,10 @@ export default function CameraOverlay({ cameras }: { cameras: OverlayCamera[] })
           'x-bettercomms-frame-width': String(session.width),
           'x-bettercomms-frame-height': String(session.height),
         } });
-        if (!stopped) timer = setTimeout(() => void tick(), Math.max(0, Math.ceil(1000 / Math.min(24, session.maxFps || 10) - (performance.now() - started))));
+        // Modern hosts pace the single in-flight frame on an absolute native
+        // deadline. A second JS timer would add scheduling drift. Older hosts
+        // still discard early frames, so preserve their advertised cadence.
+        if (!stopped) timer = setTimeout(() => void tick(), session.maxFps === 24 ? 0 : Math.max(0, Math.ceil(1000 / Math.min(24, session.maxFps || 10) - (performance.now() - started))));
       } catch (error) {
         close();
         if (!stopped) {

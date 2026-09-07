@@ -28,6 +28,7 @@ struct Overlay {
     click_through: bool,
     rows: u8,
     last_frame: Option<Instant>,
+    next_frame_at: Instant,
 }
 #[derive(Clone, Copy, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -119,6 +120,7 @@ pub async fn camera_overlay_open(
         platform::create(&ui_window, width, height, position, click_through)
     })
     .await??;
+    let now = Instant::now();
     let overlay = Overlay {
         id,
         hwnd,
@@ -127,7 +129,8 @@ pub async fn camera_overlay_open(
         height,
         click_through,
         rows,
-        last_frame: Some(Instant::now()),
+        last_frame: Some(now),
+        next_frame_at: now,
     };
     let result = info(&overlay);
     *state
@@ -239,9 +242,7 @@ pub async fn camera_overlay_frame(
         if width != o.width || height != o.height {
             return Err("Camera overlay frame dimensions do not match the current layout".into());
         }
-        let delay = o.last_frame.map_or(Duration::ZERO, |last| {
-            MIN_FRAME_INTERVAL.saturating_sub(last.elapsed())
-        });
+        let delay = o.next_frame_at.saturating_duration_since(Instant::now());
         (
             o.hwnd,
             o.position,
@@ -262,7 +263,9 @@ pub async fn camera_overlay_frame(
         .map_err(|_| "Camera overlay state unavailable")?
         .as_mut()
     {
-        overlay.last_frame = Some(Instant::now());
+        let now = Instant::now();
+        overlay.last_frame = Some(now);
+        overlay.next_frame_at = advance_frame_deadline(overlay.next_frame_at, now);
     }
     let bgra = rgba_to_bgra_scaled(&rgba, width, height, target_width, target_height)?;
     let target_height = (bgra.len() / 4 / target_width as usize) as u32;
@@ -322,6 +325,14 @@ fn validate_rows(rows: u8) -> Result<(), String> {
         Ok(())
     } else {
         Err("Camera overlay supports one to four rows".into())
+    }
+}
+
+fn advance_frame_deadline(deadline: Instant, now: Instant) -> Instant {
+    if now.saturating_duration_since(deadline) > MIN_FRAME_INTERVAL {
+        now + MIN_FRAME_INTERVAL
+    } else {
+        deadline + MIN_FRAME_INTERVAL
     }
 }
 
@@ -658,6 +669,20 @@ mod tests {
         for size in [OverlaySize::Small, OverlaySize::Medium, OverlaySize::Large] {
             assert!(size.width() <= MAX_WIDTH);
         }
+    }
+    #[test]
+    fn absolute_pacing_absorbs_small_overshoot_without_catchup_bursts() {
+        let start = Instant::now();
+        let small_overshoot = start + Duration::from_millis(5);
+        assert_eq!(
+            advance_frame_deadline(start, small_overshoot),
+            start + MIN_FRAME_INTERVAL
+        );
+        let late = start + MIN_FRAME_INTERVAL + Duration::from_millis(1);
+        assert_eq!(
+            advance_frame_deadline(start, late),
+            late + MIN_FRAME_INTERVAL
+        );
     }
     #[cfg(windows)]
     #[test]
