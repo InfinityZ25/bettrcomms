@@ -1,3 +1,5 @@
+import { isNativePushToTalk, NativePushToTalk, type GlobalInputStatus } from './nativePushToTalk';
+
 export type TalkBinding = { kind: 'keyboard'; code: string } | { kind: 'mouse'; button: number };
 export interface TalkSettings { enabled: boolean; binding: TalkBinding }
 const storageKey = 'bc-push-to-talk';
@@ -37,7 +39,9 @@ function isInteractive(target: EventTarget | null): boolean {
 /** Owns the call input gate; React only observes its snapshot. */
 export class CallMicrophone {
   private listeners = new Set<() => void>();
-  private state = { settings: readTalkSettings(), active: false, held: false, manualMuted: false, deafened: false, muted: false };
+  private nativeInput?: NativePushToTalk;
+  private nativeGeneration = 0;
+  private state = { settings: readTalkSettings(), active: false, held: false, manualMuted: false, deafened: false, muted: false, globalStatus: 'foreground' as GlobalInputStatus, globalMessage: '' };
 
   constructor(private readonly setEnabled: (enabled: boolean) => void) {}
 
@@ -53,10 +57,33 @@ export class CallMicrophone {
 
   start(): void {
     this.update({ settings: readTalkSettings(), active: true, held: false, manualMuted: false, deafened: false });
+    this.configureNative();
   }
 
   stop(): void {
-    this.update({ active: false, held: false, manualMuted: false, deafened: false });
+    ++this.nativeGeneration;
+    this.nativeInput?.dispose();
+    this.nativeInput = undefined;
+    this.update({ active: false, held: false, manualMuted: false, deafened: false, globalStatus: 'foreground', globalMessage: '' });
+  }
+
+  private configureNative(): void {
+    const generation = ++this.nativeGeneration;
+    this.nativeInput?.dispose();
+    this.nativeInput = undefined;
+    if (!this.state.active || !this.state.settings.enabled || !isNativePushToTalk()) {
+      this.update({ globalStatus: 'foreground', globalMessage: '', held: false });
+      return;
+    }
+    this.nativeInput = new NativePushToTalk((pressed, focused) => {
+      if (generation !== this.nativeGeneration) return;
+      // WebView2 can retain DOM focus after restoration while Windows has another foreground app.
+      const blocked = this.state.manualMuted || this.state.deafened || (focused !== false && isInteractive(document.activeElement));
+      this.update({ held: pressed && !blocked });
+    }, (globalStatus, globalMessage) => {
+      if (generation === this.nativeGeneration) this.update({ globalStatus, globalMessage, held: false });
+    });
+    void this.nativeInput.start(this.state.settings.binding);
   }
 
   toggleMute(): void {
@@ -71,14 +98,20 @@ export class CallMicrophone {
   private release = () => {
     if (this.state.held) this.update({ held: false });
   };
-  private visibility = () => { if (document.hidden) this.release(); };
+  private blur = () => { if (this.state.globalStatus !== 'active') this.release(); };
+  private pageHide = () => this.stop();
+  private visibility = () => { if (document.hidden) this.blur(); };
   private focus = (event: FocusEvent) => { if (isInteractive(event.target)) this.release(); };
-  private settingsChanged = () => this.update({ settings: readTalkSettings(), held: false });
+  private settingsChanged = () => {
+    this.update({ settings: readTalkSettings(), held: false });
+    this.configureNative();
+  };
   private storageChanged = (event: StorageEvent) => {
     if (event.key === storageKey || event.key === null) this.settingsChanged();
   };
 
   private press(event: KeyboardEvent | MouseEvent): void {
+    if (this.state.globalStatus !== 'foreground') return;
     if (!this.state.active || !this.state.settings.enabled || this.state.manualMuted || this.state.deafened || document.hidden || isInteractive(event.target)) return;
     event.preventDefault();
     if (!this.state.held) this.update({ held: true });
@@ -89,6 +122,7 @@ export class CallMicrophone {
     this.press(event);
   };
   private keyUp = (event: KeyboardEvent) => {
+    if (this.state.globalStatus !== 'foreground') return;
     const binding = this.state.settings.binding;
     if (binding.kind === 'keyboard' && event.code === binding.code) this.release();
   };
@@ -100,7 +134,7 @@ export class CallMicrophone {
     const binding = this.state.settings.binding;
     if (binding.kind === 'mouse' && event.button === binding.button) {
       if (this.state.held) event.preventDefault();
-      this.release();
+      if (this.state.globalStatus === 'foreground') this.release();
     }
   };
   private mouseDefault = (event: MouseEvent) => {
@@ -117,8 +151,8 @@ export class CallMicrophone {
       window.addEventListener('mouseup', this.mouseUp);
       window.addEventListener('contextmenu', this.mouseDefault);
       window.addEventListener('auxclick', this.mouseDefault);
-      window.addEventListener('blur', this.release);
-      window.addEventListener('pagehide', this.release);
+      window.addEventListener('blur', this.blur);
+      window.addEventListener('pagehide', this.pageHide);
       window.addEventListener('focusin', this.focus);
       document.addEventListener('visibilitychange', this.visibility);
       window.addEventListener(changeEvent, this.settingsChanged);
@@ -133,8 +167,8 @@ export class CallMicrophone {
       window.removeEventListener('mouseup', this.mouseUp);
       window.removeEventListener('contextmenu', this.mouseDefault);
       window.removeEventListener('auxclick', this.mouseDefault);
-      window.removeEventListener('blur', this.release);
-      window.removeEventListener('pagehide', this.release);
+      window.removeEventListener('blur', this.blur);
+      window.removeEventListener('pagehide', this.pageHide);
       window.removeEventListener('focusin', this.focus);
       document.removeEventListener('visibilitychange', this.visibility);
       window.removeEventListener(changeEvent, this.settingsChanged);

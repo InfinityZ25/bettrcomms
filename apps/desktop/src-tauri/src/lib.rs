@@ -16,6 +16,7 @@ mod native_system_audio;
 mod nvidia_audio;
 mod nvidia_setup;
 mod recording_export;
+mod push_to_talk;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -156,6 +157,7 @@ fn desktop_media_capabilities() -> DesktopMediaCapabilities {
 pub fn run() {
     tauri::Builder::default()
         .manage(recording_export::RecordingExportState::default())
+        .manage(push_to_talk::PushToTalkState::default())
         .manage(camera_overlay::CameraOverlayState::default())
         .manage(native_screen::NativeScreenState::default())
         .manage(native_system_audio::NativeSystemAudioState::default())
@@ -185,6 +187,10 @@ pub fn run() {
             }
             let handler: &dyn Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = &tauri::generate_handler![
                 desktop_boot_config,
+                push_to_talk::push_to_talk_capabilities,
+                push_to_talk::push_to_talk_start,
+                push_to_talk::push_to_talk_heartbeat,
+                push_to_talk::push_to_talk_stop,
                 camera_overlay::camera_overlay_open,
                 camera_overlay::camera_overlay_update,
                 camera_overlay::camera_overlay_frame,

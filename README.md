@@ -49,7 +49,7 @@ Restart the API after starting the relay. The script generates a private coturn 
 - PostgreSQL-backed friends, requests, private rooms, direct rooms, membership, and chat.
 - Room permissions, membership removal, room management, and authenticated signaling.
 - Browser microphone, camera, screen sharing, and shared audio where supported by the browser.
-- Optional keyboard/mouse push-to-talk, disabled by default and configurable in Settings; see [usage and local setup](docs/PUSH_TO_TALK.md).
+- Optional keyboard/mouse push-to-talk, disabled by default and configurable in Settings. Windows Tauri includes global input; browsers use focused-window input. See [usage, validation status and local setup](docs/PUSH_TO_TALK.md).
 - Direct-first and direct-only WebRTC, configurable quality ceilings, and live media statistics.
 - Cameras above or beside content, focus layout, screen zoom/pan/fullscreen, and local layout preferences.
 - Per-person playback gain, optional voice leveling, and browser noise suppression.

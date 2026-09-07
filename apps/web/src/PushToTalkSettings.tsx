@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { isNativePushToTalk } from './media/nativePushToTalk';
 import { canBindKey, readTalkSettings, talkBindingLabel, writeTalkSettings, type TalkBinding, type TalkSettings } from './media/pushToTalk';
 
 export default function PushToTalkSettings() {
@@ -56,7 +57,7 @@ export default function PushToTalkSettings() {
       >
         {binding ? 'Press a key or mouse button here…' : `Shortcut: ${talkBindingLabel(settings.binding)}`}
       </button>
-      <p role="status">{binding ? 'Escape cancels. Tab and the Windows/Command key are reserved.' : 'Keep BetterComms focused. The shortcut is paused in text fields and controls; global shortcuts while gaming are not available yet.'}</p>
+      <p role="status">{binding ? 'Escape cancels. Tab and the Windows/Command key are reserved.' : isNativePushToTalk() ? 'On Windows, your shortcut works during calls even with another app focused or BetterComms minimized. It stays paused in BetterComms text fields and controls. Other platforms use the focused-window shortcut.' : 'Keep BetterComms focused. For global keyboard and mouse shortcuts while gaming, use the Windows desktop app.'}</p>
       {error && <p role="alert">{error}</p>}
     </div>
   );

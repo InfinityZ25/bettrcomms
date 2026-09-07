@@ -2,9 +2,9 @@
 
 ## Unreleased — configurable push-to-talk
 
-Settings offers an opt-in Push-to-talk checkbox and a keyboard or mouse shortcut. It is disabled by default and saved on this device. Calls transmit the processed microphone only while the shortcut is held; manual mute and deafen take priority. Focus loss, settings changes, disconnect, and leaving release the shortcut. Device and denoiser replacement retain the current microphone gate, including replacements still waiting on WebRTC senders.
+Settings offers an opt-in Push-to-talk checkbox and a keyboard or mouse shortcut. It is disabled by default and saved on this device. Calls transmit the processed microphone only while the shortcut is held; manual mute and deafen take priority. Settings changes, disconnect, and leaving release the shortcut. Device and denoiser replacement retain the current microphone gate, including replacements still waiting on WebRTC senders.
 
-This is a foreground browser/WebView shortcut, not a native global hotkey for background gaming. Camera, screen, system audio and playback volume remain independent. See [push-to-talk and local setup](PUSH_TO_TALK.md) for use, acceptance tests and the Windows database-port workaround.
+The Windows Tauri host now provides global keyboard and mouse input through native hooks during enabled calls. The frontend reports connection failures and keeps the microphone muted until the registration is restored. Native registrations expire without a frontend heartbeat and are removed when disabled, rebound, or disconnected. The browser and other operating systems use foreground input and release on focus loss. Camera, screen, system audio and playback volume remain independent. Actual Windows acceptance passes background keyboard and all five mouse buttons, minimized keyboard/mouse operation, passthrough, mute/deafen, rebinding, cleanup and lease expiry. Input snapshots use native window focus to avoid a WebView2 focus mismatch after restoration. See [push-to-talk and local setup](PUSH_TO_TALK.md) for use, acceptance scope and the Windows database-port workaround.
 
 ## 0.1.8 — 24 FPS camera overlay
 
