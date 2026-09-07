@@ -1,5 +1,11 @@
 param([Parameter(Mandatory)][string]$Directory, [Parameter(Mandatory)][int]$NativeProcessId)
 $ErrorActionPreference = 'Stop'
+function Get-NativeTestHandle {
+  $native = Get-Process -Id $NativeProcessId -ErrorAction Stop
+  $expectedBinary = Join-Path (Split-Path -Parent $PSScriptRoot) 'apps/desktop/src-tauri/target/debug/bettercomms-desktop.exe'
+  if ($native.Path -ne $expectedBinary) { throw 'Refusing to operate a window outside the native test host' }
+  return $native.MainWindowHandle
+}
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 Add-Type @'
@@ -58,6 +64,7 @@ $timer.Add_Tick({
   $commandFile = Join-Path $Directory 'command.json'
   if (-not (Test-Path -LiteralPath $commandFile)) { return }
   try { $command = Get-Content -Raw -LiteralPath $commandFile | ConvertFrom-Json } catch { return }
+  if ($null -eq $command -or $null -eq $command.sequence -or $null -eq $command.action) { return }
   if ($command.sequence -eq $script:lastSequence) { return }
   $script:lastSequence = $command.sequence
   try {
@@ -73,7 +80,8 @@ $timer.Add_Tick({
         [Windows.Forms.Cursor]::Position = $form.PointToScreen((New-Object Drawing.Point(250, 140)))
       }
       'keyDown' {
-        if ([PttTestInput]::GetForegroundWindow() -ne $form.Handle) { throw 'Test window must have focus before injecting input. Unlock Windows and retry.' }
+        $targetHandle = if ($command.target -eq 'native') { Get-NativeTestHandle } else { $form.Handle }
+        if ([PttTestInput]::GetForegroundWindow() -ne $targetHandle) { throw 'Test window must have focus before injecting input. Unlock Windows and retry.' }
         [PttTestInput]::Key([ushort]$command.scan, $true)
       }
       'keyUp' { [PttTestInput]::Key([ushort]$command.scan, $false) }
@@ -84,10 +92,10 @@ $timer.Add_Tick({
       'mouseUp' { [PttTestInput]::Mouse([uint32]$command.button, $false) }
       'snapshot' {}
       'restoreNative' {
-        $native = Get-Process -Id $NativeProcessId -ErrorAction Stop
-        $expectedBinary = Join-Path (Split-Path -Parent $PSScriptRoot) 'apps/desktop/src-tauri/target/debug/bettercomms-desktop.exe'
-        if ($native.Path -ne $expectedBinary) { throw 'Refusing to restore a window outside the native test host' }
-        [PttTestInput]::ShowWindow($native.MainWindowHandle, 9) | Out-Null
+        [PttTestInput]::ShowWindow((Get-NativeTestHandle), 9) | Out-Null
+      }
+      'focusNative' {
+        [PttTestInput]::Focus((Get-NativeTestHandle))
       }
       'close' { $timer.Stop(); $form.Hide() }
       default { throw 'Unknown input fixture command' }

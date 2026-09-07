@@ -91,7 +91,7 @@ for (const route of ['automatic', 'relay']) {
     const b = await browser.newContext({ baseURL });
     try {
       const suffix = `${Date.now()}-${route}`;
-      await login(a, 'PTTSender', suffix);
+      const owner = await login(a, 'PTTSender', suffix);
       const guest = await login(b, 'PTTReceiver', suffix);
       const request = await json(await a.request.post('/api/v1/friends/requests', { headers: { Origin: origin }, data: { user_id: guest.id } }));
       await json(await b.request.post(`/api/v1/friends/requests/${request.request.id}/accept`, { headers: { Origin: origin }, data: {} }));
@@ -125,8 +125,12 @@ for (const route of ['automatic', 'relay']) {
         oscillator.connect(gain).connect(destination); oscillator.start();
         await context.resume();
         const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
-        navigator.mediaDevices.getUserMedia = async constraints => constraints?.audio && !constraints.video
-          ? new MediaStream([destination.stream.getAudioTracks()[0].clone()]) : original(constraints);
+        (window as any).pttCaptures = 0;
+        navigator.mediaDevices.getUserMedia = async constraints => {
+          (window as any).pttCaptures++;
+          return constraints?.audio && !constraints.video
+            ? new MediaStream([destination.stream.getAudioTracks()[0].clone()]) : original(constraints);
+        };
         (window as any).pttSource = context;
       });
       await settings(sender);
@@ -139,6 +143,21 @@ for (const route of ['automatic', 'relay']) {
       await expect(sender.getByRole('button', { name: 'Leave call' })).toBeVisible();
       const micEnabled = () => sender.evaluate(() => (window as any).pttEngine.getLocalTracks().get('microphone')?.enabled);
       await expect.poll(micEnabled).toBe(false);
+      const captureState = () => sender.evaluate(() => {
+        const e = (window as any).pttEngine;
+        const raw = e.getMicrophoneInput();
+        return { captures: (window as any).pttCaptures, input: raw?.id, state: raw?.readyState, enabled: raw?.enabled, output: e.getLocalTracks().get('microphone')?.id };
+      });
+      const initialCapture = await captureState();
+      expect(initialCapture).toMatchObject({ state: 'live', enabled: true });
+      const muteButton = sender.getByRole('button', { name: 'Mute microphone', exact: true });
+      await expect(muteButton).not.toHaveClass(/danger/);
+      const ownerPresence = async () => {
+        const response = await b.request.get('/api/v1/call-presence');
+        const value = await json(response);
+        return value.rooms?.find((entry: any) => entry.room_id === room.id)?.participants.find((entry: any) => entry.user_id === owner.id)?.muted;
+      };
+      await expect.poll(ownerPresence).toBe(false);
       await expect.poll(() => receiver.evaluate(() => (window as any).pttEngine.getRemoteTracks().filter((t: any) => t.source === 'microphone').length)).toBe(1);
       if (route === 'relay') {
         await expect.poll(() => receiver.evaluate(async () => {
@@ -161,12 +180,16 @@ for (const route of ['automatic', 'relay']) {
         analyser.getFloatTimeDomainData(samples);
         return Math.sqrt(samples.reduce((sum, value) => sum + value * value, 0) / samples.length);
       });
-      await sender.locator('.self .avatar-large, .camera-tile.self').first().click();
-      await sender.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+      // Retained button focus must not require a click on an empty part of the call.
+      await muteButton.focus();
       await sender.keyboard.down('v');
       await expect.poll(micEnabled).toBe(true);
       await expect.poll(rms).toBeGreaterThan(0.005);
       await sender.keyboard.up('v');
+      await expect.poll(micEnabled).toBe(false);
+      expect(await captureState()).toEqual(initialCapture);
+      await expect(muteButton).not.toHaveClass(/danger/);
+      await expect.poll(ownerPresence).toBe(false);
 
       await sender.getByRole('button', { name: 'Toggle chat' }).click();
       const composer = sender.getByRole('textbox', { name: 'Message your room' });
@@ -183,6 +206,7 @@ for (const route of ['automatic', 'relay']) {
       await sender.keyboard.up('v');
 
       await sender.getByRole('button', { name: 'Mute microphone', exact: true }).click();
+      await expect.poll(ownerPresence).toBe(true);
       await sender.evaluate(() => (document.activeElement as HTMLElement)?.blur());
       await sender.keyboard.down('v'); await expect.poll(micEnabled).toBe(false); await sender.keyboard.up('v');
       await sender.getByRole('button', { name: 'Deafen call', exact: true }).click();
@@ -190,6 +214,32 @@ for (const route of ['automatic', 'relay']) {
       await expect(sender.getByRole('button', { name: 'Unmute microphone', exact: true })).toBeVisible();
       await sender.getByRole('button', { name: 'Unmute microphone', exact: true }).click();
       await expect.poll(micEnabled).toBe(false);
+
+      await settings(sender);
+      await sender.getByRole('button', { name: 'Set push-to-talk shortcut' }).click();
+      await sender.keyboard.press('ControlLeft');
+      await sender.getByRole('button', { name: 'Back to call' }).click();
+      await muteButton.click();
+      await sender.getByRole('button', { name: 'Unmute microphone', exact: true }).click();
+      await expect(muteButton).toBeFocused();
+      await sender.keyboard.down('ControlLeft');
+      await expect.poll(micEnabled).toBe(true);
+      await expect.poll(rms).toBeGreaterThan(0.005);
+      await sender.keyboard.up('ControlLeft');
+      await expect.poll(micEnabled).toBe(false);
+      await expect.poll(rms).toBeLessThan(0.001);
+      expect(await captureState()).toEqual(initialCapture);
+
+      // A Space binding must not also click the focused mute button on release/repeat.
+      await settings(sender);
+      await sender.getByRole('button', { name: 'Set push-to-talk shortcut' }).click();
+      await sender.keyboard.press('Space');
+      await sender.getByRole('button', { name: 'Back to call' }).click();
+      await muteButton.focus();
+      await sender.keyboard.down('Space'); await sender.keyboard.down('Space');
+      await expect.poll(micEnabled).toBe(true);
+      await sender.keyboard.up('Space'); await expect.poll(micEnabled).toBe(false);
+      await expect(muteButton).not.toHaveClass(/danger/);
 
       await settings(sender);
       const bind = sender.getByRole('button', { name: 'Set push-to-talk shortcut' });

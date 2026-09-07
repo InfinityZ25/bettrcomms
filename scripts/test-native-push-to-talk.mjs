@@ -62,7 +62,7 @@ try {
         if (!rejected) throw new Error('Invalid binding was accepted');
       }
       const old = await invoke('push_to_talk_start', { binding: { kind: 'mouse', button: 3 } });
-      window.pttLease = await invoke('push_to_talk_start', { binding: { kind: 'keyboard', code: 'KeyV' } });
+      window.pttLease = await invoke('push_to_talk_start', { binding: { kind: 'keyboard', code: 'ControlLeft' } });
       await invoke('push_to_talk_stop', { sessionId: old.sessionId });
       const current = await invoke('push_to_talk_heartbeat', { sessionId: window.pttLease.sessionId });
       if (!current.healthy) throw new Error('A stale stop removed the current registration');
@@ -112,37 +112,57 @@ try {
   assert.equal(await toggle.isChecked(), false, 'Native mode also defaults off');
   await toggle.check();
   await page.getByRole('button', { name: 'Set push-to-talk shortcut' }).click();
-  await page.keyboard.press('v');
+  await page.keyboard.press('ControlLeft');
   await page.getByRole('button', { name: 'Back to call' }).click();
   await page.getByRole('button', { name: 'Join call', exact: true }).click();
-  await page.getByText('Hold V to talk · Global', { exact: true }).waitFor();
+  await page.getByText('Hold Control Left to talk · Global', { exact: true }).waitFor();
   const enabled = () => page.evaluate(() => window.pttEngine?.getLocalTracks().get('microphone')?.enabled);
   await until(enabled, false, 'silent native join');
+  const capture = () => page.evaluate(() => {
+    const input = window.pttEngine.getMicrophoneInput();
+    return { id: input?.id, readyState: input?.readyState, enabled: input?.enabled };
+  });
+  const initialCapture = await capture();
+  assert.equal(initialCapture.readyState, 'live'); assert.equal(initialCapture.enabled, true);
+  const muteButton = page.getByRole('button', { name: 'Mute microphone', exact: true });
+  assert.ok(!(await muteButton.getAttribute('class')).includes('danger'), 'PTT waiting is not manual mute');
   assert.equal((await input('focus')).foreground, true, 'External test window must have OS focus');
   assert.equal(await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('plugin:window|is_focused', { label: 'main' })), false, 'Keyboard acceptance uses real background focus');
   const before = await input('snapshot');
-  await input('keyDown', { scan: 0x2f }); await until(enabled, true, 'background key down');
-  await input('keyUp', { scan: 0x2f }); await until(enabled, false, 'background key up');
+  await input('keyDown', { scan: 0x1d }); await until(enabled, true, 'background key down');
+  await input('keyUp', { scan: 0x1d }); await until(enabled, false, 'background key up');
   assert.ok((await input('snapshot')).keys > before.keys, 'The other application must still receive the shortcut');
   console.log('PASS native background keyboard, release and input passthrough');
+  await input('focus');
+  await input('focusNative');
+  await muteButton.click();
+  await page.getByRole('button', { name: 'Unmute microphone', exact: true }).click();
+  assert.equal(await muteButton.evaluate(element => element === document.activeElement), true, 'Mute button retains keyboard focus');
+  await input('keyDown', { scan: 0x1d, target: 'native' });
+  await until(enabled, true, 'foreground Left Ctrl after unmute');
+  assert.ok(!(await muteButton.getAttribute('class')).includes('danger'));
+  await input('keyUp', { scan: 0x1d }); await until(enabled, false, 'foreground Left Ctrl release');
+  assert.deepEqual(await capture(), initialCapture, 'PTT must keep the microphone capture alive');
+  console.log('PASS native Left Ctrl with focused mute button, independent mute state and continuous capture');
+  await input('focus');
 
   await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('plugin:window|minimize', { label: 'main' }));
   await input('focus');
-  await input('keyDown', { scan: 0x2f }); await until(enabled, true, 'minimized key down');
+  await input('keyDown', { scan: 0x1d }); await until(enabled, true, 'minimized key down');
   await pause(1600); assert.equal(await enabled(), true, 'Heartbeat stays alive while minimized');
-  await input('keyUp', { scan: 0x2f }); await until(enabled, false, 'minimized key up');
+  await input('keyUp', { scan: 0x1d }); await until(enabled, false, 'minimized key up');
   await input('restoreNative');
   console.log('PASS native minimized push-to-talk and heartbeat');
 
   await page.getByRole('button', { name: 'Mute microphone', exact: true }).click();
-  await input('focus'); await input('keyDown', { scan: 0x2f }); await pause(200);
+  await input('focus'); await input('keyDown', { scan: 0x1d }); await pause(200);
   assert.equal(await enabled(), false, 'Manual mute overrides the global shortcut');
-  await input('keyUp', { scan: 0x2f });
+  await input('keyUp', { scan: 0x1d });
   await page.getByRole('button', { name: 'Unmute microphone', exact: true }).click();
   await page.getByRole('button', { name: 'Deafen call', exact: true }).click();
-  await input('focus'); await input('keyDown', { scan: 0x2f }); await pause(200);
+  await input('focus'); await input('keyDown', { scan: 0x1d }); await pause(200);
   assert.equal(await enabled(), false, 'Deafen overrides the global shortcut');
-  await input('keyUp', { scan: 0x2f });
+  await input('keyUp', { scan: 0x1d });
   await page.getByRole('button', { name: 'Undeafen call', exact: true }).click();
 
   await page.getByRole('button', { name: 'Audio and video settings' }).click();
@@ -202,12 +222,12 @@ try {
     const { listen } = await import(loaded.name);
     window.pttLeaseEvents = [];
     window.pttLeaseUnlisten = await listen('bc-global-push-to-talk', event => window.pttLeaseEvents.push(event.payload));
-    window.pttLease = await window.__TAURI_INTERNALS__.invoke('push_to_talk_start', { binding: { kind: 'keyboard', code: 'KeyV' } });
+    window.pttLease = await window.__TAURI_INTERNALS__.invoke('push_to_talk_start', { binding: { kind: 'keyboard', code: 'ControlLeft' } });
   });
-  await input('focus'); await input('keyDown', { scan: 0x2f });
+  await input('focus'); await input('keyDown', { scan: 0x1d });
   await until(() => page.evaluate(() => window.pttLeaseEvents.some(event => event.pressed)), true, 'native lease held');
   await until(() => page.evaluate(() => window.pttLeaseEvents.some(event => !event.healthy && !event.pressed)), true, 'native lease expiry', 8000);
-  await input('keyUp', { scan: 0x2f });
+  await input('keyUp', { scan: 0x1d });
   const expired = await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('push_to_talk_heartbeat', { sessionId: window.pttLease.sessionId }));
   assert.equal(expired.healthy, false);
   await page.evaluate(async () => {
@@ -223,7 +243,7 @@ try {
   const rejected = await page.evaluate(async () => {
     try {
       if (!window.__TAURI_INTERNALS__?.invoke) return true;
-      await window.__TAURI_INTERNALS__.invoke('push_to_talk_start', { binding: { kind: 'keyboard', code: 'KeyV' } });
+      await window.__TAURI_INTERNALS__.invoke('push_to_talk_start', { binding: { kind: 'keyboard', code: 'ControlLeft' } });
       return false;
     } catch { return true; }
   });
@@ -238,7 +258,7 @@ try {
     window.pttLeaseUnlisten?.(); await window.pttSource?.close().catch(() => {});
   }).catch(() => {});
   if (fixture) {
-    await input('keyUp', { scan: 0x2f }).catch(() => {});
+    await input('keyUp', { scan: 0x1d }).catch(() => {});
     await input('mouseUp', { button: 3 }).catch(() => {});
     await input('close').catch(() => {});
     fixture.kill();

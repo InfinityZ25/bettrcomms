@@ -42,6 +42,16 @@ describe('call microphone input gate', () => {
     key('keydown'); expect(enabled).toHaveBeenLastCalledWith(true);
     key('keyup'); expect(enabled).toHaveBeenLastCalledWith(false);
   });
+  it('keeps push-to-talk waiting separate from manual mute', () => {
+    enablePTT(); input.start();
+    expect(input.getSnapshot()).toMatchObject({ muted: false, transmitting: false });
+    key('keydown');
+    expect(input.getSnapshot()).toMatchObject({ muted: false, transmitting: true });
+    key('keyup'); input.toggleMute();
+    expect(input.getSnapshot()).toMatchObject({ muted: true, transmitting: false });
+    input.toggleMute();
+    expect(input.getSnapshot()).toMatchObject({ muted: false, transmitting: false });
+  });
   it('releases on blur and requires a fresh press after autorepeat', () => {
     enablePTT(); input.start(); key('keydown');
     window.dispatchEvent(new Event('blur'));

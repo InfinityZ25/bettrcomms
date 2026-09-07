@@ -135,7 +135,7 @@ export default function CallStage({
     shareRequest = useRef(0),
     active = useRef(true);
   const [callMicrophone] = useState(() => new CallMicrophone(enabled => engine.current?.setMicrophoneEnabled(enabled)));
-  const { muted, deafened, manualMuted, settings: talkSettings, globalStatus, globalMessage } = useSyncExternalStore(callMicrophone.subscribe, callMicrophone.getSnapshot);
+  const { muted, transmitting, deafened, manualMuted, settings: talkSettings, globalStatus, globalMessage } = useSyncExternalStore(callMicrophone.subscribe, callMicrophone.getSnapshot);
   const [remotePresence, setRemotePresence] = useState<Record<string, { muted: boolean; deafened: boolean }>>({});
   const [stats, setStats] = useState<PeerMediaStats[]>([]),
     [showStats, setShowStats] = useState(false),
@@ -1025,7 +1025,7 @@ export default function CallStage({
       <div className="call-footer">
         {talkSettings.enabled && (
           <span className="push-to-talk-status" role="status" title={globalMessage}>
-            {globalStatus === 'unavailable' || globalStatus === 'connecting' ? globalMessage : deafened ? 'Deafened' : manualMuted ? 'Microphone muted' : muted ? `Hold ${talkBindingLabel(talkSettings.binding)} to talk${globalStatus === 'active' ? ' · Global' : ''}` : 'Push-to-talk · Transmitting'}
+            {globalStatus === 'unavailable' || globalStatus === 'connecting' ? globalMessage : deafened ? 'Deafened' : manualMuted ? 'Microphone muted' : !transmitting ? `Hold ${talkBindingLabel(talkSettings.binding)} to talk${globalStatus === 'active' ? ' · Global' : ''}` : 'Push-to-talk · Transmitting'}
           </span>
         )}
         <ConnectionStatus
