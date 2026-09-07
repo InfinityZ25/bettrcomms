@@ -889,18 +889,15 @@ pub async fn native_screen_start(
             return Err("Stop the current native screen share first".into());
         }
     }
-    let w = if width == 0 {
-        source.width.min(3840)
-    } else {
-        width
-    };
-    let h = if height == 0 {
-        source.height.min(2160)
-    } else {
-        height
-    };
-    let w = w / 2 * 2;
-    let h = h / 2 * 2;
+    // Resolution choices are bounds, not fixed canvases. Keeping the source's
+    // aspect ratio prevents FFmpeg from baking letterbox/pillarbox bars into
+    // portrait and unusually shaped application windows.
+    let (w, h) = fit_capture_dimensions(
+        source.width,
+        source.height,
+        if width == 0 { 3840 } else { width },
+        if height == 0 { 2160 } else { height },
+    );
     if w < 16 || h < 16 {
         return Err("The selected source has no capturable area".into());
     }
@@ -914,7 +911,15 @@ pub async fn native_screen_start(
     } else {
         "hwnd"
     };
-    let input=format!("gfxcapture={handle}={}:capture_cursor={}:display_border={}:max_framerate={fps},hwdownload,format=bgra,scale={w}:{h}:force_original_aspect_ratio=decrease:force_divisible_by=2:out_color_matrix=bt709:out_range=tv,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,format=yuv420p",source.handle,u8::from(cursor),u8::from(display_border.unwrap_or(false)));
+    let input = capture_filter(
+        handle,
+        source.handle,
+        cursor,
+        display_border.unwrap_or(false),
+        fps,
+        w,
+        h,
+    );
     cmd.args([
         "-hide_banner",
         "-loglevel",
@@ -1134,6 +1139,40 @@ fn validate_capture_settings(
     }
 }
 
+fn fit_capture_dimensions(
+    source_width: u32,
+    source_height: u32,
+    maximum_width: u32,
+    maximum_height: u32,
+) -> (u32, u32) {
+    if source_width == 0 || source_height == 0 || maximum_width == 0 || maximum_height == 0 {
+        return (0, 0);
+    }
+    let scale = (maximum_width as f64 / source_width as f64)
+        .min(maximum_height as f64 / source_height as f64);
+    let even = |value: f64| ((value.floor() as u32) / 2 * 2).max(2);
+    (
+        even(source_width as f64 * scale),
+        even(source_height as f64 * scale),
+    )
+}
+
+fn capture_filter(
+    handle_kind: &str,
+    handle: usize,
+    cursor: bool,
+    display_border: bool,
+    fps: u32,
+    width: u32,
+    height: u32,
+) -> String {
+    format!(
+        "gfxcapture={handle_kind}={handle}:capture_cursor={}:display_border={}:max_framerate={fps},hwdownload,format=bgra,scale={width}:{height}:out_color_matrix=bt709:out_range=tv,format=yuv420p",
+        u8::from(cursor),
+        u8::from(display_border),
+    )
+}
+
 #[tauri::command]
 pub async fn native_screen_diagnostics(
     state: tauri::State<'_, NativeScreenState>,
@@ -1334,6 +1373,22 @@ mod tests {
         assert!(validate_capture_settings(1280, 720, 241, 12).is_err());
         assert!(validate_capture_settings(1280, 720, 120, 0).is_err());
         assert!(validate_capture_settings(1280, 720, 120, 201).is_err());
+    }
+
+    #[test]
+    fn capture_dimensions_preserve_the_source_shape_within_the_quality_bound() {
+        assert_eq!(fit_capture_dimensions(500, 900, 1920, 1080), (600, 1080));
+        assert_eq!(fit_capture_dimensions(1600, 900, 1920, 1080), (1920, 1080));
+        assert_eq!(fit_capture_dimensions(3440, 1440, 1920, 1080), (1920, 802));
+        assert_eq!(fit_capture_dimensions(5120, 1440, 3840, 2160), (3840, 1080));
+    }
+
+    #[test]
+    fn capture_filter_does_not_encode_padding_around_the_source() {
+        let filter = capture_filter("hwnd", 42, true, false, 60, 600, 1080);
+        assert!(filter.contains("scale=600:1080"));
+        assert!(!filter.contains("pad="));
+        assert!(!filter.contains("force_original_aspect_ratio"));
     }
 
     #[test]

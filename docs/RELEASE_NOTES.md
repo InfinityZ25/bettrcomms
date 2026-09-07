@@ -17,6 +17,10 @@ PostgreSQL remains authoritative for history, rooms, membership, and friendships
 
 The realtime hub remains process-local, matching the existing single signaling-process deployment. A future multi-replica deployment must add shared fanout such as PostgreSQL `LISTEN/NOTIFY` or Redis before enabling more than one API replica.
 
+## 0.1.12 — native screen shape preservation
+
+Windows native sharing now treats 720p, 1080p, 1440p, 4K, and Match source as maximum resolution bounds while preserving the selected window or display's actual aspect ratio. FFmpeg no longer pads narrow, portrait, ultrawide, or unusually shaped application windows into a fixed 16:9 canvas, so receivers and recordings no longer contain encoded black pillars or letterboxing. Encoder dimensions remain even and within the selected quality bound for H.264 compatibility.
+
 ## 0.1.11 — high-refresh native screen sharing
 
 Windows native sharing adds a 720p output option, a 120 FPS preset, custom whole-number frame rates from 15–240 FPS, and custom whole-number bitrates from 1–200 Mbps. The selected rate flows through Windows Graphics Capture, FFmpeg hardware encoding, H.264 negotiation, native RTP pacing, diagnostics, and local native recording. Invalid inputs and combinations above H.264 Level 5.2 are rejected before capture; actual delivered FPS can be lower when the source, encoder, receiver, or network cannot sustain the request.
