@@ -1,5 +1,15 @@
 # BetterComms preview release notes
 
+## 0.1.6 — native camera overlay
+
+Windows calls offer Camera overlay in the call layout toolbar. The optional Rust-owned, always-on-top window shows up to four camera previews, participant labels and mute/deafen/speaking state. Corner and size presets, click-through by default, and optional self-view are available. The overlay uses the display containing BetterComms and fits its work area. Leaving the call closes it; a native watchdog also closes it after missing frontend frames. It requests exclusion from screen capture to avoid recapturing the overlay into shared content.
+
+The call WebView supplies small RGBA composites through bounded binary IPC at up to 10 FPS; Rust paints the overlay without an extra WebView, device capture or audio playback. Source tracks and recordings are unchanged. Desktop background rendering remains active for call previews when occluded. This works with the Windows desktop/windowed/borderless approach; exclusive fullscreen and anti-cheat game compatibility are not established. macOS and browsers do not offer this Windows-only overlay. An updated native binary is required.
+
+Browser GPU-only DeepFilterNet was evaluated but is not enabled. A fixed-shape GRU conversion passed ONNX validation and 100 stateful CPU-reference frames, but strict hardware WebGPU inference failed in ONNX Runtime Web 1.29 before producing audio. The conversion script remains in `scripts/prepare-deepfilter-webgpu.py` and findings in `scripts/experimental/`; no unused browser model/runtime or hidden CPU fallback ships.
+
+Validation: web build and 72 unit tests passed; the full browser run passed 71 tests with one optional TURN check skipped. Rust passed 51 tests with 11 opt-in checks ignored. An isolated Windows host passed overlay binary IPC, size changes, invalid/stale grant rejection, source ownership, UI controls and the actual no-frame watchdog timeout. These checks do not establish exclusive-fullscreen game compatibility.
+
 ## 0.1.5 — native screen diagnostics and decoder initialization
 
 Connection details offers Download diagnostic report. The JSON includes client/runtime version, bounded native-screen signaling events and receive samples, separate screen ICE/connection states, negotiated H.264 profile identifiers, selected candidate types/protocol (without addresses), packet/frame/decode counters, and video-element readiness. Native 0.1.5 adds sender encoder settings, encoded frame/keyframe/byte counts, actual SPS profile bytes, and anonymous per-connection state/RTP/feedback counters. Older hosts report that native sender diagnostics are unavailable. Export while the call and problematic share are still active; these diagnostics stay local until explicitly exported.

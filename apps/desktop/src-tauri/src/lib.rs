@@ -1,6 +1,7 @@
 use serde::Serialize;
 use url::Url;
 
+mod camera_overlay;
 mod deepfilter_audio;
 mod deepfilter_runtime;
 mod deepfilter_setup;
@@ -155,6 +156,7 @@ fn desktop_media_capabilities() -> DesktopMediaCapabilities {
 pub fn run() {
     tauri::Builder::default()
         .manage(recording_export::RecordingExportState::default())
+        .manage(camera_overlay::CameraOverlayState::default())
         .manage(native_screen::NativeScreenState::default())
         .manage(native_system_audio::NativeSystemAudioState::default())
         .setup(|app| {
@@ -183,6 +185,10 @@ pub fn run() {
             }
             let handler: &dyn Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = &tauri::generate_handler![
                 desktop_boot_config,
+                camera_overlay::camera_overlay_open,
+                camera_overlay::camera_overlay_update,
+                camera_overlay::camera_overlay_frame,
+                camera_overlay::camera_overlay_close,
                 native_screen::native_screen_capabilities,
                 native_screen::native_screen_sources,
                 native_screen::native_screen_thumbnail,

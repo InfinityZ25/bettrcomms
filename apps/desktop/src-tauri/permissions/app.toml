@@ -2,6 +2,10 @@
 identifier = "app-native"
 description = "BetterComms commands for the trusted application origin only."
 commands.allow = [
+  "camera_overlay_open",
+  "camera_overlay_update",
+  "camera_overlay_frame",
+  "camera_overlay_close",
   "desktop_boot_config",
   "native_screen_capabilities",
   "native_screen_sources",

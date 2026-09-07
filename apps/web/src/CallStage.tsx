@@ -50,6 +50,7 @@ import { saveRecordingAsset } from './media/recordingExport';
 import './CallLobby.css';
 import './CallWorkspace.css';
 import { useCallLayout } from './useCallLayout';
+import CameraOverlay from './CameraOverlay';
 
 export interface CallPresence {
   user_id: string;
@@ -812,6 +813,10 @@ export default function CallStage({
           <option value="top">Top row</option><option value="left">Left side</option><option value="right">Right side</option>
         </select></label>
         <button onClick={docking.reset}>Reset layout</button>
+        <CameraOverlay cameras={[
+          ...(locals.get('camera') ? [{ id: 'self', name: 'You', track: locals.get('camera')!, speaking: speaking.has('self'), muted, deafened }] : []),
+          ...remote.filter(track => track.source === 'camera').map(track => ({ id: track.peerId, name: names[track.peerId] ?? 'Friend', track: track.track, speaking: speaking.has(track.peerId), muted: remotePresence[track.peerId]?.muted, deafened: remotePresence[track.peerId]?.deafened })),
+        ]} />
         <button onClick={() => { if (document.fullscreenElement) void document.exitFullscreen().then(onInvite); else onInvite(); }} aria-label="Invite to call"><Plus size={16} /> Invite</button>
         <button onClick={onFocus} aria-pressed={focused}>{focused ? 'Show navigation' : 'Focus call'}</button>
         <button onClick={toggleFullscreen} aria-label={fullscreen ? 'Exit fullscreen call' : 'Fullscreen call'}><Maximize2 size={16} /></button>
