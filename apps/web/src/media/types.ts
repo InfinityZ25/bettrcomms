@@ -26,13 +26,13 @@ export type IceCandidateSignal = {
   captureId?: string;
 };
 
-export type NativeScreenStopSignal = {
+export type NativeScreenControlSignal = {
   type: 'signal';
   to: string;
   from?: string;
   transport: 'native-screen';
   captureId: string;
-  data: { kind: 'native-screen-stop'; captureId: string };
+  data: { kind: string; captureId?: string; [key: string]: unknown };
 };
 
 export type TrackMetadataSignal = {
@@ -46,7 +46,7 @@ export type MediaSignal =
   | SessionDescriptionSignal
   | IceCandidateSignal
   | TrackMetadataSignal
-  | NativeScreenStopSignal
+  | NativeScreenControlSignal
   | VoiceRelaySignal;
 
 export type VoiceRelaySignal = {

@@ -128,6 +128,7 @@ export class MediaEngine extends EventTarget {
         this.emit('remote-track-removed', { peerId, source: 'screen' });
       },
       (reason) => this.emit('error', { operation: 'native-screen-ended', error: new Error(reason) }),
+      (peerId) => this.enableNativeScreenFallback(peerId),
     );
   }
 
@@ -567,7 +568,8 @@ export class MediaEngine extends EventTarget {
     return peers.flatMap((peer) => [...peer.remote.values()].filter(
       (track) => track.source !== 'microphone' || !this.relayTracks.has(track.peerId),
     )).concat(
-      [...this.nativeRemote.values()].filter((track) => !peerId || track.peerId === peerId),
+      [...this.nativeRemote.values()].filter((track) =>
+        (!peerId || track.peerId === peerId) && !this.peers.get(track.peerId)?.remote.has('screen')),
       [...this.relayTracks.values()].filter((track) => !peerId || track.peerId === peerId),
     );
   }
@@ -987,6 +989,7 @@ export class MediaEngine extends EventTarget {
     }
     else {
       this.localTracks.delete('screen');
+      this.clearNativeScreenFallbacks();
       void this.stopNativeSystemAudio().catch(error => this.emit('error', { operation: 'stop-system-audio', error }));
     }
     this.emit('local-track', { source: 'screen', track });
@@ -1041,6 +1044,8 @@ export class MediaEngine extends EventTarget {
       track,
       stream: new MediaStream([track]),
     };
+    if (descriptor.source === 'screen' && this.nativeRemote.delete(peerId))
+      this.nativeScreen.finishReceiverFallback(peerId);
     peer.remote.set(descriptor.source, remote);
     track.addEventListener(
       'ended',
@@ -1113,7 +1118,8 @@ export class MediaEngine extends EventTarget {
   private async sendMetadata(peerId: string): Promise<void> {
     const peer = this.peers.get(peerId);
     const tracks: TrackDescriptor[] = [...this.localTracks]
-      .filter(([source]) => source !== 'screen' || !this.nativeScreen.active)
+      .filter(([source]) =>
+        source !== 'screen' || !this.nativeScreen.active || peer?.senders.has('screen'))
       .map(
       ([source, track]) => ({
         source,
@@ -1124,6 +1130,33 @@ export class MediaEngine extends EventTarget {
       }),
     );
     await this.send({ type: 'track-metadata', to: peerId, tracks });
+  }
+
+  private async enableNativeScreenFallback(peerId: string): Promise<void> {
+    const peer = this.peers.get(peerId);
+    const track = this.localTracks.get('screen');
+    if (!peer || !track || track.readyState !== 'live' || !this.nativeScreen.active)
+      throw new Error('Native screen fallback is no longer available');
+    if (peer.senders.has('screen')) return;
+    const stream = new MediaStream([track]);
+    const sender = peer.pc.addTrack(track, stream);
+    peer.streams.set('screen', stream);
+    peer.senders.set('screen', sender);
+    await this.applyQuality(sender);
+    await this.sendMetadata(peerId);
+    await this.negotiate(peerId, peer);
+  }
+
+  private clearNativeScreenFallbacks(): void {
+    for (const [peerId, peer] of this.peers) {
+      const sender = peer.senders.get('screen');
+      if (!sender) continue;
+      peer.pc.removeTrack(sender);
+      peer.senders.delete('screen');
+      peer.streams.delete('screen');
+      void this.sendMetadata(peerId).then(() => this.negotiate(peerId, peer)).catch(error =>
+        this.emit('error', { peerId, operation: 'stop-native-screen-fallback', error }));
+    }
   }
 
   private async send(signal: MediaSignal): Promise<void> {
