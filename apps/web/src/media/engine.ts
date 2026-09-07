@@ -63,6 +63,8 @@ export class MediaEngine extends EventTarget {
   >();
   private disposed = false;
   private microphoneInput?: MediaStreamTrack;
+  private microphoneEnabled?: boolean;
+  private readonly pendingMicrophones = new Set<MediaStreamTrack>();
   private readonly nativeRemote = new Map<string, RemoteTrack>();
   private readonly signalQueues = new Map<string, Promise<void>>();
   private readonly nativeScreen: NativeScreenTransport;
@@ -478,11 +480,11 @@ export class MediaEngine extends EventTarget {
     const previous = this.localTracks.get(source);
     const previousCleanup = this.trackCleanup.get(source);
     if (previous === track) return;
+    if (track) this.assertSourceKind(source, track);
     // Device/denoiser replacement must never briefly publish an unmuted mic.
-    if (source === 'microphone' && previous && track)
-      track.enabled = previous.enabled;
-    if (track) {
-      this.assertSourceKind(source, track);
+    if (source === 'microphone' && track) {
+      track.enabled = this.microphoneEnabled ?? previous?.enabled ?? track.enabled;
+      this.pendingMicrophones.add(track);
     }
     try {
       await Promise.all(
@@ -504,10 +506,14 @@ export class MediaEngine extends EventTarget {
           }
         }),
       );
+      this.ensureActive();
     } catch (error) {
+      if (track) this.pendingMicrophones.delete(track);
+      if (this.disposed) track?.stop();
       cleanup?.();
       throw error;
     }
+    if (track) this.pendingMicrophones.delete(track);
     if (track) {
       this.localTracks.set(source, track);
       if (cleanup) this.trackCleanup.set(source, cleanup);
@@ -540,6 +546,14 @@ export class MediaEngine extends EventTarget {
 
   getLocalTracks(): ReadonlyMap<MediaSourceKind, MediaStreamTrack> {
     return new Map(this.localTracks);
+  }
+
+  /** Gate both the published mic and replacements waiting on sender promises. */
+  setMicrophoneEnabled(enabled: boolean): void {
+    this.microphoneEnabled = enabled;
+    const microphone = this.localTracks.get('microphone');
+    if (microphone) microphone.enabled = enabled;
+    for (const track of this.pendingMicrophones) track.enabled = enabled;
   }
 
   /** Borrowed for local diagnostics only. Capture retains ownership. */
@@ -949,6 +963,8 @@ export class MediaEngine extends EventTarget {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    for (const track of this.pendingMicrophones) track.stop();
+    this.pendingMicrophones.clear();
     this.voiceRelay?.dispose();
     ++this.nativeShareGeneration;
     void this.stopNativeSystemAudio();

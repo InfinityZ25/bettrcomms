@@ -32,6 +32,20 @@ if (Test-Path -LiteralPath (Join-Path $cargoBin 'cargo.exe')) {
 if (-not (Get-Command cargo.exe -ErrorAction SilentlyContinue)) {
     throw 'cargo.exe is unavailable. Install the repository Rust toolchain or add its bin directory to PATH.'
 }
+# Prefer installed stable C++ Build Tools over an incomplete Visual Studio preview.
+# Keep an explicitly initialized developer shell, and scope setup to this process.
+if (-not $env:VSCMD_VER) {
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+    if (Test-Path -LiteralPath $vswhere) {
+        $installation = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+        if ($installation) {
+            $devShell = Join-Path $installation 'Common7\Tools\Launch-VsDevShell.ps1'
+            if (Test-Path -LiteralPath $devShell) {
+                & $devShell -Arch amd64 -HostArch amd64 -SkipAutomaticLocation
+            }
+        }
+    }
+}
 $npm = Get-Command npm.cmd -ErrorAction SilentlyContinue
 if (-not $npm) {
     throw 'npm.cmd is unavailable. Install the repository Node.js toolchain or add it to PATH.'

@@ -1,6 +1,12 @@
 # BetterComms preview release notes
 
-## Unreleased — adaptive call gallery
+## Unreleased — push-to-talk and adaptive call gallery
+
+Settings offers an opt-in Push-to-talk checkbox and a keyboard or mouse shortcut. It is disabled by default and saved on this device. Calls transmit the processed microphone only while the shortcut is held; manual mute and deafen take priority. Settings changes, disconnect, and leaving release the shortcut. Device and denoiser replacement retain the current microphone gate, including replacements still waiting on WebRTC senders.
+
+Waiting for the shortcut stays separate from manual mute in call controls and participant presence. The microphone capture remains live while the processed output sends silence. Keyboard shortcuts work after clicking mute/unmute, and foreground Windows input uses WebView events without depending on a duplicate global hook event. Editing and shortcut assignment remain protected; assigned Space/Enter no longer also activate the focused call button. Regression tests exercise Left Ctrl, continuous capture, transmitted audio/silence, and independent mute state.
+
+The Windows Tauri host provides global keyboard and mouse input through native hooks during enabled calls. The frontend reports connection failures and keeps the microphone muted until registration is restored. Native registrations expire without a frontend heartbeat and are removed when disabled, rebound, or disconnected. The browser and other operating systems use foreground input and release on focus loss. Camera, screen, system audio and playback volume remain independent. Actual Windows acceptance passes background keyboard and all five mouse buttons, minimized keyboard/mouse operation, passthrough, mute/deafen, rebinding, cleanup and lease expiry. Input snapshots use native window focus to avoid a WebView2 focus mismatch after restoration. See [push-to-talk and local setup](PUSH_TO_TALK.md) for use and acceptance scope.
 
 Native screen receivers now request an automatic compatibility path when the dedicated native connection delivers no video bytes for five seconds or fails. The sender republishes its already-decoded native preview through that viewer's established call peer connection, then closes only the failed native sender leg. Healthy viewers retain the direct Rust-to-WebRTC hardware-encoded path. Diagnostics record fallback requests and activation. This hosted frontend recovery works with existing 0.1.9 desktop apps; it does not fix the underlying separate native ICE path or make FFmpeg unnecessary for sending native captures.
 

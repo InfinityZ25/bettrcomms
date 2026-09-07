@@ -1,9 +1,9 @@
-param([switch]$DevAuth)
+param([switch]$DevAuth, [ValidateRange(1024, 65535)][int]$DatabasePort = 54329)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $localDir = Join-Path $projectRoot '.local'
 New-Item -ItemType Directory -Force -Path $localDir | Out-Null
-$env:DATABASE_URL = 'postgres://bettercomms:local-development-only@127.0.0.1:54329/bettercomms?sslmode=disable'
+$env:DATABASE_URL = "postgres://bettercomms:local-development-only@127.0.0.1:$DatabasePort/bettercomms?sslmode=disable"
 $env:HTTP_ADDR = '127.0.0.1:8080'
 $env:APP_URL = 'http://localhost:5173'
 $env:WORKOS_REDIRECT_URI = 'http://localhost:5173/api/v1/auth/callback'
