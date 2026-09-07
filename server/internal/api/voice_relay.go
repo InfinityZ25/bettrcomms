@@ -37,6 +37,7 @@ type queuedVoice struct {
 }
 
 type voiceClient struct {
+	peer      string
 	user      string
 	owner     *client
 	conn      *websocket.Conn
@@ -68,11 +69,11 @@ func (v *voiceClient) enqueue(message voiceWire) {
 	}
 }
 
-func (h *Hub) addVoice(room, user string, v *voiceClient) bool {
+func (h *Hub) addVoice(room, peer string, v *voiceClient) bool {
 	h.mu.Lock()
 	active := false
 	for c := range h.rooms[room] {
-		if c == v.owner && c.user == user {
+		if c == v.owner && c.peer == peer {
 			active = true
 			break
 		}
@@ -84,8 +85,9 @@ func (h *Hub) addVoice(room, user string, v *voiceClient) bool {
 	if h.voices[room] == nil {
 		h.voices[room] = map[string]*voiceClient{}
 	}
-	old := h.voices[room][user]
-	h.voices[room][user] = v
+	v.peer = peer
+	old := h.voices[room][peer]
+	h.voices[room][peer] = v
 	h.mu.Unlock()
 	if old != nil && old != v {
 		old.close("voice relay replaced")
@@ -93,10 +95,10 @@ func (h *Hub) addVoice(room, user string, v *voiceClient) bool {
 	return true
 }
 
-func (h *Hub) removeVoice(room, user string, v *voiceClient) {
+func (h *Hub) removeVoice(room, peer string, v *voiceClient) {
 	h.mu.Lock()
-	if h.voices[room][user] == v {
-		delete(h.voices[room], user)
+	if h.voices[room][peer] == v {
+		delete(h.voices[room], peer)
 	}
 	if len(h.voices[room]) == 0 {
 		delete(h.voices, room)
@@ -104,11 +106,11 @@ func (h *Hub) removeVoice(room, user string, v *voiceClient) {
 	h.mu.Unlock()
 }
 
-func (h *Hub) activeSignal(room, user string) *client {
+func (h *Hub) activeSignal(room, user, peer string) *client {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	for c := range h.rooms[room] {
-		if c.user == user {
+		if c.user == user && (peer == "" || c.peer == peer) {
 			return c
 		}
 	}
@@ -118,7 +120,7 @@ func (h *Hub) activeSignal(room, user string) *client {
 func (h *Hub) relayVoice(room string, sender *voiceClient, to string, message voiceWire) bool {
 	h.mu.RLock()
 	target := h.voices[room][to]
-	valid := h.voices[room][sender.user] == sender && target != nil
+	valid := h.voices[room][sender.peer] == sender && target != nil
 	if valid {
 		_, senderActive := h.rooms[room][sender.owner]
 		_, targetActive := h.rooms[room][target.owner]
@@ -188,22 +190,30 @@ func (a *API) voiceRelay(w http.ResponseWriter, r *http.Request, u User, room st
 		a.fail(w, http.StatusForbidden, "origin_not_allowed", "WebSocket origin is not allowed")
 		return
 	}
-	owner := a.Hub.activeSignal(room, u.ID)
+	peerID := r.URL.Query().Get("peer_id")
+	if peerID != "" && !uuidPattern.MatchString(peerID) {
+		a.fail(w, http.StatusBadRequest, "invalid_peer", "a valid peer_id is required")
+		return
+	}
+	owner := a.Hub.activeSignal(room, u.ID, peerID)
 	if owner == nil {
 		a.fail(w, http.StatusConflict, "signaling_required", "an active signaling connection is required")
 		return
+	}
+	if peerID == "" {
+		peerID = owner.peer
 	}
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: a.AllowedOrigins})
 	if err != nil {
 		return
 	}
 	conn.SetReadLimit(8 << 10)
-	v := &voiceClient{user: u.ID, owner: owner, conn: conn, send: make(chan queuedVoice, voiceQueueSize)}
-	if !a.Hub.addVoice(room, u.ID, v) {
+	v := &voiceClient{peer: peerID, user: u.ID, owner: owner, conn: conn, send: make(chan queuedVoice, voiceQueueSize)}
+	if !a.Hub.addVoice(room, peerID, v) {
 		_ = conn.Close(websocket.StatusPolicyViolation, "signaling connection is no longer active")
 		return
 	}
-	defer func() { a.Hub.removeVoice(room, u.ID, v); conn.CloseNow() }()
+	defer func() { a.Hub.removeVoice(room, peerID, v); conn.CloseNow() }()
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	go func() {
@@ -264,7 +274,7 @@ func (a *API) voiceRelay(w http.ResponseWriter, r *http.Request, u User, room st
 			}
 			targets[message.To] = struct{}{}
 		}
-		message.From = u.ID
+		message.From = peerID
 		a.Hub.relayVoice(room, v, message.To, message)
 	}
 }

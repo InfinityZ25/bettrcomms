@@ -1,10 +1,10 @@
 import type { MediaSignal, SignalingAdapter } from "./types";
 
 export type RoomSocketEventMap = {
-  peers: CustomEvent<{ peerIds: string[] }>;
+  peers: CustomEvent<{ peerIds: string[]; identities: Record<string, { userId: string; name?: string }> }>;
   signal: CustomEvent<MediaSignal>;
-  "peer-joined": CustomEvent<{ peerId: string }>;
-  "peer-left": CustomEvent<{ peerId: string }>;
+  "peer-joined": CustomEvent<{ peerId: string; userId?: string; name?: string }>;
+  "peer-left": CustomEvent<{ peerId: string; userId?: string; name?: string }>;
   presence: CustomEvent<{ peerId: string; payload: unknown }>;
   latency: CustomEvent<{ rttMs: number | null }>;
   error: CustomEvent<unknown>;
@@ -91,7 +91,7 @@ export class RoomWebSocketSignaling extends EventTarget implements SignalingAdap
     this.socket.send(JSON.stringify(signal));
   }
 
-  sendPresence(payload: { camera: boolean; microphone: boolean; sharing: boolean; recording?: boolean; muted?: boolean; deafened?: boolean }): void {
+  sendPresence(payload: { camera: boolean; microphone: boolean; sharing: boolean; recording?: boolean; muted?: boolean; deafened?: boolean; name?: string }): void {
     if (this.socket?.readyState !== WebSocket.OPEN) throw new Error("Room WebSocket is not open");
     this.socket.send(JSON.stringify({ type: "presence", payload }));
   }
@@ -117,11 +117,21 @@ export class RoomWebSocketSignaling extends EventTarget implements SignalingAdap
           this.dispatchEvent(new CustomEvent("latency", { detail: { rttMs } }));
         }
       } else if (type === "peers") {
-        const payload = message.payload as { peers?: unknown } | undefined;
+        const payload = message.payload as { peers?: unknown; identities?: unknown } | undefined;
         const peerIds = Array.isArray(payload?.peers) ? payload.peers.map(String) : [];
-        this.dispatchEvent(new CustomEvent("peers", { detail: { peerIds } }));
+        const identities = payload?.identities && typeof payload.identities === 'object'
+          ? Object.fromEntries(Object.entries(payload.identities).map(([peerId, identity]) => {
+              const value = identity as { user_id?: unknown; name?: unknown };
+              return [peerId, { userId: String(value?.user_id ?? ''), name: typeof value?.name === 'string' ? value.name : undefined }];
+            }))
+          : {};
+        this.dispatchEvent(new CustomEvent("peers", { detail: { peerIds, identities } }));
       } else if (type === "peer.joined" || type === "peer.left") {
-        this.dispatchEvent(new CustomEvent(type === "peer.joined" ? "peer-joined" : "peer-left", { detail: { peerId: String(message.from) } }));
+        this.dispatchEvent(new CustomEvent(type === "peer.joined" ? "peer-joined" : "peer-left", { detail: {
+          peerId: String(message.from),
+          userId: typeof message.user_id === 'string' ? message.user_id : undefined,
+          name: typeof message.name === 'string' ? message.name : undefined,
+        } }));
       } else if (type === "presence") {
         this.dispatchEvent(new CustomEvent("presence", { detail: { peerId: String(message.from), payload: message.payload } }));
       } else if (type === "offer" || type === "answer" || type === "ice-candidate" || type === "track-metadata" || (type === "signal" && (message.transport === "native-screen" || message.transport === "voice-relay"))) {

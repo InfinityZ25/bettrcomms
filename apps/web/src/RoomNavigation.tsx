@@ -29,7 +29,7 @@ export default function RoomNavigation({ rooms, selected, presence, known, onSel
             {known && callers.length > 0 && <ul className="room-call-roster" aria-label={`${roomLabel(room)} call participants`}>
               {callers.map(person => <li key={person.user_id}>
                 <span className="presence-avatar" aria-hidden="true">{(person.name || '?').slice(0, 1).toUpperCase()}</span>
-                <span className="presence-person-name">{person.name || 'Participant'}</span>
+                <span className="presence-person-name">{person.name || 'Participant'}{person.device_count > 1 ? ` · ${person.device_count} devices` : ''}</span>
                 {person.deafened ? <HeadphoneOff size={14} aria-label="Deafened" /> : person.muted ? <MicOff size={14} aria-label="Muted" /> : <span className="presence-live-dot" aria-label="In call" />}
               </li>)}
             </ul>}

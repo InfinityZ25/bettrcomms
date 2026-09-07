@@ -30,57 +30,77 @@ type wire struct {
 	Error       *apiError       `json:"error,omitempty"`
 	Muted       *bool           `json:"muted,omitempty"`
 	Deafened    *bool           `json:"deafened,omitempty"`
+	UserID      string          `json:"user_id,omitempty"`
+	Name        string          `json:"name,omitempty"`
 }
 type client struct {
-	user string
-	name string
-	conn *websocket.Conn
-	send chan wire
+	peer     string
+	user     string
+	name     string
+	conn     *websocket.Conn
+	send     chan wire
+	muted    bool
+	deafened bool
 }
 type Hub struct {
-	mu       sync.RWMutex
-	rooms    map[string]map[*client]struct{}
-	voices   map[string]map[string]*voiceClient
-	presence map[string]map[string]CallParticipant
+	mu     sync.RWMutex
+	rooms  map[string]map[*client]struct{}
+	voices map[string]map[string]*voiceClient
 }
 
 func NewHub() *Hub {
-	return &Hub{rooms: map[string]map[*client]struct{}{}, voices: map[string]map[string]*voiceClient{}, presence: map[string]map[string]CallParticipant{}}
+	return &Hub{rooms: map[string]map[*client]struct{}{}, voices: map[string]map[string]*voiceClient{}}
 }
 func (h *Hub) add(room string, c *client) []string {
+	if c.peer == "" {
+		c.peer = c.user
+	}
+	c.muted = true
+	peers, _, _ := h.addWithMode(room, c, true)
+	return peers
+}
+
+func (h *Hub) addWithMode(room string, c *client, replaceUser bool) ([]string, map[string]PeerIdentity, error) {
 	h.mu.Lock()
 	if h.rooms[room] == nil {
 		h.rooms[room] = map[*client]struct{}{}
 	}
 	var replaced []*client
 	var replacedVoices []*voiceClient
-	peers := make([]string, 0, len(h.rooms[room]))
 	for existing := range h.rooms[room] {
-		if existing.user == c.user {
+		if existing.peer == c.peer && existing.user != c.user {
+			h.mu.Unlock()
+			return nil, nil, errors.New("peer identity is already in use")
+		}
+		if existing.peer == c.peer || (replaceUser && existing.user == c.user) {
 			replaced = append(replaced, existing)
-			if voice := h.voices[room][existing.user]; voice != nil && voice.owner == existing {
+			if voice := h.voices[room][existing.peer]; voice != nil && voice.owner == existing {
 				replacedVoices = append(replacedVoices, voice)
-				delete(h.voices[room], existing.user)
+				delete(h.voices[room], existing.peer)
 			}
 			delete(h.rooms[room], existing)
-		} else {
-			peers = append(peers, existing.user)
+		}
+	}
+	peers := make([]string, 0, len(h.rooms[room]))
+	identities := make(map[string]PeerIdentity, len(h.rooms[room]))
+	for existing := range h.rooms[room] {
+		peers = append(peers, existing.peer)
+		identities[existing.peer] = PeerIdentity{UserID: existing.user, Name: existing.name}
+		for _, old := range replaced {
+			select {
+			case existing.send <- wire{Type: "peer.left", From: old.peer, UserID: old.user, Name: old.name}:
+			default:
+			}
 		}
 	}
 	h.rooms[room][c] = struct{}{}
-	if h.presence[room] == nil {
-		h.presence[room] = map[string]CallParticipant{}
-	}
-	h.presence[room][c.user] = CallParticipant{UserID: c.user, Name: c.name, Muted: true}
 	// Snapshot and membership must be atomic. Otherwise simultaneous callers
 	// can both receive an empty snapshot and only one learns the other exists.
-	if len(replaced) == 0 {
-		for existing := range h.rooms[room] {
-			if existing != c {
-				select {
-				case existing.send <- wire{Type: "peer.joined", From: c.user}:
-				default:
-				}
+	for existing := range h.rooms[room] {
+		if existing != c {
+			select {
+			case existing.send <- wire{Type: "peer.joined", From: c.peer, UserID: c.user, Name: c.name}:
+			default:
 			}
 		}
 	}
@@ -90,50 +110,47 @@ func (h *Hub) add(room string, c *client) []string {
 	}
 	for _, existing := range replaced {
 		go func(old *client) {
-			_ = old.conn.Close(websocket.StatusPolicyViolation, "replaced by a newer connection")
+			if old.conn != nil {
+				_ = old.conn.Close(websocket.StatusPolicyViolation, "replaced by a newer connection")
+			}
 		}(existing)
 	}
-	return peers
+	return peers, identities, nil
 }
 func (h *Hub) remove(room string, c *client) {
 	h.mu.Lock()
+	if _, active := h.rooms[room][c]; !active {
+		h.mu.Unlock()
+		return
+	}
 	delete(h.rooms[room], c)
 	var voice *voiceClient
-	if candidate := h.voices[room][c.user]; candidate != nil && candidate.owner == c {
+	if candidate := h.voices[room][c.peer]; candidate != nil && candidate.owner == c {
 		voice = candidate
-		delete(h.voices[room], c.user)
-	}
-	userStillConnected := false
-	for existing := range h.rooms[room] {
-		if existing.user == c.user {
-			userStillConnected = true
-			break
-		}
+		delete(h.voices[room], c.peer)
 	}
 	if len(h.rooms[room]) == 0 {
 		delete(h.rooms, room)
 		delete(h.voices, room)
 	}
-	if !userStillConnected {
-		delete(h.presence[room], c.user)
-	}
-	if len(h.presence[room]) == 0 {
-		delete(h.presence, room)
-	}
 	h.mu.Unlock()
 	if voice != nil {
 		voice.close("signaling connection closed")
 	}
-	if !userStillConnected {
-		h.broadcast(room, c, wire{Type: "peer.left", From: c.user})
-	}
+	h.broadcast(room, c, wire{Type: "peer.left", From: c.peer, UserID: c.user, Name: c.name})
+}
+
+type PeerIdentity struct {
+	UserID string `json:"user_id"`
+	Name   string `json:"name,omitempty"`
 }
 
 type CallParticipant struct {
-	UserID   string `json:"user_id"`
-	Name     string `json:"name,omitempty"`
-	Muted    bool   `json:"muted"`
-	Deafened bool   `json:"deafened"`
+	UserID      string `json:"user_id"`
+	Name        string `json:"name,omitempty"`
+	Muted       bool   `json:"muted"`
+	Deafened    bool   `json:"deafened"`
+	DeviceCount int    `json:"device_count"`
 }
 
 type RoomCallPresence struct {
@@ -147,24 +164,27 @@ func (h *Hub) setPresence(room string, sender *client, muted, deafened bool) boo
 	if _, active := h.rooms[room][sender]; !active {
 		return false
 	}
-	if h.presence[room] == nil {
-		return false
-	}
-	if _, connected := h.presence[room][sender.user]; !connected {
-		return false
-	}
-	participant := h.presence[room][sender.user]
-	participant.Muted = muted
-	participant.Deafened = deafened
-	h.presence[room][sender.user] = participant
+	sender.muted = muted
+	sender.deafened = deafened
 	return true
 }
 
 func (h *Hub) callPresence(room string) []CallParticipant {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	participants := make([]CallParticipant, 0, len(h.presence[room]))
-	for _, participant := range h.presence[room] {
+	byUser := map[string]CallParticipant{}
+	for c := range h.rooms[room] {
+		participant, ok := byUser[c.user]
+		if !ok {
+			participant = CallParticipant{UserID: c.user, Name: c.name, Muted: true, Deafened: true}
+		}
+		participant.DeviceCount++
+		participant.Muted = participant.Muted && c.muted
+		participant.Deafened = participant.Deafened && c.deafened
+		byUser[c.user] = participant
+	}
+	participants := make([]CallParticipant, 0, len(byUser))
+	for _, participant := range byUser {
 		participants = append(participants, participant)
 	}
 	sort.Slice(participants, func(i, j int) bool { return participants[i].UserID < participants[j].UserID })
@@ -210,7 +230,7 @@ func (h *Hub) relay(room, to string, m wire) bool {
 	defer h.mu.RUnlock()
 	ok := false
 	for c := range h.rooms[room] {
-		if c.user == to {
+		if c.peer == to {
 			select {
 			case c.send <- m:
 				ok = true
@@ -226,9 +246,9 @@ func (h *Hub) peers(room, user string) []string {
 	seen := map[string]bool{}
 	out := []string{}
 	for c := range h.rooms[room] {
-		if c.user != user && !seen[c.user] {
-			seen[c.user] = true
-			out = append(out, c.user)
+		if c.user != user && !seen[c.peer] {
+			seen[c.peer] = true
+			out = append(out, c.peer)
 		}
 	}
 	return out
@@ -241,11 +261,15 @@ func (h *Hub) disconnectRoomUser(room, user string) {
 			targets = append(targets, c)
 		}
 	}
-	voice := h.voices[room][user]
-	delete(h.voices[room], user)
-	delete(h.presence[room], user)
+	voices := []*voiceClient{}
+	for peer, voice := range h.voices[room] {
+		if voice.user == user {
+			voices = append(voices, voice)
+			delete(h.voices[room], peer)
+		}
+	}
 	h.mu.Unlock()
-	if voice != nil {
+	for _, voice := range voices {
 		voice.close("room membership revoked")
 	}
 	for _, c := range targets {
@@ -265,7 +289,6 @@ func (h *Hub) disconnectRoom(room string) {
 		voices = append(voices, voice)
 	}
 	delete(h.voices, room)
-	delete(h.presence, room)
 	h.mu.Unlock()
 	for _, voice := range voices {
 		voice.close("room deleted")
@@ -284,14 +307,15 @@ func (h *Hub) disconnectUser(user string) {
 				targets = append(targets, c)
 			}
 		}
-		if voice := h.voices[room][user]; voice != nil {
-			voices = append(voices, voice)
-			delete(h.voices[room], user)
-			if len(h.voices[room]) == 0 {
-				delete(h.voices, room)
+		for peer, voice := range h.voices[room] {
+			if voice.user == user {
+				voices = append(voices, voice)
+				delete(h.voices[room], peer)
 			}
 		}
-		delete(h.presence[room], user)
+		if len(h.voices[room]) == 0 {
+			delete(h.voices, room)
+		}
 	}
 	h.mu.Unlock()
 	for _, voice := range voices {
@@ -315,10 +339,24 @@ func (a *API) websocket(w http.ResponseWriter, r *http.Request, u User, room str
 		return
 	}
 	conn.SetReadLimit(64 << 10)
-	c := &client{user: u.ID, name: u.Name, conn: conn, send: make(chan wire, 32)}
-	initialPeers := a.Hub.add(room, c)
+	peerID := r.URL.Query().Get("peer_id")
+	joinMode := r.URL.Query().Get("join_mode")
+	if peerID == "" {
+		peerID = u.ID
+		joinMode = "replace"
+	}
+	if !uuidPattern.MatchString(peerID) || (joinMode != "" && joinMode != "replace" && joinMode != "additional") {
+		_ = conn.Close(websocket.StatusPolicyViolation, "invalid peer identity or join mode")
+		return
+	}
+	c := &client{peer: peerID, user: u.ID, name: u.Name, conn: conn, send: make(chan wire, 32), muted: true}
+	initialPeers, identities, addError := a.Hub.addWithMode(room, c, joinMode != "additional")
+	if addError != nil {
+		_ = conn.Close(websocket.StatusPolicyViolation, addError.Error())
+		return
+	}
 	defer func() { a.Hub.remove(room, c); conn.CloseNow() }()
-	peers, _ := json.Marshal(map[string]any{"peers": initialPeers})
+	peers, _ := json.Marshal(map[string]any{"peers": initialPeers, "identities": identities})
 	if e = wsjsonWrite(r.Context(), conn, wire{Type: "peers", Payload: peers}); e != nil {
 		conn.CloseNow()
 		return
@@ -375,7 +413,9 @@ func (a *API) websocket(w http.ResponseWriter, r *http.Request, u User, room str
 			if !a.Hub.setPresence(room, c, muted, deafened) {
 				return
 			}
-			m.From = u.ID
+			m.From = c.peer
+			m.UserID = c.user
+			m.Name = c.name
 			a.Hub.broadcast(room, c, m)
 		case "signal", "offer", "answer", "ice-candidate", "track-metadata":
 			if m.To == "" {
@@ -385,7 +425,7 @@ func (a *API) websocket(w http.ResponseWriter, r *http.Request, u User, room str
 				}
 				continue
 			}
-			m.From = u.ID
+			m.From = c.peer
 			if !a.Hub.relay(room, m.To, m) {
 				select {
 				case c.send <- wire{Type: "error", RequestID: m.RequestID, Error: &apiError{Code: "peer_unavailable", Message: "target is not connected"}}:

@@ -61,6 +61,7 @@ export interface CallPresence {
   name?: string;
   muted: boolean;
   deafened: boolean;
+  device_count: number;
 }
 const EMPTY_CALL_PRESENCE: CallPresence[] = [];
 type GalleryLayout = 'adaptive' | 'grid' | 'focus' | 'all';
@@ -482,7 +483,7 @@ export default function CallStage({
       if (active.current) setBusy(false);
     }
   }
-  async function join() {
+  async function join(joinMode: 'replace' | 'additional' = 'replace') {
     if (!user) {
       location.assign('/api/v1/auth/login');
       return;
@@ -497,14 +498,16 @@ export default function CallStage({
       const config = await api<{ ice_servers: RTCIceServer[] }>('/ice').catch(
         () => api<{ ice_servers: RTCIceServer[] }>('/config'),
       );
+      const peerId = createCallPeerId();
+      const query = new URLSearchParams({ peer_id: peerId, join_mode: joinMode });
       const s = new RoomWebSocketSignaling(
-        user.id,
-        '/api/v1/rooms/' + room.id + '/ws',
+        peerId,
+        `/api/v1/rooms/${room.id}/ws?${query}`,
       );
       const e = new MediaEngine({
         signaling: s,
         voiceRelay: {
-          url: `/api/v1/rooms/${room.id}/voice-relay`,
+          url: `/api/v1/rooms/${room.id}/voice-relay?peer_id=${encodeURIComponent(peerId)}`,
           mode: localStorage.getItem('bc-voice-route') === 'relay' ? 'relay' : 'automatic',
         },
         quality: readQuality(),
@@ -548,6 +551,13 @@ export default function CallStage({
           e.addPeer(id);
           setPeers((p) => ({ ...p, [id]: 'connecting' }));
         }
+        setNames(current => {
+          const next = { ...current };
+          for (const [id, identity] of Object.entries(event.detail.identities)) {
+            if (identity.name) next[id] = identity.name;
+          }
+          return next;
+        });
       });
       s.addEventListener('signal', (event) => {
         void e
@@ -557,6 +567,7 @@ export default function CallStage({
       s.addEventListener('peer-joined', (event) => {
         e.addPeer(event.detail.peerId);
         setPeers((p) => ({ ...p, [event.detail.peerId]: 'connecting' }));
+        if (event.detail.name) setNames(current => ({ ...current, [event.detail.peerId]: event.detail.name! }));
       });
       s.addEventListener('peer-left', (event) => {
         setRemotePresence((current) => {
@@ -620,7 +631,7 @@ export default function CallStage({
         await s.connect();
         setJoined(true);
         const input = callMicrophone.getSnapshot();
-        s.sendPresence({ camera: false, microphone: !input.muted, sharing: false, muted: input.muted, deafened: input.deafened });
+        s.sendPresence({ camera: false, microphone: !input.muted, sharing: false, muted: input.muted, deafened: input.deafened, name: user.name });
       } catch (error) {
         callMicrophone.stop();
         s.close();
@@ -846,6 +857,7 @@ export default function CallStage({
   };
   if (!joined) {
     const lobbyPresence = callPresence.filter((presence) => presence.user_id !== user?.id);
+    const existingSelf = callPresence.find((presence) => presence.user_id === user?.id);
     return (
       <>
       <section className="call-lobby" aria-label="Call lobby">
@@ -853,9 +865,17 @@ export default function CallStage({
           <span className="call-lobby__eyebrow">Ready to join</span>
           <h2>{(room as (Room & { display_name?: string }) | null)?.display_name || room?.name || (user ? 'Choose a room' : 'Your call')}</h2>
           <p>{room ? 'Review who is here, then join with your selected microphone. Your camera stays off until you enable it.' : 'Select a room or direct conversation to see its call and join.'}</p>
-          <Button onClick={join} disabled={busy || Boolean(user && !room)}>
+          {existingSelf && user && room ? <div className="call-lobby__device-choice">
+            <strong aria-live="polite">You’re already in this call{existingSelf.device_count > 1 ? ` on ${existingSelf.device_count} devices` : ' on another device'}.</strong>
+            <p>Reconnect here to move the call to this device, or keep the other device connected and add this one.</p>
+            <div>
+              <Button onClick={() => join('replace')} disabled={busy}><Headphones size={18} /> {busy ? 'Connecting…' : 'Reconnect from here'}</Button>
+              <Button variant="secondary" onClick={() => join('additional')} disabled={busy}><Plus size={18} /> Connect second device</Button>
+            </div>
+            <small>Mute or deafen one device if its speakers can feed the other device’s microphone.</small>
+          </div> : <Button onClick={() => join('replace')} disabled={busy || Boolean(user && !room)}>
             <Headphones size={18} /> {busy ? 'Connecting…' : !user ? 'Sign in to join' : room ? 'Join call' : 'Select a room to join'}
-          </Button>
+          </Button>}
         </div>
         <div className="call-lobby__roster">
           <h3>In this call</h3>
@@ -869,6 +889,7 @@ export default function CallStage({
                 <span className="call-lobby__badges">
                   {presence.muted && <span><MicOff size={14} /> Muted</span>}
                   {presence.deafened && <span><Headphones size={14} /> Deafened</span>}
+                  {presence.device_count > 1 && <span>{presence.device_count} devices</span>}
                 </span>
               </li>
             ))}</ul>
@@ -1161,7 +1182,7 @@ export default function CallStage({
               </Button>
             </>
           ) : (
-            <Button onClick={join} disabled={busy}>
+            <Button onClick={() => join('replace')} disabled={busy}>
               <Headphones size={18} />
               {busy ? 'Connecting…' : user ? 'Join call' : 'Sign in to join'}
             </Button>
@@ -1418,6 +1439,15 @@ function FrozenTrackPreview({ track, name }: { track: MediaStreamTrack; name: st
       {status !== 'ready' && <video ref={video} muted playsInline aria-hidden="true" />}
     </div>
   );
+}
+
+function createCallPeerId(): string {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = [...bytes].map(value => value.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 function TrackVideo({

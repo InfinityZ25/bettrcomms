@@ -46,6 +46,38 @@ func TestPresencePayloadCompatibilityAndValidation(t *testing.T) {
 	}
 }
 
+func TestSameUserCanJoinFromMultipleDevicesOrReplaceThem(t *testing.T) {
+	hub := NewHub()
+	first := &client{peer: "device-1", user: "user-1", name: "Alice", muted: true, send: make(chan wire, 8)}
+	if peers, _, err := hub.addWithMode("room", first, false); err != nil || len(peers) != 0 {
+		t.Fatalf("first join peers=%v err=%v", peers, err)
+	}
+	second := &client{peer: "device-2", user: "user-1", name: "Alice", muted: true, send: make(chan wire, 8)}
+	peers, identities, err := hub.addWithMode("room", second, false)
+	if err != nil || len(peers) != 1 || peers[0] != first.peer || identities[first.peer].UserID != first.user {
+		t.Fatalf("second device did not discover first: peers=%v identities=%v err=%v", peers, identities, err)
+	}
+	if joined := <-first.send; joined.Type != "peer.joined" || joined.From != second.peer || joined.UserID != first.user {
+		t.Fatalf("first device join event=%#v", joined)
+	}
+	if !hub.setPresence("room", second, false, true) {
+		t.Fatal("second-device presence was rejected")
+	}
+	participants := hub.callPresence("room")
+	if len(participants) != 1 || participants[0].DeviceCount != 2 || participants[0].Muted || participants[0].Deafened {
+		t.Fatalf("multi-device presence was not grouped: %#v", participants)
+	}
+
+	replacement := &client{peer: "device-3", user: "user-1", name: "Alice", muted: true, send: make(chan wire, 8)}
+	if peers, _, err = hub.addWithMode("room", replacement, true); err != nil || len(peers) != 0 {
+		t.Fatalf("replacement retained old peers: peers=%v err=%v", peers, err)
+	}
+	participants = hub.callPresence("room")
+	if len(participants) != 1 || participants[0].DeviceCount != 1 || !participants[0].Muted {
+		t.Fatalf("replacement presence=%#v", participants)
+	}
+}
+
 func TestConcurrentJoinersAlwaysDiscoverEachOther(t *testing.T) {
 	for attempt := 0; attempt < 100; attempt++ {
 		hub := NewHub()

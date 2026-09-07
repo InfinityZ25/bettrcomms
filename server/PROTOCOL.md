@@ -39,12 +39,12 @@ Browser mutation origins must match `APP_URL`; requests marked cross-site are re
 
 ## WebSocket signaling
 
-`GET /api/v1/rooms/{room_id}/ws` upgrades only for authenticated room members. The session cookie authenticates the handshake. Messages are bounded to 64 KiB.
+`GET /api/v1/rooms/{room_id}/ws?peer_id=<uuid>&join_mode=replace|additional` upgrades only for authenticated room members. The session cookie authenticates the account while the random `peer_id` identifies this device's call endpoint. `replace` closes the account's other endpoints in this room; `additional` keeps them connected. Messages are bounded to 64 KiB.
 
 Client frames:
 
 ```json
-{ "type": "offer", "to": "user-id", "description": { "type": "offer", "sdp": "..." } }
+{ "type": "offer", "to": "device-peer-id", "description": { "type": "offer", "sdp": "..." } }
 { "type": "answer", "to": "user-id", "description": { "type": "answer", "sdp": "..." } }
 { "type": "ice-candidate", "to": "user-id", "candidate": { "candidate": "...", "sdpMid": "0", "sdpMLineIndex": 0 } }
 { "type": "track-metadata", "to": "user-id", "tracks": [{ "source": "camera|screen|microphone|system", "trackId": "...", "streamId": "optional", "mediaKind": "audio|video", "enabled": true }] }
@@ -56,14 +56,14 @@ Server frames:
 
 ```json
 { "type": "signal", "from": "user-id", "request_id": "optional", "payload": {} }
-{ "type": "peers", "payload": { "peers": ["already-connected-user-id"] } }
-{ "type": "presence", "from": "user-id", "payload": {} }
-{ "type": "peer.joined|peer.left", "from": "user-id" }
+{ "type": "peers", "payload": { "peers": ["device-peer-id"], "identities": { "device-peer-id": { "user_id": "account-id", "name": "Alice" } } } }
+{ "type": "presence", "from": "device-peer-id", "user_id": "account-id", "payload": {} }
+{ "type": "peer.joined|peer.left", "from": "device-peer-id", "user_id": "account-id", "name": "Alice" }
 { "type": "pong", "request_id": "optional" }
 { "type": "error", "error": { "code": "...", "message": "..." } }
 ```
 
-`offer`, `answer`, `ice-candidate`, and `track-metadata` are relayed unchanged except that the server supplies the authenticated `from` identity. A legacy `signal` envelope is also accepted. Signals are ephemeral and relayed only to a currently connected target in the same room. Presence is ephemeral and broadcast within the room. Messages, membership, and friendships are persisted in PostgreSQL.
+`offer`, `answer`, `ice-candidate`, and `track-metadata` are relayed unchanged except that the server supplies the authenticated device peer as `from`. A legacy `signal` envelope is also accepted. Signals are ephemeral and relayed only to a currently connected target in the same room. Presence is ephemeral, grouped by account for room rosters, and includes `device_count`; media routing remains per device. Messages, membership, and friendships are persisted in PostgreSQL. Older clients that omit `peer_id` retain the single-device replacement behavior.
 
 In v1, a `channel` room is the conversation container that future community/server channels will reference. Communities themselves are outside the current protocol. A `direct` room is a persistent, unique conversation for one accepted friend pair.
 

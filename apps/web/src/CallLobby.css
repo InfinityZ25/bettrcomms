@@ -21,6 +21,19 @@
 .call-lobby h2 { margin: 10px 0; font-size: clamp(26px, 3vw, 38px); overflow-wrap: anywhere; }
 .call-lobby p { color: var(--muted); line-height: 1.6; }
 .call-lobby__hero .button { margin-top: 18px; }
+.call-lobby__device-choice {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid #86a86b;
+  border-radius: 12px;
+  background: #1a241bd9;
+}
+.call-lobby__device-choice > p { margin: 0; }
+.call-lobby__device-choice > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.call-lobby__device-choice .button { margin-top: 0; }
+.call-lobby__device-choice small { color: #9cab9f; line-height: 1.45; }
 .call-lobby__roster h3 { margin-top: 0; }
 .call-lobby__roster ul { display: grid; gap: 10px; padding: 0; list-style: none; }
 .call-lobby__roster li { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 10px; border-radius: 10px; background: rgba(255,255,255,.035); }

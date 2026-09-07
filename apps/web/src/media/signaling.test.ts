@@ -78,3 +78,35 @@ it('measures only a matching server pong and reports a timeout', async () => {
   expect(latency).toHaveBeenLastCalledWith(null);
   signaling.close();
 });
+
+it('keeps device peer identities separate from account identities', async () => {
+  let socket: FakeSocket;
+  class FakeSocket {
+    static OPEN = 1;
+    readyState = 1;
+    onopen?: () => void;
+    onmessage?: (event: { data: string }) => void;
+    send = vi.fn();
+    constructor() { socket = this; queueMicrotask(() => this.onopen?.()); }
+    close() { this.readyState = 3; }
+  }
+  vi.stubGlobal('WebSocket', FakeSocket);
+  vi.stubGlobal('window', {
+    location: { href: 'http://localhost:5173' },
+    setTimeout, clearTimeout, setInterval, clearInterval,
+  });
+  const signaling = new RoomWebSocketSignaling('device-local', '/api/v1/rooms/test/ws');
+  const peers = vi.fn();
+  const joined = vi.fn();
+  signaling.addEventListener('peers', event => peers(event.detail));
+  signaling.addEventListener('peer-joined', event => joined(event.detail));
+  await signaling.connect();
+  socket!.onmessage?.({ data: JSON.stringify({
+    type: 'peers',
+    payload: { peers: ['device-a'], identities: { 'device-a': { user_id: 'account-a', name: 'Ada' } } },
+  }) });
+  socket!.onmessage?.({ data: JSON.stringify({ type: 'peer.joined', from: 'device-b', user_id: 'account-a', name: 'Ada' }) });
+  expect(peers).toHaveBeenCalledWith({ peerIds: ['device-a'], identities: { 'device-a': { userId: 'account-a', name: 'Ada' } } });
+  expect(joined).toHaveBeenCalledWith({ peerId: 'device-b', userId: 'account-a', name: 'Ada' });
+  signaling.close();
+});

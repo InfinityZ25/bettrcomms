@@ -2,6 +2,8 @@
 
 ## Unreleased — push-to-talk and adaptive call gallery
 
+One account can now join the same call from several devices. Each call endpoint receives an opaque device peer ID for WebRTC and optional voice-relay routing while room presence remains grouped under the account with a device count. A device entering an active call sees explicit choices to move the call with **Reconnect from here** or preserve the existing endpoint with **Connect second device**. Reconnecting closes every older call endpoint for that account; adding a device lets each endpoint independently publish or consume microphone, camera, screen, and system audio.
+
 Settings offers an opt-in Push-to-talk checkbox and a keyboard or mouse shortcut. It is disabled by default and saved on this device. Calls transmit the processed microphone only while the shortcut is held; manual mute and deafen take priority. Settings changes, disconnect, and leaving release the shortcut. Device and denoiser replacement retain the current microphone gate, including replacements still waiting on WebRTC senders.
 
 Waiting for the shortcut stays separate from manual mute in call controls and participant presence. The microphone capture remains live while the processed output sends silence. Keyboard shortcuts work after clicking mute/unmute, and foreground Windows input uses WebView events without depending on a duplicate global hook event. Editing and shortcut assignment remain protected; assigned Space/Enter no longer also activate the focused call button. Regression tests exercise Left Ctrl, continuous capture, transmitted audio/silence, and independent mute state.
