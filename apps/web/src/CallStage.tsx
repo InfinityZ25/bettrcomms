@@ -386,9 +386,12 @@ export default function CallStage({
     api<{ members: { user: User }[] }>('/rooms/' + room.id + '/members')
       .then((r) => {
         if (live)
-          setNames(
-            Object.fromEntries(r.members.map((m) => [m.user.id, m.user.name])),
-          );
+          setNames((current) => ({
+            ...Object.fromEntries(r.members.map((m) => [m.user.id, m.user.name])),
+            // Signaling identities are keyed by per-device peer IDs. Keep
+            // those entries when the durable room-member snapshot refreshes.
+            ...current,
+          }));
       })
       .catch(() => {});
     return () => {

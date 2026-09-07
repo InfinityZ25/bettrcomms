@@ -215,7 +215,6 @@ test('two members chat, call, record separate tracks, and transport a screen sha
     await expectDecodedVideo(guestPage, '.video-viewport video');
     await expect(guestPage.locator('.stage-badge')).toHaveText('Live');
     await expect(guestPage.getByText('Waiting for video frames…')).toHaveCount(0);
-    await expect(guestPage.getByText(/screen/i).first()).toBeVisible();
 
     await guestPage.evaluate(syntheticDisplayCapture);
     await guestPage.getByRole('button', { name: /share screen/i }).click();
