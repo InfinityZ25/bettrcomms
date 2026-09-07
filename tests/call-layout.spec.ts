@@ -156,6 +156,10 @@ test('camera dock resizes, snaps, focuses, and preserves the active share', asyn
     await expect.poll(() => page.evaluate(() => document.fullscreenElement?.classList.contains('call-workspace'))).toBe(true);
     await expect(page.locator('.call-workspace .camera-dock')).toBeVisible();
     await expect(page.locator('.call-workspace .call-controls')).toBeVisible();
+    await expect.poll(() => page.locator('.call-workspace').evaluate(element => ({
+      horizontal: element.scrollWidth - element.clientWidth,
+      vertical: element.scrollHeight - element.clientHeight,
+    }))).toEqual({ horizontal: 0, vertical: 0 });
     await expect(page.locator('.call-workspace')).toHaveAttribute('data-controls-visible', 'false', { timeout: 4000 });
     const fullscreenStageBox = await stage.boundingBox();
     expect(fullscreenStageBox?.height).toBeGreaterThan(880);

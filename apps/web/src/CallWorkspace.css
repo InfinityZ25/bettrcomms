@@ -535,14 +535,35 @@
 .call-workspace:fullscreen {
   position: fixed;
   inset: 0;
-  width: 100%;
-  height: 100%;
+  width: 100dvw;
+  height: 100dvh;
+  max-width: 100dvw;
+  max-height: 100dvh;
   padding: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 .call-workspace:fullscreen > .stage {
   position: absolute;
   inset: 0;
+  overflow: hidden;
+}
+
+/* WebView2 reserves a bottom gutter for classic scrollbars in fullscreen. */
+.call-workspace:fullscreen .camera-strip,
+.call-workspace:fullscreen .content-grid {
+  scrollbar-width: none;
+}
+
+.call-workspace:fullscreen .camera-strip::-webkit-scrollbar,
+.call-workspace:fullscreen .content-grid::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.call-workspace:fullscreen > .stage[data-has-share='false'] .camera-strip {
+  overflow: hidden;
 }
 
 .call-workspace:fullscreen > .call-layout-toolbar,
