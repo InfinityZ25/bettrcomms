@@ -1,5 +1,11 @@
 # BetterComms preview release notes
 
+## Unreleased — configurable push-to-talk
+
+Settings offers an opt-in Push-to-talk checkbox and a keyboard or mouse shortcut. It is disabled by default and saved on this device. Calls transmit the processed microphone only while the shortcut is held; manual mute and deafen take priority. Focus loss, settings changes, disconnect, and leaving release the shortcut. Device and denoiser replacement retain the current microphone gate, including replacements still waiting on WebRTC senders.
+
+This is a foreground browser/WebView shortcut, not a native global hotkey for background gaming. Camera, screen, system audio and playback volume remain independent. See [push-to-talk and local setup](PUSH_TO_TALK.md) for use, acceptance tests and the Windows database-port workaround.
+
 ## 0.1.8 — 24 FPS camera overlay
 
 The Windows camera overlay now targets 24 FPS instead of 10. Rust paces frames against absolute deadlines rather than silently dropping early frames or accumulating timer drift. The frontend submits one frame at a time without adding a competing timer on modern hosts. Frame submission remains sequential with no stale-frame backlog. Actual cadence depends on source cameras and local rendering load. An updated native 0.1.8 binary is required; older hosts retain their advertised 10 FPS limit. The unpublished 0.1.7 candidate was superseded after its native timing check measured drift.

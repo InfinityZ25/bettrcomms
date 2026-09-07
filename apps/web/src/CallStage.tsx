@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type PointerEvent, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type PointerEvent, type CSSProperties } from 'react';
+import { CallMicrophone, talkBindingLabel } from './media/pushToTalk';
 import { RecordingDownload } from './RecordingDownload';
 import ConnectionStatus from './ConnectionStatus';
 import { useSpeakingActivity } from './media/useSpeakingActivity';
@@ -107,8 +108,6 @@ export default function CallStage({
     [remote, setRemote] = useState<RemoteTrack[]>([]),
     [peers, setPeers] = useState<Record<string, string>>({}),
     [names, setNames] = useState<Record<string, string>>({}),
-    [muted, setMuted] = useState(false),
-    [deafened, setDeafened] = useState(false),
     [zoom, setZoom] = useState(1),
     [pan, setPan] = useState({ x: 0, y: 0 }),
     [recording, setRecording] = useState(false),
@@ -135,7 +134,8 @@ export default function CallStage({
     ),
     shareRequest = useRef(0),
     active = useRef(true);
-  const mutedBeforeDeafen = useRef(false);
+  const [callMicrophone] = useState(() => new CallMicrophone(enabled => engine.current?.setMicrophoneEnabled(enabled)));
+  const { muted, deafened, manualMuted, settings: talkSettings } = useSyncExternalStore(callMicrophone.subscribe, callMicrophone.getSnapshot);
   const [remotePresence, setRemotePresence] = useState<Record<string, { muted: boolean; deafened: boolean }>>({});
   const [stats, setStats] = useState<PeerMediaStats[]>([]),
     [showStats, setShowStats] = useState(false),
@@ -232,6 +232,7 @@ export default function CallStage({
       }
   };
   const leave = () => {
+    callMicrophone.stop();
     disposeCallPlayback();
     void finishRecording();
     socket.current?.close();
@@ -246,8 +247,6 @@ export default function CallStage({
     setPeers({});
     setRemoteRecording({});
     setRemotePresence({});
-    setMuted(false);
-    setDeafened(false);
     setCallPlaybackDeafened(false);
   };
   useEffect(() => {
@@ -276,14 +275,10 @@ export default function CallStage({
       const e = engine.current;
       if (!e) return;
       try {
-        const wasEnabled =
-          e.getLocalTracks().get('microphone')?.enabled ?? true;
         await e.captureUserMedia({
           camera: false,
           ...microphoneCaptureOptions(localStorage.getItem('bc-input') ?? ''),
         });
-        const track = e.getLocalTracks().get('microphone');
-        if (track) track.enabled = wasEnabled;
       } catch (error) {
         onError(error instanceof Error ? error.message : String(error));
       }
@@ -391,8 +386,6 @@ export default function CallStage({
               )
             : false,
         });
-        const mic = e.getLocalTracks().get('microphone');
-        if (mic) mic.enabled = !muted;
       } catch (error) {
         onError(error instanceof Error ? error.message : String(error));
       }
@@ -475,6 +468,7 @@ export default function CallStage({
         },
       });
       engine.current = e;
+      callMicrophone.start();
       socket.current = s;
       s.addEventListener('latency', (event) => {
         if (socket.current === s) setServerRtt(event.detail.rttMs);
@@ -554,13 +548,12 @@ export default function CallStage({
       });
       s.addEventListener('close', () => {
         if (engine.current === e) {
+          callMicrophone.stop();
           void finishRecording();
           e.dispose();
           disposeCallPlayback();
           engine.current = null;
           setJoined(false);
-          setMuted(false);
-          setDeafened(false);
           setCallPlaybackDeafened(false);
           setServerRtt(null);
           setStats([]);
@@ -577,9 +570,10 @@ export default function CallStage({
         });
         await s.connect();
         setJoined(true);
-        setMuted(false);
-        s.sendPresence({ camera: false, microphone: true, sharing: false, muted: false, deafened: false });
+        const input = callMicrophone.getSnapshot();
+        s.sendPresence({ camera: false, microphone: !input.muted, sharing: false, muted: input.muted, deafened: input.deafened });
       } catch (error) {
+        callMicrophone.stop();
         s.close();
         e.dispose();
         disposeCallPlayback();
@@ -666,27 +660,12 @@ export default function CallStage({
     });
   }
   function mic() {
-    if (deafened) return;
-    const track = engine.current?.getLocalTracks().get('microphone');
-    if (track) {
-      track.enabled = !track.enabled;
-      setMuted(!track.enabled);
-    } else onError('Join a call to use your microphone.');
+    if (engine.current) callMicrophone.toggleMute();
+    else onError('Join a call to use your microphone.');
   }
   function toggleDeafen() {
-    const track = engine.current?.getLocalTracks().get('microphone');
-    if (!deafened) {
-      mutedBeforeDeafen.current = muted;
-      if (track) track.enabled = false;
-      setMuted(true);
-      setDeafened(true);
-      setCallPlaybackDeafened(true);
-    } else {
-      if (track) track.enabled = !mutedBeforeDeafen.current;
-      setMuted(mutedBeforeDeafen.current);
-      setDeafened(false);
-      setCallPlaybackDeafened(false);
-    }
+    callMicrophone.toggleDeafen();
+    setCallPlaybackDeafened(callMicrophone.getSnapshot().deafened);
   }
   async function toggleRecord() {
     await perform(async () => {
@@ -1044,6 +1023,11 @@ export default function CallStage({
         </div>
       </div>
       <div className="call-footer">
+        {talkSettings.enabled && (
+          <span className="push-to-talk-status" role="status">
+            {deafened ? 'Deafened' : manualMuted ? 'Microphone muted' : muted ? `Hold ${talkBindingLabel(talkSettings.binding)} to talk` : 'Push-to-talk · Transmitting'}
+          </span>
+        )}
         <ConnectionStatus
           joined={joined}
           peerCount={Object.keys(peers).length}
@@ -1056,7 +1040,7 @@ export default function CallStage({
           <Button
             variant={muted ? 'danger' : 'secondary'}
             size="icon"
-            aria-label={deafened ? 'Microphone muted while deafened' : muted ? 'Unmute microphone' : 'Mute microphone'}
+            aria-label={deafened ? 'Microphone muted while deafened' : manualMuted ? 'Unmute microphone' : 'Mute microphone'}
             onClick={mic}
             disabled={deafened}
           >

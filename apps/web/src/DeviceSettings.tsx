@@ -9,6 +9,7 @@ import {
   setOutputVolume,
 } from './media/volumeSettings';
 import './DeviceSettings.css';
+import PushToTalkSettings from './PushToTalkSettings';
 import { MediaEngine } from './media/engine';
 import { allowDesktopCapture, isWindowsDesktop } from './media/permissions';
 import {
@@ -658,6 +659,7 @@ export default function DeviceSettings() {
   return (
     <section className="device-settings" aria-label="Media devices">
       <div className="device-settings__grid">
+        <PushToTalkSettings />
         <div className="device-settings__card">
           <label>
             Microphone

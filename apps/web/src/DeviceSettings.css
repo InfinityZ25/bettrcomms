@@ -22,6 +22,10 @@
 .device-settings__card select {
   width: 100%;
 }
+.push-to-talk-settings .push-to-talk-settings__toggle { display: flex; align-items: center; justify-content: space-between; font-weight: 650; }
+.push-to-talk-settings__toggle input { width: 18px; height: 18px; accent-color: var(--accent, #b8ff42); }
+.push-to-talk-settings p { margin: 10px 0; color: var(--text-muted, #aeb6a6); font-size: 0.82rem; line-height: 1.5; }
+.push-to-talk-settings button { min-height: 36px; text-align: left; }
 .device-volume {
   margin-top: 14px;
 }

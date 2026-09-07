@@ -321,6 +321,7 @@
 .call-workspace .stage-topline, .call-workspace .stage-bottomline { flex-shrink: 0; padding: 4px; }
 .call-workspace .video-viewport { min-height: 0; flex: 1; }
 .call-workspace .call-footer { margin: 0; gap: 12px; }
+.push-to-talk-status { font-size: 12px; color: #b9c6bc; }
 .call-workspace > .recording-downloads { flex: 0 0 auto; max-height: 110px; overflow: auto; margin: 0; }
 .call-workspace > .stats-panel { flex: 0 0 auto; max-height: 30vh; overflow: auto; }
 .dock-targets { position: absolute; inset: 0; z-index: 20; pointer-events: none; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; padding: 14px; }
