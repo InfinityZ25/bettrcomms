@@ -2,6 +2,10 @@
 
 ## Unreleased — adaptive call gallery
 
+Shared content now zooms from 50% to 500% with small button steps, ordinary mouse-wheel scrolling, and trackpad pinch/scroll gestures. Wheel zoom is anchored under the pointer, animated without adding a frame loop, and bounded so dragged content cannot be lost completely off-canvas. Each watched item keeps its own zoom and pan while it remains mounted.
+
+Every participant can continue publishing one independent screen track. Incoming shares first appear as preview tiles beside participants and move onto the main stage after the viewer chooses Watch. Viewers can watch several shares in a responsive center grid, focus one share, move a live camera onto the center stage, return to all watched shares, or stop watching any share. Watched screen audio follows the same selection so multiple unwatched game feeds do not play over the call. Local sharing opens on the sharer's stage automatically.
+
 Calls without a screen share now use the full stage as a responsive camera gallery instead of leaving a shallow camera strip above unused space. Adaptive view gives the active speaker more room in three-person calls; Equal grid keeps every tile the same size; Focus lets the user pin any participant. A local fit/fill preference controls whether cameras are cropped to use the tile or shown in full. Gallery preferences persist on the device, and shared-content calls keep the existing resizable top/side camera docks.
 
 The gallery toolbar only presents controls that apply to the current state. Pin controls appear on hover or keyboard focus, the layout collapses cleanly for narrow windows, and fullscreen retains the selected gallery. The call-layout browser acceptance test now covers gallery sizing, saved view/fit preferences, screen-share docking, fullscreen, focus mode, and mobile overflow.

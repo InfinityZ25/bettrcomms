@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type PointerEvent, type WheelEvent as ReactWheelEvent, type CSSProperties } from 'react';
 import { RecordingDownload } from './RecordingDownload';
 import ConnectionStatus from './ConnectionStatus';
 import { useSpeakingActivity } from './media/useSpeakingActivity';
@@ -21,6 +21,8 @@ import {
   ZoomOut,
   Plus,
   Pin,
+  LayoutGrid,
+  X,
 } from 'lucide-react';
 import { Button } from './components/ui/button';
 import {
@@ -61,6 +63,13 @@ export interface CallPresence {
 }
 const EMPTY_CALL_PRESENCE: CallPresence[] = [];
 type GalleryLayout = 'adaptive' | 'grid' | 'focus';
+type StageItem = {
+  key: string;
+  kind: 'screen' | 'camera';
+  name: string;
+  track: MediaStreamTrack;
+  self?: boolean;
+};
 
 function readGalleryLayout(): GalleryLayout {
   try {
@@ -118,11 +127,10 @@ export default function CallStage({
     [names, setNames] = useState<Record<string, string>>({}),
     [muted, setMuted] = useState(false),
     [deafened, setDeafened] = useState(false),
-    [zoom, setZoom] = useState(1),
-    [pan, setPan] = useState({ x: 0, y: 0 }),
     [recording, setRecording] = useState(false),
     [result, setResult] = useState<RecordingResult | null>(null),
-    [selected, setSelected] = useState('');
+    [watchedShareIds, setWatchedShareIds] = useState<string[]>([]),
+    [focusedStageKey, setFocusedStageKey] = useState<string | null>(null);
   const workspace = useRef<HTMLDivElement>(null);
   const docking = useCallLayout(layout, onLayout, joined);
   const [fullscreen, setFullscreen] = useState(false);
@@ -173,9 +181,6 @@ export default function CallStage({
   const engine = useRef<MediaEngine | null>(null),
     socket = useRef<RoomWebSocketSignaling | null>(null),
     recorder = useRef<TrackRecordingSession | null>(null),
-    drag = useRef<{ x: number; y: number; px: number; py: number } | null>(
-      null,
-    ),
     shareRequest = useRef(0),
     active = useRef(true);
   const mutedBeforeDeafen = useRef(false);
@@ -189,7 +194,6 @@ export default function CallStage({
   const [saveStatus, setSaveStatus] = useState('');
   const [serverRtt, setServerRtt] = useState<number | null>(null);
   const [reportStatus, setReportStatus] = useState('');
-  const [receivingVideo, setReceivingVideo] = useState<string | null>(null);
   async function downloadDiagnostics() {
     try {
       const nativeVersion = isTauri() ? await import('@tauri-apps/api/app').then(api => api.getVersion()).catch(() => 'unknown') : undefined;
@@ -291,6 +295,8 @@ export default function CallStage({
     setRemotePresence({});
     setMuted(false);
     setDeafened(false);
+    setWatchedShareIds([]);
+    setFocusedStageKey(null);
     setCallPlaybackDeafened(false);
   };
   useEffect(() => {
@@ -784,7 +790,6 @@ export default function CallStage({
         track: t.track,
       })),
   ];
-  const share = shares.find((s) => s.id === selected) ?? shares[0];
   const connected = Object.entries(peers).filter(
     ([id, state]) => state === 'connected' || stats.some(s => s.peerId === id && s.voiceRelay?.state === 'relayed'),
   ).length;
@@ -797,6 +802,52 @@ export default function CallStage({
       self: false,
     })),
   ];
+  const shareSignature = shares.map(({ id, track }) => `${id}:${track.id}`).join('|');
+  useEffect(() => {
+    const available = new Set(shares.map(({ id }) => id));
+    setWatchedShareIds(current => {
+      const next = current.filter(id => available.has(id));
+      if (available.has('local') && !next.includes('local')) next.unshift('local');
+      return next.length === current.length && next.every((id, index) => id === current[index]) ? current : next;
+    });
+    setFocusedStageKey(current => {
+      if (!current?.startsWith('screen:')) return current;
+      return available.has(current.slice('screen:'.length)) ? current : null;
+    });
+  }, [shareSignature]);
+  const availableStageItems: StageItem[] = [
+    ...shares.map(share => ({
+      key: `screen:${share.id}`,
+      kind: 'screen' as const,
+      name: share.name,
+      track: share.track,
+      self: share.id === 'local',
+    })),
+    ...cameraParticipants
+      .filter((camera): camera is typeof camera & { track: MediaStreamTrack } => Boolean(camera.track))
+      .map(camera => ({
+        key: `camera:${camera.id}`,
+        kind: 'camera' as const,
+        name: camera.self ? 'Your camera' : camera.name,
+        track: camera.track,
+        self: camera.self,
+      })),
+  ];
+  const focusedStageItem = availableStageItems.find(item => item.key === focusedStageKey);
+  const watchedScreens = availableStageItems.filter(item =>
+    item.kind === 'screen' && watchedShareIds.includes(item.key.slice('screen:'.length)),
+  );
+  const stageItems = focusedStageItem ? [focusedStageItem] : watchedScreens;
+  const hasStageContent = stageItems.length > 0;
+  const visibleTileCount = cameraParticipants.length + shares.length;
+  const toggleWatchedShare = (id: string) => {
+    setWatchedShareIds(current => current.includes(id) ? current.filter(value => value !== id) : [...current, id]);
+    if (focusedStageKey === `screen:${id}`) setFocusedStageKey(null);
+  };
+  const focusShare = (id: string) => {
+    setWatchedShareIds(current => current.includes(id) ? current : [...current, id]);
+    setFocusedStageKey(`screen:${id}`);
+  };
   const activeSpeakerCamera = cameraParticipants.find(camera => speaking.has(camera.id))?.id;
   const activeFeaturedCamera = galleryLayout === 'adaptive' && activeSpeakerCamera
     ? activeSpeakerCamera
@@ -812,11 +863,6 @@ export default function CallStage({
     setGalleryFit(next);
     try { localStorage.setItem('bc-gallery-fit', next); } catch { /* Session-only when storage is unavailable. */ }
   };
-  function pointerDown(e: PointerEvent) {
-    if (zoom <= 1) return;
-    drag.current = { x: e.clientX, y: e.clientY, px: pan.x, py: pan.y };
-    e.currentTarget.setPointerCapture(e.pointerId);
-  }
   if (!joined) {
     const lobbyPresence = callPresence.filter((presence) => presence.user_id !== user?.id);
     return (
@@ -876,10 +922,13 @@ export default function CallStage({
                         .join(', ') + ' IS RECORDING'}
                 </span>
               )}
-        {share ? <>
+        {hasStageContent ? <>
           <label>Camera position <select aria-label="Camera position" value={docking.dock} onChange={e => docking.setDock(e.target.value as 'top' | 'left' | 'right')}>
             <option value="top">Top row</option><option value="left">Left side</option><option value="right">Right side</option>
           </select></label>
+          {focusedStageItem && watchedScreens.length > 1 && (
+            <button onClick={() => setFocusedStageKey(null)}><LayoutGrid size={15} /> Show {watchedScreens.length} screens</button>
+          )}
           <button onClick={docking.reset}>Reset layout</button>
         </> : <div className="gallery-layout-tools" role="group" aria-label="Camera gallery controls">
           <label>View <select aria-label="Camera gallery layout" value={galleryLayout} onChange={e => changeGalleryLayout(e.target.value as GalleryLayout)}>
@@ -895,7 +944,7 @@ export default function CallStage({
         <button onClick={onFocus} aria-pressed={focused}>{focused ? 'Show navigation' : 'Focus call'}</button>
         <button onClick={toggleFullscreen} aria-label={fullscreen ? 'Exit fullscreen call' : 'Fullscreen call'}><Maximize2 size={16} /></button>
       </div>
-      <div ref={docking.stage} data-joined={joined} className="stage" data-dock={docking.dock} data-has-share={Boolean(share)} data-gallery={galleryLayout} data-camera-fit={galleryFit} data-camera-count={cameraParticipants.length} style={{ '--camera-size': docking.size + 'px' } as CSSProperties}>
+      <div ref={docking.stage} data-joined={joined} className="stage" data-dock={docking.dock} data-has-share={hasStageContent} data-content-count={stageItems.length} data-gallery={galleryLayout} data-camera-fit={galleryFit} data-camera-count={visibleTileCount} style={{ '--camera-size': docking.size + 'px' } as CSSProperties}>
         <div className="camera-dock">
           <button className="camera-dock-handle" aria-label="Drag cameras to dock" {...docking.moveHandlers}>⠿ Cameras · drag to dock</button>
           <div className="camera-strip">
@@ -904,7 +953,10 @@ export default function CallStage({
             data-speaking={speaking.has('self')}
             style={{ '--media-aspect': cameraAspects.self ?? 16 / 9 } as CSSProperties}
           >
-            {!share && cameraParticipants.length > 1 && <button className="camera-focus-button" aria-label="Focus You" aria-pressed={galleryLayout === 'focus' && activeFeaturedCamera === 'self'} onClick={() => { setFeaturedCamera('self'); changeGalleryLayout('focus'); }}><Pin size={14} /></button>}
+            {locals.has('camera') && (cameraParticipants.length > 1 || shares.length > 0) && <button className="camera-focus-button" aria-label={hasStageContent || shares.length ? 'Put your camera on stage' : 'Focus You'} aria-pressed={focusedStageKey === 'camera:self' || (!hasStageContent && galleryLayout === 'focus' && activeFeaturedCamera === 'self')} onClick={() => {
+              if (hasStageContent || shares.length) setFocusedStageKey('camera:self');
+              else { setFeaturedCamera('self'); changeGalleryLayout('focus'); }
+            }}><Pin size={14} /></button>}
             {speaking.has('self') && (
               <span className="speaking-label">Microphone active</span>
             )}
@@ -930,7 +982,10 @@ export default function CallStage({
               data-speaking={speaking.has(id)}
               style={{ '--media-aspect': cameraAspects[id] ?? 16 / 9 } as CSSProperties}
             >
-              {!share && cameraParticipants.length > 1 && <button className="camera-focus-button" aria-label={`Focus ${names[id] ?? 'Friend'}`} aria-pressed={galleryLayout === 'focus' && activeFeaturedCamera === id} onClick={() => { setFeaturedCamera(id); changeGalleryLayout('focus'); }}><Pin size={14} /></button>}
+              {remote.some((track) => track.peerId === id && track.source === 'camera') && (cameraParticipants.length > 1 || shares.length > 0) && <button className="camera-focus-button" aria-label={hasStageContent || shares.length ? `Put ${names[id] ?? 'Friend'} on stage` : `Focus ${names[id] ?? 'Friend'}`} aria-pressed={focusedStageKey === `camera:${id}` || (!hasStageContent && galleryLayout === 'focus' && activeFeaturedCamera === id)} onClick={() => {
+                if (hasStageContent || shares.length) setFocusedStageKey(`camera:${id}`);
+                else { setFeaturedCamera(id); changeGalleryLayout('focus'); }
+              }}><Pin size={14} /></button>}
               {speaking.has(id) && (
                 <span className="speaking-label">Speaking</span>
               )}
@@ -966,12 +1021,26 @@ export default function CallStage({
               </details>
             </div>
           ))}
+          {shares.filter(screenShare => !watchedShareIds.includes(screenShare.id)).map((screenShare) => {
+            return (
+              <div className="camera-tile screen-share-tile" data-watching="false" key={`screen-preview:${screenShare.id}`}>
+                <TrackVideo track={screenShare.track} />
+                <button className="camera-focus-button" aria-label={`Focus ${screenShare.name}`} aria-pressed={focusedStageKey === `screen:${screenShare.id}`} onClick={() => focusShare(screenShare.id)}><Pin size={14} /></button>
+                <div className="screen-share-actions">
+                  <button aria-label={`Watch ${screenShare.name}`} onClick={() => toggleWatchedShare(screenShare.id)}>
+                    <MonitorUp size={14} /> Watch
+                  </button>
+                </div>
+                <div className="tile-caption"><span>{screenShare.name}</span><MonitorUp size={13} /></div>
+              </div>
+            );
+          })}
           </div>
         </div>
-        {share && <div className="camera-divider" role="separator" tabIndex={0} aria-label="Resize cameras" aria-orientation={docking.dock === 'top' ? 'horizontal' : 'vertical'} aria-valuemin={docking.minimum} aria-valuemax={docking.maximum} aria-valuenow={Math.round(docking.size)} {...docking.resizeHandlers} onKeyDown={docking.resizeKey} />}
+        {hasStageContent && <div className="camera-divider" role="separator" tabIndex={0} aria-label="Resize cameras" aria-orientation={docking.dock === 'top' ? 'horizontal' : 'vertical'} aria-valuemin={docking.minimum} aria-valuemax={docking.maximum} aria-valuenow={Math.round(docking.size)} {...docking.resizeHandlers} onKeyDown={docking.resizeKey} />}
         {docking.target && <div className="dock-targets" aria-hidden="true"><span data-active={docking.target === 'left'}>Left</span><span data-active={docking.target === 'top'}>Top</span><span data-active={docking.target === 'right'}>Right</span></div>}
         {remote
-          .filter((t) => t.track.kind === 'audio')
+          .filter((t) => t.track.kind === 'audio' && (t.source !== 'system' || watchedShareIds.includes(t.peerId)))
           .map((t) => (
             <RemoteAudio
               key={t.peerId + t.source + t.track.id}
@@ -992,141 +1061,42 @@ export default function CallStage({
             <Volume2 size={17} /> Enable call audio
           </Button>
         )}
-        <div className={'content-stage ' + (share ? 'has-share' : '')} data-content-fit={contentFit}>
-          <div className="stage-topline">
-            <span>
-              <MonitorUp size={15} />
-              {share ? share.name.toUpperCase() : 'YOUR SHARED SPACE'}
-
-            </span>
-            {shares.length > 1 ? (
-              <select
-                aria-label="Select shared screen"
-                value={share.id}
-                onChange={(e) => {
-                  setSelected(e.target.value);
-                  setZoom(1);
-                  setPan({ x: 0, y: 0 });
-                }}
-              >
-                {shares.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
+        <div className={'content-stage ' + (hasStageContent ? 'has-share' : '')} data-content-fit={contentFit}>
+          {hasStageContent ? (
+            <>
+              <div className="content-grid">
+                {stageItems.map(item => (
+                  <ZoomableStageItem
+                    key={item.key}
+                    item={item}
+                    contentFit={contentFit}
+                    canFocus={!focusedStageItem && stageItems.length > 1}
+                    onFocus={() => setFocusedStageKey(item.key)}
+                    onRemove={() => item.kind === 'screen'
+                      ? toggleWatchedShare(item.key.slice('screen:'.length))
+                      : setFocusedStageKey(null)}
+                    onToggleFit={() => {
+                      const next = contentFit === 'fit' ? 'fill' : 'fit';
+                      setContentFit(next);
+                      try { localStorage.setItem('bc-content-fit', next); } catch { /* Session-only when storage is unavailable. */ }
+                    }}
+                    onFullscreen={toggleFullscreen}
+                  />
                 ))}
-              </select>
-            ) : (
-              <span className="stage-badge">
-                {share
-                  ? receivingVideo === share.track.id ? 'Live' : 'Waiting for video'
-                  : joined
-                    ? 'You’re in good company'
-                    : 'Ready when you are'}
-              </span>
-            )}
-          </div>
-          {share ? (
-            <div
-              className="video-viewport"
-              onWheel={(e) => {
-                if (e.ctrlKey || e.metaKey) {
-                  setZoom((z) =>
-                    Math.max(1, Math.min(5, z + (e.deltaY < 0 ? 0.1 : -0.1))),
-                  );
-                }
-              }}
-              onPointerDown={pointerDown}
-              onPointerMove={(e) => {
-                if (drag.current)
-                  setPan({
-                    x: drag.current.px + e.clientX - drag.current.x,
-                    y: drag.current.py + e.clientY - drag.current.y,
-                  });
-              }}
-              onPointerUp={() => (drag.current = null)}
-              onPointerCancel={() => (drag.current = null)}
-            >
-              <div
-                className="zoom-surface"
-                style={{
-                  transform: `translate(${pan.x}px,${pan.y}px) scale(${zoom})`,
-                }}
-              >
-                <TrackVideo track={share.track} showStatus onReceiving={receiving => setReceivingVideo(receiving ? share.track.id : null)} />
               </div>
-            </div>
+              <span className="content-security"><ShieldCheck size={14} /> {connected} connected · encrypted media</span>
+            </>
           ) : (
             <div className="stage-empty">
               <div className="share-illustration">
-                <div className="illustration-window">
-                  <span />
-                  <span />
-                  <span />
-                  <div className="illustration-content">
-                    <Radio size={39} />
-                    <div />
-                    <div />
-                  </div>
-                </div>
-                <div className="floating-play">
-                  <MonitorUp size={24} />
-                </div>
+                <div className="illustration-window"><span /><span /><span /><div className="illustration-content"><Radio size={39} /><div /><div /></div></div>
+                <div className="floating-play"><MonitorUp size={24} /></div>
               </div>
               <h2>Big screen. Small circle.</h2>
-              <p>
-                Share your game, a movie night, or your next idea.
-                <br /> Everyone gets the best seat in the room.
-              </p>
-              <Button onClick={screen} variant="secondary" disabled={busy}>
-                <MonitorUp size={17} /> Share your screen
-              </Button>
+              <p>Share your game, a movie night, or your next idea.<br /> Everyone gets the best seat in the room.</p>
+              <Button onClick={screen} variant="secondary" disabled={busy}><MonitorUp size={17} /> Share your screen</Button>
             </div>
           )}
-          <div className="stage-bottomline">
-            <span>
-              <ShieldCheck size={14} />
-              {joined
-                ? `${connected} connected · encrypted media`
-                : 'Direct-first media'}
-            </span>
-            <div>
-              <button
-                aria-label="Zoom out"
-                onClick={() => setZoom((z) => Math.max(1, z - 0.25))}
-              >
-                <ZoomOut size={16} />
-              </button>
-              <button
-                onClick={() => {
-                  setZoom(1);
-                  setPan({ x: 0, y: 0 });
-                }}
-                aria-label="Reset zoom"
-              >
-                {Math.round(zoom * 100)}%
-              </button>
-              {share && <button aria-label={contentFit === 'fit' ? 'Fill available space' : 'Fit entire shared screen'} onClick={() => {
-                const next = contentFit === 'fit' ? 'fill' : 'fit';
-                setContentFit(next);
-                setZoom(1);
-                setPan({ x: 0, y: 0 });
-                try { localStorage.setItem('bc-content-fit', next); } catch { /* Session-only when storage is unavailable. */ }
-              }}>{contentFit === 'fit' ? 'Fit' : 'Fill'}</button>}
-              <button
-                aria-label="Zoom in"
-                onClick={() => setZoom((z) => Math.min(5, z + 0.25))}
-              >
-                <ZoomIn size={16} />
-              </button>
-              <span />
-              <button
-                aria-label="Fullscreen shared content"
-                onClick={toggleFullscreen}
-              >
-                <Maximize2 size={16} />
-              </button>
-            </div>
-          </div>
         </div>
       </div>
       <div className="call-footer">
@@ -1270,6 +1240,142 @@ export default function CallStage({
     </div>
   );
 }
+
+function ZoomableStageItem({
+  item,
+  contentFit,
+  canFocus,
+  onFocus,
+  onRemove,
+  onToggleFit,
+  onFullscreen,
+}: {
+  item: StageItem;
+  contentFit: 'fit' | 'fill';
+  canFocus: boolean;
+  onFocus(): void;
+  onRemove(): void;
+  onToggleFit(): void;
+  onFullscreen(): void;
+}) {
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
+  const [receiving, setReceiving] = useState(false);
+  const viewport = useRef<HTMLDivElement>(null);
+  const zoomRef = useRef(1);
+  const panRef = useRef({ x: 0, y: 0 });
+  const drag = useRef<{ pointerId: number; x: number; y: number; px: number; py: number } | null>(null);
+  useEffect(() => {
+    zoomRef.current = 1;
+    panRef.current = { x: 0, y: 0 };
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+    setReceiving(false);
+  }, [item.track]);
+  const commitPan = (next: { x: number; y: number }) => {
+    panRef.current = next;
+    setPan(next);
+  };
+  const constrainPan = (next: { x: number; y: number }, scale: number) => {
+    const rect = viewport.current?.getBoundingClientRect();
+    if (!rect || scale <= 1) return { x: 0, y: 0 };
+    const maxX = rect.width * (scale - 1) / 2;
+    const maxY = rect.height * (scale - 1) / 2;
+    return {
+      x: Math.max(-maxX, Math.min(maxX, next.x)),
+      y: Math.max(-maxY, Math.min(maxY, next.y)),
+    };
+  };
+  useEffect(() => {
+    const target = viewport.current;
+    if (!target || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      commitPan(constrainPan(panRef.current, zoomRef.current));
+    });
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, []);
+  const zoomAt = (requested: number, clientX?: number, clientY?: number) => {
+    const next = Math.max(.5, Math.min(5, requested));
+    const previous = zoomRef.current;
+    if (Math.abs(next - previous) < .0001) return;
+    const rect = viewport.current?.getBoundingClientRect();
+    const point = rect && clientX !== undefined && clientY !== undefined
+      ? { x: clientX - rect.left - rect.width / 2, y: clientY - rect.top - rect.height / 2 }
+      : { x: 0, y: 0 };
+    const ratio = next / previous;
+    commitPan(constrainPan({
+      x: point.x - ratio * (point.x - panRef.current.x),
+      y: point.y - ratio * (point.y - panRef.current.y),
+    }, next));
+    zoomRef.current = next;
+    setZoom(next);
+  };
+  const wheelZoom = (event: ReactWheelEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const pixels = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? rect.height : 1);
+    zoomAt(zoomRef.current * Math.exp(-pixels * .00125), event.clientX, event.clientY);
+  };
+  const pointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    if (zoomRef.current <= 1 || event.button !== 0) return;
+    drag.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, px: panRef.current.x, py: panRef.current.y };
+    setDragging(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const endDrag = (event: PointerEvent<HTMLDivElement>) => {
+    if (drag.current?.pointerId === event.pointerId) drag.current = null;
+    setDragging(false);
+  };
+  const reset = () => {
+    zoomRef.current = 1;
+    setZoom(1);
+    commitPan({ x: 0, y: 0 });
+  };
+  return (
+    <section className="stage-content-pane" data-kind={item.kind} data-dragging={dragging} aria-label={item.name}>
+      <div className="stage-topline">
+        <span>{item.kind === 'screen' ? <MonitorUp size={15} /> : <Video size={15} />}{item.name.toUpperCase()}</span>
+        <div className="stage-pane-actions">
+          {canFocus && <button aria-label={`Focus ${item.name}`} onClick={onFocus}><Pin size={14} /> Focus</button>}
+          <span className="stage-badge">{item.kind === 'camera' || receiving ? 'Live' : 'Waiting for video'}</span>
+          <button aria-label={item.kind === 'screen' ? `Stop watching ${item.name}` : `Return ${item.name} to the camera row`} onClick={onRemove}><X size={15} /></button>
+        </div>
+      </div>
+      <div
+        ref={viewport}
+        className="video-viewport"
+        data-pannable={zoom > 1}
+        onWheel={wheelZoom}
+        onPointerDown={pointerDown}
+        onPointerMove={(event) => {
+          if (!drag.current || drag.current.pointerId !== event.pointerId) return;
+          commitPan(constrainPan({ x: drag.current.px + event.clientX - drag.current.x, y: drag.current.py + event.clientY - drag.current.y }, zoomRef.current));
+        }}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+        onLostPointerCapture={endDrag}
+      >
+        <div className="zoom-surface" style={{ transform: `translate3d(${pan.x}px,${pan.y}px,0) scale(${zoom})` }}>
+          <TrackVideo track={item.track} self={item.kind === 'camera' && item.self} showStatus={item.kind === 'screen'} onReceiving={item.kind === 'screen' ? setReceiving : undefined} />
+        </div>
+      </div>
+      <div className="stage-bottomline">
+        <span>{zoom > 1 ? 'Drag to move · scroll to zoom' : 'Scroll or pinch to zoom'}</span>
+        <div>
+          <button aria-label={`Zoom out ${item.name}`} onClick={() => zoomAt(zoomRef.current - .1)}><ZoomOut size={16} /></button>
+          <button onClick={reset} aria-label={`Reset zoom ${item.name}`}>{Math.round(zoom * 100)}%</button>
+          <button aria-label={contentFit === 'fit' ? 'Fill available space' : 'Fit entire shared screen'} onClick={() => { onToggleFit(); reset(); }}>{contentFit === 'fit' ? 'Fit' : 'Fill'}</button>
+          <button aria-label={`Zoom in ${item.name}`} onClick={() => zoomAt(zoomRef.current + .1)}><ZoomIn size={16} /></button>
+          <span />
+          <button aria-label="Fullscreen shared content" onClick={onFullscreen}><Maximize2 size={16} /></button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function TrackVideo({
   track,
   self = false,

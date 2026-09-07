@@ -40,7 +40,7 @@ Video prefers hardware encode/decode when the runtime exposes it, then degrades 
 
 ## Stage and media layout
 
-The stage places the active camera strip at the top and content below it. The strip wraps or scrolls without covering shared content. Users can resize the strip and content split, collapse the strip, pop out a feed, pin any source, and restore a sensible automatic layout. Shared content supports fit, fill, 100%, zoom controls, wheel/pinch zoom, and pan while zoomed. Transform state is per viewer and never affects what others see. Keyboard focus, visible labels, reduced motion, and touch targets are required.
+The stage places the active camera strip at the top or either side and content in the remaining space. The strip wraps or scrolls without covering shared content. Users can resize the strip and content split, pin a camera or screen to the stage, watch several independent screen shares together, stop watching a share, and restore a sensible automatic layout. An incoming share appears as a preview tile and does not begin watched system-audio playback until selected. Shared content supports fit, fill, zoom from 50% to 500%, buttons, ordinary wheel/trackpad gestures anchored under the pointer, and bounded click-drag panning while enlarged. Transform state is per source and viewer and never affects what others see. Keyboard focus, visible labels, reduced motion, and touch targets are required.
 
 The layout engine preserves the content aspect ratio and prevents zero-sized panes. Double-click resets fit; Esc exits focused/fullscreen content. When the window narrows, camera tiles reduce before the content viewport. Active-speaker changes do not steal a manual pin.
 

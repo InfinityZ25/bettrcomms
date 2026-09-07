@@ -98,6 +98,25 @@ test('camera dock resizes, snaps, focuses, and preserves the active share', asyn
     );
     expect(originalTrackId).toBeTruthy();
 
+    const zoomOut = page.getByRole('button', { name: 'Zoom out Your screen' });
+    const resetZoom = page.getByRole('button', { name: 'Reset zoom Your screen' });
+    for (let step = 0; step < 6; step += 1) await zoomOut.click();
+    await expect(resetZoom).toHaveText('50%');
+    await resetZoom.click();
+    const viewport = page.locator('.stage-content-pane .video-viewport');
+    const viewportBox = await viewport.boundingBox();
+    if (!viewportBox) throw new Error('Shared content viewport has no layout box');
+    await page.mouse.move(viewportBox.x + viewportBox.width * .75, viewportBox.y + viewportBox.height * .4);
+    await page.mouse.wheel(0, -240);
+    await expect(resetZoom).toHaveText(/1[2-9]\d%|[2-5]\d\d%/);
+    const transformBeforePan = await page.locator('.stage-content-pane .zoom-surface').evaluate(element => getComputedStyle(element).transform);
+    await page.mouse.down();
+    await page.mouse.move(viewportBox.x + viewportBox.width * .6, viewportBox.y + viewportBox.height * .55, { steps: 5 });
+    await page.mouse.up();
+    const transformAfterPan = await page.locator('.stage-content-pane .zoom-surface').evaluate(element => getComputedStyle(element).transform);
+    expect(transformAfterPan).not.toBe(transformBeforePan);
+    await resetZoom.click();
+
     const position = page.getByLabel('Camera position');
     for (const [label, dock] of [['Top row', 'top'], ['Left side', 'left'], ['Right side', 'right']] as const) {
       await position.selectOption({ label });
