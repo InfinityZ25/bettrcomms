@@ -544,6 +544,18 @@ h1 {
   padding: 4px 7px;
   background: #283224;
 }
+/* Losing signaling does not stop established peer-to-peer media, so say that
+   rather than letting the call look broken while the server comes back. */
+.signaling-reconnecting {
+  font-size: 11px;
+  color: #e6c07a;
+  border: 1px solid #6b5426;
+  border-radius: 6px;
+  padding: 4px 8px;
+  background: #34291399;
+  white-space: nowrap;
+}
+
 /* A screen the sender had to re-encode through the call reads as a bad share
    otherwise, so name the cause instead of leaving the viewer to guess. */
 .stage-badge-degraded,

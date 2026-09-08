@@ -132,6 +132,8 @@ export default function CallStage({
     [recording, setRecording] = useState(false),
     [result, setResult] = useState<RecordingResult | null>(null),
     [watchedShareIds, setWatchedShareIds] = useState<string[]>([]),
+    /** Signaling is retrying. Media continues; setup and membership pause. */
+    [signalingDown, setSignalingDown] = useState(false),
     [focusedStageKey, setFocusedStageKey] = useState<string | null>(null);
   const workspace = useRef<HTMLDivElement>(null);
   const docking = useCallLayout(layout, onLayout, joined);
@@ -290,6 +292,7 @@ export default function CallStage({
     engine.current?.dispose();
     engine.current = null;
     setJoined(false);
+    setSignalingDown(false);
     setServerRtt(null);
     setStats([]);
     setLocals(new Map());
@@ -611,7 +614,35 @@ export default function CallStage({
         if (p?.name)
           setNames((n) => ({ ...n, [event.detail.peerId]: p.name! }));
       });
+      // Signaling carries setup and membership, not media. Established peer
+      // connections keep flowing while the server restarts, so a dropped socket
+      // is a degraded state, not the end of the call.
+      s.addEventListener('disconnected', () => {
+        if (socket.current === s) setSignalingDown(true);
+      });
+      s.addEventListener('reconnected', () => {
+        if (socket.current !== s) return;
+        setSignalingDown(false);
+        // A restarted server has no memory of this participant's presence, and
+        // peers it never saw join need connections. Both are re-announced by
+        // the server's snapshot; adding a peer we already hold is a no-op.
+        const input = callMicrophone.getSnapshot();
+        try {
+          s.sendPresence({
+            camera: locals.has('camera'),
+            microphone: !input.muted,
+            sharing: locals.has('screen'),
+            muted: input.muted,
+            deafened: input.deafened,
+            name: user.name,
+          });
+        } catch {
+          // The socket closed again before presence could be re-announced;
+          // the next reconnection repeats it.
+        }
+      });
       s.addEventListener('close', () => {
+        setSignalingDown(false);
         if (engine.current === e) {
           callMicrophone.stop();
           void finishRecording();
@@ -1118,6 +1149,15 @@ export default function CallStage({
         {talkSettings.enabled && (
           <span className="push-to-talk-status" role="status" title={globalMessage}>
             {globalStatus === 'unavailable' || globalStatus === 'connecting' ? globalMessage : deafened ? 'Deafened' : manualMuted ? 'Microphone muted' : !transmitting ? `Hold ${talkBindingLabel(talkSettings.binding)} to talk${globalStatus === 'active' ? ' · Global' : ''}` : 'Push-to-talk · Transmitting'}
+          </span>
+        )}
+        {signalingDown && (
+          <span
+            className="signaling-reconnecting"
+            role="status"
+            title="The signaling server is unreachable. Calls already connected keep running peer to peer; joining, sharing and camera changes resume when it returns."
+          >
+            Reconnecting to server · call continues
           </span>
         )}
         <ConnectionStatus
