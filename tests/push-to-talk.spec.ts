@@ -23,7 +23,8 @@ async function settings(page: Page) {
   await expect(page.getByRole('checkbox', { name: 'Push-to-talk', exact: true })).toBeVisible();
 }
 
-test('typing preference persists and permits PTT without swallowing text', async ({ page }) => {
+test('typing preference persists and permits PTT without swallowing text', async ({ page, context }) => {
+  await login(context, 'PTTTyping', `${Date.now()}-typing`);
   await page.goto('/'); await settings(page);
   await page.getByRole('checkbox', { name: 'Push-to-talk', exact: true }).check();
   const preference = page.getByRole('checkbox', { name: 'Allow push-to-talk while typing in BetterComms', exact: true });
@@ -52,6 +53,7 @@ test('typing preference persists and permits PTT without swallowing text', async
 });
 
 test('side mouse buttons can be assigned and held without navigating browser history', async ({ page, context }) => {
+  await login(context, 'PTTSideMouse', `${Date.now()}-side-mouse`);
   await page.goto('/');
   await settings(page);
   await page.getByRole('checkbox', { name: 'Push-to-talk', exact: true }).check();
@@ -83,7 +85,8 @@ test('side mouse buttons can be assigned and held without navigating browser his
   await cdp.detach();
 });
 
-test('push-to-talk is opt-in and remembers keyboard and mouse shortcuts in Settings', async ({ page }) => {
+test('push-to-talk is opt-in and remembers keyboard and mouse shortcuts in Settings', async ({ page, context }) => {
+  await login(context, 'PTTSettings', `${Date.now()}-settings`);
   await page.goto('/');
   await settings(page);
   const toggle = page.getByRole('checkbox', { name: 'Push-to-talk', exact: true });

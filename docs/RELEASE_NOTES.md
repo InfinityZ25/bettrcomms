@@ -1,10 +1,12 @@
 # BetterComms preview release notes
 
-## Unreleased — configurable visual copilot preview
+## 0.1.14 — configurable visual copilot and resilient calls
 
 Viewers can send quick signals on a shared video or freeze their own view and send a marked JPEG of that frame. The stream keeps running. Both clients opt in through Settings, and the sharer grants signals and captures separately to each device for the current share. Stopping/replacing the share, disabling reception, leaving or pausing revokes permission and clears indications. Settings include sizes, durations, corners, animation and optional foreground shortcuts with push-to-talk conflict checks.
 
 Indications use a bounded, versioned WebRTC data channel, independently of microphone, camera, screen and system-audio tracks. Marked images stay in endpoint memory. The current Windows native host can display click-through, capture-excluded signals and cards over the captured source, with geometry validation and a 1.2-second renderer lease. Application signals hide when another window is in front; source resizing requires a sharing restart. Browser and non-Windows clients retain in-app presentation. See [visual copilot use and limits](VISUAL_COPILOT.md).
+
+Established peer-to-peer calls now survive a signaling-server restart. The client reconnects with bounded backoff while retaining its media and peer connections, re-announces presence after signaling returns, and distinguishes that recovery from deliberate membership, session, room, or device replacement closures. A resumed socket for the same user and device no longer makes other participants tear down and rebuild that peer.
 
 ## Unreleased — native compatibility quality
 

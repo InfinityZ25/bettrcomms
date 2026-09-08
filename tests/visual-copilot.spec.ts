@@ -3,7 +3,14 @@ const baseURL = process.env.E2E_BASE_URL ?? 'http://localhost:5173';
 const headers = { Origin: new URL(baseURL).origin };
 async function json(response: APIResponse) { expect(response.ok(), `API status ${response.status()}`).toBeTruthy(); return response.json(); }
 async function login(context: BrowserContext, name: string) {
-  const result = await json(await context.request.post('/api/v1/auth/dev', { headers, data: { name, email: `copilot-${name}-${crypto.randomUUID()}@example.test` } }));
+  const deadline = Date.now() + 65_000;
+  let response: APIResponse;
+  do {
+    response = await context.request.post('/api/v1/auth/dev', { headers, data: { name, email: `copilot-${name}-${crypto.randomUUID()}@example.test` } });
+    if (response.status() !== 429 || Date.now() >= deadline) break;
+    await new Promise(resolve => setTimeout(resolve, 5_000));
+  } while (true);
+  const result = await json(response);
   return result.user ?? result;
 }
 async function enable(page: Page) {
@@ -21,7 +28,8 @@ function syntheticScreen() {
   } });
 }
 
-test('settings are opt-in, persist and reject push-to-talk shortcut conflicts', async ({ page }) => {
+test('settings are opt-in, persist and reject push-to-talk shortcut conflicts', async ({ page, context }) => {
+  await login(context, 'Settings');
   await page.goto('/');
   await page.getByRole('button', { name: 'Audio and video settings' }).click();
   await expect(page.getByRole('checkbox', { name: 'Enable visual copilot on this device' })).not.toBeChecked();
