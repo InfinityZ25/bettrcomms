@@ -10,6 +10,8 @@ commands.allow = [
   "camera_overlay_update",
   "camera_overlay_frame",
   "camera_overlay_close",
+  "copilot_overlay_frame",
+  "copilot_overlay_clear",
   "desktop_boot_config",
   "native_screen_capabilities",
   "native_screen_sources",

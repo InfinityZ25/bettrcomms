@@ -1,4 +1,5 @@
 import { AudioLeveler, type AudioLevelerOptions } from './audio';
+import { VisualCopilot } from './visualCopilot';
 import { VoiceRelay } from './voiceRelay';
 import { TrackRecordingSession, type RecordableTrack } from './recording';
 import type {
@@ -52,6 +53,7 @@ export interface MediaEngineOptions {
 }
 
 export class MediaEngine extends EventTarget {
+  readonly copilot = new VisualCopilot();
   private readonly signaling: SignalingAdapter;
   private readonly ice: Required<Pick<IceOptions, 'mode'>> & IceOptions;
   private readonly peers = new Map<string, Peer>();
@@ -572,6 +574,7 @@ export class MediaEngine extends EventTarget {
       if (previous) previous.stop();
       previousCleanup?.();
     }
+    if (source === 'screen') this.copilot.setSource(track);
     this.emit('local-track', { source, track });
     if (source === 'microphone') this.voiceRelay?.setMicrophone(track);
   }
@@ -629,6 +632,7 @@ export class MediaEngine extends EventTarget {
       pendingCandidates: [],
     };
     this.peers.set(peerId, peer);
+    this.copilot.attach(peerId, pc);
     for (const [source, track] of this.localTracks) {
       if (source === 'screen' && this.nativeScreen.active) continue;
       const stream = new MediaStream([track]);
@@ -677,6 +681,7 @@ export class MediaEngine extends EventTarget {
   }
 
   removePeer(peerId: string): void {
+    this.copilot.detach(peerId);
     this.clearRelayTimer(peerId);
     clearTimeout(this.stableTimers.get(peerId));
     this.stableTimers.delete(peerId);
@@ -998,6 +1003,7 @@ export class MediaEngine extends EventTarget {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.copilot.dispose();
     for (const track of this.pendingMicrophones) track.stop();
     this.pendingMicrophones.clear();
     this.voiceRelay?.dispose();
@@ -1030,6 +1036,7 @@ export class MediaEngine extends EventTarget {
       this.clearNativeScreenFallbacks();
       void this.stopNativeSystemAudio().catch(error => this.emit('error', { operation: 'stop-system-audio', error }));
     }
+    this.copilot.setSource(track);
     this.emit('local-track', { source: 'screen', track });
   }
 

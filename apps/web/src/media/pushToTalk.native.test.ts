@@ -35,6 +35,34 @@ describe('native call microphone integration', () => {
   });
   afterEach(() => { unsubscribe(); vi.unstubAllGlobals(); });
 
+  it.each(['ControlLeft', 'KeyV', 'Space', 'Enter'])('allows %s in editors only when opted in, without consuming editing events', code => {
+    const editor = new Element();
+    const dispatch = (type: string, target: Element = editor) => {
+      const event = Object.assign(new Event(type, { cancelable: true }), { code, repeat: false });
+      Object.defineProperty(event, 'target', { value: target });
+      window.dispatchEvent(event);
+      return event;
+    };
+    writeTalkSettings({ enabled: true, binding: { kind: 'keyboard', code } }); input.start();
+    dispatch('keydown'); expect(enabled).toHaveBeenLastCalledWith(false);
+    writeTalkSettings({ enabled: true, binding: { kind: 'keyboard', code }, allowWhileTyping: true });
+    expect(dispatch('keydown').defaultPrevented).toBe(false);
+    expect(enabled).toHaveBeenLastCalledWith(true);
+    dispatch('focusin'); expect(enabled).toHaveBeenLastCalledWith(true);
+    expect(dispatch('keyup').defaultPrevented).toBe(false);
+    expect(enabled).toHaveBeenLastCalledWith(false);
+    const assignment = Object.assign(new Element(), { kind: '[data-talk-binding]' });
+    dispatch('keydown', assignment); expect(enabled).toHaveBeenLastCalledWith(false);
+    dispatch('keydown'); dispatch('focusin', assignment);
+    expect(enabled).toHaveBeenLastCalledWith(false);
+    dispatch('keyup'); dispatch('keydown'); input.toggleMute();
+    dispatch('keydown'); expect(enabled).toHaveBeenLastCalledWith(false);
+    input.toggleMute();
+    writeTalkSettings({ enabled: true, binding: { kind: 'keyboard', code }, allowWhileTyping: false });
+    dispatch('keydown'); expect(enabled).toHaveBeenLastCalledWith(false);
+    current().pressed(true, false); expect(enabled).toHaveBeenLastCalledWith(true);
+  });
+
   it('never installs global input until explicitly enabled in a call', () => {
     input.start(); expect(native.registrations).toHaveLength(0);
     expect(enabled).toHaveBeenLastCalledWith(true);

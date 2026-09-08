@@ -27,6 +27,12 @@ export default function PushToTalkSettings() {
         }} />
       </label>
       <p>Hold your shortcut to speak in calls. Waiting keeps your microphone ready and is separate from mute. Off by default. Mute and deafen always take priority.</p>
+      <label className="push-to-talk-settings__toggle">
+        <span>Allow push-to-talk while typing in BetterComms</span>
+        <input type="checkbox" checked={settings.allowWhileTyping === true} disabled={!settings.enabled}
+          onChange={event => save({ ...settings, allowWhileTyping: event.target.checked })} />
+      </label>
+      <p>Applies to every assigned shortcut inside BetterComms. Text and editing shortcuts keep working. Input in other applications is unchanged. Shortcut assignment always pauses push-to-talk.</p>
       <button
         type="button"
         className="text-button"
@@ -57,7 +63,7 @@ export default function PushToTalkSettings() {
       >
         {binding ? 'Press a key or mouse button here…' : `Shortcut: ${talkBindingLabel(settings.binding)}`}
       </button>
-      <p role="status">{binding ? 'Escape cancels. Tab and the Windows/Command key are reserved.' : isNativePushToTalk() ? 'On Windows, your shortcut works during calls even with another app focused or BetterComms minimized. It stays paused while editing text or assigning a shortcut in BetterComms. Other platforms use the focused-window shortcut.' : 'Keep BetterComms focused. For global keyboard and mouse shortcuts while gaming, use the Windows desktop app.'}</p>
+      <p role="status">{binding ? 'Escape cancels. Tab and the Windows/Command key are reserved.' : isNativePushToTalk() ? 'On Windows, your shortcut works during calls even with another app focused or BetterComms minimized. Other platforms use the focused-window shortcut.' : 'Keep BetterComms focused. For global keyboard and mouse shortcuts while gaming, use the Windows desktop app.'}</p>
       {error && <p role="alert">{error}</p>}
     </div>
   );

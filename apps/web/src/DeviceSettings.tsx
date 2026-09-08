@@ -659,8 +659,8 @@ export default function DeviceSettings() {
   };
   return (
     <section className="device-settings" aria-label="Media devices">
+      <PushToTalkSettings />
       <div className="device-settings__grid">
-        <PushToTalkSettings />
         <div className="device-settings__card">
           <label>
             Microphone

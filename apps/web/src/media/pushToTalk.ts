@@ -1,7 +1,7 @@
 import { isNativePushToTalk, NativePushToTalk, type GlobalInputStatus } from './nativePushToTalk';
 
 export type TalkBinding = { kind: 'keyboard'; code: string } | { kind: 'mouse'; button: number };
-export interface TalkSettings { enabled: boolean; binding: TalkBinding }
+export interface TalkSettings { enabled: boolean; binding: TalkBinding; allowWhileTyping?: boolean }
 const storageKey = 'bc-push-to-talk';
 const changeEvent = 'bc-push-to-talk';
 const defaults: TalkSettings = { enabled: false, binding: { kind: 'keyboard', code: 'Space' } };
@@ -17,7 +17,7 @@ export function readTalkSettings(): TalkSettings {
     if (typeof value?.enabled === 'boolean' && (
       (binding?.kind === 'keyboard' && typeof binding.code === 'string' && canBindKey(binding.code)) ||
       (binding?.kind === 'mouse' && Number.isInteger(binding.button) && binding.button >= 0 && binding.button <= 4)
-    )) return { enabled: value.enabled, binding };
+    )) return { enabled: value.enabled, binding, ...(value.allowWhileTyping === true ? { allowWhileTyping: true } : {}) };
   } catch { /* Invalid or unavailable storage uses open-mic defaults. */ }
   return { ...defaults, binding: { ...defaults.binding } };
 }
@@ -40,6 +40,10 @@ function isEditing(target: EventTarget | null): boolean {
   return target instanceof Element && Boolean(target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [data-talk-binding]'));
 }
 
+function isAssigning(target: EventTarget | null): boolean {
+  return target instanceof Element && Boolean(target.closest('[data-talk-binding]'));
+}
+
 /** Owns the call input gate; React only observes its snapshot. */
 export class CallMicrophone {
   private listeners = new Set<() => void>();
@@ -51,6 +55,10 @@ export class CallMicrophone {
   constructor(private readonly setEnabled: (enabled: boolean) => void) {}
 
   getSnapshot = () => this.state;
+
+  private blocksInput(target: EventTarget | null): boolean {
+    return isAssigning(target) || (!this.state.settings.allowWhileTyping && isEditing(target));
+  }
 
   private update(patch: Partial<typeof this.state>): void {
     const next = { ...this.state, ...patch };
@@ -88,7 +96,7 @@ export class CallMicrophone {
       // Foreground key delivery need not also produce a native hook event.
       if (pressed && focused === true) return;
       // WebView2 can retain DOM focus after restoration while Windows has another foreground app.
-      const blocked = this.state.manualMuted || this.state.deafened || (focused !== false && isEditing(document.activeElement));
+      const blocked = this.state.manualMuted || this.state.deafened || (focused !== false && this.blocksInput(document.activeElement));
       if (pressed) this.foregroundHeld = false;
       this.update({ held: pressed && !blocked });
     }, (globalStatus, globalMessage) => {
@@ -112,7 +120,7 @@ export class CallMicrophone {
   private blur = () => { if (this.foregroundHeld || this.state.globalStatus !== 'active') this.release(); };
   private pageHide = () => this.stop();
   private visibility = () => { if (document.hidden) this.blur(); };
-  private focus = (event: FocusEvent) => { if (isEditing(event.target)) this.release(); };
+  private focus = (event: FocusEvent) => { if (this.blocksInput(event.target)) this.release(); };
   private settingsChanged = () => {
     this.update({ settings: readTalkSettings(), held: false });
     this.configureNative();
@@ -124,9 +132,9 @@ export class CallMicrophone {
   private press(event: KeyboardEvent | MouseEvent): void {
     const binding = this.state.settings.binding;
     if (this.state.globalStatus !== 'foreground' && this.state.globalStatus !== 'active') return;
-    if (!this.state.active || !this.state.settings.enabled || this.state.manualMuted || this.state.deafened || document.hidden || isEditing(event.target)) return;
+    if (!this.state.active || !this.state.settings.enabled || this.state.manualMuted || this.state.deafened || document.hidden || this.blocksInput(event.target)) return;
     if (binding.kind === 'mouse' && binding.button === 0 && isInteractive(event.target)) return;
-    event.preventDefault();
+    if (!isEditing(event.target)) event.preventDefault();
     this.foregroundHeld = true;
     if (!this.state.held) this.update({ held: true });
   }
@@ -151,7 +159,7 @@ export class CallMicrophone {
   private mouseUp = (event: MouseEvent) => {
     const binding = this.state.settings.binding;
     if (binding.kind === 'mouse' && event.button === binding.button) {
-      if (this.state.held) event.preventDefault();
+      if (this.state.held && !isEditing(event.target)) event.preventDefault();
       this.release();
     }
   };
