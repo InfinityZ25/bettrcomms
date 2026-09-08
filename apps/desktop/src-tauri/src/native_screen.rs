@@ -1225,8 +1225,11 @@ fn fit_capture_dimensions(
     if source_width == 0 || source_height == 0 || maximum_width == 0 || maximum_height == 0 {
         return (0, 0);
     }
+    // These are ceilings, including the 4K safety ceiling for Match source.
+    // Upscaling adds encoder/decoder load without adding source detail.
     let scale = (maximum_width as f64 / source_width as f64)
-        .min(maximum_height as f64 / source_height as f64);
+        .min(maximum_height as f64 / source_height as f64)
+        .min(1.0);
     let even = |value: f64| ((value.floor() as u32) / 2 * 2).max(2);
     (
         even(source_width as f64 * scale),
@@ -1467,10 +1470,19 @@ mod tests {
 
     #[test]
     fn capture_dimensions_preserve_the_source_shape_within_the_quality_bound() {
-        assert_eq!(fit_capture_dimensions(500, 900, 1920, 1080), (600, 1080));
-        assert_eq!(fit_capture_dimensions(1600, 900, 1920, 1080), (1920, 1080));
+        assert_eq!(fit_capture_dimensions(500, 900, 1920, 1080), (500, 900));
+        assert_eq!(fit_capture_dimensions(1600, 900, 1920, 1080), (1600, 900));
         assert_eq!(fit_capture_dimensions(3440, 1440, 1920, 1080), (1920, 802));
         assert_eq!(fit_capture_dimensions(5120, 1440, 3840, 2160), (3840, 1080));
+    }
+
+    #[test]
+    fn match_source_does_not_upscale_to_the_4k_safety_bound() {
+        assert_eq!(fit_capture_dimensions(1920, 1080, 3840, 2160), (1920, 1080));
+        assert_eq!(fit_capture_dimensions(1280, 720, 3840, 2160), (1280, 720));
+        assert_eq!(fit_capture_dimensions(901, 1601, 3840, 2160), (900, 1600));
+        assert_eq!(fit_capture_dimensions(7680, 4320, 3840, 2160), (3840, 2160));
+        assert_eq!(fit_capture_dimensions(0, 1080, 3840, 2160), (0, 0));
     }
 
     #[test]

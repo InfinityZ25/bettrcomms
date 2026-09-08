@@ -225,6 +225,17 @@ test('unavailable native audio is disabled and keeps browser sharing actionable'
   await expect(page.locator('body')).toHaveAttribute('data-browser', 'true');
 });
 
+test('Match source delegates actual dimensions to the native host', async ({ page }) => {
+  await mount(page);
+  await page.getByRole('button', { name: 'Application 1', exact: true }).click();
+  await page.getByLabel('Resolution', { exact: true }).selectOption('source');
+  await page.getByRole('button', { name: 'Share', exact: true }).click();
+  expect(await page.evaluate(() => (window as any).__shared)).toMatchObject({
+    width: 0,
+    height: 0,
+  });
+});
+
 test('offers 120 FPS and bounded custom frame rate and bitrate', async ({ page }) => {
   await mount(page);
   await page.getByRole('button', { name: 'Application 1', exact: true }).click();

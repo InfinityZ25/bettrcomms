@@ -329,19 +329,49 @@ describe('native screen signaling lifecycle', () => {
     expect(removed).toHaveBeenCalledWith('peer-b');
   });
 
-  it('requests the ordinary WebRTC fallback after five seconds with no native RTP', async () => {
+  it('gives a slow handshake a full first-media window after connecting', async () => {
     vi.useFakeTimers();
     const { transport, sent } = setup();
     await transport.handle({
       type: 'offer', from: 'peer-b', to: 'self', transport: 'native-screen',
       captureId: 'remote-capture', description: { type: 'offer', sdp: 'v=0\r\n' },
     });
-    await vi.advanceTimersByTimeAsync(5_000);
+    const receiver = FakePeerConnection.instances[0];
+    receiver.connectionState = 'connecting';
+    await vi.advanceTimersByTimeAsync(18_000);
+    expect(sent.filter(signal => signal.type === 'signal')).toHaveLength(0);
+    receiver.connectionState = 'connected';
+    receiver.onconnectionstatechange?.call(receiver as unknown as RTCPeerConnection, new Event('connectionstatechange'));
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(sent.filter(signal => signal.type === 'signal')).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1);
     expect(sent.at(-1)).toMatchObject({
       type: 'signal', to: 'peer-b', transport: 'native-screen',
       captureId: 'remote-capture',
       data: { kind: 'native-screen-fallback-request', captureId: 'remote-capture' },
     });
+    vi.useRealTimers();
+  });
+
+  it('bounds a stuck handshake and cancels deadlines when the receiver stops', async () => {
+    vi.useFakeTimers();
+    const { transport, sent } = setup();
+    const offer = {
+      type: 'offer' as const, from: 'peer-b', to: 'self', transport: 'native-screen' as const,
+      captureId: 'remote-capture', description: { type: 'offer' as const, sdp: 'v=0\r\n' },
+    };
+    await transport.handle(offer);
+    await vi.advanceTimersByTimeAsync(19_999);
+    expect(sent.filter(signal => signal.type === 'signal')).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(sent.filter(signal => signal.type === 'signal')).toHaveLength(1);
+    await transport.handle({ ...offer, captureId: 'replacement' });
+    await transport.handle({
+      type: 'signal', from: 'peer-b', to: 'self', transport: 'native-screen',
+      captureId: 'replacement', data: { kind: 'native-screen-stop' },
+    });
+    await vi.advanceTimersByTimeAsync(25_000);
+    expect(sent.filter(signal => signal.type === 'signal')).toHaveLength(1);
     vi.useRealTimers();
   });
 
@@ -356,7 +386,11 @@ describe('native screen signaling lifecycle', () => {
       type: 'offer', from: 'peer-b', to: 'self', transport: 'native-screen',
       captureId: 'remote-capture', description: { type: 'offer', sdp: 'v=0\r\n' },
     });
-    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(8_000);
+    const receiver = FakePeerConnection.instances[0];
+    receiver.connectionState = 'connected';
+    receiver.onconnectionstatechange?.call(receiver as unknown as RTCPeerConnection, new Event('connectionstatechange'));
+    await vi.advanceTimersByTimeAsync(25_000);
     expect(sent.some(signal => signal.type === 'signal'
       && signal.transport === 'native-screen'
       && signal.data.kind === 'native-screen-fallback-request')).toBe(false);

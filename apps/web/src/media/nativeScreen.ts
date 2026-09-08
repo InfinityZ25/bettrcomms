@@ -85,6 +85,9 @@ const HEALTH_LOSS_FRACTION = 0.05;
 const HEALTH_FROZEN_FRACTION = 0.25;
 /** Below this a window carries too little traffic to judge a rate from. */
 const HEALTH_MIN_PACKETS = 100;
+// ICE connectivity alone does not mean DTLS/SRTP is ready to carry video.
+const CONNECTION_TIMEOUT_MS = 20_000;
+const FIRST_MEDIA_TIMEOUT_MS = 5_000;
 
 type HealthSample = { lost: number; received: number; frozenMs: number };
 type Session = NativeScreenStartOptions & { sessionId: string };
@@ -93,6 +96,7 @@ type Receiver = {
   pc: RTCPeerConnection;
   fallbackTimer?: ReturnType<typeof setTimeout>;
   fallbackRequested: boolean;
+  connectedOnce?: boolean;
   healthTimer?: ReturnType<typeof setInterval>;
   health?: HealthSample;
   badWindows: number;
@@ -479,9 +483,13 @@ export class NativeScreenTransport {
       });
       const receiver = this.receivers.get(peerId);
       if (receiver?.pc === pc) {
-        receiver.fallbackTimer = globalThis.setTimeout(() => {
-          void this.requestReceiverFallback(peerId, signal.captureId!, 'no-media-timeout');
-        }, 5_000);
+        // The connection event may have arrived while sending the answer.
+        if (!receiver.connectedOnce) {
+          receiver.fallbackTimer = globalThis.setTimeout(() => {
+            void this.requestReceiverFallback(peerId, signal.captureId!, 'connection-timeout');
+          }, CONNECTION_TIMEOUT_MS);
+          if (pc.connectionState === 'connected') this.receiverConnected(peerId, signal.captureId!);
+        }
         // A stream that arrives but cannot be sustained is invisible to the
         // no-media timer, and the sender cannot lower its bitrate for us.
         receiver.healthTimer = globalThis.setInterval(() => {
@@ -596,6 +604,7 @@ export class NativeScreenTransport {
     };
     pc.onconnectionstatechange = () => {
       this.log(peerId, 'connection', pc.connectionState);
+      if (pc.connectionState === 'connected') this.receiverConnected(peerId, captureId);
       if (pc.connectionState === 'failed') {
         void this.requestReceiverFallback(peerId, captureId, 'connection-failed')
           .finally(() => this.closeReceiver(peerId, captureId));
@@ -618,6 +627,16 @@ export class NativeScreenTransport {
       ).catch(() => undefined);
     };
     return pc;
+  }
+
+  private receiverConnected(peerId: string, captureId: string) {
+    const receiver = this.receivers.get(peerId);
+    if (!receiver || receiver.captureId !== captureId || receiver.fallbackRequested || receiver.connectedOnce) return;
+    receiver.connectedOnce = true;
+    globalThis.clearTimeout(receiver.fallbackTimer);
+    receiver.fallbackTimer = globalThis.setTimeout(() => {
+      void this.requestReceiverFallback(peerId, captureId, 'no-media-timeout');
+    }, FIRST_MEDIA_TIMEOUT_MS);
   }
 
   private closeReceiver(peerId: string, captureId?: string) {
@@ -682,7 +701,7 @@ export class NativeScreenTransport {
   private async requestReceiverFallback(peerId: string, captureId: string, reason: string) {
     const receiver = this.receivers.get(peerId);
     if (!receiver || receiver.captureId !== captureId || receiver.fallbackRequested) return;
-    if (reason === 'no-media-timeout') {
+    if (reason === 'no-media-timeout' || reason === 'connection-timeout') {
       const report = await receiver.pc.getStats().catch(() => undefined);
       if (!report || this.receivers.get(peerId) !== receiver) return;
       const video = [...report.values()].find(row =>

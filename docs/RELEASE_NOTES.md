@@ -1,5 +1,19 @@
 # BetterComms preview release notes
 
+## 0.1.15 — source resolution and stream startup fixes
+
+Match source now preserves a 1080p capture at 1080p instead of enlarging it to
+4K. All native resolution presets act as ceilings without upscaling smaller
+sources. Install the new desktop build to receive this native fix.
+
+Native screen receivers allow up to 20 seconds for connection establishment,
+then five seconds for initial video, avoiding premature compatibility fallback
+during setup. The underlying zero-RTP field failure still needs cross-network
+acceptance; full-quality delivery is not guaranteed by this release.
+
+Validation: production frontend build, 125 frontend unit tests, 68 native tests
+(11 opt-in tests skipped), and 11 screen-sharing browser tests passed.
+
 ## 0.1.14 — configurable visual copilot and resilient calls
 
 Viewers can send quick signals on a shared video or freeze their own view and send a marked JPEG of that frame. The stream keeps running. Both clients opt in through Settings, and the sharer grants signals and captures separately to each device for the current share. Stopping/replacing the share, disabling reception, leaving or pausing revokes permission and clears indications. Settings include sizes, durations, corners, animation and optional foreground shortcuts with push-to-talk conflict checks.
@@ -9,6 +23,21 @@ Indications use a bounded, versioned WebRTC data channel, independently of micro
 Established peer-to-peer calls now survive a signaling-server restart. The client reconnects with bounded backoff while retaining its media and peer connections, re-announces presence after signaling returns, and distinguishes that recovery from deliberate membership, session, room, or device replacement closures. A resumed socket for the same user and device no longer makes other participants tear down and rebuild that peer.
 
 ## Unreleased — native compatibility quality
+
+Fixed Match source enlarging a 1080p capture to 4K. The native dimension fitter
+now caps its scale at 1, so Match source preserves the source size (rounded
+down to even encoder dimensions), and higher resolution presets never upscale
+a smaller source. Oversized sources still shrink within the 4K safety ceiling.
+This change requires a rebuilt desktop app; a hosted frontend reload alone
+does not update the native capture code.
+
+Native screen startup now allows up to 20 seconds for the dedicated connection
+to establish, followed by five seconds for its first video packets. Previously
+the five-second video deadline included ICE and DTLS setup and could move a
+still-connecting viewer permanently onto the re-encoded compatibility path.
+An explicit connection failure still triggers recovery immediately. This fixes
+premature fallback; it does not establish that the zero-RTP field handshake
+failure is resolved or guarantee full quality across all networks and devices.
 
 The desktop-viewer compatibility path now carries the native screen picker's
 selected bitrate and frame-rate ceiling into its WebRTC sender instead of
@@ -24,8 +53,8 @@ actual frame rate remains bounded by capture, decode, re-encode, receiver, and
 network capacity.
 
 Native desktop viewers again try the single-encode Rust H.264 route first,
-matching the capture-to-network shape used by OBS. The measured five-second
-zero-media recovery remains in place. Stream setup adds Automatic, Gameplay,
+matching the capture-to-network shape used by OBS. Five-second zero-media
+recovery now starts after connection establishment. Stream setup adds Automatic, Gameplay,
 and Text & desktop content tuning; detected games prefer motion encoding and
 balanced fallback adaptation, while desktop content preserves fine detail.
 
