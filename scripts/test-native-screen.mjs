@@ -71,7 +71,12 @@ try {
       const red=[...x.getImageData(c.width*.75,c.height*.7,1,1).data];
       return { framesDecoded: s.framesDecoded, width:s.frameWidth,height:s.frameHeight,fps:s.framesPerSecond,bytes:s.bytesReceived,codec:all.find(c=>c.id===s.codecId)?.mimeType,green,red };
     });
-    assert.equal(stats.width,width);assert.equal(stats.height,height);assert.equal(stats.codec,'video/H264');
+    // Resolution choices are bounds, not fixed canvases: a source that is not
+    // the requested shape keeps its aspect ratio inside them. Assert the whole
+    // chain agrees rather than that the encoder ignored the source shape.
+    assert.ok(session.width<=width&&session.height<=height,`Negotiated ${session.width}x${session.height} must fit inside ${width}x${height}`);
+    assert.ok(session.width>=width-2||session.height>=height-2,`Negotiated ${session.width}x${session.height} must fill one bound of ${width}x${height}`);
+    assert.equal(stats.width,session.width);assert.equal(stats.height,session.height);assert.equal(stats.codec,'video/H264');
     const rateStart = await receiver.evaluate(async () => {
       const s = [...(await window.testPc.getStats()).values()].find(s => s.type === 'inbound-rtp' && s.framesDecoded !== undefined);
       return { frames: s.framesDecoded, time: performance.now() };
