@@ -51,6 +51,29 @@ if (-not $npm) {
     throw 'npm.cmd is unavailable. Install the repository Node.js toolchain or add it to PATH.'
 }
 
+# The Vite development server proxies authentication, configuration, and
+# signaling to the local Go API. Detect a missing API before Tauri starts so a
+# developer gets one actionable error instead of repeated ECONNREFUSED output.
+if (-not $env:BETTERCOMMS_API_TARGET) {
+    try {
+        $health = Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 'http://127.0.0.1:8080/healthz'
+        if ($health.StatusCode -ne 200) {
+            throw "Unexpected health status $($health.StatusCode)"
+        }
+    } catch {
+        throw @"
+BetterComms local API is not running at http://127.0.0.1:8080.
+
+From the repository root, run these in order:
+  docker compose up -d postgres
+  ./scripts/start-api.ps1 -DevAuth
+
+Keep the API terminal open, then run the desktop command again.
+To use a different API, set BETTERCOMMS_API_TARGET before launching desktop development.
+"@
+    }
+}
+
 Push-Location $desktopRoot
 try {
     $viteListener = Get-NetTCPConnection -State Listen -LocalPort 5173 -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -63,9 +86,9 @@ try {
         New-Item -ItemType Directory -Force -Path $localRoot | Out-Null
         $overridePath = Join-Path $localRoot 'desktop-existing-vite.json'
         '{"build":{"beforeDevCommand":""}}' | Set-Content -LiteralPath $overridePath -Encoding utf8
-        & $npm.Source run dev -- --config $overridePath
+        & $npm.Source run dev:tauri -- --config $overridePath
     } else {
-        & $npm.Source run dev
+        & $npm.Source run dev:tauri
     }
     if ($LASTEXITCODE -ne 0) {
         throw "Tauri development launcher exited with code $LASTEXITCODE"
