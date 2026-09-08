@@ -15,6 +15,12 @@ bitrate varies with frame complexity and WebRTC congestion control, while
 actual frame rate remains bounded by capture, decode, re-encode, receiver, and
 network capacity.
 
+Native desktop viewers again try the single-encode Rust H.264 route first,
+matching the capture-to-network shape used by OBS. The measured five-second
+zero-media recovery remains in place. Stream setup adds Automatic, Gameplay,
+and Text & desktop content tuning; detected games prefer motion encoding and
+balanced fallback adaptation, while desktop content preserves fine detail.
+
 ## Unreleased — realtime conversations and presence
 
 Mezon's `deepfilternet3-noise-filter` 1.3.0 is now available as an experimental

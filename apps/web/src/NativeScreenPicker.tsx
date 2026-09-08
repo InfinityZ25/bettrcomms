@@ -193,6 +193,8 @@ export default function NativeScreenPicker({
   const [encoder, setEncoder] =
     useState<NativeScreenStartOptions['encoder']>('libx264');
   const [resolution, setResolution] = useState('source');
+  const [contentChoice, setContentChoice] =
+    useState<'auto' | 'motion' | 'detail'>('auto');
   const [fpsChoice, setFpsChoice] =
     useState<'30' | '60' | '120' | 'custom'>('60');
   const [customFps, setCustomFps] = useState('144');
@@ -302,6 +304,17 @@ export default function NativeScreenPicker({
     bitrateMbps <= 200;
   const applicationAudio = (selected?.kind ?? tab) === 'window' && audioScope === 'application';
   const audioAvailable = audioCaps?.available === true && (!applicationAudio || audioCaps.applicationAudio === true);
+  const resolutionLabel = resolution === 'source' && selected
+    ? `Match source (${selected.width}×${selected.height})`
+    : resolution === 'source'
+      ? 'Match source'
+      : resolution.toUpperCase();
+  const requestedPixels = resolution === 'source' && selected
+    ? selected.width * selected.height
+    : resolution === '720p' ? 1280 * 720
+      : resolution === '1080p' ? 1920 * 1080
+        : resolution === '1440p' ? 2560 * 1440
+          : 3840 * 2160;
   async function start(browser = false) {
     setBusy(true);
     setError('');
@@ -328,6 +341,9 @@ export default function NativeScreenPicker({
           height: dimensions[1],
           fps,
           bitrateMbps,
+          contentHint: contentChoice === 'auto'
+            ? selected?.category === 'game' ? 'motion' : 'detail'
+            : contentChoice,
           h264Profile,
           cursor,
           displayBorder,
@@ -553,6 +569,27 @@ export default function NativeScreenPicker({
               )}
             </label>
           </div>
+          <label>
+            Content
+            <select
+              aria-label="Stream content"
+              value={contentChoice}
+              disabled={busy}
+              onChange={(event) =>
+                setContentChoice(event.target.value as typeof contentChoice)
+              }
+            >
+              <option value="auto">Automatic · detect source</option>
+              <option value="motion">Gameplay · smooth motion</option>
+              <option value="detail">Text & desktop · fine detail</option>
+            </select>
+          </label>
+          {selected && requestedPixels * fps > 1920 * 1080 * 60 && (
+            <p className="share-source-advice">
+              {resolutionLabel} at {fps} FPS exceeds 1080p60 pixel throughput.
+              Some compatibility viewers may receive fewer frames.
+            </p>
+          )}
           {!qualityValid && (
             <p className="share-error" role="alert">
               Enter a whole frame rate from 15 to 240 FPS and a whole bitrate
@@ -753,7 +790,7 @@ export default function NativeScreenPicker({
           <small>
             {selected
               ? qualityValid
-                ? `${resolution === 'source' ? 'Match source' : resolution.toUpperCase()} · ${fps} FPS · ${bitrateMbps} Mbps`
+                ? `${resolutionLabel} · ${fps} FPS · ${bitrateMbps} Mbps`
                 : 'Finish the custom quality settings'
               : 'Choose an application or your entire screen.'}
           </small>

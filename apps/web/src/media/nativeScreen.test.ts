@@ -135,7 +135,7 @@ describe('native screen signaling lifecycle', () => {
       expect.objectContaining({ h264Profile: 'main' }));
   });
 
-  it('publishes through the ordinary call connection immediately for a desktop viewer', async () => {
+  it('tries the single-encode native path for a desktop viewer before fallback', async () => {
     vi.stubGlobal('RTCRtpReceiver', {
       getCapabilities: () => ({ codecs: [
         { mimeType: 'video/H264', sdpFmtpLine: 'packetization-mode=1;profile-level-id=42e01f' },
@@ -165,8 +165,8 @@ describe('native screen signaling lifecycle', () => {
       scaleResolutionDownBy: 1,
     });
     await transport.addPeer('peer-desktop');
-    expect(fallback).toHaveBeenCalledWith('peer-desktop');
-    expect(mocks.invoke).not.toHaveBeenCalledWith('native_screen_peer_offer',
+    expect(fallback).not.toHaveBeenCalled();
+    expect(mocks.invoke).toHaveBeenCalledWith('native_screen_peer_offer',
       expect.objectContaining({ peerId: 'peer-desktop' }));
   });
 

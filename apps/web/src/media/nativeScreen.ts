@@ -36,6 +36,8 @@ export interface NativeScreenStartOptions {
   fps: number;
   /** Per-viewer native video bitrate, from 1 through 200 Mbps. */
   bitrateMbps: number;
+  /** Tune compatibility encoding for motion or fine text. */
+  contentHint?: 'motion' | 'detail';
   /** High requires every current receiver to advertise the matching 6400 profile. */
   h264Profile?: 'auto' | NativeH264Profile;
   cursor: boolean;
@@ -125,6 +127,7 @@ export class NativeScreenTransport {
   private disposed = false;
   private unlisten?: UnlistenFn;
   private activeProfile: NativeH264Profile = 'baseline';
+  private activeContentHint: 'motion' | 'detail' = 'detail';
   private pendingProfileQueries = new Map<string, PendingProfileQuery>();
   private peerProfiles = new Map<string, Set<NativeH264Profile>>();
   private peerRuntimes = new Map<string, 'browser' | 'desktop'>();
@@ -153,6 +156,10 @@ export class NativeScreenTransport {
           scaleResolutionDownBy: 1,
         }
       : undefined;
+  }
+
+  get compatibilityContentHint() {
+    return this.activeContentHint;
   }
 
   async getReceiverStats(peerId: string) {
@@ -217,8 +224,9 @@ export class NativeScreenTransport {
         throw new Error(`Every current participant must support H.264 ${h264Profile}. Use automatic or baseline compatibility mode.`);
       }
     }
+    const { contentHint = 'detail', ...nativeOptions } = options;
     const session = await invoke<Session>('native_screen_start', {
-      ...options,
+      ...nativeOptions,
       h264Profile,
     });
     if (generation !== this.generation) {
@@ -229,6 +237,7 @@ export class NativeScreenTransport {
     }
     this.session = session;
     this.activeProfile = h264Profile;
+    this.activeContentHint = contentHint;
     this.log('self', 'capture-started', h264Profile);
     try {
       const unlisten = await listen<{ sessionId: string; reason: string }>(
@@ -271,13 +280,7 @@ export class NativeScreenTransport {
       if (!profiles || !this.peerRuntimes.has(peerId)) {
         profiles = (await this.queryProfiles([peerId])).get(peerId);
       }
-      if (this.peerRuntimes.get(peerId) === 'desktop') {
-        this.log(peerId, 'desktop-viewer-compatibility');
-        await this.onFallbackRequested(peerId);
-        this.outboundPeers.delete(peerId);
-        this.log(peerId, 'fallback-sender-active', 'desktop-viewer');
-        return;
-      }
+      this.log(peerId, 'native-sender-selected', this.peerRuntimes.get(peerId) ?? 'unknown');
       if (this.activeProfile !== 'baseline') {
         if (!profiles?.has(this.activeProfile)) {
           throw new Error(`This participant cannot decode H.264 ${this.activeProfile}. Restart the share in baseline compatibility mode.`);
@@ -472,6 +475,7 @@ export class NativeScreenTransport {
     const session = this.session;
     this.session = undefined;
     this.activeProfile = 'baseline';
+    this.activeContentHint = 'detail';
     this.peerProfiles.clear();
     this.peerRuntimes.clear();
     this.unlisten?.();

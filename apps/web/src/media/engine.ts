@@ -1000,7 +1000,7 @@ export class MediaEngine extends EventTarget {
     if (track) {
       // This decoded native track is also used by the compatibility sender.
       // Prefer preserving text/detail instead of silently scaling the picture.
-      track.contentHint = 'detail';
+      track.contentHint = this.nativeScreen.compatibilityContentHint;
       this.localTracks.set('screen', track);
       track.addEventListener('ended', () => {
         if (this.localTracks.get('screen') !== track) return;
@@ -1226,9 +1226,15 @@ export class MediaEngine extends EventTarget {
     let changed = false;
     if (
       nativeCompatibility &&
-      parameters.degradationPreference !== 'maintain-resolution'
+      parameters.degradationPreference !==
+        (this.nativeScreen.compatibilityContentHint === 'motion'
+          ? 'balanced'
+          : 'maintain-resolution')
     ) {
-      parameters.degradationPreference = 'maintain-resolution';
+      parameters.degradationPreference =
+        this.nativeScreen.compatibilityContentHint === 'motion'
+          ? 'balanced'
+          : 'maintain-resolution';
       changed = true;
     }
     for (const encoding of parameters.encodings) {
