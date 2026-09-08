@@ -54,7 +54,8 @@ matriz no demuestra el rendimiento de BetterComms en una llamada o captura.
 
 La ventana principal no activa `transparent` ni `windowEffects`.
 `better-gui/src/windows.rs` configura bordes, esquinas y modo oscuro mediante
-DWM, pero fija el alfa del fondo del overlay en 255. El frontend también pinta
+DWM. La corrección posterior de controles retiró el overlay experimental y dejó
+los botones a cargo de DWM. El frontend también pinta
 sus propias superficies. Esas capas opacas ocultarían un material situado debajo;
 activar un fondo del HWND no demuestra que el efecto resulte visible en la app.
 

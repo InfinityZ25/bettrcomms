@@ -43,17 +43,13 @@
   --text-muted: var(--muted-foreground);
   --brand-accent: var(--primary);
 }
-/* Windows: WebView2 pinta los botones reales del sistema encima de la pagina y
-   publica su geometria en env(titlebar-area-*). Esa medida es la unica fiel:
-   cambia con el idioma, el escalado y el ancho que el usuario le haya dado a
-   los botones, y ningun numero fijo la sigue. */
+/* Compatibility with desktop hosts using the WebView2 controls overlay.
+   Native-frame hosts render no HTML title bar. */
 .better-window-titlebar {
   -webkit-app-region: drag;
   app-region: drag;
   padding-inline-start: env(titlebar-area-x, 0px);
-  padding-inline-end: calc(
-    100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)
-  );
+  padding-inline-end: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
 }
 .better-window-titlebar
   :is(

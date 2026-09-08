@@ -1,28 +1,30 @@
 # BetterComms preview release notes
 
-## Unreleased — Windows caption input
+## Unreleased — Windows native frame
 
-`better-gui` extends DWM's caption frame to the WebView2 overlay height and
-routes input through a paint-free child covering the system caption buttons.
-This lets the host receive non-client input even when the windowed WebView2
-surface belongs to another process. DWM supplies the button bounds and hit
-testing; WebView2 keeps drawing the controls. Non-client leave tracking is
-re-armed during pointer movement so Windows can clear caption highlights.
-This path is enabled only when WebView2's experimental Window Controls Overlay
-reports that it is enabled.
+Windows now uses its complete native title bar outside the WebView client area.
+The frontend removes its own title bar when the host publishes `native-frame`.
+This removes the overlapping renderers, oversized caption cutout, clipped
+maximized buttons and manual input routing. Windows owns caption dimensions,
+icons, clicks, hover cleanup and Snap Layouts. Title text and the application
+icon use Windows' native presentation; macOS and Linux keep their existing bars.
 
-Windows 11 Snap Layouts appeared on maximize hover in a local development
-executable; moving into client content cleared the highlight and dismissed the
-flyout. Direct pointer exit across the outer window boundary still requires
-manual acceptance, as do maximize/restore clicks: the automation's caption
-clicks did not produce a successful maximize, and its injected coordinates
-disagreed with the cursor position reported to Win32. This is not yet a complete
-native acceptance pass. The existing 960 logical-pixel minimum width continues to
-limit which Snap zones can fit the app. This requires a rebuilt desktop host.
+The caption receives the frontend's actual sidebar palette, converted from CSS
+to sRGB, and updates when the page theme changes. Theme observers/listeners are
+released on unmount/window destruction. WebView composition still pauses while
+minimized, without manually overwriting its bounds when restored.
 
-Transparency and blur were researched only; see
-[window materials findings](WINDOW_MATERIALS_RESEARCH.md). No window material
-or transparency setting was changed.
+Native checks on Windows 11: repeated maximize/restore, a visible Snap Layout
+flyout, and hover/flyout cleanup on return to client content succeeded. Direct
+exit across the outer window edge and other monitor DPI settings were not
+independently exercised by the window-scoped automation. Browser tests verify
+that no HTML title bar duplicates the native frame and that palette changes
+and cleanup reach the host contract; they do not prove native mouse behavior.
+This requires a rebuilt desktop host. The existing 960 logical-pixel minimum
+width still limits which Snap zones can fit the app.
+
+Transparency and blur remain research only; see
+[window materials findings](WINDOW_MATERIALS_RESEARCH.md).
 
 ## 0.1.15 — source resolution and stream startup fixes
 

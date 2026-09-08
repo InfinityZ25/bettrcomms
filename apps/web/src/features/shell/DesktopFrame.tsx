@@ -14,6 +14,7 @@ import {
   type WindowButton,
   type WindowControlsState,
 } from './windowControls';
+import { syncNativeCaptionTheme } from './nativeCaptionTheme';
 
 export default function DesktopFrame({ children }: { children: ReactNode }) {
   const desktop = isTauri();
@@ -23,6 +24,10 @@ export default function DesktopFrame({ children }: { children: ReactNode }) {
   );
   const [maximized, setMaximized] = useState(false);
   const [error, setError] = useState('');
+  useEffect(() => {
+    if (!desktop || controls.mode !== 'native-frame') return;
+    return syncNativeCaptionTheme();
+  }, [desktop, controls.mode]);
   useEffect(() => {
     if (!desktop) return;
     const appWindow = getCurrentWindow();
@@ -41,7 +46,7 @@ export default function DesktopFrame({ children }: { children: ReactNode }) {
       void listener.then((unlisten) => unlisten());
     };
   }, [desktop]);
-  if (!desktop) return children;
+  if (!desktop || controls.mode === 'native-frame') return children;
   const run = (action: () => Promise<unknown>) => {
     setError('');
     void action().catch(() =>

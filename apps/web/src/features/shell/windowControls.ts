@@ -2,8 +2,8 @@
  * Reads the window-control state the `better-gui` Tauri plugin publishes.
  *
  * Who draws the minimize/maximize/close buttons depends on the desktop, and
- * only the host can tell: WebView2 paints the real Windows buttons over the
- * page, macOS keeps its own traffic lights, and Linux expects the app to draw
+ * only the host can tell: Windows owns the non-client frame outside the page,
+ * macOS keeps its own traffic lights, and Linux expects the app to draw
  * them in the order `gtk-decoration-layout` asks for. The plugin resolves that
  * once and publishes it on `window.__BETTER_WINDOW_CONTROLS__`.
  *
@@ -17,6 +17,7 @@
 export type WindowButton = 'minimize' | 'maximize' | 'close';
 export type ButtonSide = 'start' | 'end';
 export type ControlsMode =
+  | 'native-frame'
   | 'native-overlay'
   | 'native-traffic-lights'
   | 'client-side';
@@ -137,6 +138,7 @@ function isWindowControlsState(value: unknown): value is WindowControlsState {
   return (
     isOneOf(state.platform, ['windows', 'macos', 'linux', 'unknown']) &&
     isOneOf(state.mode, [
+      'native-frame',
       'native-overlay',
       'native-traffic-lights',
       'client-side',
