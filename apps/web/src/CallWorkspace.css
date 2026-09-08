@@ -69,7 +69,7 @@
 }
 
 .call-workspace .camera-dock-handle:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--brand-accent);
   outline-offset: 2px;
 }
 
@@ -91,7 +91,7 @@
 
 .call-workspace .camera-divider:hover::after,
 .call-workspace .camera-divider:focus-visible::after {
-  background: var(--accent);
+  background: var(--brand-accent);
 }
 
 .call-workspace .camera-divider:focus-visible {

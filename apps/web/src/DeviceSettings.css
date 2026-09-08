@@ -113,7 +113,7 @@
 .loopback-volume input {
   padding: 0;
   height: 24px;
-  accent-color: var(--accent);
+  accent-color: var(--brand-accent);
 }
 .loopback-volume span {
   font-size: 11px;

@@ -128,7 +128,7 @@
   padding: 0;
   border: 0;
   background: transparent;
-  accent-color: var(--accent);
+  accent-color: var(--brand-accent);
 }
 .recording-player__track input {
   width: min(180px, 28vw);
@@ -162,7 +162,7 @@
   place-items: center;
   border-radius: 50%;
   color: #26331f;
-  background: var(--accent);
+  background: var(--brand-accent);
 }
 .recording-player__play:hover {
   background: #d2f6af;

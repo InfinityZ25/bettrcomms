@@ -21,6 +21,7 @@ import {
   Send,
   Settings2,
   ShieldCheck,
+  SunMoon,
   Users,
   Video,
   Volume2,
@@ -30,6 +31,7 @@ import {
 } from 'lucide-react';
 import { Button } from './components/ui/button';
 import { Dialog } from './components/ui/dialog';
+import { ModeToggle } from './components/mode-toggle';
 import { api, type User, type Room, type Message, type CallParticipant } from './api';
 import CallStage, { type NativeShareActions } from './CallStage';
 import NativeScreenPicker from './NativeScreenPicker';
@@ -708,6 +710,16 @@ export default function App() {
               />
             </label>
             <MediaSettings />
+            <h3>
+              <SunMoon size={17} /> Appearance
+            </h3>
+            <div className="switch-row">
+              <div>
+                <strong>Theme</strong>
+                <p>Light, dark, or match your system.</p>
+              </div>
+              <ModeToggle />
+            </div>
             <h3>
               <LayoutPanelTop size={17} /> Layout
             </h3>

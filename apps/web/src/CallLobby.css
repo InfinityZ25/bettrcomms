@@ -17,9 +17,9 @@
   padding: clamp(18px, 2vw, 28px);
 }
 .call-lobby__hero { background: transparent; border-color: transparent; padding-left: 0; }
-.call-lobby__eyebrow { color: var(--accent); font-size: 12px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.call-lobby__eyebrow { color: var(--brand-accent); font-size: 12px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
 .call-lobby h2 { margin: 10px 0; font-size: clamp(26px, 3vw, 38px); overflow-wrap: anywhere; }
-.call-lobby p { color: var(--muted); line-height: 1.6; }
+.call-lobby p { color: var(--text-muted); line-height: 1.6; }
 .call-lobby__hero .button { margin-top: 18px; }
 .call-lobby__roster h3 { margin-top: 0; }
 .call-lobby__roster ul { display: grid; gap: 10px; padding: 0; list-style: none; }
@@ -28,5 +28,5 @@
 .call-lobby__roster li { grid-template-columns: auto minmax(0, 1fr); }
 .call-lobby__roster li strong { overflow-wrap: anywhere; }
 .call-lobby__badges { grid-column: 2; }
-.call-lobby__badges span { display: inline-flex; gap: 4px; align-items: center; color: var(--muted); font-size: 11px; }
+.call-lobby__badges span { display: inline-flex; gap: 4px; align-items: center; color: var(--text-muted); font-size: 11px; }
 @media (max-width: 760px) { .call-lobby { grid-template-columns: 1fr; align-content: start; } }

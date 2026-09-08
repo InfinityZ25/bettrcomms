@@ -31,7 +31,7 @@
 }
 .workspace-screen__header nav a[aria-current='page'] {
   background: #293726;
-  color: var(--accent);
+  color: var(--brand-accent);
 }
 .workspace-screen__header nav a:hover {
   background: #222c25;

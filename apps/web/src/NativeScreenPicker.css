@@ -38,7 +38,7 @@
 .share-screen select:focus-visible,
 .share-screen summary:focus-visible,
 .share-source-scroll:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--brand-accent);
   outline-offset: 3px;
 }
 .share-screen-header {
@@ -58,7 +58,7 @@
 .share-call-status i {
   width: 6px;
   height: 6px;
-  background: var(--accent);
+  background: var(--brand-accent);
   border-radius: 50%;
 }
 .share-screen-intro {
@@ -206,8 +206,8 @@
   background: #202920;
 }
 .share-source-card.is-selected {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
+  border-color: var(--brand-accent);
+  box-shadow: 0 0 0 1px var(--brand-accent);
   background: #273326;
 }
 .share-source-preview {
@@ -241,7 +241,7 @@
   height: 25px;
   display: grid;
   place-items: center;
-  background: var(--accent);
+  background: var(--brand-accent);
   color: #172014;
   border-radius: 50%;
   box-shadow: 0 2px 8px #0005;
@@ -363,7 +363,7 @@
 .share-cursor input {
   width: 17px;
   height: 17px;
-  accent-color: var(--accent);
+  accent-color: var(--brand-accent);
 }
 .share-advanced {
   border-top: 1px solid #303b31;

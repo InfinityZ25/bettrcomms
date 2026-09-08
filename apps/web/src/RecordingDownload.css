@@ -25,7 +25,7 @@
   opacity: 0.75;
 }
 .recording-asset__download > svg {
-  color: var(--accent);
+  color: var(--brand-accent);
   flex-shrink: 0;
 }
 .recording-asset .recording-asset__name {
@@ -54,7 +54,7 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  color: var(--accent);
+  color: var(--brand-accent);
   font-size: 12px;
   white-space: nowrap;
 }
