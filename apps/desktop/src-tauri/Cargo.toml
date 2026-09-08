@@ -25,6 +25,7 @@ tempfile = "3"
 tungstenite = "0.23"
 url = "2"
 webrtc = "=0.17.2"
+bytes = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time"] }
 
 [target.'cfg(windows)'.dependencies]
