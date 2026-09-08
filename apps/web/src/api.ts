@@ -17,6 +17,7 @@ export interface CallParticipant {
   name?: string;
   muted: boolean;
   deafened: boolean;
+  device_count: number;
 }
 export interface Message {
   id: string;

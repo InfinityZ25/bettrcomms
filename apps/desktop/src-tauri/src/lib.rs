@@ -1,6 +1,8 @@
 use serde::Serialize;
 use url::Url;
 
+mod camera_overlay;
+mod copilot_overlay;
 mod deepfilter_audio;
 mod deepfilter_runtime;
 mod deepfilter_setup;
@@ -15,6 +17,7 @@ mod native_system_audio;
 mod nvidia_audio;
 mod nvidia_setup;
 mod recording_export;
+mod push_to_talk;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -145,7 +148,7 @@ fn desktop_media_capabilities() -> DesktopMediaCapabilities {
             detail: "Native local screen recording remuxes the live H.264 stream to MP4. Other independent tracks use browser recording. Continuous rewind and active-recording crash recovery remain unavailable.",
         },
         notes: vec![
-            "native Windows sharing requires the separately installed FFmpeg runtime and a successful encoder probe",
+            "native Windows sharing requires the bundled FFmpeg runtime and a successful encoder probe",
             "the web client must fall back to browser media whenever a native capability is not implemented",
         ],
     }
@@ -156,10 +159,16 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(better_gui::init())
         .manage(recording_export::RecordingExportState::default())
+        .manage(push_to_talk::PushToTalkState::default())
+        .manage(camera_overlay::CameraOverlayState::default())
+        .manage(copilot_overlay::CopilotOverlayState::default())
         .manage(native_screen::NativeScreenState::default())
         .manage(native_system_audio::NativeSystemAudioState::default())
         .setup(|app| {
             use tauri::Manager;
+            if let Ok(resource_dir) = app.path().resource_dir() {
+                ffmpeg_setup::configure_bundled_runtime(resource_dir);
+            }
             let webview = app
                 .get_webview_window("main")
                 .ok_or_else(|| "BetterComms main webview was not created".to_owned())?;
@@ -184,6 +193,16 @@ pub fn run() {
             }
             let handler: &dyn Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = &tauri::generate_handler![
                 desktop_boot_config,
+                push_to_talk::push_to_talk_capabilities,
+                push_to_talk::push_to_talk_start,
+                push_to_talk::push_to_talk_heartbeat,
+                push_to_talk::push_to_talk_stop,
+                camera_overlay::camera_overlay_open,
+                camera_overlay::camera_overlay_update,
+                camera_overlay::camera_overlay_frame,
+                camera_overlay::camera_overlay_close,
+                copilot_overlay::copilot_overlay_frame,
+                copilot_overlay::copilot_overlay_clear,
                 native_screen::native_screen_capabilities,
                 native_screen::native_screen_sources,
                 native_screen::native_screen_thumbnail,

@@ -1,11 +1,13 @@
 {
   "name": "@bettercomms/desktop",
   "private": true,
-  "version": "0.1.5",
+  "version": "0.1.15",
   "type": "module",
   "scripts": {
-    "dev": "tauri dev",
+    "dev": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/start-desktop.ps1",
+    "dev:tauri": "tauri dev",
     "build": "tauri build",
+    "prepare:ffmpeg": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/prepare-ffmpeg-bundle.ps1",
     "check": "cargo check --manifest-path src-tauri/Cargo.toml"
   },
   "devDependencies": {

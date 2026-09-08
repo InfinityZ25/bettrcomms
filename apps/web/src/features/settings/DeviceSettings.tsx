@@ -9,6 +9,7 @@ import {
   setOutputVolume,
 } from '@/media/volumeSettings';
 import './DeviceSettings.css';
+import PushToTalkSettings from './PushToTalkSettings';
 import { MediaEngine } from '@/media/engine';
 import { allowDesktopCapture, isWindowsDesktop } from '@/media/permissions';
 import {
@@ -251,6 +252,7 @@ export default function DeviceSettings() {
           standard: 'Browser',
           rnnoise: 'RNNoise',
           speex: 'Speex',
+          'deepfilter-wasm': 'DeepFilterNet3',
           nvidia: 'NVIDIA',
           deepfilter: 'DeepFilterNet',
           off: 'Suppression off',
@@ -657,6 +659,7 @@ export default function DeviceSettings() {
   };
   return (
     <section className="device-settings" aria-label="Media devices">
+      <PushToTalkSettings />
       <div className="device-settings__grid">
         <div className="device-settings__card">
           <label>

@@ -102,6 +102,34 @@ h1 {
   padding: 4px 7px;
   background: #283224;
 }
+
+/* Established peer media can continue while signaling reconnects. */
+.signaling-reconnecting,
+.stage-badge-degraded,
+.screen-share-degraded {
+  white-space: nowrap;
+  border: 1px solid #6b5426;
+  background: #34291399;
+  color: #e6c07a;
+}
+
+.signaling-reconnecting {
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+.stage-badge-degraded,
+.screen-share-degraded {
+  border-radius: 5px;
+  padding: 3px 6px;
+  font-size: 10px;
+}
+
+.screen-share-degraded {
+  margin-right: 6px;
+  margin-left: auto;
+}
 .stage-empty {
   flex: 1;
   display: flex;

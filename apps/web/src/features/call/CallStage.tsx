@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type PointerEvent, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type PointerEvent, type WheelEvent as ReactWheelEvent, type CSSProperties } from 'react';
+import { CallMicrophone, talkBindingLabel } from '@/media/pushToTalk';
 import { RecordingDownload } from '@/features/recordings/RecordingDownload';
 import ConnectionStatus from './ConnectionStatus';
 import { useSpeakingActivity } from '@/media/useSpeakingActivity';
@@ -20,6 +21,9 @@ import {
   ZoomIn,
   ZoomOut,
   Plus,
+  Pin,
+  LayoutGrid,
+  X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -51,14 +55,35 @@ import './CallBase.css';
 import './CallLobby.css';
 import './CallWorkspace.css';
 import { useCallLayout } from './useCallLayout';
+import CameraOverlay from './CameraOverlay';
+import { CopilotPanel, CopilotViewerSlot, CopilotLocalMarks } from './VisualCopilot';
+import type { VisualCopilot } from '@/media/visualCopilot';
 
 export interface CallPresence {
   user_id: string;
   name?: string;
   muted: boolean;
   deafened: boolean;
+  device_count: number;
 }
 const EMPTY_CALL_PRESENCE: CallPresence[] = [];
+type GalleryLayout = 'adaptive' | 'grid' | 'focus' | 'all';
+type StageItem = {
+  key: string;
+  kind: 'screen' | 'camera';
+  name: string;
+  track: MediaStreamTrack;
+  self?: boolean;
+  /** The sender fell back to re-encoding this screen through the call. */
+  reencoded?: boolean;
+};
+
+function readGalleryLayout(): GalleryLayout {
+  try {
+    const value = localStorage.getItem('bc-gallery-layout');
+    return value === 'grid' || value === 'focus' || value === 'all' ? value : 'adaptive';
+  } catch { return 'adaptive'; }
+}
 
 export interface NativeShareActions {
   onShare(options: NativeScreenStartOptions): Promise<void>;
@@ -107,22 +132,55 @@ export default function CallStage({
     [remote, setRemote] = useState<RemoteTrack[]>([]),
     [peers, setPeers] = useState<Record<string, string>>({}),
     [names, setNames] = useState<Record<string, string>>({}),
-    [muted, setMuted] = useState(false),
-    [deafened, setDeafened] = useState(false),
-    [zoom, setZoom] = useState(1),
-    [pan, setPan] = useState({ x: 0, y: 0 }),
     [recording, setRecording] = useState(false),
     [result, setResult] = useState<RecordingResult | null>(null),
-    [selected, setSelected] = useState('');
+    [watchedShareIds, setWatchedShareIds] = useState<string[]>([]),
+    /** Signaling is retrying. Media continues; setup and membership pause. */
+    [signalingDown, setSignalingDown] = useState(false),
+    [focusedStageKey, setFocusedStageKey] = useState<string | null>(null);
   const workspace = useRef<HTMLDivElement>(null);
   const docking = useCallLayout(layout, onLayout, joined);
   const [fullscreen, setFullscreen] = useState(false);
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const controlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastControlsPointer = useRef({ x: Number.NaN, y: Number.NaN });
+  const [cameraAspects, setCameraAspects] = useState<Record<string, number>>({});
+  const [contentFit, setContentFit] = useState<'fit' | 'fill'>(() => {
+    try { return localStorage.getItem('bc-content-fit') === 'fill' ? 'fill' : 'fit'; }
+    catch { return 'fit'; }
+  });
+  const [galleryLayout, setGalleryLayout] = useState<GalleryLayout>(readGalleryLayout);
+  const [galleryFit, setGalleryFit] = useState<'cover' | 'contain'>(() => {
+    try { return localStorage.getItem('bc-gallery-fit') === 'contain' ? 'contain' : 'cover'; }
+    catch { return 'cover'; }
+  });
+  const [featuredCamera, setFeaturedCamera] = useState('self');
   useEffect(() => { onJoinedChange?.(joined); }, [joined, onJoinedChange]);
   useEffect(() => {
-    const update = () => setFullscreen(document.fullscreenElement === workspace.current && Boolean(workspace.current));
+    const update = () => {
+      setFullscreen(document.fullscreenElement === workspace.current && Boolean(workspace.current));
+      setControlsVisible(true);
+    };
     document.addEventListener('fullscreenchange', update);
     return () => document.removeEventListener('fullscreenchange', update);
   }, []);
+  useEffect(() => () => { if (controlsTimer.current) clearTimeout(controlsTimer.current); }, []);
+  const revealControls = () => {
+    setControlsVisible(true);
+    if (controlsTimer.current) clearTimeout(controlsTimer.current);
+    if (fullscreen) controlsTimer.current = setTimeout(() => setControlsVisible(false), 2400);
+  };
+  const pointerActivity = (event: PointerEvent<HTMLDivElement>) => {
+    const previous = lastControlsPointer.current;
+    if (previous.x === event.clientX && previous.y === event.clientY) return;
+    lastControlsPointer.current = { x: event.clientX, y: event.clientY };
+    revealControls();
+  };
+  useEffect(() => {
+    if (!fullscreen) return;
+    revealControls();
+    return () => { if (controlsTimer.current) clearTimeout(controlsTimer.current); };
+  }, [fullscreen]);
   const toggleFullscreen = () => {
     const action = document.fullscreenElement ? document.exitFullscreen() : workspace.current?.requestFullscreen();
     void action?.catch(error => onError(error.message));
@@ -130,12 +188,10 @@ export default function CallStage({
   const engine = useRef<MediaEngine | null>(null),
     socket = useRef<RoomWebSocketSignaling | null>(null),
     recorder = useRef<TrackRecordingSession | null>(null),
-    drag = useRef<{ x: number; y: number; px: number; py: number } | null>(
-      null,
-    ),
     shareRequest = useRef(0),
     active = useRef(true);
-  const mutedBeforeDeafen = useRef(false);
+  const [callMicrophone] = useState(() => new CallMicrophone(enabled => engine.current?.setMicrophoneEnabled(enabled)));
+  const { muted, transmitting, deafened, manualMuted, settings: talkSettings, globalStatus, globalMessage } = useSyncExternalStore(callMicrophone.subscribe, callMicrophone.getSnapshot);
   const [remotePresence, setRemotePresence] = useState<Record<string, { muted: boolean; deafened: boolean }>>({});
   const [stats, setStats] = useState<PeerMediaStats[]>([]),
     [showStats, setShowStats] = useState(false),
@@ -146,7 +202,6 @@ export default function CallStage({
   const [saveStatus, setSaveStatus] = useState('');
   const [serverRtt, setServerRtt] = useState<number | null>(null);
   const [reportStatus, setReportStatus] = useState('');
-  const [receivingVideo, setReceivingVideo] = useState<string | null>(null);
   async function downloadDiagnostics() {
     try {
       const nativeVersion = isTauri() ? await import('@tauri-apps/api/app').then(api => api.getVersion()).catch(() => 'unknown') : undefined;
@@ -232,6 +287,7 @@ export default function CallStage({
       }
   };
   const leave = () => {
+    callMicrophone.stop();
     disposeCallPlayback();
     void finishRecording();
     socket.current?.close();
@@ -239,6 +295,7 @@ export default function CallStage({
     engine.current?.dispose();
     engine.current = null;
     setJoined(false);
+    setSignalingDown(false);
     setServerRtt(null);
     setStats([]);
     setLocals(new Map());
@@ -246,8 +303,8 @@ export default function CallStage({
     setPeers({});
     setRemoteRecording({});
     setRemotePresence({});
-    setMuted(false);
-    setDeafened(false);
+    setWatchedShareIds([]);
+    setFocusedStageKey(null);
     setCallPlaybackDeafened(false);
   };
   useEffect(() => {
@@ -276,14 +333,10 @@ export default function CallStage({
       const e = engine.current;
       if (!e) return;
       try {
-        const wasEnabled =
-          e.getLocalTracks().get('microphone')?.enabled ?? true;
         await e.captureUserMedia({
           camera: false,
           ...microphoneCaptureOptions(localStorage.getItem('bc-input') ?? ''),
         });
-        const track = e.getLocalTracks().get('microphone');
-        if (track) track.enabled = wasEnabled;
       } catch (error) {
         onError(error instanceof Error ? error.message : String(error));
       }
@@ -341,9 +394,12 @@ export default function CallStage({
     api<{ members: { user: User }[] }>('/rooms/' + room.id + '/members')
       .then((r) => {
         if (live)
-          setNames(
-            Object.fromEntries(r.members.map((m) => [m.user.id, m.user.name])),
-          );
+          setNames((current) => ({
+            ...Object.fromEntries(r.members.map((m) => [m.user.id, m.user.name])),
+            // Signaling identities are keyed by per-device peer IDs. Keep
+            // those entries when the durable room-member snapshot refreshes.
+            ...current,
+          }));
       })
       .catch(() => {});
     return () => {
@@ -391,8 +447,6 @@ export default function CallStage({
               )
             : false,
         });
-        const mic = e.getLocalTracks().get('microphone');
-        if (mic) mic.enabled = !muted;
       } catch (error) {
         onError(error instanceof Error ? error.message : String(error));
       }
@@ -440,7 +494,7 @@ export default function CallStage({
       if (active.current) setBusy(false);
     }
   }
-  async function join() {
+  async function join(joinMode: 'replace' | 'additional' = 'replace') {
     if (!user) {
       location.assign('/api/v1/auth/login');
       return;
@@ -455,14 +509,16 @@ export default function CallStage({
       const config = await api<{ ice_servers: RTCIceServer[] }>('/ice').catch(
         () => api<{ ice_servers: RTCIceServer[] }>('/config'),
       );
+      const peerId = createCallPeerId();
+      const query = new URLSearchParams({ peer_id: peerId, join_mode: joinMode });
       const s = new RoomWebSocketSignaling(
-        user.id,
-        '/api/v1/rooms/' + room.id + '/ws',
+        peerId,
+        `/api/v1/rooms/${room.id}/ws?${query}`,
       );
       const e = new MediaEngine({
         signaling: s,
         voiceRelay: {
-          url: `/api/v1/rooms/${room.id}/voice-relay`,
+          url: `/api/v1/rooms/${room.id}/voice-relay?peer_id=${encodeURIComponent(peerId)}`,
           mode: localStorage.getItem('bc-voice-route') === 'relay' ? 'relay' : 'automatic',
         },
         quality: readQuality(),
@@ -475,6 +531,7 @@ export default function CallStage({
         },
       });
       engine.current = e;
+      callMicrophone.start();
       socket.current = s;
       s.addEventListener('latency', (event) => {
         if (socket.current === s) setServerRtt(event.detail.rttMs);
@@ -503,8 +560,15 @@ export default function CallStage({
       s.addEventListener('peers', (event) => {
         for (const id of event.detail.peerIds) {
           e.addPeer(id);
-          setPeers((p) => ({ ...p, [id]: 'connecting' }));
+          setPeers((p) => p[id] === undefined ? { ...p, [id]: 'connecting' } : p);
         }
+        setNames(current => {
+          const next = { ...current };
+          for (const [id, identity] of Object.entries(event.detail.identities)) {
+            if (identity.name) next[id] = identity.name;
+          }
+          return next;
+        });
       });
       s.addEventListener('signal', (event) => {
         void e
@@ -513,7 +577,8 @@ export default function CallStage({
       });
       s.addEventListener('peer-joined', (event) => {
         e.addPeer(event.detail.peerId);
-        setPeers((p) => ({ ...p, [event.detail.peerId]: 'connecting' }));
+        setPeers((p) => p[event.detail.peerId] === undefined ? { ...p, [event.detail.peerId]: 'connecting' } : p);
+        if (event.detail.name) setNames(current => ({ ...current, [event.detail.peerId]: event.detail.name! }));
       });
       s.addEventListener('peer-left', (event) => {
         setRemotePresence((current) => {
@@ -552,15 +617,44 @@ export default function CallStage({
         if (p?.name)
           setNames((n) => ({ ...n, [event.detail.peerId]: p.name! }));
       });
+      // Signaling carries setup and membership, not media. Established peer
+      // connections keep flowing while the server restarts, so a dropped socket
+      // is a degraded state, not the end of the call.
+      s.addEventListener('disconnected', () => {
+        if (socket.current === s) setSignalingDown(true);
+      });
+      s.addEventListener('reconnected', () => {
+        if (socket.current !== s) return;
+        setSignalingDown(false);
+        // A restarted server has no memory of this participant's presence, and
+        // peers it never saw join need connections. Both are re-announced by
+        // the server's snapshot; adding a peer we already hold is a no-op.
+        const input = callMicrophone.getSnapshot();
+        const currentTracks = e.getLocalTracks();
+        try {
+          s.sendPresence({
+            camera: currentTracks.has('camera'),
+            microphone: !input.muted,
+            sharing: currentTracks.has('screen'),
+            recording: recorder.current !== null,
+            muted: input.muted,
+            deafened: input.deafened,
+            name: user.name,
+          });
+        } catch {
+          // The socket closed again before presence could be re-announced;
+          // the next reconnection repeats it.
+        }
+      });
       s.addEventListener('close', () => {
+        setSignalingDown(false);
         if (engine.current === e) {
+          callMicrophone.stop();
           void finishRecording();
           e.dispose();
           disposeCallPlayback();
           engine.current = null;
           setJoined(false);
-          setMuted(false);
-          setDeafened(false);
           setCallPlaybackDeafened(false);
           setServerRtt(null);
           setStats([]);
@@ -577,9 +671,10 @@ export default function CallStage({
         });
         await s.connect();
         setJoined(true);
-        setMuted(false);
-        s.sendPresence({ camera: false, microphone: true, sharing: false, muted: false, deafened: false });
+        const input = callMicrophone.getSnapshot();
+        s.sendPresence({ camera: false, microphone: !input.muted, sharing: false, muted: input.muted, deafened: input.deafened, name: user.name });
       } catch (error) {
+        callMicrophone.stop();
         s.close();
         e.dispose();
         disposeCallPlayback();
@@ -611,14 +706,8 @@ export default function CallStage({
         onShare: (options) => originatingEngine.captureNativeScreen(options),
         onBrowser: async () => {
           await originatingEngine.captureScreen(
-            {
-              video: {
-                width: { ideal: 2560 },
-                height: { ideal: 1440 },
-                frameRate: { ideal: 60, max: 60 },
-              },
-              systemAudio: true,
-            },
+            // Capture constraints follow the configured stream quality.
+            { systemAudio: true },
             () =>
               request === shareRequest.current &&
               originatingEngine === engine.current,
@@ -635,14 +724,8 @@ export default function CallStage({
   async function browserScreen() {
     await perform(async () => {
       if (!engine.current) return;
-      await engine.current.captureScreen({
-        video: {
-          width: { ideal: 2560 },
-          height: { ideal: 1440 },
-          frameRate: { ideal: 60, max: 60 },
-        },
-        systemAudio: true,
-      });
+      // Capture constraints follow the configured stream quality.
+      await engine.current.captureScreen({ systemAudio: true });
     });
   }
   async function camera() {
@@ -666,27 +749,12 @@ export default function CallStage({
     });
   }
   function mic() {
-    if (deafened) return;
-    const track = engine.current?.getLocalTracks().get('microphone');
-    if (track) {
-      track.enabled = !track.enabled;
-      setMuted(!track.enabled);
-    } else onError('Join a call to use your microphone.');
+    if (engine.current) callMicrophone.toggleMute();
+    else onError('Join a call to use your microphone.');
   }
   function toggleDeafen() {
-    const track = engine.current?.getLocalTracks().get('microphone');
-    if (!deafened) {
-      mutedBeforeDeafen.current = muted;
-      if (track) track.enabled = false;
-      setMuted(true);
-      setDeafened(true);
-      setCallPlaybackDeafened(true);
-    } else {
-      if (track) track.enabled = !mutedBeforeDeafen.current;
-      setMuted(mutedBeforeDeafen.current);
-      setDeafened(false);
-      setCallPlaybackDeafened(false);
-    }
+    callMicrophone.toggleDeafen();
+    setCallPlaybackDeafened(callMicrophone.getSnapshot().deafened);
   }
   async function toggleRecord() {
     await perform(async () => {
@@ -731,7 +799,7 @@ export default function CallStage({
   }
   const shares = [
     ...(locals.has('screen')
-      ? [{ id: 'local', name: 'Your screen', track: locals.get('screen')! }]
+      ? [{ id: 'local', name: 'Your screen', track: locals.get('screen')!, reencoded: false }]
       : []),
     ...remote
       .filter((t) => t.source === 'screen')
@@ -739,19 +807,90 @@ export default function CallStage({
         id: t.peerId,
         name: (names[t.peerId] ?? 'Friend') + '’s screen',
         track: t.track,
+        // The sender's direct native connection failed and it is re-encoding
+        // its own decoded preview. Say so instead of looking like a bad share.
+        reencoded: t.screenTransport === 'native-compatibility',
       })),
   ];
-  const share = shares.find((s) => s.id === selected) ?? shares[0];
   const connected = Object.entries(peers).filter(
     ([id, state]) => state === 'connected' || stats.some(s => s.peerId === id && s.voiceRelay?.state === 'relayed'),
   ).length;
-  function pointerDown(e: PointerEvent) {
-    if (zoom <= 1) return;
-    drag.current = { x: e.clientX, y: e.clientY, px: pan.x, py: pan.y };
-    e.currentTarget.setPointerCapture(e.pointerId);
-  }
+  const cameraParticipants = [
+    { id: 'self', name: user?.name ?? 'You', track: locals.get('camera'), self: true },
+    ...Object.keys(peers).map(id => ({
+      id,
+      name: names[id] ?? 'Friend',
+      track: remote.find(t => t.peerId === id && t.source === 'camera')?.track,
+      self: false,
+    })),
+  ];
+  const shareSignature = shares.map(({ id, track }) => `${id}:${track.id}`).join('|');
+  useEffect(() => {
+    const available = new Set(shares.map(({ id }) => id));
+    setWatchedShareIds(current => {
+      const next = current.filter(id => available.has(id));
+      if (available.has('local') && !next.includes('local')) next.unshift('local');
+      return next.length === current.length && next.every((id, index) => id === current[index]) ? current : next;
+    });
+    setFocusedStageKey(current => {
+      if (!current?.startsWith('screen:')) return current;
+      return available.has(current.slice('screen:'.length)) ? current : null;
+    });
+  }, [shareSignature]);
+  const availableStageItems: StageItem[] = [
+    ...shares.map(share => ({
+      key: `screen:${share.id}`,
+      kind: 'screen' as const,
+      name: share.name,
+      track: share.track,
+      self: share.id === 'local',
+      reencoded: share.reencoded ?? false,
+    })),
+    ...cameraParticipants
+      .filter((camera): camera is typeof camera & { track: MediaStreamTrack } => Boolean(camera.track))
+      .map(camera => ({
+        key: `camera:${camera.id}`,
+        kind: 'camera' as const,
+        name: camera.self ? 'Your camera' : camera.name,
+        track: camera.track,
+        self: camera.self,
+      })),
+  ];
+  const focusedStageItem = availableStageItems.find(item => item.key === focusedStageKey);
+  const watchedScreens = availableStageItems.filter(item =>
+    item.kind === 'screen' && watchedShareIds.includes(item.key.slice('screen:'.length)),
+  );
+  const unifiedGrid = galleryLayout === 'all' && !focusedStageItem;
+  const stageItems = focusedStageItem ? [focusedStageItem] : unifiedGrid ? [] : watchedScreens;
+  const hasStageContent = stageItems.length > 0;
+  const visibleTileCount = cameraParticipants.length + shares.length;
+  const toggleWatchedShare = (id: string) => {
+    setWatchedShareIds(current => current.includes(id) ? current.filter(value => value !== id) : [...current, id]);
+    if (focusedStageKey === `screen:${id}`) setFocusedStageKey(null);
+  };
+  const focusShare = (id: string) => {
+    setWatchedShareIds(current => current.includes(id) ? current : [...current, id]);
+    setFocusedStageKey(`screen:${id}`);
+  };
+  const activeSpeakerCamera = cameraParticipants.find(camera => speaking.has(camera.id))?.id;
+  const activeFeaturedCamera = galleryLayout === 'adaptive' && activeSpeakerCamera
+    ? activeSpeakerCamera
+    : cameraParticipants.some(camera => camera.id === featuredCamera)
+      ? featuredCamera
+      : cameraParticipants[0]?.id;
+  const changeGalleryLayout = (value: GalleryLayout) => {
+    setGalleryLayout(value);
+    if (value === 'all') setFocusedStageKey(null);
+    try { localStorage.setItem('bc-gallery-layout', value); } catch { /* Session-only when storage is unavailable. */ }
+  };
+  const toggleGalleryFit = () => {
+    const next = galleryFit === 'cover' ? 'contain' : 'cover';
+    setGalleryFit(next);
+    try { localStorage.setItem('bc-gallery-fit', next); } catch { /* Session-only when storage is unavailable. */ }
+  };
   if (!joined) {
     const lobbyPresence = callPresence.filter((presence) => presence.user_id !== user?.id);
+    const existingSelf = callPresence.find((presence) => presence.user_id === user?.id);
     return (
       <>
       <section className="call-lobby" aria-label="Call lobby">
@@ -759,9 +898,17 @@ export default function CallStage({
           <span className="call-lobby__eyebrow">Ready to join</span>
           <h2>{(room as (Room & { display_name?: string }) | null)?.display_name || room?.name || (user ? 'Choose a room' : 'Your call')}</h2>
           <p>{room ? 'Review who is here, then join with your selected microphone. Your camera stays off until you enable it.' : 'Select a room or direct conversation to see its call and join.'}</p>
-          <Button onClick={join} disabled={busy || Boolean(user && !room)}>
+          {existingSelf && user && room ? <div className="call-lobby__device-choice">
+            <strong aria-live="polite">You’re already in this call{existingSelf.device_count > 1 ? ` on ${existingSelf.device_count} devices` : ' on another device'}.</strong>
+            <p>Reconnect here to move the call to this device, or keep the other device connected and add this one.</p>
+            <div>
+              <Button onClick={() => join('replace')} disabled={busy}><Headphones size={18} /> {busy ? 'Connecting…' : 'Reconnect from here'}</Button>
+              <Button variant="secondary" onClick={() => join('additional')} disabled={busy}><Plus size={18} /> Connect second device</Button>
+            </div>
+            <small>Mute or deafen one device if its speakers can feed the other device’s microphone.</small>
+          </div> : <Button onClick={() => join('replace')} disabled={busy || Boolean(user && !room)}>
             <Headphones size={18} /> {busy ? 'Connecting…' : !user ? 'Sign in to join' : room ? 'Join call' : 'Select a room to join'}
-          </Button>
+          </Button>}
         </div>
         <div className="call-lobby__roster">
           <h3>In this call</h3>
@@ -775,6 +922,7 @@ export default function CallStage({
                 <span className="call-lobby__badges">
                   {presence.muted && <span><MicOff size={14} /> Muted</span>}
                   {presence.deafened && <span><Headphones size={14} /> Deafened</span>}
+                  {presence.device_count > 1 && <span>{presence.device_count} devices</span>}
                 </span>
               </li>
             ))}</ul>
@@ -796,7 +944,8 @@ export default function CallStage({
     );
   }
   return (
-    <div className="call-workspace" ref={workspace}>
+    <div className="call-workspace" ref={workspace} data-controls-visible={!fullscreen || controlsVisible} onPointerMove={pointerActivity} onKeyDown={() => revealControls()}>
+      {engine.current && <CopilotPanel copilot={engine.current.copilot} names={names} />}
       <div className="call-layout-toolbar">
               {(recording || Object.values(remoteRecording).some(Boolean)) && (
                 <span className="recording-badge">
@@ -809,27 +958,50 @@ export default function CallStage({
                         .join(', ') + ' IS RECORDING'}
                 </span>
               )}
-        <label>Camera position <select aria-label="Camera position" value={docking.dock} onChange={e => docking.setDock(e.target.value as 'top' | 'left' | 'right')}>
-          <option value="top">Top row</option><option value="left">Left side</option><option value="right">Right side</option>
-        </select></label>
-        <button onClick={docking.reset}>Reset layout</button>
+        <div className="gallery-layout-tools" role="group" aria-label="Call layout controls">
+          <label>View <select aria-label="Call layout" value={galleryLayout} onChange={e => changeGalleryLayout(e.target.value as GalleryLayout)}>
+            <option value="adaptive">Adaptive</option><option value="grid">Equal cameras</option><option value="focus">Focus camera</option><option value="all">Everyone + screens</option>
+          </select></label>
+          {!hasStageContent && <button onClick={toggleGalleryFit} aria-pressed={galleryFit === 'contain'}>{galleryFit === 'cover' ? 'Fill tiles' : 'Fit video'}</button>}
+        </div>
+        {hasStageContent && <>
+          <label>Camera position <select aria-label="Camera position" value={docking.dock} onChange={e => docking.setDock(e.target.value as 'top' | 'left' | 'right')}>
+            <option value="top">Top row</option><option value="left">Left side</option><option value="right">Right side</option>
+          </select></label>
+          {galleryLayout === 'all' && focusedStageItem && (
+            <button onClick={() => setFocusedStageKey(null)}><LayoutGrid size={15} /> Back to all media</button>
+          )}
+          {focusedStageItem && watchedScreens.length > 1 && (
+            <button onClick={() => setFocusedStageKey(null)}><LayoutGrid size={15} /> Show {watchedScreens.length} screens</button>
+          )}
+          <button onClick={docking.reset}>Reset layout</button>
+        </>}
+        <CameraOverlay cameras={[
+          ...(locals.get('camera') ? [{ id: 'self', name: 'You', track: locals.get('camera')!, speaking: speaking.has('self'), muted, deafened }] : []),
+          ...remote.filter(track => track.source === 'camera').map(track => ({ id: track.peerId, name: names[track.peerId] ?? 'Friend', track: track.track, speaking: speaking.has(track.peerId), muted: remotePresence[track.peerId]?.muted, deafened: remotePresence[track.peerId]?.deafened })),
+        ]} />
         <button onClick={() => { if (document.fullscreenElement) void document.exitFullscreen().then(onInvite); else onInvite(); }} aria-label="Invite to call"><Plus size={16} /> Invite</button>
         <button onClick={onFocus} aria-pressed={focused}>{focused ? 'Show navigation' : 'Focus call'}</button>
         <button onClick={toggleFullscreen} aria-label={fullscreen ? 'Exit fullscreen call' : 'Fullscreen call'}><Maximize2 size={16} /></button>
       </div>
-      <div ref={docking.stage} data-joined={joined} className="stage" data-dock={docking.dock} data-has-share={Boolean(share)} style={{ '--camera-size': docking.size + 'px' } as CSSProperties}>
+      <div ref={docking.stage} data-joined={joined} className="stage" data-dock={docking.dock} data-has-share={hasStageContent} data-content-count={stageItems.length} data-gallery={galleryLayout} data-camera-fit={galleryFit} data-camera-count={visibleTileCount} style={{ '--camera-size': docking.size + 'px' } as CSSProperties}>
         <div className="camera-dock">
           <button className="camera-dock-handle" aria-label="Drag cameras to dock" {...docking.moveHandlers}>⠿ Cameras · drag to dock</button>
           <div className="camera-strip">
           <div
-            className={`camera-tile self${speaking.has('self') ? ' is-speaking' : ''}`}
+            className={`camera-tile self${speaking.has('self') ? ' is-speaking' : ''}${activeFeaturedCamera === 'self' ? ' is-featured' : ''}`}
             data-speaking={speaking.has('self')}
+            style={{ '--media-aspect': cameraAspects.self ?? 16 / 9 } as CSSProperties}
           >
+            {locals.has('camera') && (cameraParticipants.length > 1 || shares.length > 0) && <button className="camera-focus-button" aria-label={hasStageContent || shares.length ? 'Put your camera on stage' : 'Focus You'} aria-pressed={focusedStageKey === 'camera:self' || (!hasStageContent && galleryLayout === 'focus' && activeFeaturedCamera === 'self')} onClick={() => {
+              if (hasStageContent || shares.length) setFocusedStageKey('camera:self');
+              else { setFeaturedCamera('self'); changeGalleryLayout('focus'); }
+            }}><Pin size={14} /></button>}
             {speaking.has('self') && (
               <span className="speaking-label">Microphone active</span>
             )}
             {locals.has('camera') ? (
-              <TrackVideo track={locals.get('camera')!} self />
+              <TrackVideo track={locals.get('camera')!} self onAspectRatio={ratio => setCameraAspects(current => current.self === ratio ? current : { ...current, self: ratio })} />
             ) : (
               <span className="inline-flex size-14 shrink-0 items-center justify-center rounded-full bg-muted text-xl font-semibold text-muted-foreground">
                 {(user?.name ?? 'You').slice(0, 2).toUpperCase()}
@@ -845,10 +1017,15 @@ export default function CallStage({
           </div>
           {Object.keys(peers).map((id) => (
             <div
-              className={`camera-tile${speaking.has(id) ? ' is-speaking' : ''}`}
+              className={`camera-tile${speaking.has(id) ? ' is-speaking' : ''}${activeFeaturedCamera === id ? ' is-featured' : ''}`}
               key={id}
               data-speaking={speaking.has(id)}
+              style={{ '--media-aspect': cameraAspects[id] ?? 16 / 9 } as CSSProperties}
             >
+              {remote.some((track) => track.peerId === id && track.source === 'camera') && (cameraParticipants.length > 1 || shares.length > 0) && <button className="camera-focus-button" aria-label={hasStageContent || shares.length ? `Put ${names[id] ?? 'Friend'} on stage` : `Focus ${names[id] ?? 'Friend'}`} aria-pressed={focusedStageKey === `camera:${id}` || (!hasStageContent && galleryLayout === 'focus' && activeFeaturedCamera === id)} onClick={() => {
+                if (hasStageContent || shares.length) setFocusedStageKey(`camera:${id}`);
+                else { setFeaturedCamera(id); changeGalleryLayout('focus'); }
+              }}><Pin size={14} /></button>}
               {speaking.has(id) && (
                 <span className="speaking-label">Speaking</span>
               )}
@@ -859,6 +1036,7 @@ export default function CallStage({
                       (t) => t.peerId === id && t.source === 'camera',
                     )!.track
                   }
+                  onAspectRatio={ratio => setCameraAspects(current => current[id] === ratio ? current : { ...current, [id]: ratio })}
                 />
               ) : (
                 <span className="inline-flex size-14 shrink-0 items-center justify-center rounded-full bg-muted text-xl font-semibold text-muted-foreground">
@@ -883,12 +1061,38 @@ export default function CallStage({
               </details>
             </div>
           ))}
+          {shares.filter(screenShare => unifiedGrid || !watchedShareIds.includes(screenShare.id)).map((screenShare) => {
+            const watching = watchedShareIds.includes(screenShare.id);
+            return (
+              <div className="camera-tile screen-share-tile" data-watching={watching} key={`screen-preview:${screenShare.id}`}>
+                {watching ? <TrackVideo track={screenShare.track} /> : <FrozenTrackPreview track={screenShare.track} name={screenShare.name} />}
+                <button className="camera-focus-button" aria-label={`Focus ${screenShare.name}`} aria-pressed={focusedStageKey === `screen:${screenShare.id}`} onClick={() => focusShare(screenShare.id)}><Pin size={14} /></button>
+                <div className="screen-share-actions">
+                  <button aria-label={`${watching ? 'Stop watching' : 'Watch'} ${screenShare.name}`} onClick={() => toggleWatchedShare(screenShare.id)}>
+                    <MonitorUp size={14} /> {watching ? 'Stop watching' : 'Watch'}
+                  </button>
+                </div>
+                <div className="tile-caption">
+                  <span>{screenShare.name}</span>
+                  {screenShare.reencoded && (
+                    <span
+                      className="screen-share-degraded"
+                      title="The direct native connection failed, so this screen is being re-encoded through the call at reduced quality."
+                    >
+                      Reduced quality
+                    </span>
+                  )}
+                  <MonitorUp size={13} />
+                </div>
+              </div>
+            );
+          })}
           </div>
         </div>
-        {share && <div className="camera-divider" role="separator" tabIndex={0} aria-label="Resize cameras" aria-orientation={docking.dock === 'top' ? 'horizontal' : 'vertical'} aria-valuemin={docking.minimum} aria-valuemax={docking.maximum} aria-valuenow={Math.round(docking.size)} {...docking.resizeHandlers} onKeyDown={docking.resizeKey} />}
+        {hasStageContent && <div className="camera-divider" role="separator" tabIndex={0} aria-label="Resize cameras" aria-orientation={docking.dock === 'top' ? 'horizontal' : 'vertical'} aria-valuemin={docking.minimum} aria-valuemax={docking.maximum} aria-valuenow={Math.round(docking.size)} {...docking.resizeHandlers} onKeyDown={docking.resizeKey} />}
         {docking.target && <div className="dock-targets" aria-hidden="true"><span data-active={docking.target === 'left'}>Left</span><span data-active={docking.target === 'top'}>Top</span><span data-active={docking.target === 'right'}>Right</span></div>}
         {remote
-          .filter((t) => t.track.kind === 'audio')
+          .filter((t) => t.track.kind === 'audio' && (t.source !== 'system' || watchedShareIds.includes(t.peerId)))
           .map((t) => (
             <RemoteAudio
               key={t.peerId + t.source + t.track.id}
@@ -909,137 +1113,61 @@ export default function CallStage({
             <Volume2 size={17} /> Enable call audio
           </Button>
         )}
-        <div className={'content-stage ' + (share ? 'has-share' : '')}>
-          <div className="stage-topline">
-            <span>
-              <MonitorUp size={15} />
-              {share ? share.name.toUpperCase() : 'YOUR SHARED SPACE'}
-
-            </span>
-            {shares.length > 1 ? (
-              <select
-                aria-label="Select shared screen"
-                value={share.id}
-                onChange={(e) => {
-                  setSelected(e.target.value);
-                  setZoom(1);
-                  setPan({ x: 0, y: 0 });
-                }}
-              >
-                {shares.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
+        <div className={'content-stage ' + (hasStageContent ? 'has-share' : '')} data-content-fit={contentFit}>
+          {hasStageContent ? (
+            <>
+              <div className="content-grid">
+                {stageItems.map(item => (
+                  <ZoomableStageItem
+                    key={item.key}
+                    copilot={engine.current?.copilot}
+                    names={names}
+                    item={item}
+                    contentFit={contentFit}
+                    canFocus={!focusedStageItem && stageItems.length > 1}
+                    onFocus={() => setFocusedStageKey(item.key)}
+                    onRemove={() => item.kind === 'screen'
+                      ? toggleWatchedShare(item.key.slice('screen:'.length))
+                      : setFocusedStageKey(null)}
+                    onToggleFit={() => {
+                      const next = contentFit === 'fit' ? 'fill' : 'fit';
+                      setContentFit(next);
+                      try { localStorage.setItem('bc-content-fit', next); } catch { /* Session-only when storage is unavailable. */ }
+                    }}
+                    onFullscreen={toggleFullscreen}
+                  />
                 ))}
-              </select>
-            ) : (
-              <span className="stage-badge">
-                {share
-                  ? receivingVideo === share.track.id ? 'Live' : 'Waiting for video'
-                  : joined
-                    ? 'You’re in good company'
-                    : 'Ready when you are'}
-              </span>
-            )}
-          </div>
-          {share ? (
-            <div
-              className="video-viewport"
-              onWheel={(e) => {
-                if (e.ctrlKey || e.metaKey) {
-                  setZoom((z) =>
-                    Math.max(1, Math.min(5, z + (e.deltaY < 0 ? 0.1 : -0.1))),
-                  );
-                }
-              }}
-              onPointerDown={pointerDown}
-              onPointerMove={(e) => {
-                if (drag.current)
-                  setPan({
-                    x: drag.current.px + e.clientX - drag.current.x,
-                    y: drag.current.py + e.clientY - drag.current.y,
-                  });
-              }}
-              onPointerUp={() => (drag.current = null)}
-              onPointerCancel={() => (drag.current = null)}
-            >
-              <div
-                className="zoom-surface"
-                style={{
-                  transform: `translate(${pan.x}px,${pan.y}px) scale(${zoom})`,
-                }}
-              >
-                <TrackVideo track={share.track} showStatus onReceiving={receiving => setReceivingVideo(receiving ? share.track.id : null)} />
               </div>
-            </div>
+              <span className="content-security"><ShieldCheck size={14} /> {connected} connected · encrypted media</span>
+            </>
           ) : (
             <div className="stage-empty">
               <div className="share-illustration">
-                <div className="illustration-window">
-                  <span />
-                  <span />
-                  <span />
-                  <div className="illustration-content">
-                    <Radio size={39} />
-                    <div />
-                    <div />
-                  </div>
-                </div>
-                <div className="floating-play">
-                  <MonitorUp size={24} />
-                </div>
+                <div className="illustration-window"><span /><span /><span /><div className="illustration-content"><Radio size={39} /><div /><div /></div></div>
+                <div className="floating-play"><MonitorUp size={24} /></div>
               </div>
               <h2>Big screen. Small circle.</h2>
-              <p>
-                Share your game, a movie night, or your next idea.
-                <br /> Everyone gets the best seat in the room.
-              </p>
-              <Button onClick={screen} variant="secondary" disabled={busy}>
-                <MonitorUp size={17} /> Share your screen
-              </Button>
+              <p>Share your game, a movie night, or your next idea.<br /> Everyone gets the best seat in the room.</p>
+              <Button onClick={screen} variant="secondary" disabled={busy}><MonitorUp size={17} /> Share your screen</Button>
             </div>
           )}
-          <div className="stage-bottomline">
-            <span>
-              <ShieldCheck size={14} />
-              {joined
-                ? `${connected} connected · encrypted media`
-                : 'Direct-first media'}
-            </span>
-            <div>
-              <button
-                aria-label="Zoom out"
-                onClick={() => setZoom((z) => Math.max(1, z - 0.25))}
-              >
-                <ZoomOut size={16} />
-              </button>
-              <button
-                onClick={() => {
-                  setZoom(1);
-                  setPan({ x: 0, y: 0 });
-                }}
-                aria-label="Reset zoom"
-              >
-                {Math.round(zoom * 100)}%
-              </button>
-              <button
-                aria-label="Zoom in"
-                onClick={() => setZoom((z) => Math.min(5, z + 0.25))}
-              >
-                <ZoomIn size={16} />
-              </button>
-              <span />
-              <button
-                aria-label="Fullscreen shared content"
-                onClick={toggleFullscreen}
-              >
-                <Maximize2 size={16} />
-              </button>
-            </div>
-          </div>
         </div>
       </div>
       <div className="call-footer">
+        {talkSettings.enabled && (
+          <span className="push-to-talk-status" role="status" title={globalMessage}>
+            {globalStatus === 'unavailable' || globalStatus === 'connecting' ? globalMessage : deafened ? 'Deafened' : manualMuted ? 'Microphone muted' : !transmitting ? `Hold ${talkBindingLabel(talkSettings.binding)} to talk${globalStatus === 'active' ? ' · Global' : ''}` : 'Push-to-talk · Transmitting'}
+          </span>
+        )}
+        {signalingDown && (
+          <span
+            className="signaling-reconnecting"
+            role="status"
+            title="The signaling server is unreachable. Calls already connected keep running peer to peer; joining, sharing and camera changes resume when it returns."
+          >
+            Reconnecting to server · call continues
+          </span>
+        )}
         <ConnectionStatus
           joined={joined}
           peerCount={Object.keys(peers).length}
@@ -1052,7 +1180,7 @@ export default function CallStage({
           <Button
             variant={muted ? 'danger' : 'secondary'}
             size="icon"
-            aria-label={deafened ? 'Microphone muted while deafened' : muted ? 'Unmute microphone' : 'Mute microphone'}
+            aria-label={deafened ? 'Microphone muted while deafened' : manualMuted ? 'Unmute microphone' : 'Mute microphone'}
             onClick={mic}
             disabled={deafened}
           >
@@ -1110,7 +1238,7 @@ export default function CallStage({
               </Button>
             </>
           ) : (
-            <Button onClick={join} disabled={busy}>
+            <Button onClick={() => join('replace')} disabled={busy}>
               <Headphones size={18} />
               {busy ? 'Connecting…' : user ? 'Join call' : 'Sign in to join'}
             </Button>
@@ -1156,7 +1284,10 @@ export default function CallStage({
                 {s.tracks.map((t, i) => (
                   <small key={i}>
                     {t.direction === 'outbound' ? 'Sending' : 'Receiving'}{' '}
-                    {t.source ?? t.mediaKind}: {(t.bitrate / 1000).toFixed(0)}{' '}
+                    {t.source ?? t.mediaKind}
+                    {t.source === 'screen' && t.screenTransport
+                      ? ` (${t.screenTransport === 'native-compatibility' ? 'native compatibility' : 'browser WebRTC'})`
+                      : ''}: {(t.bitrate / 1000).toFixed(0)}{' '}
                     kbps{' '}
                     {t.width
                       ? `· ${t.width}×${t.height} · ${t.framesPerSecond ?? '—'} FPS`
@@ -1180,20 +1311,239 @@ export default function CallStage({
     </div>
   );
 }
+
+function ZoomableStageItem({
+  copilot,
+  names,
+  item,
+  contentFit,
+  canFocus,
+  onFocus,
+  onRemove,
+  onToggleFit,
+  onFullscreen,
+}: {
+  copilot?: VisualCopilot;
+  names: Record<string, string>;
+  item: StageItem;
+  contentFit: 'fit' | 'fill';
+  canFocus: boolean;
+  onFocus(): void;
+  onRemove(): void;
+  onToggleFit(): void;
+  onFullscreen(): void;
+}) {
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
+  const [receiving, setReceiving] = useState(false);
+  const viewport = useRef<HTMLDivElement>(null);
+  const zoomRef = useRef(1);
+  const panRef = useRef({ x: 0, y: 0 });
+  const drag = useRef<{ pointerId: number; x: number; y: number; px: number; py: number } | null>(null);
+  useEffect(() => {
+    zoomRef.current = 1;
+    panRef.current = { x: 0, y: 0 };
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+    setReceiving(false);
+  }, [item.track]);
+  const commitPan = (next: { x: number; y: number }) => {
+    panRef.current = next;
+    setPan(next);
+  };
+  const constrainPan = (next: { x: number; y: number }, scale: number) => {
+    const rect = viewport.current?.getBoundingClientRect();
+    if (!rect || scale <= 1) return { x: 0, y: 0 };
+    const maxX = rect.width * (scale - 1) / 2;
+    const maxY = rect.height * (scale - 1) / 2;
+    return {
+      x: Math.max(-maxX, Math.min(maxX, next.x)),
+      y: Math.max(-maxY, Math.min(maxY, next.y)),
+    };
+  };
+  useEffect(() => {
+    const target = viewport.current;
+    if (!target || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      commitPan(constrainPan(panRef.current, zoomRef.current));
+    });
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, []);
+  const zoomAt = (requested: number, clientX?: number, clientY?: number) => {
+    const next = Math.max(.5, Math.min(5, requested));
+    const previous = zoomRef.current;
+    if (Math.abs(next - previous) < .0001) return;
+    const rect = viewport.current?.getBoundingClientRect();
+    const point = rect && clientX !== undefined && clientY !== undefined
+      ? { x: clientX - rect.left - rect.width / 2, y: clientY - rect.top - rect.height / 2 }
+      : { x: 0, y: 0 };
+    const ratio = next / previous;
+    commitPan(constrainPan({
+      x: point.x - ratio * (point.x - panRef.current.x),
+      y: point.y - ratio * (point.y - panRef.current.y),
+    }, next));
+    zoomRef.current = next;
+    setZoom(next);
+  };
+  const wheelZoom = (event: ReactWheelEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const pixels = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? rect.height : 1);
+    zoomAt(zoomRef.current * Math.exp(-pixels * .00125), event.clientX, event.clientY);
+  };
+  const pointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    if (zoomRef.current <= 1 || event.button !== 0) return;
+    drag.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, px: panRef.current.x, py: panRef.current.y };
+    setDragging(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const endDrag = (event: PointerEvent<HTMLDivElement>) => {
+    if (drag.current?.pointerId === event.pointerId) drag.current = null;
+    setDragging(false);
+  };
+  const reset = () => {
+    zoomRef.current = 1;
+    setZoom(1);
+    commitPan({ x: 0, y: 0 });
+  };
+  return (
+    <section className="stage-content-pane" data-kind={item.kind} data-dragging={dragging} aria-label={item.name}>
+      <div className="stage-topline">
+        <span>{item.kind === 'screen' ? <MonitorUp size={15} /> : <Video size={15} />}{item.name.toUpperCase()}</span>
+        <div className="stage-pane-actions">
+          {canFocus && <button aria-label={`Focus ${item.name}`} onClick={onFocus}><Pin size={14} /> Focus</button>}
+          {item.reencoded && (
+            <span
+              className="stage-badge stage-badge-degraded"
+              title="The direct native connection failed, so this screen is being re-encoded through the call at reduced quality."
+            >
+              Reduced quality
+            </span>
+          )}
+          <span className="stage-badge">{item.kind === 'camera' || receiving ? 'Live' : 'Waiting for video'}</span>
+          <button aria-label={item.kind === 'screen' ? `Stop watching ${item.name}` : `Return ${item.name} to the camera row`} onClick={onRemove}><X size={15} /></button>
+        </div>
+      </div>
+      <div
+        ref={viewport}
+        className="video-viewport"
+        data-pannable={zoom > 1}
+        onWheel={wheelZoom}
+        onPointerDown={pointerDown}
+        onPointerMove={(event) => {
+          if (!drag.current || drag.current.pointerId !== event.pointerId) return;
+          commitPan(constrainPan({ x: drag.current.px + event.clientX - drag.current.x, y: drag.current.py + event.clientY - drag.current.y }, zoomRef.current));
+        }}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+        onLostPointerCapture={endDrag}
+      >
+        <div className="zoom-surface" style={{ transform: `translate3d(${pan.x}px,${pan.y}px,0) scale(${zoom})` }}>
+          <TrackVideo track={item.track} self={item.kind === 'camera' && item.self} showStatus={item.kind === 'screen'} onReceiving={item.kind === 'screen' ? setReceiving : undefined} />
+          {copilot && item.kind === 'screen' && item.self && <CopilotLocalMarks key={item.track.id} copilot={copilot} fit={contentFit} names={names} />}
+        </div>
+        {copilot && item.kind === 'screen' && !item.self && <CopilotViewerSlot copilot={copilot} peerId={item.key.slice('screen:'.length)} track={item.track} viewport={viewport} />}
+      </div>
+      <div className="stage-bottomline">
+        <span>{zoom > 1 ? 'Drag to move · scroll to zoom' : 'Scroll or pinch to zoom'}</span>
+        <div>
+          <button aria-label={`Zoom out ${item.name}`} onClick={() => zoomAt(zoomRef.current - .1)}><ZoomOut size={16} /></button>
+          <button onClick={reset} aria-label={`Reset zoom ${item.name}`}>{Math.round(zoom * 100)}%</button>
+          <button aria-label={contentFit === 'fit' ? 'Fill available space' : 'Fit entire shared screen'} onClick={() => { onToggleFit(); reset(); }}>{contentFit === 'fit' ? 'Fit' : 'Fill'}</button>
+          <button aria-label={`Zoom in ${item.name}`} onClick={() => zoomAt(zoomRef.current + .1)}><ZoomIn size={16} /></button>
+          <span />
+          <button aria-label="Fullscreen shared content" onClick={onFullscreen}><Maximize2 size={16} /></button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FrozenTrackPreview({ track, name }: { track: MediaStreamTrack; name: string }) {
+  const video = useRef<HTMLVideoElement>(null);
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const [status, setStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading');
+
+  useEffect(() => {
+    const source = video.current;
+    const target = canvas.current;
+    if (!source || !target) return;
+    let active = true;
+    let captured = false;
+    let frameRequest: number | undefined;
+    const fallbackTimer = window.setTimeout(() => {
+      if (active && !captured) setStatus('unavailable');
+    }, 8_000);
+    const capture = () => {
+      if (!active || captured || !source.videoWidth || !source.videoHeight) return;
+      captured = true;
+      const scale = Math.min(1, 720 / source.videoWidth, 405 / source.videoHeight);
+      target.width = Math.max(1, Math.round(source.videoWidth * scale));
+      target.height = Math.max(1, Math.round(source.videoHeight * scale));
+      target.getContext('2d', { alpha: false })?.drawImage(source, 0, 0, target.width, target.height);
+      // The track keeps arriving whether or not this tile paints it, so freezing
+      // the picture must not tear the decoder down. A detached decoder needs a
+      // keyframe when watching resumes, and a native sender cannot supply one on
+      // request, which stalls the resumed view until the next scheduled IDR.
+      // Keep decoding into the offscreen element and show the still frame.
+      setStatus('ready');
+    };
+    const queueCapture = () => {
+      if (source.requestVideoFrameCallback) frameRequest = source.requestVideoFrameCallback(capture);
+      else window.setTimeout(capture, 0);
+    };
+    source.srcObject = new MediaStream([track]);
+    source.addEventListener('loadeddata', queueCapture, { once: true });
+    void source.play().catch(() => { if (active) setStatus('unavailable'); });
+    return () => {
+      active = false;
+      clearTimeout(fallbackTimer);
+      if (frameRequest !== undefined && source.cancelVideoFrameCallback) source.cancelVideoFrameCallback(frameRequest);
+      source.removeEventListener('loadeddata', queueCapture);
+      source.pause();
+      source.srcObject = null;
+    };
+  }, [track]);
+
+  return (
+    <div className="frozen-track-preview" data-preview-ready={status === 'ready'}>
+      <canvas ref={canvas} aria-label={`Preview of ${name}`} />
+      {status === 'loading' && <span>Preparing preview…</span>}
+      {status === 'unavailable' && <span>Preview unavailable</span>}
+      <video ref={video} muted playsInline aria-hidden="true" />
+    </div>
+  );
+}
+
+function createCallPeerId(): string {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = [...bytes].map(value => value.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 function TrackVideo({
   track,
   self = false,
   showStatus = false,
   onReceiving,
+  onAspectRatio,
 }: {
   track: MediaStreamTrack;
   self?: boolean;
   showStatus?: boolean;
   onReceiving?: (receiving: boolean) => void;
+  onAspectRatio?: (ratio: number) => void;
 }) {
   const ref = useRef<HTMLVideoElement>(null);
   const receivingCallback = useRef(onReceiving);
   receivingCallback.current = onReceiving;
+  const aspectCallback = useRef(onAspectRatio);
+  aspectCallback.current = onAspectRatio;
   const [videoStatus, setVideoStatus] = useState('Waiting for video frames…');
   useEffect(() => {
     const video = ref.current;
@@ -1202,6 +1552,12 @@ function TrackVideo({
     setVideoStatus('Waiting for video frames…');
     receivingCallback.current?.(false);
     video.srcObject = new MediaStream([track]);
+    const metadata = () => {
+      if (video.videoWidth && video.videoHeight)
+        aspectCallback.current?.(Math.max(.4, Math.min(2.4, video.videoWidth / video.videoHeight)));
+    };
+    video.addEventListener('loadedmetadata', metadata);
+    video.addEventListener('resize', metadata);
     void video.play().catch(() => { if (active) setVideoStatus('Video playback needs another attempt.'); });
     const started = performance.now();
     let lastFrame = 0, lastProgress = started;
@@ -1218,6 +1574,8 @@ function TrackVideo({
     return () => {
       active = false;
       clearInterval(check);
+      video.removeEventListener('loadedmetadata', metadata);
+      video.removeEventListener('resize', metadata);
       video.srcObject = null;
     };
   }, [track, showStatus]);

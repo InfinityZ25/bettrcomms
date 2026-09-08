@@ -2,9 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
+  isTauri: vi.fn(() => false),
   listen: vi.fn(async () => vi.fn()),
 }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke, isTauri: mocks.isTauri }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: mocks.listen }));
 
 import { NativeScreenTransport } from './nativeScreen';
@@ -53,6 +54,7 @@ function setup(directOnly = false) {
   const remote = vi.fn();
   const removed = vi.fn();
   const ended = vi.fn();
+  const fallback = vi.fn(async () => undefined);
   const transport = new NativeScreenTransport(
     signaling,
     [{ urls: 'stun:example.test' }],
@@ -61,8 +63,9 @@ function setup(directOnly = false) {
     remote,
     removed,
     ended,
+    fallback,
   );
-  return { transport, sent, preview, remote, removed };
+  return { transport, sent, preview, remote, removed, fallback };
 }
 
 beforeEach(() => {
@@ -72,6 +75,8 @@ beforeEach(() => {
   FakePeerConnection.stats = new Map();
   vi.stubGlobal('RTCPeerConnection', FakePeerConnection);
   mocks.invoke.mockReset();
+  mocks.isTauri.mockReset();
+  mocks.isTauri.mockReturnValue(false);
   mocks.listen.mockClear();
   mocks.invoke.mockImplementation(
     async (command: string, args: Record<string, unknown>) => {
@@ -128,6 +133,54 @@ describe('native screen signaling lifecycle', () => {
     expect(sent).toEqual([]);
     expect(mocks.invoke).toHaveBeenCalledWith('native_screen_start',
       expect.objectContaining({ h264Profile: 'main' }));
+  });
+
+  it('tries the single-encode native path for a desktop viewer before fallback', async () => {
+    vi.stubGlobal('RTCRtpReceiver', {
+      getCapabilities: () => ({ codecs: [
+        { mimeType: 'video/H264', sdpFmtpLine: 'packetization-mode=1;profile-level-id=42e01f' },
+      ] }),
+    });
+    const { transport, sent, fallback } = setup();
+    const starting = transport.start({
+      sourceId: 'window:opaque', encoder: 'h264_nvenc', width: 1920,
+      height: 1080, fps: 60, bitrateMbps: 20, cursor: true,
+      h264Profile: 'auto',
+    }, ['peer-desktop']);
+    await Promise.resolve();
+    const query = sent.find(signal => signal.type === 'signal'
+      && signal.transport === 'native-screen')!;
+    await transport.handle({
+      type: 'signal', from: 'peer-desktop', to: 'self', transport: 'native-screen',
+      captureId: query.captureId,
+      data: {
+        kind: 'native-screen-profile-reply', nonce: query.captureId,
+        profiles: ['baseline'], runtime: 'desktop',
+      },
+    });
+    await starting;
+    expect(transport.compatibilityQuality).toEqual({
+      maxVideoBitrate: 20_000_000,
+      maxFramerate: 60,
+      scaleResolutionDownBy: 1,
+    });
+    await transport.addPeer('peer-desktop');
+    expect(fallback).not.toHaveBeenCalled();
+    expect(mocks.invoke).toHaveBeenCalledWith('native_screen_peer_offer',
+      expect.objectContaining({ peerId: 'peer-desktop' }));
+  });
+
+  it('advertises whether the receiver is a desktop WebView', async () => {
+    mocks.isTauri.mockReturnValue(true);
+    const { transport, sent } = setup();
+    await transport.handle({
+      type: 'signal', from: 'peer-a', to: 'self', transport: 'native-screen',
+      captureId: 'profile-query',
+      data: { kind: 'native-screen-profile-query', nonce: 'profile-query' },
+    });
+    expect(sent.at(-1)).toMatchObject({
+      data: { kind: 'native-screen-profile-reply', runtime: 'desktop' },
+    });
   });
 
   it('rejects more peers than can be validated instead of truncating negotiation', async () => {
@@ -276,6 +329,158 @@ describe('native screen signaling lifecycle', () => {
     expect(removed).toHaveBeenCalledWith('peer-b');
   });
 
+  it('gives a slow handshake a full first-media window after connecting', async () => {
+    vi.useFakeTimers();
+    const { transport, sent } = setup();
+    await transport.handle({
+      type: 'offer', from: 'peer-b', to: 'self', transport: 'native-screen',
+      captureId: 'remote-capture', description: { type: 'offer', sdp: 'v=0\r\n' },
+    });
+    const receiver = FakePeerConnection.instances[0];
+    receiver.connectionState = 'connecting';
+    await vi.advanceTimersByTimeAsync(18_000);
+    expect(sent.filter(signal => signal.type === 'signal')).toHaveLength(0);
+    receiver.connectionState = 'connected';
+    receiver.onconnectionstatechange?.call(receiver as unknown as RTCPeerConnection, new Event('connectionstatechange'));
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(sent.filter(signal => signal.type === 'signal')).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(sent.at(-1)).toMatchObject({
+      type: 'signal', to: 'peer-b', transport: 'native-screen',
+      captureId: 'remote-capture',
+      data: { kind: 'native-screen-fallback-request', captureId: 'remote-capture' },
+    });
+    vi.useRealTimers();
+  });
+
+  it('bounds a stuck handshake and cancels deadlines when the receiver stops', async () => {
+    vi.useFakeTimers();
+    const { transport, sent } = setup();
+    const offer = {
+      type: 'offer' as const, from: 'peer-b', to: 'self', transport: 'native-screen' as const,
+      captureId: 'remote-capture', description: { type: 'offer' as const, sdp: 'v=0\r\n' },
+    };
+    await transport.handle(offer);
+    await vi.advanceTimersByTimeAsync(19_999);
+    expect(sent.filter(signal => signal.type === 'signal')).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(sent.filter(signal => signal.type === 'signal')).toHaveLength(1);
+    await transport.handle({ ...offer, captureId: 'replacement' });
+    await transport.handle({
+      type: 'signal', from: 'peer-b', to: 'self', transport: 'native-screen',
+      captureId: 'replacement', data: { kind: 'native-screen-stop' },
+    });
+    await vi.advanceTimersByTimeAsync(25_000);
+    expect(sent.filter(signal => signal.type === 'signal')).toHaveLength(1);
+    vi.useRealTimers();
+  });
+
+  it('keeps a native receiver that has begun receiving RTP', async () => {
+    vi.useFakeTimers();
+    FakePeerConnection.stats = new Map([['video', {
+      id: 'video', type: 'inbound-rtp', kind: 'video',
+      bytesReceived: 4096, framesDecoded: 2,
+    }]]);
+    const { transport, sent } = setup();
+    await transport.handle({
+      type: 'offer', from: 'peer-b', to: 'self', transport: 'native-screen',
+      captureId: 'remote-capture', description: { type: 'offer', sdp: 'v=0\r\n' },
+    });
+    await vi.advanceTimersByTimeAsync(8_000);
+    const receiver = FakePeerConnection.instances[0];
+    receiver.connectionState = 'connected';
+    receiver.onconnectionstatechange?.call(receiver as unknown as RTCPeerConnection, new Event('connectionstatechange'));
+    await vi.advanceTimersByTimeAsync(25_000);
+    expect(sent.some(signal => signal.type === 'signal'
+      && signal.transport === 'native-screen'
+      && signal.data.kind === 'native-screen-fallback-request')).toBe(false);
+    vi.useRealTimers();
+  });
+
+  it('moves a viewer whose link cannot sustain the fixed native bitrate to the compatibility route', async () => {
+    vi.useFakeTimers();
+    // Receiving, so the no-media timer never fires, but losing far more than
+    // NACK can retransmit. The native sender has no way to encode any slower.
+    let lost = 0, received = 0;
+    const advance = () => {
+      lost += 90;
+      received += 910;
+      FakePeerConnection.stats = new Map([['video', {
+        id: 'video', type: 'inbound-rtp', kind: 'video',
+        bytesReceived: received * 1200, framesDecoded: received,
+        packetsReceived: received, packetsLost: lost, totalFreezesDuration: 0,
+      }]]);
+    };
+    advance();
+    const { transport, sent } = setup();
+    await transport.handle({
+      type: 'offer', from: 'peer-b', to: 'self', transport: 'native-screen',
+      captureId: 'remote-capture', description: { type: 'offer', sdp: 'v=0\r\n' },
+    });
+    const requested = () => sent.some(signal => signal.type === 'signal'
+      && signal.transport === 'native-screen'
+      && signal.data.kind === 'native-screen-fallback-request');
+    // The first window only establishes a baseline, and one bad window is a
+    // hiccup, so neither may move a viewer off the native route.
+    for (let window = 0; window < 2; window += 1) {
+      advance();
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(requested()).toBe(false);
+    }
+    for (let window = 0; window < 3; window += 1) {
+      advance();
+      await vi.advanceTimersByTimeAsync(2_000);
+    }
+    expect(requested()).toBe(true);
+    vi.useRealTimers();
+  });
+
+  it('keeps a viewer on the native route through an isolated bad window', async () => {
+    vi.useFakeTimers();
+    let lost = 0, received = 0;
+    const advance = (lossPackets: number) => {
+      lost += lossPackets;
+      received += 1000 - lossPackets;
+      FakePeerConnection.stats = new Map([['video', {
+        id: 'video', type: 'inbound-rtp', kind: 'video',
+        bytesReceived: received * 1200, framesDecoded: received,
+        packetsReceived: received, packetsLost: lost, totalFreezesDuration: 0,
+      }]]);
+    };
+    advance(0);
+    const { transport, sent } = setup();
+    await transport.handle({
+      type: 'offer', from: 'peer-b', to: 'self', transport: 'native-screen',
+      captureId: 'remote-capture', description: { type: 'offer', sdp: 'v=0\r\n' },
+    });
+    for (const loss of [0, 90, 90, 0, 90, 90, 0]) {
+      advance(loss);
+      await vi.advanceTimersByTimeAsync(2_000);
+    }
+    expect(sent.some(signal => signal.type === 'signal'
+      && signal.transport === 'native-screen'
+      && signal.data.kind === 'native-screen-fallback-request')).toBe(false);
+    vi.useRealTimers();
+  });
+
+  it('publishes a requested compatibility fallback and removes the failed native sender peer', async () => {
+    const { transport, fallback } = setup();
+    await transport.start({
+      sourceId: 'window:opaque', encoder: 'h264_nvenc', width: 1920,
+      height: 1080, fps: 60, bitrateMbps: 20, cursor: true,
+    });
+    await transport.addPeer('peer-b');
+    await transport.handle({
+      type: 'signal', from: 'peer-b', to: 'self', transport: 'native-screen',
+      captureId: 'capture-1',
+      data: { kind: 'native-screen-fallback-request', captureId: 'capture-1' },
+    });
+    expect(fallback).toHaveBeenCalledWith('peer-b');
+    expect(mocks.invoke).toHaveBeenCalledWith('native_screen_peer_remove', {
+      sessionId: 'capture-1', peerId: 'peer-b',
+    });
+  });
+
   it('cleans up a native session that resolves after cancellation', async () => {
     let resolveStart!: (value: unknown) => void;
     mocks.invoke.mockImplementation(
@@ -307,6 +512,7 @@ describe('native screen signaling lifecycle', () => {
   });
 
   it('does not signal an outbound offer that resolves after the share stopped', async () => {
+    vi.useFakeTimers();
     let resolveOffer!: (value: RTCSessionDescriptionInit) => void;
     mocks.invoke.mockImplementation(
       (command: string, args: Record<string, unknown>) => {
@@ -325,11 +531,12 @@ describe('native screen signaling lifecycle', () => {
       height: 1080, fps: 30, bitrateMbps: 20, cursor: false,
     });
     const adding = transport.addPeer('peer-late');
-    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(1_000);
     await transport.stop();
     resolveOffer({ type: 'offer', sdp: 'stale-offer' });
     await adding;
     expect(sent.some((signal) => signal.type === 'offer' && signal.to === 'peer-late')).toBe(false);
+    vi.useRealTimers();
   });
 
   it('closes a receiver disposed while its asynchronous offer is being applied', async () => {
@@ -351,6 +558,7 @@ describe('native screen signaling lifecycle', () => {
   });
 
   it('reserves pending peers, enforces the native 7-peer limit, and preserves receivers on local stop', async () => {
+    vi.useFakeTimers();
     const { transport, removed } = setup();
     await transport.start({
       sourceId: 'window:opaque',
@@ -369,24 +577,30 @@ describe('native screen signaling lifecycle', () => {
       captureId: 'incoming',
       description: { type: 'offer', sdp: 'v=0\r\n' },
     });
-    await Promise.all([
+    const duplicate = Promise.all([
       transport.addPeer('peer-1'),
       transport.addPeer('peer-1'),
     ]);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await duplicate;
     expect(
       mocks.invoke.mock.calls.filter(
         ([command, args]) =>
           command === 'native_screen_peer_offer' && args.peerId === 'peer-1',
       ),
     ).toHaveLength(1);
-    for (let number = 2; number <= 7; number++)
-      await transport.addPeer(`peer-${number}`);
+    for (let number = 2; number <= 7; number++) {
+      const adding = transport.addPeer(`peer-${number}`);
+      await vi.advanceTimersByTimeAsync(1_000);
+      await adding;
+    }
     await expect(transport.addPeer('peer-8')).rejects.toThrow(/up to 7/);
 
     const receiver = FakePeerConnection.instances[1];
     await transport.stop();
     expect(receiver.close).not.toHaveBeenCalled();
     expect(removed).not.toHaveBeenCalledWith('viewer');
+    vi.useRealTimers();
   });
 
   it('queues receiver ICE before its offer and removes relay routes in direct-only mode', async () => {

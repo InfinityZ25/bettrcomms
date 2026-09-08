@@ -11,3 +11,4 @@ tests/screenshots/
 *.tsbuildinfo
 .local/
 server/bettercomms.exe
+apps/desktop/src-tauri/generated/

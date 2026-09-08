@@ -79,7 +79,7 @@ test('lobby and navigation show live mute and deafen presence', async ({ browser
     await ownerPage.getByRole('button', { name: 'Deafen call' }).click();
     await expect(guestPage.locator('.camera-tile:not(.self)').getByLabel('Deafened')).toBeVisible();
 
-    await guestPage.route('**/api/v1/call-presence*', (route) => route.abort());
+    await guestPage.routeWebSocket(/\/api\/v1\/events/, (socket) => socket.close());
     await guestPage.reload();
     await expect(guestPage.getByText('Call activity unavailable')).toBeVisible();
     await expect(guestPage.getByRole('region', { name: 'Call lobby' })).toContainText('Checking who’s here…');

@@ -59,6 +59,10 @@ jobs:
       - name: Require deployment-specific desktop configuration
         shell: bash
         run: test -f apps/desktop/src-tauri/tauri.release.conf.json
+      - name: Prepare bundled native sharing runtime
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: ./scripts/prepare-ffmpeg-bundle.ps1
       - name: Build desktop bundle
         run: npm --prefix apps/desktop run build -- --target ${{ matrix.target }} --config src-tauri/tauri.release.conf.json
       - uses: actions/upload-artifact@v4

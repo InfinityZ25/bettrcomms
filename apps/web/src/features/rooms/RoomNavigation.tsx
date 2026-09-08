@@ -105,6 +105,9 @@ export default function RoomNavigation({
                           </span>
                           <span className="min-w-0 flex-1 truncate">
                             {person.name || 'Participant'}
+                            {person.device_count > 1
+                              ? ` · ${person.device_count} devices`
+                              : ''}
                           </span>
                           {person.deafened ? (
                             <HeadphoneOff size={14} aria-label="Deafened" />

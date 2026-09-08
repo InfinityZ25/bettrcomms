@@ -193,10 +193,14 @@ export default function NativeScreenPicker({
   const [encoder, setEncoder] =
     useState<NativeScreenStartOptions['encoder']>('libx264');
   const [resolution, setResolution] = useState('source');
-  const [fps, setFps] = useState<30 | 60>(60);
-  const [bitrateMbps, setBitrate] = useState<8 | 10 | 12 | 16 | 20 | 40 | 80>(
-    20,
-  );
+  const [contentChoice, setContentChoice] =
+    useState<'auto' | 'motion' | 'detail'>('auto');
+  const [fpsChoice, setFpsChoice] =
+    useState<'30' | '60' | '120' | 'custom'>('60');
+  const [customFps, setCustomFps] = useState('144');
+  const [bitrateChoice, setBitrateChoice] =
+    useState<'8' | '10' | '12' | '16' | '20' | '40' | '80' | 'custom'>('20');
+  const [customBitrate, setCustomBitrate] = useState('20');
   const [h264Profile, setH264Profile] = useState<'auto' | 'baseline'>('auto');
   const [cursor, setCursor] = useState(true);
   const [displayBorder, setDisplayBorder] = useState(
@@ -287,16 +291,43 @@ export default function NativeScreenPicker({
     [sources, tab, query],
   );
   const selected = sources.find((source) => source.id === sourceId);
+  const fps = Number(fpsChoice === 'custom' ? customFps : fpsChoice);
+  const bitrateMbps = Number(
+    bitrateChoice === 'custom' ? customBitrate : bitrateChoice,
+  );
+  const qualityValid =
+    Number.isInteger(fps) &&
+    fps >= 15 &&
+    fps <= 240 &&
+    Number.isInteger(bitrateMbps) &&
+    bitrateMbps >= 1 &&
+    bitrateMbps <= 200;
   const applicationAudio = (selected?.kind ?? tab) === 'window' && audioScope === 'application';
   const audioAvailable = audioCaps?.available === true && (!applicationAudio || audioCaps.applicationAudio === true);
+  const resolutionLabel = resolution === 'source' && selected
+    ? `Match source (${selected.width}×${selected.height})`
+    : resolution === 'source'
+      ? 'Match source'
+      : resolution.toUpperCase();
+  const requestedPixels = resolution === 'source' && selected
+    ? selected.width * selected.height
+    : resolution === '720p' ? 1280 * 720
+      : resolution === '1080p' ? 1920 * 1080
+        : resolution === '1440p' ? 2560 * 1440
+          : 3840 * 2160;
   async function start(browser = false) {
     setBusy(true);
     setError('');
     try {
       if (browser) await onBrowser();
       else {
+        if (!qualityValid) {
+          throw new Error('Choose 15–240 whole FPS and 1–200 whole Mbps');
+        }
         const dimensions =
-          resolution === '1080p'
+          resolution === '720p'
+            ? [1280, 720]
+            : resolution === '1080p'
             ? [1920, 1080]
             : resolution === '1440p'
               ? [2560, 1440]
@@ -310,6 +341,9 @@ export default function NativeScreenPicker({
           height: dimensions[1],
           fps,
           bitrateMbps,
+          contentHint: contentChoice === 'auto'
+            ? selected?.category === 'game' ? 'motion' : 'detail'
+            : contentChoice,
           h264Profile,
           cursor,
           displayBorder,
@@ -499,6 +533,7 @@ export default function NativeScreenPicker({
                 onChange={(e) => setResolution(e.target.value)}
               >
                 <option value="source">Match source</option>
+                <option value="720p">720p</option>
                 <option value="1080p">1080p</option>
                 <option value="1440p">1440p</option>
                 <option value="4k">4K</option>
@@ -508,15 +543,59 @@ export default function NativeScreenPicker({
               Frame rate
               <select
                 aria-label="Frame rate"
-                value={fps}
+                value={fpsChoice}
                 disabled={busy}
-                onChange={(e) => setFps(Number(e.target.value) as 30 | 60)}
+                onChange={(event) =>
+                  setFpsChoice(event.target.value as typeof fpsChoice)
+                }
               >
                 <option value="30">30 FPS</option>
                 <option value="60">60 FPS</option>
+                <option value="120">120 FPS</option>
+                <option value="custom">Custom</option>
               </select>
+              {fpsChoice === 'custom' && (
+                <input
+                  aria-label="Custom frame rate"
+                  type="number"
+                  inputMode="numeric"
+                  min="15"
+                  max="240"
+                  step="1"
+                  value={customFps}
+                  disabled={busy}
+                  onChange={(event) => setCustomFps(event.target.value)}
+                />
+              )}
             </label>
           </div>
+          <label>
+            Content
+            <select
+              aria-label="Stream content"
+              value={contentChoice}
+              disabled={busy}
+              onChange={(event) =>
+                setContentChoice(event.target.value as typeof contentChoice)
+              }
+            >
+              <option value="auto">Automatic · detect source</option>
+              <option value="motion">Gameplay · smooth motion</option>
+              <option value="detail">Text & desktop · fine detail</option>
+            </select>
+          </label>
+          {selected && requestedPixels * fps > 1920 * 1080 * 60 && (
+            <p className="share-source-advice">
+              {resolutionLabel} at {fps} FPS exceeds 1080p60 pixel throughput.
+              Some compatibility viewers may receive fewer frames.
+            </p>
+          )}
+          {!qualityValid && (
+            <p className="share-error" role="alert">
+              Enter a whole frame rate from 15 to 240 FPS and a whole bitrate
+              from 1 to 200 Mbps.
+            </p>
+          )}
           <label className="share-cursor">
             Include cursor
             <input
@@ -576,12 +655,10 @@ export default function NativeScreenPicker({
                 Bitrate
                 <select
                   aria-label="Bitrate"
-                  value={bitrateMbps}
+                  value={bitrateChoice}
                   disabled={busy}
-                  onChange={(e) =>
-                    setBitrate(
-                      Number(e.target.value) as 8 | 10 | 12 | 16 | 20 | 40 | 80,
-                    )
+                  onChange={(event) =>
+                    setBitrateChoice(event.target.value as typeof bitrateChoice)
                   }
                 >
                   {[8, 10, 12, 16, 20, 40, 80].map((n) => (
@@ -589,7 +666,21 @@ export default function NativeScreenPicker({
                       {n} Mbps
                     </option>
                   ))}
+                  <option value="custom">Custom</option>
                 </select>
+                {bitrateChoice === 'custom' && (
+                  <input
+                    aria-label="Custom bitrate"
+                    type="number"
+                    inputMode="numeric"
+                    min="1"
+                    max="200"
+                    step="1"
+                    value={customBitrate}
+                    disabled={busy}
+                    onChange={(event) => setCustomBitrate(event.target.value)}
+                  />
+                )}
               </label>
               <label>
                 Video compatibility
@@ -611,6 +702,11 @@ export default function NativeScreenPicker({
                 Automatic selects the best H.264 profile supported by everyone
                 currently in the call. Bitrate applies to each viewer and your
                 native recording.
+              </p>
+              <p>
+                Custom range: 15–240 FPS and 1–200 Mbps. Delivered FPS can be
+                lower when the source, encoder, GPU, receiver, or network cannot
+                sustain the request.
               </p>
             </div>
           </details>
@@ -693,7 +789,9 @@ export default function NativeScreenPicker({
           </strong>
           <small>
             {selected
-              ? `${resolution === 'source' ? 'Match source' : resolution.toUpperCase()} · ${fps} FPS · ${bitrateMbps} Mbps`
+              ? qualityValid
+                ? `${resolutionLabel} · ${fps} FPS · ${bitrateMbps} Mbps`
+                : 'Finish the custom quality settings'
               : 'Choose an application or your entire screen.'}
           </small>
         </div>
@@ -702,7 +800,7 @@ export default function NativeScreenPicker({
             Cancel
           </Button>
           <Button
-            disabled={!capabilities?.available || !selected || busy}
+            disabled={!capabilities?.available || !selected || busy || !qualityValid}
             onClick={() => void start()}
           >
             <MonitorUp size={17} />

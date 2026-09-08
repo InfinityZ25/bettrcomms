@@ -11,7 +11,7 @@
       "minHeight": 640,
       "resizable": true,
       "decorations": false,
-      "additionalBrowserArgs": "--autoplay-policy=no-user-gesture-required"
+      "additionalBrowserArgs": "--autoplay-policy=no-user-gesture-required --disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows"
     }]
   }
 }

@@ -9,14 +9,15 @@ use std::{
     collections::HashMap,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
-        Arc,
+        Arc, Mutex as SyncMutex, MutexGuard,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
+use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use tokio::{
-    sync::{Mutex, OwnedSemaphorePermit, Semaphore},
+    sync::{mpsc, Mutex, OwnedSemaphorePermit, Semaphore},
     task::JoinHandle,
 };
 use webrtc::{
@@ -27,7 +28,6 @@ use webrtc::{
     },
     ice_transport::{ice_candidate::RTCIceCandidateInit, ice_server::RTCIceServer},
     interceptor::registry::Registry,
-    media::Sample,
     peer_connection::{
         configuration::RTCConfiguration, sdp::session_description::RTCSessionDescription,
         RTCPeerConnection,
@@ -39,18 +39,48 @@ use webrtc::{
             full_intra_request::FullIntraRequest, picture_loss_indication::PictureLossIndication,
         },
     },
+    rtp::{
+        codecs::h264::H264Payloader,
+        packetizer::{new_packetizer, Packetizer},
+        sequence::new_random_sequencer,
+    },
     rtp_transceiver::{
         rtp_codec::{RTCRtpCodecCapability, RTCRtpCodecParameters, RTPCodecType},
         RTCPFeedback,
     },
     stats::StatsReportType,
-    track::track_local::{track_local_static_sample::TrackLocalStaticSample, TrackLocal},
+    track::track_local::{
+        track_local_static_rtp::TrackLocalStaticRTP, TrackLocal, TrackLocalWriter,
+    },
 };
 
 const MAX_PEERS: usize = 8;
 const MAX_ACCESS_UNIT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_PARAMETER_SET_BYTES: usize = 64 * 1024;
 const ICE_GATHER_TIMEOUT: Duration = Duration::from_secs(15);
+const RTP_CLOCK_RATE: u32 = 90_000;
+/// Keeps an RTP packet plus its SRTP tag and UDP/IP headers inside a 1280-byte
+/// path MTU, which is the smallest an IPv6 route is allowed to offer.
+const RTP_MTU: usize = 1200;
+/// Bytes of transport overhead a paced RTP packet actually costs on the wire.
+const RTP_WIRE_OVERHEAD: usize = 38;
+/// Per-viewer send queue. Deep enough to absorb ordinary scheduling jitter and
+/// shallow enough that a stalled viewer cannot accumulate seconds of stale video.
+const PEER_QUEUE_FRAMES: usize = 16;
+/// Keyframes are paced above the target rate, the way libwebrtc's pacer does,
+/// so an access unit spreads over milliseconds instead of arriving as one burst.
+const PACE_HEADROOM: f64 = 2.5;
+const PACE_BURST: Duration = Duration::from_millis(5);
+/// One capture gap never advances the RTP clock by more than this.
+const MAX_FRAME_GAP_TICKS: f64 = 10.0 * RTP_CLOCK_RATE as f64;
+/// The sender's own preview connection. It never leaves the machine, so there
+/// is no path capacity to pace against and pacing would only add latency.
+const PREVIEW_PEER_ID: &str = "__preview";
+
+fn lock<T>(mutex: &SyncMutex<T>) -> MutexGuard<'_, T> {
+    // Capture state is plain data; a panicking writer must not stop the stream.
+    mutex.lock().unwrap_or_else(|error| error.into_inner())
+}
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -96,9 +126,23 @@ pub struct NativeOffer {
     pub sdp: String,
 }
 
+/// One encoded access unit, shared by reference with every viewer's queue.
+struct EncodedFrame {
+    data: Bytes,
+    /// Session-relative 90 kHz capture time, wrapping exactly like an RTP stamp.
+    rtp_time: u32,
+    keyframe: bool,
+}
+
 struct NativePeer {
     connection: Arc<RTCPeerConnection>,
     rtcp_task: JoinHandle<()>,
+    writer_task: JoinHandle<()>,
+    frames: mpsc::Sender<Arc<EncodedFrame>>,
+    /// Set when this viewer's queue overflowed, so its writer restarts cleanly
+    /// at the next keyframe instead of emitting frames with missing references.
+    resync: Arc<AtomicBool>,
+    dropped_frames: Arc<AtomicU64>,
     direct_only: bool,
     signaling: Arc<Mutex<NativePeerSignaling>>,
     _permit: OwnedSemaphorePermit,
@@ -113,14 +157,17 @@ struct NativePeerSignaling {
 pub struct NativeScreenRtcHub {
     session_id: String,
     api: Arc<API>,
-    track: Arc<TrackLocalStaticSample>,
-    peers: Mutex<HashMap<String, NativePeer>>,
+    codec: RTCRtpCodecCapability,
+    pace_bits_per_second: f64,
+    peers: SyncMutex<HashMap<String, NativePeer>>,
     peer_slots: Arc<Semaphore>,
     idr_requested: Arc<AtomicBool>,
     access_units: AtomicU64,
     keyframes: AtomicU64,
     encoded_bytes: AtomicU64,
-    parameter_sets: Mutex<ParameterSets>,
+    dropped_frames: AtomicU64,
+    parameter_sets: SyncMutex<ParameterSets>,
+    clock: SyncMutex<CaptureClock>,
     closed: AtomicBool,
 }
 
@@ -134,8 +181,18 @@ impl NativeScreenRtcHub {
         bitrate_mbps: u32,
     ) -> Result<Arc<Self>, String> {
         validate_identifier("session ID", &session_id)?;
+        if fps == 0 {
+            return Err("native screen frame rate must be positive".to_owned());
+        }
         let codec = h264_codec(profile, width, height, fps, bitrate_mbps)?;
         let mut media_engine = MediaEngine::default();
+        // Registering the interceptors first keeps their feedback registration
+        // away from this codec, so the offer advertises exactly the feedback
+        // this sender implements: NACK retransmission, PLI and FIR. Transport-wide
+        // congestion control belongs here once an estimator actually drives the
+        // encoder's bitrate; advertising it without one only invites empty reports.
+        let registry = register_default_interceptors(Registry::new(), &mut media_engine)
+            .map_err(public_error)?;
         media_engine
             .register_codec(
                 RTCRtpCodecParameters {
@@ -146,28 +203,24 @@ impl NativeScreenRtcHub {
                 RTPCodecType::Video,
             )
             .map_err(public_error)?;
-        let registry = register_default_interceptors(Registry::new(), &mut media_engine)
-            .map_err(public_error)?;
         let api = APIBuilder::new()
             .with_media_engine(media_engine)
             .with_interceptor_registry(registry)
             .build();
-        let track = Arc::new(TrackLocalStaticSample::new(
-            codec,
-            format!("native-screen-video-{session_id}"),
-            format!("native-screen-{session_id}"),
-        ));
         Ok(Arc::new(Self {
             session_id,
             api: Arc::new(api),
-            track,
-            peers: Mutex::new(HashMap::new()),
+            codec,
+            pace_bits_per_second: bitrate_mbps as f64 * 1_000_000.0 * PACE_HEADROOM,
+            peers: SyncMutex::new(HashMap::new()),
             peer_slots: Arc::new(Semaphore::new(MAX_PEERS)),
             idr_requested: Arc::new(AtomicBool::new(false)),
             access_units: AtomicU64::new(0),
             keyframes: AtomicU64::new(0),
             encoded_bytes: AtomicU64::new(0),
-            parameter_sets: Mutex::new(ParameterSets::default()),
+            dropped_frames: AtomicU64::new(0),
+            parameter_sets: SyncMutex::new(ParameterSets::default()),
+            clock: SyncMutex::new(CaptureClock::new(fps)),
             closed: AtomicBool::new(false),
         }))
     }
@@ -188,7 +241,7 @@ impl NativeScreenRtcHub {
         if self.closed.load(Ordering::Acquire) {
             return Err("native screen WebRTC hub is closed".to_owned());
         }
-        if self.peers.lock().await.contains_key(&peer_id) {
+        if lock(&self.peers).contains_key(&peer_id) {
             return Err("native screen peer already exists".to_owned());
         }
         let permit = Arc::clone(&self.peer_slots)
@@ -204,8 +257,16 @@ impl NativeScreenRtcHub {
                 .await
                 .map_err(public_error)?,
         );
+        // Each viewer gets its own track, queue and writer task. A shared track
+        // serializes every packet write across all viewers, so one congested
+        // viewer would otherwise stall the encoder pipe for everybody.
+        let track = Arc::new(TrackLocalStaticRTP::new(
+            self.codec.clone(),
+            format!("native-screen-video-{}", self.session_id),
+            format!("native-screen-{}", self.session_id),
+        ));
         let sender = match connection
-            .add_track(Arc::clone(&self.track) as Arc<dyn TrackLocal + Send + Sync>)
+            .add_track(Arc::clone(&track) as Arc<dyn TrackLocal + Send + Sync>)
             .await
         {
             Ok(sender) => sender,
@@ -256,26 +317,55 @@ impl NativeScreenRtcHub {
                 }
             }
         });
-        let mut peers = self.peers.lock().await;
-        if self.closed.load(Ordering::Acquire) || peers.contains_key(&peer_id) {
-            rtcp_task.abort();
-            let _ = connection.close().await;
-            return Err(if self.closed.load(Ordering::Relaxed) {
-                "native screen WebRTC hub is closed".to_owned()
+        let resync = Arc::new(AtomicBool::new(false));
+        let dropped_frames = Arc::new(AtomicU64::new(0));
+        let (frames, receiver) = mpsc::channel(PEER_QUEUE_FRAMES);
+        let writer_task = spawn_peer_writer(
+            track,
+            receiver,
+            Arc::clone(&resync),
+            if peer_id == PREVIEW_PEER_ID {
+                None
             } else {
-                "native screen peer already exists".to_owned()
-            });
-        }
-        peers.insert(
-            peer_id.clone(),
-            NativePeer {
-                connection,
-                rtcp_task,
-                direct_only,
-                signaling: Arc::new(Mutex::new(NativePeerSignaling::default())),
-                _permit: permit,
+                Some(self.pace_bits_per_second)
             },
         );
+        // Scope the synchronous peer lock so it is never held across an await.
+        let rejection = {
+            let mut peers = lock(&self.peers);
+            let rejection = if self.closed.load(Ordering::Acquire) {
+                Some("native screen WebRTC hub is closed".to_owned())
+            } else if peers.contains_key(&peer_id) {
+                Some("native screen peer already exists".to_owned())
+            } else {
+                None
+            };
+            if let Some(rejection) = rejection {
+                rtcp_task.abort();
+                writer_task.abort();
+                Some(rejection)
+            } else {
+                peers.insert(
+                    peer_id.clone(),
+                    NativePeer {
+                        connection: Arc::clone(&connection),
+                        rtcp_task,
+                        writer_task,
+                        frames,
+                        resync,
+                        dropped_frames,
+                        direct_only,
+                        signaling: Arc::new(Mutex::new(NativePeerSignaling::default())),
+                        _permit: permit,
+                    },
+                );
+                None
+            }
+        };
+        if let Some(rejection) = rejection {
+            let _ = connection.close().await;
+            return Err(rejection);
+        }
         Ok(NativeOffer { peer_id, sdp })
     }
 
@@ -325,59 +415,61 @@ impl NativeScreenRtcHub {
     }
 
     pub async fn remove_peer(&self, peer_id: &str) -> Result<(), String> {
-        let peer = self
-            .peers
-            .lock()
-            .await
+        let peer = lock(&self.peers)
             .remove(peer_id)
             .ok_or_else(|| "native screen peer was not found".to_owned())?;
         peer.rtcp_task.abort();
+        peer.writer_task.abort();
         peer.connection.close().await.map_err(public_error)
     }
 
     pub async fn close(&self) {
         self.closed.store(true, Ordering::Release);
         self.peer_slots.close();
-        let peers = std::mem::take(&mut *self.peers.lock().await);
+        let peers = std::mem::take(&mut *lock(&self.peers));
         for (_, peer) in peers {
             peer.rtcp_task.abort();
+            peer.writer_task.abort();
             let _ = peer.connection.close().await;
         }
     }
 
-    /// Sends one complete Annex-B H.264 access unit to every bound peer.
-    pub async fn write_access_unit(
-        &self,
-        annex_b: Vec<u8>,
-        duration: Duration,
-    ) -> Result<(), String> {
+    /// Queues one complete Annex-B H.264 access unit for every bound peer.
+    ///
+    /// This runs on the encoder's output thread and never awaits the network:
+    /// each viewer owns a bounded queue drained by its own paced writer task.
+    /// `arrived_at` is when the encoder finished the access unit; the RTP clock
+    /// is derived from it rather than from a nominal frame interval.
+    pub fn write_access_unit(&self, annex_b: Vec<u8>, arrived_at: Instant) -> Result<(), String> {
         if annex_b.is_empty() || annex_b.len() > MAX_ACCESS_UNIT_BYTES {
             return Err("native screen H.264 access unit has an invalid size".to_owned());
-        }
-        if duration.is_zero() || duration > Duration::from_secs(1) {
-            return Err("native screen H.264 access unit has an invalid duration".to_owned());
         }
         if !has_annex_b_start_code(&annex_b) {
             return Err("native screen H.264 access unit is not Annex-B".to_owned());
         }
-        let annex_b = {
-            let mut parameter_sets = self.parameter_sets.lock().await;
-            prepare_access_unit(annex_b, &mut parameter_sets)?
-        };
+        let annex_b = prepare_access_unit(annex_b, &mut lock(&self.parameter_sets))?;
+        let keyframe = annex_b_has_idr(&annex_b);
         self.access_units.fetch_add(1, Ordering::Relaxed);
         self.encoded_bytes
             .fetch_add(annex_b.len() as u64, Ordering::Relaxed);
-        if annex_b_has_idr(&annex_b) {
+        if keyframe {
             self.keyframes.fetch_add(1, Ordering::Relaxed);
         }
-        self.track
-            .write_sample(&Sample {
-                data: annex_b.into(),
-                duration,
-                ..Default::default()
-            })
-            .await
-            .map_err(public_error)
+        let frame = Arc::new(EncodedFrame {
+            data: Bytes::from(annex_b),
+            rtp_time: lock(&self.clock).advance(arrived_at),
+            keyframe,
+        });
+        for peer in lock(&self.peers).values() {
+            if peer.frames.try_send(Arc::clone(&frame)).is_err() {
+                // This viewer cannot keep up. Drop its frame rather than block
+                // the encoder, and make its writer resume at the next keyframe.
+                peer.resync.store(true, Ordering::Release);
+                peer.dropped_frames.fetch_add(1, Ordering::Relaxed);
+                self.dropped_frames.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+        Ok(())
     }
 
     /// Returns and clears the coalesced PLI/FIR request. The encoder should force
@@ -386,20 +478,36 @@ impl NativeScreenRtcHub {
         self.idr_requested.swap(false, Ordering::AcqRel)
     }
 
-    pub async fn peer_count(&self) -> usize {
-        self.peers.lock().await.len()
+    pub fn peer_count(&self) -> usize {
+        lock(&self.peers).len()
     }
 
     pub async fn diagnostics(&self) -> NativeRtcDiagnostics {
-        let parameter_sets = self.parameter_sets.lock().await;
-        let sps = parameter_sets.sps_descriptor();
-        drop(parameter_sets);
-        let peers = self.peers.lock().await;
-        let mut ordered = peers.iter().collect::<Vec<_>>();
-        ordered.sort_by_key(|(peer_id, _)| *peer_id);
+        let sps = lock(&self.parameter_sets).sps_descriptor();
+        // Snapshot before awaiting: the peer map is a synchronous lock so the
+        // encoder thread can enqueue frames without waiting on the async runtime.
+        let mut ordered = {
+            let peers = lock(&self.peers);
+            let mut rows = peers
+                .iter()
+                .map(|(peer_id, peer)| {
+                    (
+                        peer_id.clone(),
+                        Arc::clone(&peer.connection),
+                        peer.direct_only,
+                        Arc::clone(&peer.signaling),
+                        peer.dropped_frames.load(Ordering::Relaxed),
+                    )
+                })
+                .collect::<Vec<_>>();
+            rows.sort_by(|left, right| left.0.cmp(&right.0));
+            rows
+        };
         let mut peer_diagnostics = Vec::with_capacity(ordered.len());
-        for (index, (peer_id, peer)) in ordered.into_iter().enumerate() {
-            let reports = peer.connection.get_stats().await;
+        for (index, (peer_id, connection, direct_only, signaling, dropped_frames)) in
+            ordered.drain(..).enumerate()
+        {
+            let reports = connection.get_stats().await;
             let mut packets_sent = 0;
             let mut bytes_sent = 0;
             let mut nack_count = 0;
@@ -425,16 +533,17 @@ impl NativeScreenRtcHub {
                     _ => {}
                 }
             }
-            let signaling = peer.signaling.lock().await;
+            let signaling = signaling.lock().await;
             peer_diagnostics.push(NativePeerDiagnostics {
                 slot: (index + 1) as u8,
-                preview: peer_id.as_str() == "__preview",
-                connection_state: peer.connection.connection_state().to_string(),
-                ice_connection_state: peer.connection.ice_connection_state().to_string(),
-                signaling_state: peer.connection.signaling_state().to_string(),
+                preview: peer_id.as_str() == PREVIEW_PEER_ID,
+                connection_state: connection.connection_state().to_string(),
+                ice_connection_state: connection.ice_connection_state().to_string(),
+                signaling_state: connection.signaling_state().to_string(),
                 answer_applied: signaling.answered,
                 pending_candidates: signaling.pending_candidates.len(),
-                direct_only: peer.direct_only,
+                direct_only,
+                dropped_frames,
                 packets_sent,
                 bytes_sent,
                 packets_received,
@@ -449,6 +558,8 @@ impl NativeScreenRtcHub {
             access_units: self.access_units.load(Ordering::Relaxed),
             keyframes: self.keyframes.load(Ordering::Relaxed),
             encoded_bytes: self.encoded_bytes.load(Ordering::Relaxed),
+            dropped_frames: self.dropped_frames.load(Ordering::Relaxed),
+            pace_bits_per_second: self.pace_bits_per_second as u64,
             sps_profile_idc: sps.map(|value| format!("{:02x}", value[0])),
             sps_constraint_flags: sps.map(|value| format!("{:02x}", value[1])),
             sps_level_idc: sps.map(|value| format!("{:02x}", value[2])),
@@ -467,9 +578,7 @@ impl NativeScreenRtcHub {
         ),
         String,
     > {
-        self.peers
-            .lock()
-            .await
+        lock(&self.peers)
             .get(peer_id)
             .map(|peer| {
                 (
@@ -488,6 +597,10 @@ pub struct NativeRtcDiagnostics {
     pub access_units: u64,
     pub keyframes: u64,
     pub encoded_bytes: u64,
+    /// Frames dropped because a viewer's own queue overflowed. Non-zero here
+    /// means a specific viewer could not keep up, not that capture stalled.
+    pub dropped_frames: u64,
+    pub pace_bits_per_second: u64,
     pub sps_profile_idc: Option<String>,
     pub sps_constraint_flags: Option<String>,
     pub sps_level_idc: Option<String>,
@@ -523,6 +636,7 @@ pub struct NativePeerDiagnostics {
     answer_applied: bool,
     pending_candidates: usize,
     direct_only: bool,
+    dropped_frames: u64,
     packets_sent: u64,
     bytes_sent: u64,
     packets_received: u64,
@@ -531,6 +645,152 @@ pub struct NativePeerDiagnostics {
     pli_count: u64,
     fir_count: u64,
     round_trip_time_ms: Option<f64>,
+}
+
+/// Turns encoder output instants into RTP timestamps.
+///
+/// FFmpeg emits constant-rate frames and several can land in one pipe read, so
+/// spacing follows the nominal interval. When capture genuinely falls behind,
+/// the clock resynchronizes to the arrival instant instead of drifting away
+/// from wall time the way a fixed `1/fps` step per access unit does.
+struct CaptureClock {
+    frame_interval: Duration,
+    /// The nominal interval in exact 90 kHz ticks. Stepping the grid by this
+    /// rather than by a nanosecond-truncated `Duration` keeps the common case
+    /// free of the rounding error a per-frame conversion would accumulate.
+    frame_ticks: f64,
+    resync_after: Duration,
+    cursor: Option<Instant>,
+    ticks: f64,
+}
+
+impl CaptureClock {
+    fn new(fps: u32) -> Self {
+        let fps = fps.max(1);
+        let frame_interval = Duration::from_secs_f64(1.0 / fps as f64);
+        Self {
+            frame_interval,
+            frame_ticks: RTP_CLOCK_RATE as f64 / fps as f64,
+            resync_after: (frame_interval * 3).max(Duration::from_millis(25)),
+            cursor: None,
+            ticks: 0.0,
+        }
+    }
+
+    fn advance(&mut self, arrived_at: Instant) -> u32 {
+        if let Some(cursor) = self.cursor {
+            let nominal = cursor + self.frame_interval;
+            if arrived_at > nominal + self.resync_after {
+                let elapsed = arrived_at.saturating_duration_since(cursor).as_secs_f64();
+                self.ticks += (elapsed * RTP_CLOCK_RATE as f64).min(MAX_FRAME_GAP_TICKS);
+                self.cursor = Some(arrived_at);
+            } else {
+                self.ticks += self.frame_ticks;
+                self.cursor = Some(nominal);
+            }
+        } else {
+            self.cursor = Some(arrived_at);
+        }
+        self.ticks as u64 as u32
+    }
+}
+
+/// Leaky bucket that spreads a large access unit over time instead of emitting
+/// a two-second keyframe as one burst that shallow path buffers simply drop.
+struct Pacer {
+    rate_bits_per_second: f64,
+    burst_bits: f64,
+    tokens: f64,
+    last: Instant,
+}
+
+impl Pacer {
+    fn new(rate_bits_per_second: f64) -> Self {
+        let rate_bits_per_second = rate_bits_per_second.max(1_000.0);
+        // The bucket must hold at least a few whole packets or a single packet
+        // could never be affordable and the writer would spin.
+        let burst_bits = (rate_bits_per_second * PACE_BURST.as_secs_f64())
+            .max(4.0 * (RTP_MTU + RTP_WIRE_OVERHEAD) as f64 * 8.0);
+        Self {
+            rate_bits_per_second,
+            burst_bits,
+            tokens: burst_bits,
+            last: Instant::now(),
+        }
+    }
+
+    async fn consume(&mut self, bits: f64) {
+        let bits = bits.min(self.burst_bits);
+        loop {
+            let now = Instant::now();
+            let refill =
+                now.saturating_duration_since(self.last).as_secs_f64() * self.rate_bits_per_second;
+            self.tokens = (self.tokens + refill).min(self.burst_bits);
+            self.last = now;
+            if self.tokens >= bits {
+                self.tokens -= bits;
+                return;
+            }
+            tokio::time::sleep(Duration::from_secs_f64(
+                (bits - self.tokens) / self.rate_bits_per_second,
+            ))
+            .await;
+        }
+    }
+}
+
+/// Drains one viewer's queue, packetizing and pacing onto that viewer's track.
+fn spawn_peer_writer(
+    track: Arc<TrackLocalStaticRTP>,
+    mut frames: mpsc::Receiver<Arc<EncodedFrame>>,
+    resync: Arc<AtomicBool>,
+    pace_bits_per_second: Option<f64>,
+) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        // The payload type and SSRC here are placeholders: the track rewrites
+        // both per binding when the packet is actually sent.
+        let mut packetizer = new_packetizer(
+            RTP_MTU,
+            0,
+            0,
+            Box::new(H264Payloader::default()),
+            Box::new(new_random_sequencer()),
+            RTP_CLOCK_RATE,
+        );
+        let mut pacer = pace_bits_per_second.map(Pacer::new);
+        let mut previous: Option<u32> = None;
+        // A viewer must start on a keyframe. Mid-GOP frames only feed the
+        // decoder broken references while consuming that viewer's downlink.
+        let mut awaiting_keyframe = true;
+        while let Some(frame) = frames.recv().await {
+            // Advance the packetizer's clock for every frame this writer saw,
+            // including skipped ones, so timestamps stay tied to capture time.
+            let delta = previous.map_or(0, |previous| frame.rtp_time.wrapping_sub(previous));
+            previous = Some(frame.rtp_time);
+            packetizer.skip_samples(delta);
+            if resync.swap(false, Ordering::AcqRel) {
+                awaiting_keyframe = true;
+            }
+            if awaiting_keyframe && !frame.keyframe {
+                continue;
+            }
+            awaiting_keyframe = false;
+            let Ok(packets) = packetizer.packetize(&frame.data, 0) else {
+                awaiting_keyframe = true;
+                continue;
+            };
+            for packet in &packets {
+                if let Some(pacer) = pacer.as_mut() {
+                    pacer
+                        .consume((packet.payload.len() + RTP_WIRE_OVERHEAD) as f64 * 8.0)
+                        .await;
+                }
+                // A closed or unbound track is an ordinary teardown race; the
+                // task ends when the hub drops this viewer's queue sender.
+                let _ = track.write_rtp(packet).await;
+            }
+        }
+    })
 }
 
 impl From<NativeIceCandidate> for RTCIceCandidateInit {
@@ -936,6 +1196,15 @@ mod tests {
         assert!(high_4k.sdp_fmtp_line.contains("profile-level-id=640034"));
         let main_1080 = h264_codec(NativeH264Profile::Main, 1920, 1080, 60, 20).unwrap();
         assert!(main_1080.sdp_fmtp_line.contains("profile-level-id=4d002a"));
+        let high_720_240 = h264_codec(NativeH264Profile::High, 1280, 720, 240, 20).unwrap();
+        assert!(high_720_240
+            .sdp_fmtp_line
+            .contains("profile-level-id=640033"));
+        let high_1080_120 = h264_codec(NativeH264Profile::High, 1920, 1080, 120, 20).unwrap();
+        assert!(high_1080_120
+            .sdp_fmtp_line
+            .contains("profile-level-id=640033"));
+        assert!(h264_codec(NativeH264Profile::High, 2560, 1440, 240, 20).is_err());
     }
 
     #[test]
@@ -949,6 +1218,7 @@ mod tests {
             answer_applied: true,
             pending_candidates: 0,
             direct_only: false,
+            dropped_frames: 0,
             packets_sent: 12,
             bytes_sent: 3_456,
             packets_received: 11,
@@ -964,6 +1234,300 @@ mod tests {
         for sensitive in ["peerId", "sdp", "candidate", "address", "url", "credential"] {
             assert!(json.get(sensitive).is_none());
         }
+    }
+
+    fn keyframe_unit() -> Vec<u8> {
+        vec![
+            0, 0, 0, 1, 0x67, 0x42, 0xe0, 0x1f, 0xaa, 0, 0, 1, 0x68, 0xbb, 0, 0, 1, 0x65, 0xcc,
+        ]
+    }
+
+    fn delta_unit() -> Vec<u8> {
+        vec![0, 0, 0, 1, 0x41, 0x11, 0x22]
+    }
+
+    #[test]
+    fn capture_clock_holds_the_nominal_grid_and_resynchronizes_after_a_stall() {
+        let mut clock = CaptureClock::new(120);
+        let start = Instant::now();
+        assert_eq!(clock.advance(start), 0);
+        // Several access units routinely arrive in one pipe read. Their spacing
+        // must stay on the encoder's grid rather than collapsing to zero.
+        let burst = start + Duration::from_millis(9);
+        let first = clock.advance(burst);
+        let second = clock.advance(burst);
+        let third = clock.advance(burst);
+        assert_eq!(first, 750);
+        assert_eq!(second, 1_500);
+        assert_eq!(third, 2_250);
+        // A genuine stall must move the clock by the real elapsed time so the
+        // receiver's playout does not drift permanently behind wall time.
+        let stalled = clock.advance(burst + Duration::from_millis(500));
+        assert!(
+            (44_000..=46_000).contains(&stalled),
+            "a 500 ms stall should advance about 45000 ticks, got {stalled}"
+        );
+    }
+
+    #[test]
+    fn capture_clock_never_lets_one_gap_run_away() {
+        let mut clock = CaptureClock::new(60);
+        let start = Instant::now();
+        clock.advance(start);
+        let ticks = clock.advance(start + Duration::from_secs(600));
+        assert_eq!(u64::from(ticks), MAX_FRAME_GAP_TICKS as u64);
+    }
+
+    #[test]
+    fn pacer_spreads_a_burst_without_stalling_on_a_single_packet() {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime")
+            .block_on(async {
+                let mut pacer = Pacer::new(20_000_000.0 * PACE_HEADROOM);
+                let packet_bits = (RTP_MTU + RTP_WIRE_OVERHEAD) as f64 * 8.0;
+                // A 2 Mbit keyframe is about 200 packets at this MTU. Draining it
+                // must take real time, and must still finish promptly.
+                let started = Instant::now();
+                for _ in 0..200 {
+                    pacer.consume(packet_bits).await;
+                }
+                let elapsed = started.elapsed();
+                assert!(
+                    elapsed >= Duration::from_millis(10),
+                    "pacing must spread the burst, took {elapsed:?}"
+                );
+                assert!(
+                    elapsed < Duration::from_millis(400),
+                    "pacing must not throttle below the target rate, took {elapsed:?}"
+                );
+                // A packet larger than the whole bucket must still be sent.
+                pacer.consume(pacer.burst_bits * 4.0).await;
+            });
+    }
+
+    #[test]
+    fn a_stalled_viewer_drops_its_own_frames_instead_of_blocking_capture() -> Result<(), String> {
+        // A current-thread runtime keeps the viewer's writer task parked for the
+        // whole burst, which is exactly the "viewer cannot keep up" case.
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|error| error.to_string())?
+            .block_on(async {
+                let hub = NativeScreenRtcHub::new(
+                    "stalled-viewer".to_owned(),
+                    NativeH264Profile::Baseline,
+                    1920,
+                    1080,
+                    120,
+                    20,
+                )?;
+                hub.create_peer("viewer".to_owned(), vec![], true).await?;
+                let started = Instant::now();
+                let burst = PEER_QUEUE_FRAMES * 4;
+                for index in 0..burst {
+                    let unit = if index == 0 {
+                        keyframe_unit()
+                    } else {
+                        delta_unit()
+                    };
+                    // Never awaits, so the writer task cannot drain in between.
+                    hub.write_access_unit(unit, Instant::now())?;
+                }
+                let elapsed = started.elapsed();
+                assert!(
+                    elapsed < Duration::from_millis(250),
+                    "capture must never wait on a viewer, took {elapsed:?}"
+                );
+                let diagnostics = hub.diagnostics().await;
+                assert_eq!(diagnostics.access_units, burst as u64);
+                assert_eq!(diagnostics.keyframes, 1);
+                assert!(
+                    diagnostics.dropped_frames >= (burst - PEER_QUEUE_FRAMES - 1) as u64,
+                    "an overflowing viewer must drop its own frames, dropped {}",
+                    diagnostics.dropped_frames
+                );
+                assert_eq!(
+                    diagnostics.peers.first().map(|peer| peer.dropped_frames),
+                    Some(diagnostics.dropped_frames),
+                    "drops must be attributed to the viewer that could not keep up"
+                );
+                hub.close().await;
+                Ok(())
+            })
+    }
+
+    /// The sender packetizes H.264 itself instead of using `write_sample`, so a
+    /// real peer must reassemble exactly what capture produced, including a
+    /// fragmented keyframe, and must see the capture clock on the wire.
+    #[test]
+    fn packetized_frames_reassemble_on_a_real_peer_with_capture_timestamps() -> Result<(), String> {
+        use webrtc::rtp::{codecs::h264::H264Packet, packetizer::Depacketizer};
+
+        let annex_b = |kind: u8, body: &[u8]| {
+            let mut unit = vec![0, 0, 0, 1, kind];
+            unit.extend_from_slice(body);
+            unit
+        };
+        // Never zero, so no payload byte sequence can imitate a start code.
+        let filler = |len: usize| (0..len).map(|i| (i % 251 + 1) as u8).collect::<Vec<_>>();
+        let sps = annex_b(0x67, &[0x42, 0xe0, 0x1f, 0xaa, 0xbb]);
+        let pps = annex_b(0x68, &[0xce, 0x3c, 0x80]);
+        // Comfortably past the MTU, so this keyframe must travel as FU-A.
+        let idr = annex_b(0x65, &filler(3_000));
+        let delta = annex_b(0x41, &filler(500));
+        let mut keyframe = annex_b(0x09, &[0x10]);
+        keyframe.extend_from_slice(&sps);
+        keyframe.extend_from_slice(&pps);
+        keyframe.extend_from_slice(&idr);
+        let mut delta_unit = annex_b(0x09, &[0x30]);
+        delta_unit.extend_from_slice(&delta);
+        // Access unit delimiters are not carried in RTP; everything else is.
+        let mut expected = sps.clone();
+        expected.extend_from_slice(&pps);
+        expected.extend_from_slice(&idr);
+        for _ in 0..3 {
+            expected.extend_from_slice(&delta);
+        }
+
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .map_err(|error| error.to_string())?
+            .block_on(async {
+                let hub = NativeScreenRtcHub::new(
+                    "loopback".to_owned(),
+                    NativeH264Profile::Baseline,
+                    1920,
+                    1080,
+                    120,
+                    20,
+                )?;
+
+                let mut media_engine = MediaEngine::default();
+                let registry = register_default_interceptors(Registry::new(), &mut media_engine)
+                    .map_err(public_error)?;
+                media_engine
+                    .register_codec(
+                        RTCRtpCodecParameters {
+                            capability: h264_codec(NativeH264Profile::Baseline, 1920, 1080, 120, 20)?,
+                            payload_type: 125,
+                            ..Default::default()
+                        },
+                        RTPCodecType::Video,
+                    )
+                    .map_err(public_error)?;
+                let receiver = Arc::new(
+                    APIBuilder::new()
+                        .with_media_engine(media_engine)
+                        .with_interceptor_registry(registry)
+                        .build()
+                        .new_peer_connection(RTCConfiguration::default())
+                        .await
+                        .map_err(public_error)?,
+                );
+                let (received, mut packets) = mpsc::unbounded_channel();
+                receiver.on_track(Box::new(move |track, _, _| {
+                    let received = received.clone();
+                    Box::pin(async move {
+                        tokio::spawn(async move {
+                            while let Ok((packet, _)) = track.read_rtp().await {
+                                if received
+                                    .send((packet.header.timestamp, packet.payload))
+                                    .is_err()
+                                {
+                                    return;
+                                }
+                            }
+                        });
+                    })
+                }));
+
+                let offer = hub.create_peer("acceptance".to_owned(), vec![], true).await?;
+                receiver
+                    .set_remote_description(
+                        RTCSessionDescription::offer(offer.sdp).map_err(public_error)?,
+                    )
+                    .await
+                    .map_err(public_error)?;
+                let answer = receiver.create_answer(None).await.map_err(public_error)?;
+                let mut gathering = receiver.gathering_complete_promise().await;
+                receiver
+                    .set_local_description(answer)
+                    .await
+                    .map_err(public_error)?;
+                tokio::time::timeout(Duration::from_secs(10), gathering.recv())
+                    .await
+                    .map_err(|_| "receiver ICE gathering timed out".to_owned())?;
+                // Both descriptions already carry their gathered host candidates.
+                let answer = receiver
+                    .local_description()
+                    .await
+                    .ok_or("receiver produced no answer")?;
+                hub.set_answer("acceptance", answer.sdp).await?;
+
+                let connected = tokio::time::timeout(Duration::from_secs(20), async {
+                    while receiver.connection_state()
+                        != webrtc::peer_connection::peer_connection_state::RTCPeerConnectionState::Connected
+                    {
+                        tokio::time::sleep(Duration::from_millis(20)).await;
+                    }
+                })
+                .await;
+                if connected.is_err() {
+                    hub.close().await;
+                    let _ = receiver.close().await;
+                    return Err("loopback peer never connected".to_owned());
+                }
+
+                hub.write_access_unit(keyframe.clone(), Instant::now())?;
+                for _ in 0..3 {
+                    hub.write_access_unit(delta_unit.clone(), Instant::now())?;
+                }
+
+                let mut depacketizer = H264Packet::default();
+                let mut assembled = Vec::new();
+                let mut timestamps = Vec::new();
+                let collected = tokio::time::timeout(Duration::from_secs(10), async {
+                    while assembled.len() < expected.len() {
+                        let Some((timestamp, payload)) = packets.recv().await else {
+                            return;
+                        };
+                        if timestamps.last() != Some(&timestamp) {
+                            timestamps.push(timestamp);
+                        }
+                        if let Ok(unit) = depacketizer.depacketize(&payload) {
+                            assembled.extend_from_slice(&unit);
+                        }
+                    }
+                })
+                .await;
+                hub.close().await;
+                let _ = receiver.close().await;
+                collected.map_err(|_| {
+                    format!(
+                        "receiver reassembled {} of {} bytes",
+                        assembled.len(),
+                        expected.len()
+                    )
+                })?;
+
+                assert_eq!(
+                    assembled, expected,
+                    "every NAL unit must survive packetization byte for byte"
+                );
+                assert_eq!(timestamps.len(), 4, "one RTP timestamp per access unit");
+                for pair in timestamps.windows(2) {
+                    assert_eq!(
+                        pair[1].wrapping_sub(pair[0]),
+                        750,
+                        "120 FPS must place frames 750 ticks apart on the wire"
+                    );
+                }
+                Ok(())
+            })
     }
 
     #[test]
@@ -1040,20 +1604,20 @@ mod tests {
 
                 hub.add_candidate("receiver", candidate).await?;
                 {
-                    let peers = hub.peers.lock().await;
-                    let signaling = peers["receiver"].signaling.lock().await;
+                    let signaling = Arc::clone(&lock(&hub.peers)["receiver"].signaling);
+                    let signaling = signaling.lock().await;
                     assert!(!signaling.answered);
                     assert_eq!(signaling.pending_candidates.len(), 1);
                 }
                 hub.set_answer("receiver", answer.sdp).await?;
                 {
-                    let peers = hub.peers.lock().await;
-                    let signaling = peers["receiver"].signaling.lock().await;
+                    let signaling = Arc::clone(&lock(&hub.peers)["receiver"].signaling);
+                    let signaling = signaling.lock().await;
                     assert!(signaling.answered);
                     assert!(signaling.pending_candidates.is_empty());
                 }
                 hub.remove_peer("receiver").await?;
-                assert_eq!(hub.peer_count().await, 0);
+                assert_eq!(hub.peer_count(), 0);
                 assert!(hub.remove_peer("receiver").await.is_err());
                 receiver.close().await.map_err(public_error)?;
 

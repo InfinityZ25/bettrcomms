@@ -1,5 +1,136 @@
 # BetterComms preview release notes
 
+## 0.1.15 — source resolution and stream startup fixes
+
+Match source now preserves a 1080p capture at 1080p instead of enlarging it to
+4K. All native resolution presets act as ceilings without upscaling smaller
+sources. Install the new desktop build to receive this native fix.
+
+Native screen receivers allow up to 20 seconds for connection establishment,
+then five seconds for initial video, avoiding premature compatibility fallback
+during setup. The underlying zero-RTP field failure still needs cross-network
+acceptance; full-quality delivery is not guaranteed by this release.
+
+Validation: production frontend build, 125 frontend unit tests, 68 native tests
+(11 opt-in tests skipped), and 11 screen-sharing browser tests passed.
+
+## 0.1.14 — configurable visual copilot and resilient calls
+
+Viewers can send quick signals on a shared video or freeze their own view and send a marked JPEG of that frame. The stream keeps running. Both clients opt in through Settings, and the sharer grants signals and captures separately to each device for the current share. Stopping/replacing the share, disabling reception, leaving or pausing revokes permission and clears indications. Settings include sizes, durations, corners, animation and optional foreground shortcuts with push-to-talk conflict checks.
+
+Indications use a bounded, versioned WebRTC data channel, independently of microphone, camera, screen and system-audio tracks. Marked images stay in endpoint memory. The current Windows native host can display click-through, capture-excluded signals and cards over the captured source, with geometry validation and a 1.2-second renderer lease. Application signals hide when another window is in front; source resizing requires a sharing restart. Browser and non-Windows clients retain in-app presentation. See [visual copilot use and limits](VISUAL_COPILOT.md).
+
+Established peer-to-peer calls now survive a signaling-server restart. The client reconnects with bounded backoff while retaining its media and peer connections, re-announces presence after signaling returns, and distinguishes that recovery from deliberate membership, session, room, or device replacement closures. A resumed socket for the same user and device no longer makes other participants tear down and rebuild that peer.
+
+## Unreleased — native compatibility quality
+
+Fixed Match source enlarging a 1080p capture to 4K. The native dimension fitter
+now caps its scale at 1, so Match source preserves the source size (rounded
+down to even encoder dimensions), and higher resolution presets never upscale
+a smaller source. Oversized sources still shrink within the 4K safety ceiling.
+This change requires a rebuilt desktop app; a hosted frontend reload alone
+does not update the native capture code.
+
+Native screen startup now allows up to 20 seconds for the dedicated connection
+to establish, followed by five seconds for its first video packets. Previously
+the five-second video deadline included ICE and DTLS setup and could move a
+still-connecting viewer permanently onto the re-encoded compatibility path.
+An explicit connection failure still triggers recovery immediately. This fixes
+premature fallback; it does not establish that the zero-RTP field handshake
+failure is resolved or guarantee full quality across all networks and devices.
+
+The desktop-viewer compatibility path now carries the native screen picker's
+selected bitrate and frame-rate ceiling into its WebRTC sender instead of
+silently reusing the global browser defaults of 20 Mbps and 60 FPS. It also
+requests resolution-preserving adaptation and marks the native preview as
+detail content, so WebView2 drops frames before reducing a 1080p source to
+640×360 when local encoding load is too high. Connection details identify
+ordinary browser screen tracks and native compatibility tracks separately.
+
+Configured bitrate remains a ceiling rather than constant padding. Actual
+bitrate varies with frame complexity and WebRTC congestion control, while
+actual frame rate remains bounded by capture, decode, re-encode, receiver, and
+network capacity.
+
+Native desktop viewers again try the single-encode Rust H.264 route first,
+matching the capture-to-network shape used by OBS. Five-second zero-media
+recovery now starts after connection establishment. Stream setup adds Automatic, Gameplay,
+and Text & desktop content tuning; detected games prefer motion encoding and
+balanced fallback adaptation, while desktop content preserves fine detail.
+
+## Unreleased — realtime conversations and presence
+
+Mezon's `deepfilternet3-noise-filter` 1.3.0 is now available as an experimental
+browser and desktop-WebView microphone engine. Its SIMD WASM and DeepFilterNet3
+model are pinned and self-hosted, the package loads only when selected, and
+surfaced startup/runtime failures recover to RNNoise. RNNoise is now the default for new
+clients. The WASM engine is not promoted as recommended: it passed realtime
+data-flow and cleanup checks but reproduced its input exactly on the pinned
+noisy-speech quality fixture. Evidence and asset hashes are recorded in
+[`DEEPFILTER_WASM_FINDINGS.md`](DEEPFILTER_WASM_FINDINGS.md).
+
+Signed-in web and desktop clients now keep one authenticated app-level WebSocket open while the user browses. New messages arrive as complete message records, and call rosters update immediately when a participant joins, leaves, mutes, deafens, reconnects, or adds another device. Room creation, renames, membership changes, direct conversations, friend requests, and friendship changes send targeted invalidation events to affected accounts. Online/offline friend state follows authenticated event-stream connections and is aggregated across multiple open devices.
+
+PostgreSQL remains authoritative for history, rooms, membership, and friendships. Clients load those records through HTTP on first load and reconcile them after a WebSocket reconnect or a targeted change event; the former 3-second message, 2-second call-presence, and 10-second room polling loops are removed. Message sends append the returned record locally and deduplicate the corresponding pushed event instead of downloading the entire history again. Server-side subscriptions are derived from authorized room membership and friendships, so clients cannot subscribe themselves to another room.
+
+The realtime hub remains process-local, matching the existing single signaling-process deployment. A future multi-replica deployment must add shared fanout such as PostgreSQL `LISTEN/NOTIFY` or Redis before enabling more than one API replica.
+
+## 0.1.12 — native screen shape preservation
+
+Windows native sharing now treats 720p, 1080p, 1440p, 4K, and Match source as maximum resolution bounds while preserving the selected window or display's actual aspect ratio. FFmpeg no longer pads narrow, portrait, ultrawide, or unusually shaped application windows into a fixed 16:9 canvas, so receivers and recordings no longer contain encoded black pillars or letterboxing. Encoder dimensions remain even and within the selected quality bound for H.264 compatibility.
+
+## 0.1.11 — high-refresh native screen sharing
+
+Windows native sharing adds a 720p output option, a 120 FPS preset, custom whole-number frame rates from 15–240 FPS, and custom whole-number bitrates from 1–200 Mbps. The selected rate flows through Windows Graphics Capture, FFmpeg hardware encoding, H.264 negotiation, native RTP pacing, diagnostics, and local native recording. Invalid inputs and combinations above H.264 Level 5.2 are rejected before capture; actual delivered FPS can be lower when the source, encoder, receiver, or network cannot sustain the request.
+
+Actual Windows acceptance passed 1280×720 at 120 FPS/12 Mbps and 240 FPS/20 Mbps through both an RTX 4070 SUPER NVENC path and Ryzen integrated-graphics AMF path. Chromium decoded approximately 120.5–120.7 FPS and 240.9–241.4 FPS respectively, and the frontend recording path produced a playable native-copy MP4. The browser fallback continues to use browser capture and its runtime limits.
+
+## 0.1.10 — bundled native sharing, multiple devices, and adaptive call gallery
+
+Windows installers now include the pinned FFmpeg 8.1 native-sharing runtime, its GPL license, setup metadata, and source/build references. A fresh install can start native window or display sharing without WinGet or a separate 236 MiB first-run download. Rust resolves the packaged resource before the older private app-data runtime; the in-app downloader remains available as a repair fallback if the packaged files are missing. This requires the 0.1.10 Windows app. macOS remains on browser-supported screen capture and does not receive the Windows runtime.
+
+One account can now join the same call from several devices. Each call endpoint receives an opaque device peer ID for WebRTC and optional voice-relay routing while room presence remains grouped under the account with a device count. A device entering an active call sees explicit choices to move the call with **Reconnect from here** or preserve the existing endpoint with **Connect second device**. Reconnecting closes every older call endpoint for that account; adding a device lets each endpoint independently publish or consume microphone, camera, screen, and system audio.
+
+Settings offers an opt-in Push-to-talk checkbox and a keyboard or mouse shortcut. It is disabled by default and saved on this device. Calls transmit the processed microphone only while the shortcut is held; manual mute and deafen take priority. Settings changes, disconnect, and leaving release the shortcut. Device and denoiser replacement retain the current microphone gate, including replacements still waiting on WebRTC senders.
+
+Waiting for the shortcut stays separate from manual mute in call controls and participant presence. The microphone capture remains live while the processed output sends silence. Keyboard shortcuts work after clicking mute/unmute, and foreground Windows input uses WebView events without depending on a duplicate global hook event. Editing and shortcut assignment remain protected; assigned Space/Enter no longer also activate the focused call button. Regression tests exercise Left Ctrl, continuous capture, transmitted audio/silence, and independent mute state.
+
+The Windows Tauri host provides global keyboard and mouse input through native hooks during enabled calls. The frontend reports connection failures and keeps the microphone muted until registration is restored. Native registrations expire without a frontend heartbeat and are removed when disabled, rebound, or disconnected. The browser and other operating systems use foreground input and release on focus loss. Camera, screen, system audio and playback volume remain independent. Actual Windows acceptance passes background keyboard and all five mouse buttons, minimized keyboard/mouse operation, passthrough, mute/deafen, rebinding, cleanup and lease expiry. Input snapshots use native window focus to avoid a WebView2 focus mismatch after restoration. See [push-to-talk and local setup](PUSH_TO_TALK.md) for use and acceptance scope.
+
+Native screen receivers now request an automatic compatibility path when the dedicated native connection delivers no video bytes for five seconds or fails. The sender republishes its already-decoded native preview through that viewer's established call peer connection, then closes only the failed native sender leg. Healthy viewers retain the direct Rust-to-WebRTC hardware-encoded path. Diagnostics record fallback requests and activation. This hosted frontend recovery works with existing 0.1.9 desktop apps; it does not fix the underlying separate native ICE path or make FFmpeg unnecessary for sending native captures.
+
+Native screen capability negotiation now identifies desktop WebView receivers. Those viewers use their established ordinary call peer connection immediately, matching the transport path used by reliable browser sharing and avoiding the dedicated Rust-to-WebView2 connection that has repeatedly delivered zero RTP in field reports. Browser viewers retain direct Rust H.264 delivery. An unknown or older receiver still attempts native delivery and retains the five-second recovery. This routing update is hosted and works after existing 0.1.9 apps reload.
+
+Fullscreen calls now clip their outer canvas to the dynamic viewport and hide WebView scrollbar gutters, removing the stray bar that could appear along the bottom edge in the Windows desktop app.
+
+Shared content now zooms from 50% to 500% with small button steps, ordinary mouse-wheel scrolling, and trackpad pinch/scroll gestures. Wheel zoom is anchored under the pointer, animated without adding a frame loop, and bounded so dragged content cannot be lost completely off-canvas. Each watched item keeps its own zoom and pan while it remains mounted.
+
+Every participant can continue publishing one independent screen track. Incoming shares first appear as preview tiles beside participants and move onto the main stage after the viewer chooses Watch. Viewers can watch several shares in a responsive center grid, focus one share, move a live camera onto the center stage, return to all watched shares, or stop watching any share. Watched screen audio follows the same selection so multiple unwatched game feeds do not play over the call. Local sharing opens on the sharer's stage automatically.
+
+Calls without a screen share now use the full stage as a responsive camera gallery instead of leaving a shallow camera strip above unused space. Adaptive view gives the active speaker more room in three-person calls; Equal grid keeps every tile the same size; Focus lets the user pin any participant. A local fit/fill preference controls whether cameras are cropped to use the tile or shown in full. Gallery preferences persist on the device, and shared-content calls keep the existing resizable top/side camera docks.
+
+The gallery toolbar only presents controls that apply to the current state. Pin controls appear on hover or keyboard focus, the layout collapses cleanly for narrow windows, and fullscreen retains the selected gallery. The call-layout browser acceptance test now covers gallery sizing, saved view/fit preferences, screen-share docking, fullscreen, focus mode, and mobile overflow.
+
+Camera tiles now follow each incoming track's actual aspect ratio, including portrait phone cameras, instead of stretching the tile when the chat panel or window width changes. Fullscreen uses the complete viewport; its call toolbar, media labels, zoom controls, and footer float above the media and fade after pointer inactivity. Moving the pointer or using the keyboard reveals them again. Shared content can switch between Fit and Fill.
+
+An active call is now owned independently from the room being browsed. Opening another room or direct conversation keeps the original media engine and signaling session alive; leaving remains an explicit call control. The layout acceptance test navigates away from and back to the active call room and verifies the call stays connected.
+
+## 0.1.9 — 24 FPS camera overlay
+
+The Windows camera overlay now targets 24 FPS instead of 10. Rust paces frames against absolute deadlines rather than silently dropping early frames or accumulating timer drift. Native painting reuses its bitmap and avoids per-frame window positioning. The frontend submits one frame at a time without adding a competing timer on modern hosts. Frame submission remains sequential with no stale-frame backlog. Actual cadence depends on source cameras and local rendering load. An updated native 0.1.9 binary is required; older hosts retain their advertised 10 FPS limit. The unpublished 0.1.7 and 0.1.8 candidates were superseded after timing and multi-camera validation.
+
+Validation: web build, 72 unit tests and two overlay/layout browser tests passed. Rust passed 52 tests with 11 hardware checks ignored. Optimized Windows live-camera checks measured 23.18 FPS for one camera and 8.01 FPS for four synthetic sources. Multi-camera throughput remains a known limitation.
+
+## 0.1.6 — native camera overlay
+
+Windows calls offer Camera overlay in the call layout toolbar. The optional Rust-owned, always-on-top window shows up to four camera previews, participant labels and mute/deafen/speaking state. Corner and size presets, click-through by default, and optional self-view are available. The overlay uses the display containing BetterComms and fits its work area. Leaving the call closes it; a native watchdog also closes it after missing frontend frames. It requests exclusion from screen capture to avoid recapturing the overlay into shared content.
+
+The call WebView supplies small RGBA composites through bounded binary IPC at up to 10 FPS; Rust paints the overlay without an extra WebView, device capture or audio playback. Source tracks and recordings are unchanged. Desktop background rendering remains active for call previews when occluded. This works with the Windows desktop/windowed/borderless approach; exclusive fullscreen and anti-cheat game compatibility are not established. macOS and browsers do not offer this Windows-only overlay. An updated native binary is required.
+
+Browser GPU-only DeepFilterNet was evaluated but is not enabled. A fixed-shape GRU conversion passed ONNX validation and 100 stateful CPU-reference frames, but strict hardware WebGPU inference failed in ONNX Runtime Web 1.29 before producing audio. The conversion script remains in `scripts/prepare-deepfilter-webgpu.py` and findings in `scripts/experimental/`; no unused browser model/runtime or hidden CPU fallback ships.
+
+Validation: web build and 72 unit tests passed; the full browser run passed 71 tests with one optional TURN check skipped. Rust passed 51 tests with 11 opt-in checks ignored. An isolated Windows host passed overlay binary IPC, size changes, invalid/stale grant rejection, source ownership, UI controls and the actual no-frame watchdog timeout. These checks do not establish exclusive-fullscreen game compatibility.
+
 ## 0.1.5 — native screen diagnostics and decoder initialization
 
 Connection details offers Download diagnostic report. The JSON includes client/runtime version, bounded native-screen signaling events and receive samples, separate screen ICE/connection states, negotiated H.264 profile identifiers, selected candidate types/protocol (without addresses), packet/frame/decode counters, and video-element readiness. Native 0.1.5 adds sender encoder settings, encoded frame/keyframe/byte counts, actual SPS profile bytes, and anonymous per-connection state/RTP/feedback counters. Older hosts report that native sender diagnostics are unavailable. Export while the call and problematic share are still active; these diagnostics stay local until explicitly exported.
@@ -149,7 +280,6 @@ Settings and Recordings now occupy the main workspace instead of modal dialogs. 
 
 Screen acceptance: fifteen browser tests pass (opt-in TURN skipped), including dedicated-screen desktop/mobile accessibility audits, browser history/reload, Escape/focus restoration, pending device-test cleanup, and a two-member call remaining connected through both screens. Nine web unit tests and the desktop release build pass. Device-settings tests no longer create unnecessary accounts, keeping the full suite within the unchanged authentication rate limit.
 
-
 ## Shared microphone processing and tuning
 
 Calls and microphone tests now use the same capture options and MediaEngine processing chain. Tests label the actual engine, honor the suppression master switch, apply saved tuning, and report NVIDIA fallback rather than claiming NVIDIA processing. Browser sessions resolve stale NVIDIA preferences to standard browser processing without invoking native IPC; RNNoise remains an explicit browser-compatible WebAssembly option. Native permission and NVIDIA SDK actions remain gated to Tauri.
@@ -232,7 +362,6 @@ Participant tiles show a green outline when their processed microphone audio is 
 
 The call footer now includes connection signal bars and measured ping. Alone in a room it shows authenticated WebSocket server round-trip time; with friends it shows the highest available connected-peer WebRTC round-trip time. A popover includes recent ping history, average, separate server ping, and each friend's direct/relay route. Missing measurements stay unknown rather than displaying zero. Existing detailed media diagnostics remain accessible.
 
-
 ## Faster source previews and game discovery
 
 The native share picker only schedules thumbnails for visible cards and removes queued work when cards leave the viewport. A picker-local memory cache reuses recent previews across tab/search changes (30 seconds, at most 32 images / 8 MiB); closing the picker releases that cache. Explicit Refresh clears it. Failed captures no longer automatically retry and occupy a second timeout interval. Native one-shot WGC previews request a 30 FPS capture clock instead of 1 FPS, retaining the two-job limit and bounded process cleanup.
@@ -258,3 +387,35 @@ The public GitHub repository is InfinityZ25/bettrcomms. Railway hosts the Vite p
 Desktop releases load the exact hosted origin and grant only that origin the explicit native command permission. A packaged Windows smoke test verified native capability IPC and WorkOS login initiation, and verified that the external authentication page cannot invoke native commands. This does not establish completion of an interactive user login or a system-browser OAuth return flow. macOS uses browser device permissions rather than Windows-only permission IPC.
 
 Windows NSIS packaging and local hosted startup passed. GitHub Actions builds Windows x64 and macOS Apple Silicon/Intel installers; consult the workflow for each final revision's actual outcome. Initial artifacts are unsigned and Mac builds are not notarized. macOS physical-device media behavior, production TURN, and packaged runtime distribution remain the limitations in DEPLOYMENT.md. The hosted and localhost origins have separate local recording libraries; this deployment does not migrate local accounts, chat, or recordings into the hosted environment.
+
+## Native screen delivery smoothness (2026-09-07)
+
+Native sharing previously handed every access unit to one shared WebRTC track, which serialized packet writes across all viewers on the encoder's own output thread. One congested viewer could back up that thread, fill the FFmpeg output pipe and drop frames for everyone, including the sender's local preview. Each viewer now owns a track, a bounded queue and a paced writer task; the encoder thread only enqueues. A viewer that cannot keep up drops its own frames and resumes at the next keyframe, reported per viewer as `droppedFrames` in the existing screen diagnostics. New viewers start on a keyframe instead of mid-GOP.
+
+Packets now leave through a leaky bucket at 2.5 times the selected bitrate, so a two-second keyframe spreads over milliseconds instead of arriving as one burst. The rate-control buffer changed from a half-second VBV to about a tenth of a second, never less than two frame intervals. A measured 1080p120 NVENC capture at 20 Mbps kept an identical keyframe cadence and mean frame size (20 943 versus 20 963 bytes) while its largest frame fell from 147 031 to 115 511 bytes. NVENC keyframes are now explicitly forced as IDR rather than relying on the GOP boundary.
+
+RTP timestamps follow the encoder's output clock instead of a nominal `1/fps` step per access unit, so an encoder that transiently falls behind no longer drifts the receiver's playout away from wall time. The offer advertises only the feedback this sender acts on — NACK, PLI and FIR — and no longer advertises transport-wide congestion control it never populated, nor duplicate NACK feedback lines.
+
+A viewer whose direct native connection fails still falls back to the sender re-encoding its decoded preview through the ordinary call. That fallback was previously visible only inside a diagnostics list; affected screens now carry a "Reduced quality" badge on the tile and on the stage.
+
+This does not add congestion control: the selected bitrate is still fixed for the session, and PLI still cannot force an IDR, so a viewer that starts or loses data waits up to two seconds for the next scheduled keyframe. Both need the encoder to move in-process and remain open.
+
+Validation: 65 native tests pass, including a new loopback test that runs an actual DTLS/SRTP peer connection and confirms a fragmented keyframe reassembles byte for byte with 750-tick spacing at 120 FPS, and a test that a stalled viewer drops its own frames without blocking capture. Encoder argument changes were measured against real NVENC through the packaged FFmpeg 8.1. Frontend build, 103 web unit tests, 82 Playwright tests (one skipped) and `go test ./...` with `go vet ./...` pass. One voice-relay browser test first failed on the local auth rate limiter after a back-to-back suite run and passed on its own; see AGENTS.md on not running suites concurrently. Cross-network behaviour and sustained gameplay load still need hardware acceptance.
+
+## Screen delivery on every route (2026-09-07)
+
+Following the native sender rework, the remaining send and receive paths were measured and corrected.
+
+**Recovery interval.** Native keyframes moved from two seconds to one. A VMAF comparison of both intervals at 1080p across 60 and 120 FPS and 8 and 20 Mbps put every pair within 0.16 VMAF, with measured output rates matching the target to within 0.03 Mbps and the sign reversing on a repeated run. The interval has no measurable quality cost in that range, so the shorter recovery is taken. A real 1080p120 capture confirmed IDRs at exactly one-second spacing with an unchanged mean frame size and 19.95 Mbps delivered. This halves the worst case for a viewer that joins or loses data; it does not replace answering a PLI.
+
+**Resuming a paused view.** An unwatched share previously detached its decoder. Resuming then needed a keyframe the native sender cannot produce on request, which is the main reason the same share looked perfect once and stuttery the next time. The frozen tile now keeps the track attached and decoding and paints a still frame over it, so only the picture is frozen. The stream arrives whether or not a tile paints it, so this costs decode, not bandwidth.
+
+**Browser sharing.** Browser screen tracks now declare `contentHint`, and every screen sender sets `degradationPreference`, not only the native compatibility path. Chromium previously treated a shared screen like camera video and traded resolution away first, which is the wrong degradation for text. Capture constraints now follow the configured stream quality instead of a hardcoded 60 FPS ceiling, and Stream quality offers a 120 FPS ceiling for high-refresh displays.
+
+**Local preview.** The sender's own preview connection never leaves the machine, so it is no longer paced; pacing a loopback path only added latency.
+
+**A viewer the fixed bitrate does not fit.** The native encoder has no congestion control and one rate for every viewer, so a link that cannot carry that rate previously stayed broken indefinitely: the no-media timer only catches a stream that never arrives, not one that arrives and cannot be sustained. Each receiver now measures its own two-second windows of unrecovered loss and freeze time and, after three consecutive bad windows, moves itself to the compatibility route, which is lower quality but runs under the browser's own rate control. The switch is one-way, needs six seconds of sustained trouble, ignores windows carrying fewer than 100 packets, and marks the screen "Reduced quality". This changes the route, not the encoder.
+
+Not addressed, and still open: the selected bitrate is fixed for the session, and PLI cannot force an IDR. Both need the encoder to run in-process. The packaged runtime is a single statically linked `ffmpeg.exe` pinned by exact length and SHA-256 and verified in CI, with no shared libraries or headers to link against, so this is a packaging migration rather than a code change. webrtc-rs 0.17 also ships no bandwidth estimator, so congestion control needs one written before any transport-wide feedback is worth advertising. Routing a share through the server instead of peer-to-peer remains planned as a later native sharing setting.
+
+Validation: 64 native tests, 105 web unit tests, the frontend production build, `go vet ./...` and `go test ./...`, and the Playwright suite pass. Encoder changes were measured against real NVENC through the packaged FFmpeg 8.1. The browser assertions cover synthetic media; they do not prove native capture or cross-network behaviour.

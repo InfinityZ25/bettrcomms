@@ -6,6 +6,7 @@ export interface TrackDescriptor {
   mediaKind: 'audio' | 'video';
   enabled: boolean;
   streamId?: string;
+  screenTransport?: 'browser' | 'native-compatibility';
 }
 
 export type SessionDescriptionSignal = {
@@ -26,13 +27,13 @@ export type IceCandidateSignal = {
   captureId?: string;
 };
 
-export type NativeScreenStopSignal = {
+export type NativeScreenControlSignal = {
   type: 'signal';
   to: string;
   from?: string;
   transport: 'native-screen';
   captureId: string;
-  data: { kind: 'native-screen-stop'; captureId: string };
+  data: { kind: string; captureId?: string; [key: string]: unknown };
 };
 
 export type TrackMetadataSignal = {
@@ -46,7 +47,7 @@ export type MediaSignal =
   | SessionDescriptionSignal
   | IceCandidateSignal
   | TrackMetadataSignal
-  | NativeScreenStopSignal
+  | NativeScreenControlSignal
   | VoiceRelaySignal;
 
 export type VoiceRelaySignal = {
@@ -67,6 +68,12 @@ export interface RemoteTrack {
   source: MediaSourceKind;
   track: MediaStreamTrack;
   stream: MediaStream;
+  /**
+   * How a screen reached us. `native-compatibility` means the native peer
+   * connection failed and the sender is re-encoding its own decoded preview
+   * through the ordinary call, which costs a generation of quality.
+   */
+  screenTransport?: 'browser' | 'native-compatibility';
 }
 
 export interface CaptureOptions {
@@ -75,12 +82,12 @@ export interface CaptureOptions {
   noiseSuppression?: boolean;
   echoCancellation?: boolean;
   autoGainControl?: boolean;
-  denoiser?: 'standard' | 'rnnoise' | 'speex' | 'nvidia' | 'deepfilter' | 'off';
+  denoiser?: 'standard' | 'rnnoise' | 'speex' | 'deepfilter-wasm' | 'nvidia' | 'deepfilter' | 'off';
   processing?: MicrophoneProcessingSettings;
 }
 
 export interface MicrophoneProcessingSettings {
-  engine: 'standard' | 'rnnoise' | 'speex' | 'nvidia' | 'deepfilter' | 'off';
+  engine: 'standard' | 'rnnoise' | 'speex' | 'deepfilter-wasm' | 'nvidia' | 'deepfilter' | 'off';
   echoCancellation: boolean;
   autoGainControl: boolean;
   nvidiaIntensity: number;
@@ -99,6 +106,8 @@ export interface MicrophoneProcessingSettings {
 export interface ScreenCaptureOptions {
   video?: boolean | MediaTrackConstraints;
   systemAudio?: boolean;
+  /** Tune browser encoding for motion or for fine text. Defaults to detail. */
+  contentHint?: 'motion' | 'detail';
 }
 
 export interface IceOptions {
@@ -149,6 +158,7 @@ export interface PeerMediaStats {
     framesPerSecond?: number;
     packetsLost?: number;
     jitterMs?: number;
+    screenTransport?: 'browser' | 'native-compatibility';
   }>;
 }
 
@@ -165,8 +175,8 @@ export type MediaEngineEventMap = {
   'peer-state': CustomEvent<{ peerId: string; state: RTCPeerConnectionState }>;
   error: CustomEvent<{ peerId?: string; operation: string; error: unknown }>;
   'denoiser-status': CustomEvent<{
-    requested: 'nvidia' | 'deepfilter';
-    active: 'nvidia' | 'deepfilter' | 'rnnoise';
+    requested: 'nvidia' | 'deepfilter' | 'deepfilter-wasm';
+    active: 'nvidia' | 'deepfilter' | 'deepfilter-wasm' | 'rnnoise';
     message: string;
   }>;
 };

@@ -19,6 +19,7 @@ src/
 │   ├── settings/
 │   ├── sharing/
 │   └── shell/
+├── hooks/             # Reusable React hooks
 ├── lib/               # Small framework-independent helpers
 └── media/             # Media engine, capture, transport, and persistence
 ```

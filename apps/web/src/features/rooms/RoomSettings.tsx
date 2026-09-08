@@ -10,6 +10,7 @@ export default function RoomSettings({
   onOpenChange,
   onChanged,
   onError,
+  refreshRevision = 0,
 }: {
   room: Room | null;
   user: User | null;
@@ -17,6 +18,7 @@ export default function RoomSettings({
   onOpenChange: (v: boolean) => void;
   onChanged: () => void;
   onError: (s: string) => void;
+  refreshRevision?: number;
 }) {
   const [name, setName] = useState(room?.name ?? ''),
     [members, setMembers] = useState<{ user: User; role: string }[]>([]),
@@ -32,7 +34,7 @@ export default function RoomSettings({
       )
         .then((r) => setMembers(r.members))
         .catch((e) => onError(e.message));
-  }, [open, room?.id]);
+  }, [open, room?.id, refreshRevision]);
   async function action(fn: () => Promise<void>) {
     setBusy(true);
     try {

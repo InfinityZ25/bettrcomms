@@ -104,7 +104,7 @@ export default function ProcessingControls({ engine }: { engine: string }) {
           </label>
         </div>
       )}
-      {engine === 'deepfilter' && (
+      {(engine === 'deepfilter' || engine === 'deepfilter-wasm') && (
         <div className="processing-engine">
           {slider(
             'deepfilterAttenuationDb',
@@ -115,8 +115,9 @@ export default function ProcessingControls({ engine }: { engine: string }) {
             ' dB',
           )}
           <p>
-            Limits the most noise DeepFilterNet may remove. 100 dB applies the
-            model's maximum suppression.
+            Limits the most noise DeepFilterNet3 may remove. 100 dB applies the
+            model's maximum suppression. The WebAssembly engine uses SIMD and
+            falls back to RNNoise if it cannot start.
           </p>
         </div>
       )}

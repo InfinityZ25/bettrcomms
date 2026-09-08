@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Headphones, Monitor, Radio } from 'lucide-react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import DeviceSettings from './DeviceSettings';
+import VisualCopilotSettings from './VisualCopilotSettings';
 import ProcessingControls from './ProcessingControls';
 import {
   readSpeakingThreshold,
@@ -58,7 +59,7 @@ export default function MediaSettings() {
   const initialDenoiser =
     (storedDenoiser === 'nvidia' || storedDenoiser === 'deepfilter') && !desktop
       ? 'standard'
-      : (storedDenoiser ?? 'standard');
+      : (storedDenoiser ?? 'rnnoise');
   const [quality, setQuality] = useState(readQuality),
     [direct, setDirect] = useState(
       localStorage.getItem('bc-direct') === 'true',
@@ -123,6 +124,7 @@ export default function MediaSettings() {
         <Headphones size={17} /> Voice & devices
       </h3>
       <DeviceSettings />
+      <VisualCopilotSettings />
       <label>
         Speaking indicator threshold · {speakingThreshold} dBFS
         <input
@@ -157,6 +159,9 @@ export default function MediaSettings() {
             window.dispatchEvent(new Event('bc-denoiser'));
           }}
         >
+          <option value="deepfilter-wasm">
+            DeepFilterNet3 · experimental · WebAssembly
+          </option>
           <option value="standard">Standard · browser processing</option>
           <option value="rnnoise">Enhanced · RNNoise on this device</option>
           <option value="speex">SpeexDSP · lightweight on this device</option>
@@ -168,7 +173,7 @@ export default function MediaSettings() {
           )}
           {desktop && (
             <option value="deepfilter" disabled={!deepfilter?.ready}>
-              DeepFilterNet · AMD/Intel GPU ·{' '}
+              DeepFilterNet3 · AMD/Intel DirectML ·{' '}
               {deepfilter?.ready ? 'ready' : 'setup required'}
             </option>
           )}
@@ -178,6 +183,13 @@ export default function MediaSettings() {
         Used when noise suppression is switched on. Processing stays on this
         device.
       </p>
+      {denoiser === 'deepfilter-wasm' && (
+        <p className="setting-note">
+          Experimental: the upstream WASM build is integrated for browser and
+          desktop testing, but it has not passed BetterComms quality acceptance.
+          RNNoise remains the default.
+        </p>
+      )}
       {desktop && nvidia && !nvidia.ready && (
         <div className="my-4 rounded-lg border bg-muted/40 p-3 text-xs leading-6 text-muted-foreground">
           <p>NVIDIA Audio Effects is unavailable: {nvidia.detail}</p>
@@ -313,6 +325,7 @@ export default function MediaSettings() {
             <option value={15}>15 FPS · text</option>
             <option value={30}>30 FPS · balanced</option>
             <option value={60}>60 FPS · motion</option>
+            <option value={120}>120 FPS · high refresh</option>
           </select>
         </label>
         <label>

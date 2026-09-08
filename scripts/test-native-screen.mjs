@@ -4,15 +4,25 @@ import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
 
-const host = await chromium.connectOverCDP('http://127.0.0.1:9223');
+const width = Number(process.env.BETTERCOMMS_TEST_WIDTH ?? 1280);
+const height = Number(process.env.BETTERCOMMS_TEST_HEIGHT ?? 720);
+const fps = Number(process.env.BETTERCOMMS_TEST_FPS ?? 60);
+const bitrateMbps = Number(process.env.BETTERCOMMS_TEST_BITRATE_MBPS ?? 20);
+const endpoint = process.env.BETTERCOMMS_NATIVE_CDP ?? 'http://127.0.0.1:9223';
+assert.ok(Number.isInteger(width) && width > 0, 'Test width must be a positive integer');
+assert.ok(Number.isInteger(height) && height > 0, 'Test height must be a positive integer');
+assert.ok(Number.isInteger(fps) && fps >= 15 && fps <= 240, 'Test FPS must be 15–240');
+assert.ok(Number.isInteger(bitrateMbps) && bitrateMbps >= 1 && bitrateMbps <= 200, 'Test bitrate must be 1–200 Mbps');
+
+const host = await chromium.connectOverCDP(endpoint);
 const browser = await chromium.launch({ channel: 'chrome', headless: false, args: ['--autoplay-policy=no-user-gesture-required'] });
-const source = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+const source = await browser.newPage({ viewport: { width, height } });
 const receiver = await browser.newPage();
 let app, session;
 try {
   app = host.contexts().flatMap(c => c.pages()).find(p => p.url().includes(':5173'));
   assert.ok(app, 'Native development preview must be open');
-  await source.setContent('<title>BetterComms Synthetic Capture Acceptance</title><style>body{margin:0;background:#101820;color:white;font:48px sans-serif}canvas{width:100vw;height:100vh}</style><canvas></canvas><script>const c=document.querySelector("canvas");c.width=1280;c.height=720;const x=c.getContext("2d");function f(t){x.fillStyle="#102030";x.fillRect(0,0,1280,720);x.fillStyle="#00e080";x.fillRect(0,0,640,720);x.fillStyle="#e03050";x.fillRect(640,0,640,720);x.fillStyle="white";x.font="48px sans-serif";x.fillText("Native capture · "+Math.floor(t/100),40,100);x.fillRect((t/4)%1200,300,80,80);requestAnimationFrame(f)}requestAnimationFrame(f)</script>');
+  await source.setContent(`<title>BetterComms Synthetic Capture Acceptance</title><style>body{margin:0;background:#101820;color:white;font:48px sans-serif}canvas{width:100vw;height:100vh}</style><canvas></canvas><script>const c=document.querySelector("canvas");c.width=${width};c.height=${height};const x=c.getContext("2d");function f(t){x.fillStyle="#102030";x.fillRect(0,0,c.width,c.height);x.fillStyle="#00e080";x.fillRect(0,0,c.width/2,c.height);x.fillStyle="#e03050";x.fillRect(c.width/2,0,c.width/2,c.height);x.fillStyle="white";x.font="48px sans-serif";x.fillText("Native capture · "+Math.floor(t/100),40,100);x.fillRect((t/4)%(c.width-80),Math.min(300,c.height-80),80,80);requestAnimationFrame(f)}requestAnimationFrame(f)</script>`);
   await source.bringToFront();
   const exportProbe = await app.evaluate(async () => {
     try { await window.__TAURI_INTERNALS__.invoke('recording_export_begin', { fileName: 'probe.webm', sizeBytes: -1 }); return 'unexpected success'; }
@@ -31,7 +41,7 @@ try {
       if(!target) await new Promise(r=>setTimeout(r,100));
     }
     assert.ok(target, 'Only the synthetic test window is eligible for capture');
-    session = await app.evaluate(args => window.__TAURI_INTERNALS__.invoke('native_screen_start', args), { sourceId: target.id, encoder, width: 1280, height: 720, fps: 60, bitrateMbps: 20, cursor: false });
+    session = await app.evaluate(args => window.__TAURI_INTERNALS__.invoke('native_screen_start', args), { sourceId: target.id, encoder, width, height, fps, bitrateMbps, cursor: false });
     const offer = await app.evaluate(sessionId => window.__TAURI_INTERNALS__.invoke('native_screen_peer_offer', { sessionId, peerId: 'acceptance', iceServers: [], directOnly: true }), session.sessionId);
     const answer = await receiver.evaluate(async offer => {
       const pc = window.testPc = new RTCPeerConnection();
@@ -61,9 +71,27 @@ try {
       const red=[...x.getImageData(c.width*.75,c.height*.7,1,1).data];
       return { framesDecoded: s.framesDecoded, width:s.frameWidth,height:s.frameHeight,fps:s.framesPerSecond,bytes:s.bytesReceived,codec:all.find(c=>c.id===s.codecId)?.mimeType,green,red };
     });
-    assert.equal(stats.width,1280);assert.equal(stats.height,720);assert.equal(stats.codec,'video/H264');
+    // Resolution choices are bounds, not fixed canvases: a source that is not
+    // the requested shape keeps its aspect ratio inside them. Assert the whole
+    // chain agrees rather than that the encoder ignored the source shape.
+    assert.ok(session.width<=width&&session.height<=height,`Negotiated ${session.width}x${session.height} must fit inside ${width}x${height}`);
+    // Smaller sources stay at source size instead of filling a larger preset.
+    assert.ok(session.width<=target.width&&session.height<=target.height,`Negotiated ${session.width}x${session.height} must not upscale the source ${target.width}x${target.height}`);
+    assert.equal(stats.width,session.width);assert.equal(stats.height,session.height);assert.equal(stats.codec,'video/H264');
+    const rateStart = await receiver.evaluate(async () => {
+      const s = [...(await window.testPc.getStats()).values()].find(s => s.type === 'inbound-rtp' && s.framesDecoded !== undefined);
+      return { frames: s.framesDecoded, time: performance.now() };
+    });
+    await new Promise(r=>setTimeout(r,3000));
+    const measuredFps = await receiver.evaluate(start => {
+      return window.testPc.getStats().then(report => {
+        const s = [...report.values()].find(s => s.type === 'inbound-rtp' && s.framesDecoded !== undefined);
+        return (s.framesDecoded - start.frames) * 1000 / (performance.now() - start.time);
+      });
+    }, rateStart);
+    if (fps > 60) assert.ok(measuredFps > 60, `Requested ${fps} FPS but decoded only ${measuredFps.toFixed(1)} FPS`);
     assert.ok(stats.green[1]>120&&stats.green[0]<80&&stats.red[0]>100&&stats.red[1]<120,'Decoded pixels must match the selected synthetic window');
-    console.log(encoder, JSON.stringify(stats));
+    console.log(encoder, JSON.stringify({...stats, requestedFps:fps, measuredFps:Number(measuredFps.toFixed(1)), bitrateMbps}));
     // Record the exact sender stream through the native remuxer.
     const recording = await app.evaluate(sessionId => window.__TAURI_INTERNALS__.invoke('native_screen_recording_start', {sessionId}),session.sessionId);
     await new Promise(r=>setTimeout(r,2500));
@@ -85,7 +113,7 @@ try {
     console.log('PASS',encoder,'native capture, H.264 browser decode, MP4 remux, stop');
   }
   await source.bringToFront();
-  const exported = await app.evaluate(async () => {
+  const exported = await app.evaluate(async ({width,height,fps,bitrateMbps}) => {
     const {NativeScreenTransport,nativeScreenSessionForTrack}=await import('/src/media/nativeScreen.ts');
     const {TrackRecordingSession}=await import('/src/media/recording.ts');
     const sources=await window.__TAURI_INTERNALS__.invoke('native_screen_sources');
@@ -95,17 +123,19 @@ try {
     const errors=[];
     const transport=new NativeScreenTransport({localPeerId:'test',send:async()=>{}},[],true,t=>track=t,()=>{},()=>{},e=>errors.push(e));
     try {
-      await transport.start({sourceId:target.id,encoder:'h264_nvenc',width:1280,height:720,fps:60,bitrateMbps:20,cursor:false});
+      await transport.start({sourceId:target.id,encoder:'h264_nvenc',width,height,fps,bitrateMbps,cursor:false});
       if(!track || !nativeScreenSessionForTrack(track)) throw new Error('Native preview recording registration missing');
       const recording=new TrackRecordingSession();recording.start([{peerId:'test',source:'screen',track}]);
-      await new Promise(r=>setTimeout(r,2500));
+      // Native recordings begin at the next IDR. Allow a full two-second GOP
+      // plus enough media to verify a useful duration at every supported rate.
+      await new Promise(r=>setTimeout(r,4500));
       const result=await recording.stop();
       const file=result.files.find(f=>f.name.endsWith('.mp4'));
       if(!file || result.manifest.tracks[0].status!=='complete') throw new Error(JSON.stringify(result.manifest.tracks));
       const base64=await new Promise(resolve=>{const r=new FileReader();r.onload=()=>resolve(r.result.split(',')[1]);r.readAsDataURL(file.blob);});
       return {base64,manifest:result.manifest.tracks[0],errors};
     } finally { await transport.stop();transport.dispose(); }
-  });
+  }, {width,height,fps,bitrateMbps});
   assert.equal(exported.manifest.mimeType,'video/mp4');
   assert.ok(exported.manifest.durationMs>1000);
   await writeFile('.local/capture-probe/frontend-native-recording.mp4',Buffer.from(exported.base64,'base64'));

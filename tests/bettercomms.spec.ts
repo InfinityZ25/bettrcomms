@@ -106,7 +106,7 @@ test('two members chat, call, record separate tracks, and transport a screen sha
     const message = `persistent message ${Date.now()}`;
     await ownerPage.getByRole('textbox', { name: /message your room/i }).fill(message);
     await ownerPage.getByRole('button', { name: /send message/i }).click();
-    await expect(guestPage.getByText(message)).toBeVisible({ timeout: 8_000 });
+    await expect(guestPage.getByText(message)).toBeVisible({ timeout: 3_000 });
     await guestPage.reload();
     await expect(guestPage.getByText(message)).toBeVisible();
 
@@ -115,8 +115,8 @@ test('two members chat, call, record separate tracks, and transport a screen sha
       guestPage.getByRole('button', { name: /join call/i }).click(),
     ]);
     await Promise.all([
-      expect(ownerPage.getByText(/1 connected/i)).toHaveCount(1),
-      expect(guestPage.getByText(/1 connected/i)).toHaveCount(1),
+      expect(ownerPage.locator('.camera-tile:not(.self)')).toHaveCount(1),
+      expect(guestPage.locator('.camera-tile:not(.self)')).toHaveCount(1),
     ]);
     const network = ownerPage.getByRole('button', { name: 'Connection diagnostics' });
     await expect(network).toContainText(/Call · \d+ ms/);
@@ -156,12 +156,12 @@ test('two members chat, call, record separate tracks, and transport a screen sha
     await expect(ownerPage.getByRole('main', { name: 'Settings' })).toBeVisible();
     await ownerPage.getByRole('button', { name: /back to call/i }).click();
     await expect(ownerPage.getByRole('main', { name: 'Settings' })).toBeHidden();
-    await expect(ownerPage.getByText(/1 connected/i)).toHaveCount(1);
+    await expect(ownerPage.locator('.camera-tile:not(.self)')).toHaveCount(1);
     await ownerPage.getByRole('button', { name: 'Recordings' }).click();
     await expect(ownerPage.getByRole('main', { name: 'Recordings' })).toBeVisible();
     await ownerPage.getByRole('button', { name: /back to call/i }).click();
     await expect(ownerPage.getByRole('main', { name: 'Recordings' })).toBeHidden();
-    await expect(ownerPage.getByText(/1 connected/i)).toHaveCount(1);
+    await expect(ownerPage.locator('.camera-tile:not(.self)')).toHaveCount(1);
 
     // Start with audio only, then require tracks added later to join the same session.
     await ownerPage.getByRole('button', { name: /record separate tracks/i }).click();
@@ -171,16 +171,66 @@ test('two members chat, call, record separate tracks, and transport a screen sha
       guestPage.getByRole('button', { name: /turn on camera/i }).click(),
     ]);
     await Promise.all([
+      expectDecodedVideo(ownerPage, '.camera-tile.self video'),
       expectDecodedVideo(ownerPage, '.camera-tile:not(.self) video'),
       expectDecodedVideo(guestPage, '.camera-tile:not(.self) video'),
     ]);
 
+    await ownerPage.getByRole('button', { name: 'Fullscreen call' }).click();
+    const fullscreenWorkspace = ownerPage.locator('.call-workspace');
+    const fullscreenStage = fullscreenWorkspace.locator('.stage');
+    await expect.poll(() => ownerPage.evaluate(() => document.fullscreenElement?.classList.contains('call-workspace'))).toBe(true);
+    await expect(fullscreenStage).toHaveAttribute('data-has-share', 'false');
+    await expect(fullscreenStage).toHaveAttribute('data-gallery', 'adaptive');
+    await expect(fullscreenStage).toHaveAttribute('data-camera-count', '2');
+    const fullscreenGeometry = await fullscreenWorkspace.evaluate((workspace) => {
+      const tiles = [...workspace.querySelectorAll<HTMLElement>('.camera-tile:not(.invite)')].map((tile) => tile.getBoundingClientRect());
+      const controls = workspace.querySelector<HTMLElement>('.call-controls')?.getBoundingClientRect();
+      return {
+        viewport: { width: innerWidth, height: innerHeight },
+        tiles: tiles.map(({ x, y, width, height }) => ({ x, y, width, height })),
+        controls: controls && { x: controls.x, width: controls.width },
+      };
+    });
+    expect(fullscreenGeometry.tiles).toHaveLength(2);
+    const [leftCamera, rightCamera] = fullscreenGeometry.tiles;
+    expect(leftCamera.width).toBeGreaterThan(fullscreenGeometry.viewport.width * .43);
+    expect(rightCamera.width).toBeGreaterThan(fullscreenGeometry.viewport.width * .43);
+    expect(Math.abs(leftCamera.width - rightCamera.width)).toBeLessThan(3);
+    expect(Math.abs(leftCamera.height - rightCamera.height)).toBeLessThan(3);
+    expect(rightCamera.x).toBeGreaterThan(leftCamera.x + leftCamera.width);
+    expect(Math.abs((leftCamera.y + leftCamera.height / 2) - fullscreenGeometry.viewport.height / 2)).toBeLessThan(4);
+    expect(fullscreenGeometry.controls).toBeTruthy();
+    expect(Math.abs((fullscreenGeometry.controls!.x + fullscreenGeometry.controls!.width / 2) - fullscreenGeometry.viewport.width / 2)).toBeLessThan(4);
+    await ownerPage.screenshot({ path: '.local/two-camera-fullscreen.png', fullPage: true });
+    await ownerPage.mouse.move(20, 450);
+    await ownerPage.getByRole('button', { name: 'Exit fullscreen call' }).click();
+
     await ownerPage.evaluate(syntheticDisplayCapture);
     await ownerPage.getByRole('button', { name: /share screen/i }).click();
+    const ownerShareName = 'Ada E2E’s screen';
+    await expect(guestPage.getByRole('button', { name: `Watch ${ownerShareName}` })).toBeVisible();
+    await expect(guestPage.locator('.video-viewport video')).toHaveCount(0);
+    await guestPage.getByRole('button', { name: `Watch ${ownerShareName}` }).click();
     await expectDecodedVideo(guestPage, '.video-viewport video');
     await expect(guestPage.locator('.stage-badge')).toHaveText('Live');
     await expect(guestPage.getByText('Waiting for video frames…')).toHaveCount(0);
-    await expect(guestPage.getByText(/screen/i).first()).toBeVisible();
+
+    await guestPage.evaluate(syntheticDisplayCapture);
+    await guestPage.getByRole('button', { name: /share screen/i }).click();
+    const guestShareName = 'Grace E2E’s screen';
+    await expect(ownerPage.getByRole('button', { name: `Watch ${guestShareName}` })).toBeVisible();
+    await ownerPage.getByRole('button', { name: `Watch ${guestShareName}` }).click();
+    await expect(ownerPage.locator('.stage-content-pane')).toHaveCount(2);
+    await Promise.all([
+      expectDecodedVideo(ownerPage, '.stage-content-pane video'),
+      expectDecodedVideo(guestPage, '.stage-content-pane video'),
+    ]);
+    await expect(ownerPage.locator('.stage-content-pane').getByRole('button', { name: `Focus ${guestShareName}` })).toBeVisible();
+    await ownerPage.screenshot({ path: '.local/two-screen-shares.png', fullPage: true });
+    await guestPage.getByRole('button', { name: /stop sharing/i }).click();
+    await expect(ownerPage.locator('.stage-content-pane')).toHaveCount(1);
+
     await guestPage.locator('[aria-label="Adjust participant volume"]').click();
     await expect(guestPage.getByText(/4 media tracks/i)).toBeVisible();
     await ownerPage.waitForTimeout(1_500);
