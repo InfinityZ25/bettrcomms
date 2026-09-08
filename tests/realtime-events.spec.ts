@@ -8,10 +8,16 @@ const json = async <T>(response: APIResponse) => {
   return response.json() as Promise<T>;
 };
 const login = async (context: BrowserContext, name: string, email: string) => {
-  const response = await context.request.post('/api/v1/auth/dev', {
-    headers: { Origin: origin },
-    data: { name, email },
-  });
+  const deadline = Date.now() + 65_000;
+  let response: APIResponse;
+  do {
+    response = await context.request.post('/api/v1/auth/dev', {
+      headers: { Origin: origin },
+      data: { name, email },
+    });
+    if (response.status() !== 429 || Date.now() >= deadline) break;
+    await new Promise(resolve => setTimeout(resolve, 5_000));
+  } while (true);
   const value = await json<User | { user: User }>(response);
   return 'user' in value ? value.user : value;
 };
