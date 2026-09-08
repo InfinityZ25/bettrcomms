@@ -19,7 +19,7 @@ On the current Windows host, native sharing can additionally present indicators 
 
 Quick signals are click-through and do not activate their window. For application capture they hide when another window owns foreground. A monitor share is tied to the whole selected display. Native cards show the original marked frame in the selected corner of the source area; the most recent card is shown outside BetterComms and the bounded retained cards remain in the app.
 
-Source coordinates account for both viewer fit/fill/zoom/pan and the native encoder's even-sized letterboxing. Window movement is checked every 100 ms. Resizing the source invalidates native placement until sharing is restarted. This deliberately avoids placing old coordinates over a changed capture area.
+Source coordinates account for viewer fit/fill/zoom/pan and map directly onto the shared source. Native encoding preserves its aspect ratio without adding bars; even-sized output rounding does not change the normalized position. Window movement is checked every 100 ms. Resizing the source invalidates native placement until sharing is restarted. This deliberately avoids placing old coordinates over a changed capture area.
 
 Native surfaces require capture exclusion. Frame leases are renewed by the renderer; abandoned surfaces close after 1.2 seconds without renewal, and the watchdog also checks whether the capture still exists. A separate overlay state preserves the camera overlay and media tracks. Up to four native signals and one native card can be displayed.
 

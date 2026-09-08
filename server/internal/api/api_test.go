@@ -218,7 +218,7 @@ func TestProductionStaticAssetsUseCSPAndContentAwareCaching(t *testing.T) {
 			t.Fatalf("path=%s status=%d cache=%q", tc.path, w.Code, w.Header().Get("Cache-Control"))
 		}
 		csp := w.Header().Get("Content-Security-Policy")
-		for _, directive := range []string{"default-src 'self'", "script-src 'self' 'wasm-unsafe-eval'", "worker-src 'self' blob:", "connect-src 'self' ipc: http://ipc.localhost ws://127.0.0.1:*", "frame-ancestors 'none'"} {
+		for _, directive := range []string{"default-src 'self'", "script-src 'self' blob: 'wasm-unsafe-eval'", "worker-src 'self' blob:", "connect-src 'self' ipc: http://ipc.localhost ws://127.0.0.1:*", "frame-ancestors 'none'"} {
 			if !strings.Contains(csp, directive) {
 				t.Fatalf("path=%s CSP missing %q: %q", tc.path, directive, csp)
 			}

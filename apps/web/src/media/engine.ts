@@ -20,6 +20,7 @@ import { createDenoiser } from './denoise';
 import { createSpeexDenoiser } from './speexDenoise';
 import { createNvidiaDenoiser } from './nvidiaDenoise';
 import { createDeepfilterDenoiser } from './deepfilterDenoise';
+import { createDeepfilterWasmDenoiser } from './deepfilterWasmDenoise';
 import { createMicrophoneEffects } from './microphoneEffects';
 import { isTauri } from '@tauri-apps/api/core';
 import { createNativeSystemAudio, type NativeSystemAudioTrack } from './nativeSystemAudio';
@@ -190,6 +191,7 @@ export class MediaEngine extends EventTarget {
             noiseSuppression:
               denoiser === 'rnnoise' ||
               denoiser === 'speex' ||
+              denoiser === 'deepfilter-wasm' ||
               denoiser === 'nvidia' ||
               denoiser === 'deepfilter' ||
               denoiser === 'off'
@@ -213,13 +215,18 @@ export class MediaEngine extends EventTarget {
         microphone &&
         (denoiser === 'rnnoise' ||
           denoiser === 'speex' ||
+          denoiser === 'deepfilter-wasm' ||
           denoiser === 'nvidia' ||
           denoiser === 'deepfilter')
       ) {
         let denoised: DenoisedTrack;
         let effects: DenoisedTrack | undefined;
         let rawOwnershipTransferred = false;
-        if (denoiser === 'nvidia' || denoiser === 'deepfilter') {
+        if (
+          denoiser === 'nvidia' ||
+          denoiser === 'deepfilter' ||
+          denoiser === 'deepfilter-wasm'
+        ) {
           try {
             denoised =
               denoiser === 'nvidia'
@@ -227,11 +234,16 @@ export class MediaEngine extends EventTarget {
                     intensity: processing.nvidiaIntensity,
                     vad: processing.nvidiaVad,
                   })
-                : await createDeepfilterDenoiser(
-                    microphone,
-                    undefined,
-                    processing.deepfilterAttenuationDb,
-                  );
+                : denoiser === 'deepfilter'
+                  ? await createDeepfilterDenoiser(
+                      microphone,
+                      undefined,
+                      processing.deepfilterAttenuationDb,
+                    )
+                  : await createDeepfilterWasmDenoiser(
+                      microphone,
+                      processing.deepfilterAttenuationDb,
+                    );
           } catch (error) {
             denoised = await createDenoiser(microphone);
             const reason =
@@ -239,7 +251,7 @@ export class MediaEngine extends EventTarget {
             this.emit('denoiser-status', {
               requested: denoiser,
               active: 'rnnoise',
-              message: `${denoiser === 'nvidia' ? 'NVIDIA' : 'DeepFilterNet'} noise removal was unavailable (${reason}). RNNoise is active.`,
+              message: `${denoiser === 'nvidia' ? 'NVIDIA' : 'DeepFilterNet3'} noise removal was unavailable (${reason}). RNNoise is active.`,
             });
           }
         } else if (denoiser === 'speex') {
@@ -292,7 +304,9 @@ export class MediaEngine extends EventTarget {
           });
         }
         if (
-          (denoiser === 'nvidia' || denoiser === 'deepfilter') &&
+          (denoiser === 'nvidia' ||
+            denoiser === 'deepfilter' ||
+            denoiser === 'deepfilter-wasm') &&
           denoised.failure
         ) {
           void denoised.failure.then(async (error) => {
@@ -338,7 +352,7 @@ export class MediaEngine extends EventTarget {
               this.emit('denoiser-status', {
                 requested: denoiser,
                 active: 'rnnoise',
-                message: `${denoiser === 'nvidia' ? 'NVIDIA' : 'DeepFilterNet'} noise removal stopped (${reason}). RNNoise is active.`,
+                message: `${denoiser === 'nvidia' ? 'NVIDIA' : 'DeepFilterNet3'} noise removal stopped (${reason}). RNNoise is active.`,
               });
             } catch (fallbackError) {
               microphone.stop();
@@ -378,7 +392,20 @@ export class MediaEngine extends EventTarget {
   ): Promise<void> {
     this.ensureActive();
     const captureOptions: DisplayMediaStreamOptions & { windowAudio: 'window' | 'exclude' } = {
-      video: options.video ?? true,
+      // Follow the configured stream quality rather than a fixed ceiling, so a
+      // high-refresh display is not silently halved before encoding starts.
+      video: options.video ?? {
+        width: { ideal: 2560 },
+        height: { ideal: 1440 },
+        ...(this.quality.maxFramerate
+          ? {
+              frameRate: {
+                ideal: this.quality.maxFramerate,
+                max: this.quality.maxFramerate,
+              },
+            }
+          : {}),
+      },
       audio: options.systemAudio ?? true,
       // Ask supporting browsers to scope window audio to the selected application.
       // This is a picker hint; the browser/OS still controls available audio sources.
@@ -394,6 +421,11 @@ export class MediaEngine extends EventTarget {
     try {
       const screen = stream.getVideoTracks()[0];
       const system = stream.getAudioTracks()[0];
+      // Without an explicit hint Chromium treats a screen like camera video and
+      // will trade resolution away first. Unreadable text is worse than a lower
+      // frame rate, so state the intent for every browser share, not only the
+      // native compatibility path.
+      if (screen) screen.contentHint = options.contentHint ?? 'detail';
       const endShare = () => {
         void Promise.all([
           this.setLocalTrack('screen', null),
@@ -909,6 +941,9 @@ export class MediaEngine extends EventTarget {
             ? { packetsLost: row.packetsLost }
             : {}),
           ...(row.jitter !== undefined ? { jitterMs: row.jitter * 1000 } : {}),
+          ...(localSource === 'screen' && descriptor?.screenTransport
+            ? { screenTransport: descriptor.screenTransport }
+            : {}),
         };
       });
     const local = selectedPair
@@ -987,6 +1022,9 @@ export class MediaEngine extends EventTarget {
     const previous = this.localTracks.get('screen');
     if (previous && previous !== track) previous.stop();
     if (track) {
+      // This decoded native track is also used by the compatibility sender.
+      // Prefer preserving text/detail instead of silently scaling the picture.
+      track.contentHint = this.nativeScreen.compatibilityContentHint;
       this.localTracks.set('screen', track);
       track.addEventListener('ended', () => {
         if (this.localTracks.get('screen') !== track) return;
@@ -1050,6 +1088,9 @@ export class MediaEngine extends EventTarget {
       source: descriptor.source,
       track,
       stream: new MediaStream([track]),
+      ...(descriptor.source === 'screen' && descriptor.screenTransport
+        ? { screenTransport: descriptor.screenTransport }
+        : {}),
     };
     if (descriptor.source === 'screen' && this.nativeRemote.delete(peerId))
       this.nativeScreen.finishReceiverFallback(peerId);
@@ -1134,6 +1175,11 @@ export class MediaEngine extends EventTarget {
         mediaKind: track.kind as 'audio' | 'video',
         enabled: track.enabled,
         streamId: peer?.streams.get(source)?.id,
+        ...(source === 'screen' ? {
+          screenTransport: this.nativeScreen.active
+            ? 'native-compatibility' as const
+            : 'browser' as const,
+        } : {}),
       }),
     );
     await this.send({ type: 'track-metadata', to: peerId, tracks });
@@ -1198,24 +1244,45 @@ export class MediaEngine extends EventTarget {
     // negotiation; inventing one makes setParameters reject and can break capture.
     // Reapply after SDP negotiation when the browser exposes the actual entries.
     if (!parameters.encodings?.length) return;
+    const isScreen =
+      sender.track.kind === 'video' &&
+      sender.track === this.localTracks.get('screen');
+    const nativeCompatibility = isScreen && this.nativeScreen.active;
+    const quality = nativeCompatibility
+      ? this.nativeScreen.compatibilityQuality ?? this.quality
+      : this.quality;
     let changed = false;
+    // Every screen sender degrades by dropping frames rather than resolution.
+    // Motion content is the one case where the reverse reads better.
+    const hint = nativeCompatibility
+      ? this.nativeScreen.compatibilityContentHint
+      : sender.track.contentHint;
+    const preference = isScreen
+      ? hint === 'motion'
+        ? 'balanced'
+        : 'maintain-resolution'
+      : undefined;
+    if (preference && parameters.degradationPreference !== preference) {
+      parameters.degradationPreference = preference;
+      changed = true;
+    }
     for (const encoding of parameters.encodings) {
       if (sender.track.kind === 'audio') {
-        if (this.quality.maxAudioBitrate !== undefined && encoding.maxBitrate !== this.quality.maxAudioBitrate) {
-          encoding.maxBitrate = this.quality.maxAudioBitrate;
+        if (quality.maxAudioBitrate !== undefined && encoding.maxBitrate !== quality.maxAudioBitrate) {
+          encoding.maxBitrate = quality.maxAudioBitrate;
           changed = true;
         }
       } else {
-        if (this.quality.maxVideoBitrate !== undefined && encoding.maxBitrate !== this.quality.maxVideoBitrate) {
-          encoding.maxBitrate = this.quality.maxVideoBitrate;
+        if (quality.maxVideoBitrate !== undefined && encoding.maxBitrate !== quality.maxVideoBitrate) {
+          encoding.maxBitrate = quality.maxVideoBitrate;
           changed = true;
         }
-        if (this.quality.maxFramerate !== undefined && encoding.maxFramerate !== this.quality.maxFramerate) {
-          encoding.maxFramerate = this.quality.maxFramerate;
+        if (quality.maxFramerate !== undefined && encoding.maxFramerate !== quality.maxFramerate) {
+          encoding.maxFramerate = quality.maxFramerate;
           changed = true;
         }
-        if (this.quality.scaleResolutionDownBy !== undefined && encoding.scaleResolutionDownBy !== this.quality.scaleResolutionDownBy) {
-          encoding.scaleResolutionDownBy = this.quality.scaleResolutionDownBy;
+        if (quality.scaleResolutionDownBy !== undefined && encoding.scaleResolutionDownBy !== quality.scaleResolutionDownBy) {
+          encoding.scaleResolutionDownBy = quality.scaleResolutionDownBy;
           changed = true;
         }
       }

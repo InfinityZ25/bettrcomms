@@ -113,10 +113,9 @@ try {
   const laserSource = actual.find(w => w.Title === 'fixture');
   const sourceWidth = laserSource.Bounds.Right - laserSource.Bounds.Left;
   const sourceHeight = laserSource.Bounds.Bottom - laserSource.Bounds.Top;
-  const captureScale = Math.min(1280 / sourceWidth, 720 / sourceHeight);
-  const encodedWidth = Math.floor(sourceWidth * captureScale / 2) * 2;
-  const laserX = laserSource.Bounds.Left + (.7 * 1280 - (1280 - encodedWidth) / 2) / encodedWidth * sourceWidth;
-  assert.ok(actual.some(w => w.Title === 'overlay' && w.Visible && Math.abs(w.Bounds.Left + 90 - laserX) <= 2), `Native laser maps onto the real source window: ${JSON.stringify(actual)}; ${await app.evaluate(() => window.copilotUiStatus)}`);
+  const laserX = laserSource.Bounds.Left + .7 * sourceWidth;
+  const laserY = laserSource.Bounds.Top + .6 * sourceHeight;
+  assert.ok(actual.some(w => w.Title === 'overlay' && w.Visible && Math.abs(w.Bounds.Left + 90 - laserX) <= 2 && Math.abs(w.Bounds.Top + 90 - laserY) <= 2), `Native laser maps onto the real source window: ${JSON.stringify(actual)}; ${await app.evaluate(() => window.copilotUiStatus)}`);
   await app.evaluate(() => new Promise(resolve => setTimeout(resolve, 600)));
   await app.evaluate(() => window.copilotSendCapture());
   actual = inspect();

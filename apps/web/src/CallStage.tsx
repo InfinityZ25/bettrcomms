@@ -73,6 +73,8 @@ type StageItem = {
   name: string;
   track: MediaStreamTrack;
   self?: boolean;
+  /** The sender fell back to re-encoding this screen through the call. */
+  reencoded?: boolean;
 };
 
 function readGalleryLayout(): GalleryLayout {
@@ -132,6 +134,8 @@ export default function CallStage({
     [recording, setRecording] = useState(false),
     [result, setResult] = useState<RecordingResult | null>(null),
     [watchedShareIds, setWatchedShareIds] = useState<string[]>([]),
+    /** Signaling is retrying. Media continues; setup and membership pause. */
+    [signalingDown, setSignalingDown] = useState(false),
     [focusedStageKey, setFocusedStageKey] = useState<string | null>(null);
   const workspace = useRef<HTMLDivElement>(null);
   const docking = useCallLayout(layout, onLayout, joined);
@@ -290,6 +294,7 @@ export default function CallStage({
     engine.current?.dispose();
     engine.current = null;
     setJoined(false);
+    setSignalingDown(false);
     setServerRtt(null);
     setStats([]);
     setLocals(new Map());
@@ -554,7 +559,7 @@ export default function CallStage({
       s.addEventListener('peers', (event) => {
         for (const id of event.detail.peerIds) {
           e.addPeer(id);
-          setPeers((p) => ({ ...p, [id]: 'connecting' }));
+          setPeers((p) => p[id] === undefined ? { ...p, [id]: 'connecting' } : p);
         }
         setNames(current => {
           const next = { ...current };
@@ -571,7 +576,7 @@ export default function CallStage({
       });
       s.addEventListener('peer-joined', (event) => {
         e.addPeer(event.detail.peerId);
-        setPeers((p) => ({ ...p, [event.detail.peerId]: 'connecting' }));
+        setPeers((p) => p[event.detail.peerId] === undefined ? { ...p, [event.detail.peerId]: 'connecting' } : p);
         if (event.detail.name) setNames(current => ({ ...current, [event.detail.peerId]: event.detail.name! }));
       });
       s.addEventListener('peer-left', (event) => {
@@ -611,7 +616,37 @@ export default function CallStage({
         if (p?.name)
           setNames((n) => ({ ...n, [event.detail.peerId]: p.name! }));
       });
+      // Signaling carries setup and membership, not media. Established peer
+      // connections keep flowing while the server restarts, so a dropped socket
+      // is a degraded state, not the end of the call.
+      s.addEventListener('disconnected', () => {
+        if (socket.current === s) setSignalingDown(true);
+      });
+      s.addEventListener('reconnected', () => {
+        if (socket.current !== s) return;
+        setSignalingDown(false);
+        // A restarted server has no memory of this participant's presence, and
+        // peers it never saw join need connections. Both are re-announced by
+        // the server's snapshot; adding a peer we already hold is a no-op.
+        const input = callMicrophone.getSnapshot();
+        const currentTracks = e.getLocalTracks();
+        try {
+          s.sendPresence({
+            camera: currentTracks.has('camera'),
+            microphone: !input.muted,
+            sharing: currentTracks.has('screen'),
+            recording: recorder.current !== null,
+            muted: input.muted,
+            deafened: input.deafened,
+            name: user.name,
+          });
+        } catch {
+          // The socket closed again before presence could be re-announced;
+          // the next reconnection repeats it.
+        }
+      });
       s.addEventListener('close', () => {
+        setSignalingDown(false);
         if (engine.current === e) {
           callMicrophone.stop();
           void finishRecording();
@@ -670,14 +705,8 @@ export default function CallStage({
         onShare: (options) => originatingEngine.captureNativeScreen(options),
         onBrowser: async () => {
           await originatingEngine.captureScreen(
-            {
-              video: {
-                width: { ideal: 2560 },
-                height: { ideal: 1440 },
-                frameRate: { ideal: 60, max: 60 },
-              },
-              systemAudio: true,
-            },
+            // Capture constraints follow the configured stream quality.
+            { systemAudio: true },
             () =>
               request === shareRequest.current &&
               originatingEngine === engine.current,
@@ -694,14 +723,8 @@ export default function CallStage({
   async function browserScreen() {
     await perform(async () => {
       if (!engine.current) return;
-      await engine.current.captureScreen({
-        video: {
-          width: { ideal: 2560 },
-          height: { ideal: 1440 },
-          frameRate: { ideal: 60, max: 60 },
-        },
-        systemAudio: true,
-      });
+      // Capture constraints follow the configured stream quality.
+      await engine.current.captureScreen({ systemAudio: true });
     });
   }
   async function camera() {
@@ -775,7 +798,7 @@ export default function CallStage({
   }
   const shares = [
     ...(locals.has('screen')
-      ? [{ id: 'local', name: 'Your screen', track: locals.get('screen')! }]
+      ? [{ id: 'local', name: 'Your screen', track: locals.get('screen')!, reencoded: false }]
       : []),
     ...remote
       .filter((t) => t.source === 'screen')
@@ -783,6 +806,9 @@ export default function CallStage({
         id: t.peerId,
         name: (names[t.peerId] ?? 'Friend') + '’s screen',
         track: t.track,
+        // The sender's direct native connection failed and it is re-encoding
+        // its own decoded preview. Say so instead of looking like a bad share.
+        reencoded: t.screenTransport === 'native-compatibility',
       })),
   ];
   const connected = Object.entries(peers).filter(
@@ -817,6 +843,7 @@ export default function CallStage({
       name: share.name,
       track: share.track,
       self: share.id === 'local',
+      reencoded: share.reencoded ?? false,
     })),
     ...cameraParticipants
       .filter((camera): camera is typeof camera & { track: MediaStreamTrack } => Boolean(camera.track))
@@ -1044,7 +1071,18 @@ export default function CallStage({
                     <MonitorUp size={14} /> {watching ? 'Stop watching' : 'Watch'}
                   </button>
                 </div>
-                <div className="tile-caption"><span>{screenShare.name}</span><MonitorUp size={13} /></div>
+                <div className="tile-caption">
+                  <span>{screenShare.name}</span>
+                  {screenShare.reencoded && (
+                    <span
+                      className="screen-share-degraded"
+                      title="The direct native connection failed, so this screen is being re-encoded through the call at reduced quality."
+                    >
+                      Reduced quality
+                    </span>
+                  )}
+                  <MonitorUp size={13} />
+                </div>
               </div>
             );
           })}
@@ -1118,6 +1156,15 @@ export default function CallStage({
         {talkSettings.enabled && (
           <span className="push-to-talk-status" role="status" title={globalMessage}>
             {globalStatus === 'unavailable' || globalStatus === 'connecting' ? globalMessage : deafened ? 'Deafened' : manualMuted ? 'Microphone muted' : !transmitting ? `Hold ${talkBindingLabel(talkSettings.binding)} to talk${globalStatus === 'active' ? ' · Global' : ''}` : 'Push-to-talk · Transmitting'}
+          </span>
+        )}
+        {signalingDown && (
+          <span
+            className="signaling-reconnecting"
+            role="status"
+            title="The signaling server is unreachable. Calls already connected keep running peer to peer; joining, sharing and camera changes resume when it returns."
+          >
+            Reconnecting to server · call continues
           </span>
         )}
         <ConnectionStatus
@@ -1236,7 +1283,10 @@ export default function CallStage({
                 {s.tracks.map((t, i) => (
                   <small key={i}>
                     {t.direction === 'outbound' ? 'Sending' : 'Receiving'}{' '}
-                    {t.source ?? t.mediaKind}: {(t.bitrate / 1000).toFixed(0)}{' '}
+                    {t.source ?? t.mediaKind}
+                    {t.source === 'screen' && t.screenTransport
+                      ? ` (${t.screenTransport === 'native-compatibility' ? 'native compatibility' : 'browser WebRTC'})`
+                      : ''}: {(t.bitrate / 1000).toFixed(0)}{' '}
                     kbps{' '}
                     {t.width
                       ? `· ${t.width}×${t.height} · ${t.framesPerSecond ?? '—'} FPS`
@@ -1363,6 +1413,14 @@ function ZoomableStageItem({
         <span>{item.kind === 'screen' ? <MonitorUp size={15} /> : <Video size={15} />}{item.name.toUpperCase()}</span>
         <div className="stage-pane-actions">
           {canFocus && <button aria-label={`Focus ${item.name}`} onClick={onFocus}><Pin size={14} /> Focus</button>}
+          {item.reencoded && (
+            <span
+              className="stage-badge stage-badge-degraded"
+              title="The direct native connection failed, so this screen is being re-encoded through the call at reduced quality."
+            >
+              Reduced quality
+            </span>
+          )}
           <span className="stage-badge">{item.kind === 'camera' || receiving ? 'Live' : 'Waiting for video'}</span>
           <button aria-label={item.kind === 'screen' ? `Stop watching ${item.name}` : `Return ${item.name} to the camera row`} onClick={onRemove}><X size={15} /></button>
         </div>
@@ -1424,8 +1482,11 @@ function FrozenTrackPreview({ track, name }: { track: MediaStreamTrack; name: st
       target.width = Math.max(1, Math.round(source.videoWidth * scale));
       target.height = Math.max(1, Math.round(source.videoHeight * scale));
       target.getContext('2d', { alpha: false })?.drawImage(source, 0, 0, target.width, target.height);
-      source.pause();
-      source.srcObject = null;
+      // The track keeps arriving whether or not this tile paints it, so freezing
+      // the picture must not tear the decoder down. A detached decoder needs a
+      // keyframe when watching resumes, and a native sender cannot supply one on
+      // request, which stalls the resumed view until the next scheduled IDR.
+      // Keep decoding into the offscreen element and show the still frame.
       setStatus('ready');
     };
     const queueCapture = () => {
@@ -1450,7 +1511,7 @@ function FrozenTrackPreview({ track, name }: { track: MediaStreamTrack; name: st
       <canvas ref={canvas} aria-label={`Preview of ${name}`} />
       {status === 'loading' && <span>Preparing preview…</span>}
       {status === 'unavailable' && <span>Preview unavailable</span>}
-      {status !== 'ready' && <video ref={video} muted playsInline aria-hidden="true" />}
+      <video ref={video} muted playsInline aria-hidden="true" />
     </div>
   );
 }

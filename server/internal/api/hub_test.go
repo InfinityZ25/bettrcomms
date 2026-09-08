@@ -108,3 +108,41 @@ func TestConcurrentJoinersAlwaysDiscoverEachOther(t *testing.T) {
 		}
 	}
 }
+
+func TestResumedSignalingSocketDoesNotDisturbOtherPeers(t *testing.T) {
+	hub := NewHub()
+	watcher := &client{peer: "watcher", user: "user-1", name: "Alice", send: make(chan wire, 8)}
+	if _, _, err := hub.addWithMode("room", watcher, false); err != nil {
+		t.Fatalf("watcher join: %v", err)
+	}
+	original := &client{peer: "caller", user: "user-2", name: "Bob", send: make(chan wire, 8)}
+	if _, _, err := hub.addWithMode("room", original, false); err != nil {
+		t.Fatalf("caller join: %v", err)
+	}
+	if joined := <-watcher.send; joined.Type != "peer.joined" || joined.From != original.peer {
+		t.Fatalf("watcher did not observe the caller joining: %#v", joined)
+	}
+
+	// The same participant reconnecting keeps its peer connections and media,
+	// so the watcher must not be told to tear anything down and rebuild it.
+	resumed := &client{peer: "caller", user: "user-2", name: "Bob", send: make(chan wire, 8)}
+	peers, _, err := hub.addWithMode("room", resumed, false)
+	if err != nil {
+		t.Fatalf("resume was rejected: %v", err)
+	}
+	if len(peers) != 1 || peers[0] != watcher.peer {
+		t.Fatalf("resumed socket did not rediscover the room: peers=%v", peers)
+	}
+	select {
+	case unexpected := <-watcher.send:
+		t.Fatalf("resuming disturbed an unrelated peer: %#v", unexpected)
+	default:
+	}
+
+	// A genuinely different participant reusing a free peer identity is still
+	// announced, and a departure is still reported when the room really loses one.
+	hub.remove("room", resumed)
+	if left := <-watcher.send; left.Type != "peer.left" || left.From != resumed.peer {
+		t.Fatalf("watcher did not observe a real departure: %#v", left)
+	}
+}

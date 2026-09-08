@@ -135,7 +135,7 @@ describe('native screen signaling lifecycle', () => {
       expect.objectContaining({ h264Profile: 'main' }));
   });
 
-  it('publishes through the ordinary call connection immediately for a desktop viewer', async () => {
+  it('tries the single-encode native path for a desktop viewer before fallback', async () => {
     vi.stubGlobal('RTCRtpReceiver', {
       getCapabilities: () => ({ codecs: [
         { mimeType: 'video/H264', sdpFmtpLine: 'packetization-mode=1;profile-level-id=42e01f' },
@@ -159,9 +159,14 @@ describe('native screen signaling lifecycle', () => {
       },
     });
     await starting;
+    expect(transport.compatibilityQuality).toEqual({
+      maxVideoBitrate: 20_000_000,
+      maxFramerate: 60,
+      scaleResolutionDownBy: 1,
+    });
     await transport.addPeer('peer-desktop');
-    expect(fallback).toHaveBeenCalledWith('peer-desktop');
-    expect(mocks.invoke).not.toHaveBeenCalledWith('native_screen_peer_offer',
+    expect(fallback).not.toHaveBeenCalled();
+    expect(mocks.invoke).toHaveBeenCalledWith('native_screen_peer_offer',
       expect.objectContaining({ peerId: 'peer-desktop' }));
   });
 
@@ -352,6 +357,72 @@ describe('native screen signaling lifecycle', () => {
       captureId: 'remote-capture', description: { type: 'offer', sdp: 'v=0\r\n' },
     });
     await vi.advanceTimersByTimeAsync(5_000);
+    expect(sent.some(signal => signal.type === 'signal'
+      && signal.transport === 'native-screen'
+      && signal.data.kind === 'native-screen-fallback-request')).toBe(false);
+    vi.useRealTimers();
+  });
+
+  it('moves a viewer whose link cannot sustain the fixed native bitrate to the compatibility route', async () => {
+    vi.useFakeTimers();
+    // Receiving, so the no-media timer never fires, but losing far more than
+    // NACK can retransmit. The native sender has no way to encode any slower.
+    let lost = 0, received = 0;
+    const advance = () => {
+      lost += 90;
+      received += 910;
+      FakePeerConnection.stats = new Map([['video', {
+        id: 'video', type: 'inbound-rtp', kind: 'video',
+        bytesReceived: received * 1200, framesDecoded: received,
+        packetsReceived: received, packetsLost: lost, totalFreezesDuration: 0,
+      }]]);
+    };
+    advance();
+    const { transport, sent } = setup();
+    await transport.handle({
+      type: 'offer', from: 'peer-b', to: 'self', transport: 'native-screen',
+      captureId: 'remote-capture', description: { type: 'offer', sdp: 'v=0\r\n' },
+    });
+    const requested = () => sent.some(signal => signal.type === 'signal'
+      && signal.transport === 'native-screen'
+      && signal.data.kind === 'native-screen-fallback-request');
+    // The first window only establishes a baseline, and one bad window is a
+    // hiccup, so neither may move a viewer off the native route.
+    for (let window = 0; window < 2; window += 1) {
+      advance();
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(requested()).toBe(false);
+    }
+    for (let window = 0; window < 3; window += 1) {
+      advance();
+      await vi.advanceTimersByTimeAsync(2_000);
+    }
+    expect(requested()).toBe(true);
+    vi.useRealTimers();
+  });
+
+  it('keeps a viewer on the native route through an isolated bad window', async () => {
+    vi.useFakeTimers();
+    let lost = 0, received = 0;
+    const advance = (lossPackets: number) => {
+      lost += lossPackets;
+      received += 1000 - lossPackets;
+      FakePeerConnection.stats = new Map([['video', {
+        id: 'video', type: 'inbound-rtp', kind: 'video',
+        bytesReceived: received * 1200, framesDecoded: received,
+        packetsReceived: received, packetsLost: lost, totalFreezesDuration: 0,
+      }]]);
+    };
+    advance(0);
+    const { transport, sent } = setup();
+    await transport.handle({
+      type: 'offer', from: 'peer-b', to: 'self', transport: 'native-screen',
+      captureId: 'remote-capture', description: { type: 'offer', sdp: 'v=0\r\n' },
+    });
+    for (const loss of [0, 90, 90, 0, 90, 90, 0]) {
+      advance(loss);
+      await vi.advanceTimersByTimeAsync(2_000);
+    }
     expect(sent.some(signal => signal.type === 'signal'
       && signal.transport === 'native-screen'
       && signal.data.kind === 'native-screen-fallback-request')).toBe(false);

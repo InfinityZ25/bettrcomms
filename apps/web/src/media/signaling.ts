@@ -8,8 +8,40 @@ export type RoomSocketEventMap = {
   presence: CustomEvent<{ peerId: string; payload: unknown }>;
   latency: CustomEvent<{ rttMs: number | null }>;
   error: CustomEvent<unknown>;
+  /** Signaling is temporarily unavailable. Established media is unaffected. */
+  disconnected: CustomEvent<{ attempt: number; delayMs: number }>;
+  /** Signaling is usable again. Presence must be re-announced. */
+  reconnected: Event;
+  /** The session is over: the caller closed it, or reconnection gave up. */
   close: Event;
 };
+
+/**
+ * Signaling carries offers, candidates, presence and membership. Once a peer
+ * connection is established its media flows directly between peers and needs
+ * none of that, so a server restart must not end a call. Retry for roughly a
+ * minute and a half before treating the session as genuinely over.
+ */
+const RECONNECT_BASE_MS = 1_000;
+const RECONNECT_MAX_MS = 10_000;
+const RECONNECT_ATTEMPTS = 12;
+
+/**
+ * Only transport-level failures may be retried. The server ends a session
+ * deliberately with a policy violation — a connection replaced from another
+ * device, revoked membership, a deleted room, a revoked session — and
+ * reconnecting through any of those would defeat the decision. Anything not
+ * listed here, including a normal closure, ends the session.
+ */
+const RECONNECTABLE_CLOSE_CODES = new Set([
+  1001, // going away: the server is shutting down for a deploy
+  1005, // no status received
+  1006, // abnormal closure: the connection died
+  1011, // internal error
+  1012, // service restart
+  1013, // try again later
+  1014, // bad gateway
+]);
 
 /** Adapter for the Bettercomms room WebSocket protocol. */
 export class RoomWebSocketSignaling extends EventTarget implements SignalingAdapter {
@@ -18,6 +50,10 @@ export class RoomWebSocketSignaling extends EventTarget implements SignalingAdap
   private pingInterval?: number;
   private pingTimeout?: number;
   private pendingPing?: { nonce: string; sentAt: number };
+  private closing = false;
+  private reconnecting = false;
+  private reconnectAttempt = 0;
+  private reconnectTimer?: number;
 
   readonly url: string;
 
@@ -46,7 +82,10 @@ export class RoomWebSocketSignaling extends EventTarget implements SignalingAdap
     if (this.socket?.readyState === WebSocket.OPEN) return Promise.resolve();
     if (this.opening) return this.opening;
     this.opening = new Promise((resolve, reject) => {
-      const socket = new WebSocket(this.url);
+      // A resume must only reclaim its own peer identity. Reusing the original
+      // join mode would let an automatic reconnection evict this account's
+      // other devices, which only a deliberate join is allowed to do.
+      const socket = new WebSocket(this.reconnecting ? this.resumeUrl() : this.url);
       let opened = false;
       const timeout = window.setTimeout(() => {
         if (opened) return;
@@ -59,8 +98,15 @@ export class RoomWebSocketSignaling extends EventTarget implements SignalingAdap
         opened = true;
         window.clearTimeout(timeout);
         this.opening = undefined;
+        const resumed = this.reconnecting;
+        this.reconnecting = false;
+        this.reconnectAttempt = 0;
+        // A queued signal can reconnect before the backoff timer fires.
+        window.clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = undefined;
         this.startTelemetry(socket);
         resolve();
+        if (resumed) this.dispatchEvent(new Event("reconnected"));
       };
       socket.onerror = (event) => {
         if (this.socket !== socket) return;
@@ -74,9 +120,24 @@ export class RoomWebSocketSignaling extends EventTarget implements SignalingAdap
         this.stopTelemetry(true);
         this.socket = undefined;
         this.opening = undefined;
-        if (!opened) reject(new Error(`Room WebSocket closed before connecting (${event.code})`));
-        this.dispatchEvent(new Event("close"));
+        if (!opened) {
+          reject(new Error(`Room WebSocket closed before connecting (${event.code})`));
+          // A retry that never opened is handled by the retry loop itself;
+          // a first attempt that never opened means the join failed.
+          if (!this.reconnecting) this.dispatchEvent(new Event("close"));
+          return;
+        }
+        if (this.closing || !RECONNECTABLE_CLOSE_CODES.has(event.code)) {
+          this.dispatchEvent(new Event("close"));
+          if (!this.closing && !event.wasClean)
+            this.dispatchEvent(new CustomEvent("error", { detail: event }));
+          return;
+        }
         if (!event.wasClean) this.dispatchEvent(new CustomEvent("error", { detail: event }));
+        // Established peer connections keep carrying media without signaling,
+        // so losing this socket is a degraded state rather than a finished call.
+        this.reconnecting = true;
+        this.scheduleReconnect();
       };
       socket.onmessage = (event) => {
         if (this.socket === socket) this.receive(event.data);
@@ -96,10 +157,43 @@ export class RoomWebSocketSignaling extends EventTarget implements SignalingAdap
     this.socket.send(JSON.stringify({ type: "presence", payload }));
   }
 
+  private resumeUrl(): string {
+    try {
+      const url = new URL(this.url);
+      url.searchParams.set("join_mode", "additional");
+      return url.toString();
+    } catch {
+      return this.url;
+    }
+  }
+
+  private scheduleReconnect(): void {
+    if (this.closing) return;
+    if (this.reconnectAttempt >= RECONNECT_ATTEMPTS) {
+      this.reconnecting = false;
+      this.dispatchEvent(new Event("close"));
+      return;
+    }
+    const attempt = ++this.reconnectAttempt;
+    const delayMs = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * 2 ** (attempt - 1));
+    this.dispatchEvent(new CustomEvent("disconnected", { detail: { attempt, delayMs } }));
+    this.reconnectTimer = window.setTimeout(() => {
+      this.reconnectTimer = undefined;
+      if (this.closing) return;
+      this.connect().catch(() => this.scheduleReconnect());
+    }, delayMs);
+  }
+
   close(code = 1000, reason = "media session ended"): void {
     const socket = this.socket;
+    this.closing = true;
+    this.reconnecting = false;
+    window.clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = undefined;
     this.stopTelemetry(true);
     this.opening = undefined;
+    // A caller that closes during the retry backoff has no socket to close and
+    // tears its own session down; emitting "close" here would race that.
     if (socket) socket.close(code, reason);
     else this.socket = undefined;
   }

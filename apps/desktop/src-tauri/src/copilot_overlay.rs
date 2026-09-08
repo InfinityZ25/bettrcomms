@@ -12,16 +12,14 @@ fn trusted(window: &WebviewWindow) -> Result<(), String> {
 }
 
 fn position(geometry: (i32, i32, u32, u32, u32, u32), size: (u32, u32), anchor: (f64, f64), corner: &str) -> Result<(i32, i32), String> {
-    let (left, top, width, height, encoded_width, encoded_height) = geometry;
+    let (left, top, width, height, _, _) = geometry;
     if corner != "point" {
         return Ok((left + if corner.ends_with("right") { (width as i32 - size.0 as i32 - 12).max(0) } else { 12 }, top + if corner.starts_with("bottom") { (height as i32 - size.1 as i32 - 12).max(0) } else { 12 }));
     }
-    let scale = (encoded_width as f64 / width as f64).min(encoded_height as f64 / height as f64);
-    // Same even-dimension letterbox used by the native FFmpeg pipeline.
-    let w = (width as f64 * scale / 2.).floor() * 2.;
-    let h = (height as f64 * scale / 2.).floor() * 2.;
-    let x = (anchor.0 * encoded_width as f64 - (encoded_width as f64 - w) / 2.) / w;
-    let y = (anchor.1 * encoded_height as f64 - (encoded_height as f64 - h) / 2.) / h;
+    // Native capture scales the entire source without encoded padding. Viewer
+    // coordinates already exclude CSS letterboxing, so map them directly back
+    // to the physical source even when encoder dimensions round to even pixels.
+    let (x, y) = anchor;
     if !(0. ..=1.).contains(&x) || !(0. ..=1.).contains(&y) { return Err("The signal points outside captured content".into()); }
     Ok((left + (x * width as f64).round() as i32 - size.0 as i32 / 2, top + (y * height as f64).round() as i32 - size.1 as i32 / 2))
 }
@@ -127,9 +125,22 @@ pub async fn copilot_overlay_clear(window: WebviewWindow) -> Result<(), String> 
 mod tests {
     use super::*;
     #[test]
-    fn maps_letterboxed_points_and_negative_monitor_origins() {
+    fn maps_points_to_negative_monitor_origins() {
         assert_eq!(position((-1920, 0, 1920, 1080, 1280, 720), (100, 100), (0.5, 0.5), "point").unwrap(), (-1010, 490));
-        assert!(position((0, 0, 800, 800, 1280, 720), (100, 100), (0.01, 0.5), "point").is_err());
-        assert_eq!(position((0, 0, 800, 800, 1280, 720), (100, 100), (0.5, 0.5), "point").unwrap(), (350, 350));
+    }
+
+    #[test]
+    fn maps_portrait_and_rounded_ultrawide_frames_without_padding() {
+        assert_eq!(position((20, 30, 500, 900, 600, 1080), (100, 100), (0.1, 0.9), "point").unwrap(), (20, 790));
+        assert_eq!(position((0, 0, 3440, 1440, 1920, 802), (100, 100), (0.7, 0.6), "point").unwrap(), (2358, 814));
+        assert_eq!(position((0, 0, 3440, 1440, 1920, 802), (100, 100), (0., 0.), "point").unwrap(), (-50, -50));
+        assert_eq!(position((0, 0, 3440, 1440, 1920, 802), (100, 100), (1., 1.), "point").unwrap(), (3390, 1390));
+    }
+
+    #[test]
+    fn rejects_points_outside_the_source() {
+        for anchor in [(-0.01, 0.5), (0.5, 1.01), (f64::NAN, 0.5), (0.5, f64::INFINITY)] {
+            assert!(position((0, 0, 800, 800, 720, 720), (100, 100), anchor, "point").is_err());
+        }
     }
 }

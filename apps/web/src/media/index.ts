@@ -13,4 +13,5 @@ export { createDenoiser, type DenoisedTrack } from './denoise';
 export { createSpeexDenoiser } from './speexDenoise';
 export { createNvidiaDenoiser, type NvidiaSession } from './nvidiaDenoise';
 export { createDeepfilterDenoiser } from './deepfilterDenoise';
+export { createDeepfilterWasmDenoiser } from './deepfilterWasmDenoise';
 export type * from './types';

@@ -196,12 +196,30 @@ test('camera dock resizes, snaps, focuses, and preserves the active share', asyn
     await expect(shareTile.locator('video')).toBeVisible();
     await shareTile.hover();
     await page.getByRole('button', { name: 'Stop watching Your screen' }).click();
-    await expect(shareTile.locator('video')).toHaveCount(0);
     const frozenPreview = shareTile.locator('.frozen-track-preview');
     await expect(frozenPreview).toHaveAttribute('data-preview-ready', 'true');
     expect(await frozenPreview.locator('canvas').evaluate((canvas: HTMLCanvasElement) => ({ width: canvas.width, height: canvas.height }))).toEqual({ width: 640, height: 360 });
     await expect(page.getByRole('button', { name: 'Watch Your screen' })).toBeVisible();
+    // The still frame is the only painted surface, but the track stays attached
+    // and playing. Detaching it would make resuming wait for a fresh keyframe,
+    // and a native sender cannot produce one on request.
+    const offscreen = frozenPreview.locator('video');
+    await expect(offscreen).toHaveCount(1);
+    expect(await offscreen.evaluate((video: HTMLVideoElement) => ({
+      paused: video.paused,
+      attached: video.srcObject !== null,
+      opacity: getComputedStyle(video).opacity,
+    }))).toEqual({ paused: false, attached: true, opacity: '0' });
+    const framesWhileFrozen = () => offscreen.evaluate((video: HTMLVideoElement) =>
+      video.getVideoPlaybackQuality?.().totalVideoFrames ?? 0);
+    const beforeFreeze = await framesWhileFrozen();
+    await expect.poll(framesWhileFrozen).toBeGreaterThan(beforeFreeze);
     await page.screenshot({ path: '.local/call-layout-all-media.png', fullPage: true });
+    // Resuming paints live video again without a decoder restart.
+    await page.getByRole('button', { name: 'Watch Your screen' }).click();
+    await expect(frozenPreview).toHaveCount(0);
+    await expect.poll(() => shareTile.locator('video').first().evaluate(
+      (video: HTMLVideoElement) => video.readyState)).toBeGreaterThanOrEqual(2);
   } finally {
     await context.close();
   }

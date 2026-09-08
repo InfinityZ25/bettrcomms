@@ -67,12 +67,20 @@ func (h *Hub) addWithMode(room string, c *client, replaceUser bool) ([]string, m
 	}
 	var replaced []*client
 	var replacedVoices []*voiceClient
+	// The same participant reconnecting its signaling socket keeps its peer
+	// connections and its media. Announcing that as a departure and a fresh
+	// arrival would make everyone else tear those connections down and rebuild
+	// them, which is exactly the interruption reconnecting exists to avoid.
+	resumed := false
 	for existing := range h.rooms[room] {
 		if existing.peer == c.peer && existing.user != c.user {
 			h.mu.Unlock()
 			return nil, nil, errors.New("peer identity is already in use")
 		}
 		if existing.peer == c.peer || (replaceUser && existing.user == c.user) {
+			if existing.peer == c.peer && existing.user == c.user {
+				resumed = true
+			}
 			replaced = append(replaced, existing)
 			if voice := h.voices[room][existing.peer]; voice != nil && voice.owner == existing {
 				replacedVoices = append(replacedVoices, voice)
@@ -87,6 +95,9 @@ func (h *Hub) addWithMode(room string, c *client, replaceUser bool) ([]string, m
 		peers = append(peers, existing.peer)
 		identities[existing.peer] = PeerIdentity{UserID: existing.user, Name: existing.name}
 		for _, old := range replaced {
+			if old.peer == c.peer && old.user == c.user {
+				continue
+			}
 			select {
 			case existing.send <- wire{Type: "peer.left", From: old.peer, UserID: old.user, Name: old.name}:
 			default:
@@ -96,11 +107,13 @@ func (h *Hub) addWithMode(room string, c *client, replaceUser bool) ([]string, m
 	h.rooms[room][c] = struct{}{}
 	// Snapshot and membership must be atomic. Otherwise simultaneous callers
 	// can both receive an empty snapshot and only one learns the other exists.
-	for existing := range h.rooms[room] {
-		if existing != c {
-			select {
-			case existing.send <- wire{Type: "peer.joined", From: c.peer, UserID: c.user, Name: c.name}:
-			default:
+	if !resumed {
+		for existing := range h.rooms[room] {
+			if existing != c {
+				select {
+				case existing.send <- wire{Type: "peer.joined", From: c.peer, UserID: c.user, Name: c.name}:
+				default:
+				}
 			}
 		}
 	}

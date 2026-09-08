@@ -6,13 +6,47 @@ Viewers can send quick signals on a shared video or freeze their own view and se
 
 Indications use a bounded, versioned WebRTC data channel, independently of microphone, camera, screen and system-audio tracks. Marked images stay in endpoint memory. The current Windows native host can display click-through, capture-excluded signals and cards over the captured source, with geometry validation and a 1.2-second renderer lease. Application signals hide when another window is in front; source resizing requires a sharing restart. Browser and non-Windows clients retain in-app presentation. See [visual copilot use and limits](VISUAL_COPILOT.md).
 
+## Unreleased — native compatibility quality
+
+The desktop-viewer compatibility path now carries the native screen picker's
+selected bitrate and frame-rate ceiling into its WebRTC sender instead of
+silently reusing the global browser defaults of 20 Mbps and 60 FPS. It also
+requests resolution-preserving adaptation and marks the native preview as
+detail content, so WebView2 drops frames before reducing a 1080p source to
+640×360 when local encoding load is too high. Connection details identify
+ordinary browser screen tracks and native compatibility tracks separately.
+
+Configured bitrate remains a ceiling rather than constant padding. Actual
+bitrate varies with frame complexity and WebRTC congestion control, while
+actual frame rate remains bounded by capture, decode, re-encode, receiver, and
+network capacity.
+
+Native desktop viewers again try the single-encode Rust H.264 route first,
+matching the capture-to-network shape used by OBS. The measured five-second
+zero-media recovery remains in place. Stream setup adds Automatic, Gameplay,
+and Text & desktop content tuning; detected games prefer motion encoding and
+balanced fallback adaptation, while desktop content preserves fine detail.
+
 ## Unreleased — realtime conversations and presence
+
+Mezon's `deepfilternet3-noise-filter` 1.3.0 is now available as an experimental
+browser and desktop-WebView microphone engine. Its SIMD WASM and DeepFilterNet3
+model are pinned and self-hosted, the package loads only when selected, and
+surfaced startup/runtime failures recover to RNNoise. RNNoise is now the default for new
+clients. The WASM engine is not promoted as recommended: it passed realtime
+data-flow and cleanup checks but reproduced its input exactly on the pinned
+noisy-speech quality fixture. Evidence and asset hashes are recorded in
+[`DEEPFILTER_WASM_FINDINGS.md`](DEEPFILTER_WASM_FINDINGS.md).
 
 Signed-in web and desktop clients now keep one authenticated app-level WebSocket open while the user browses. New messages arrive as complete message records, and call rosters update immediately when a participant joins, leaves, mutes, deafens, reconnects, or adds another device. Room creation, renames, membership changes, direct conversations, friend requests, and friendship changes send targeted invalidation events to affected accounts. Online/offline friend state follows authenticated event-stream connections and is aggregated across multiple open devices.
 
 PostgreSQL remains authoritative for history, rooms, membership, and friendships. Clients load those records through HTTP on first load and reconcile them after a WebSocket reconnect or a targeted change event; the former 3-second message, 2-second call-presence, and 10-second room polling loops are removed. Message sends append the returned record locally and deduplicate the corresponding pushed event instead of downloading the entire history again. Server-side subscriptions are derived from authorized room membership and friendships, so clients cannot subscribe themselves to another room.
 
 The realtime hub remains process-local, matching the existing single signaling-process deployment. A future multi-replica deployment must add shared fanout such as PostgreSQL `LISTEN/NOTIFY` or Redis before enabling more than one API replica.
+
+## 0.1.12 — native screen shape preservation
+
+Windows native sharing now treats 720p, 1080p, 1440p, 4K, and Match source as maximum resolution bounds while preserving the selected window or display's actual aspect ratio. FFmpeg no longer pads narrow, portrait, ultrawide, or unusually shaped application windows into a fixed 16:9 canvas, so receivers and recordings no longer contain encoded black pillars or letterboxing. Encoder dimensions remain even and within the selected quality bound for H.264 compatibility.
 
 ## 0.1.11 — high-refresh native screen sharing
 
@@ -322,3 +356,35 @@ The public GitHub repository is InfinityZ25/bettrcomms. Railway hosts the Vite p
 Desktop releases load the exact hosted origin and grant only that origin the explicit native command permission. A packaged Windows smoke test verified native capability IPC and WorkOS login initiation, and verified that the external authentication page cannot invoke native commands. This does not establish completion of an interactive user login or a system-browser OAuth return flow. macOS uses browser device permissions rather than Windows-only permission IPC.
 
 Windows NSIS packaging and local hosted startup passed. GitHub Actions builds Windows x64 and macOS Apple Silicon/Intel installers; consult the workflow for each final revision's actual outcome. Initial artifacts are unsigned and Mac builds are not notarized. macOS physical-device media behavior, production TURN, and packaged runtime distribution remain the limitations in DEPLOYMENT.md. The hosted and localhost origins have separate local recording libraries; this deployment does not migrate local accounts, chat, or recordings into the hosted environment.
+
+## Native screen delivery smoothness (2026-09-07)
+
+Native sharing previously handed every access unit to one shared WebRTC track, which serialized packet writes across all viewers on the encoder's own output thread. One congested viewer could back up that thread, fill the FFmpeg output pipe and drop frames for everyone, including the sender's local preview. Each viewer now owns a track, a bounded queue and a paced writer task; the encoder thread only enqueues. A viewer that cannot keep up drops its own frames and resumes at the next keyframe, reported per viewer as `droppedFrames` in the existing screen diagnostics. New viewers start on a keyframe instead of mid-GOP.
+
+Packets now leave through a leaky bucket at 2.5 times the selected bitrate, so a two-second keyframe spreads over milliseconds instead of arriving as one burst. The rate-control buffer changed from a half-second VBV to about a tenth of a second, never less than two frame intervals. A measured 1080p120 NVENC capture at 20 Mbps kept an identical keyframe cadence and mean frame size (20 943 versus 20 963 bytes) while its largest frame fell from 147 031 to 115 511 bytes. NVENC keyframes are now explicitly forced as IDR rather than relying on the GOP boundary.
+
+RTP timestamps follow the encoder's output clock instead of a nominal `1/fps` step per access unit, so an encoder that transiently falls behind no longer drifts the receiver's playout away from wall time. The offer advertises only the feedback this sender acts on — NACK, PLI and FIR — and no longer advertises transport-wide congestion control it never populated, nor duplicate NACK feedback lines.
+
+A viewer whose direct native connection fails still falls back to the sender re-encoding its decoded preview through the ordinary call. That fallback was previously visible only inside a diagnostics list; affected screens now carry a "Reduced quality" badge on the tile and on the stage.
+
+This does not add congestion control: the selected bitrate is still fixed for the session, and PLI still cannot force an IDR, so a viewer that starts or loses data waits up to two seconds for the next scheduled keyframe. Both need the encoder to move in-process and remain open.
+
+Validation: 65 native tests pass, including a new loopback test that runs an actual DTLS/SRTP peer connection and confirms a fragmented keyframe reassembles byte for byte with 750-tick spacing at 120 FPS, and a test that a stalled viewer drops its own frames without blocking capture. Encoder argument changes were measured against real NVENC through the packaged FFmpeg 8.1. Frontend build, 103 web unit tests, 82 Playwright tests (one skipped) and `go test ./...` with `go vet ./...` pass. One voice-relay browser test first failed on the local auth rate limiter after a back-to-back suite run and passed on its own; see AGENTS.md on not running suites concurrently. Cross-network behaviour and sustained gameplay load still need hardware acceptance.
+
+## Screen delivery on every route (2026-09-07)
+
+Following the native sender rework, the remaining send and receive paths were measured and corrected.
+
+**Recovery interval.** Native keyframes moved from two seconds to one. A VMAF comparison of both intervals at 1080p across 60 and 120 FPS and 8 and 20 Mbps put every pair within 0.16 VMAF, with measured output rates matching the target to within 0.03 Mbps and the sign reversing on a repeated run. The interval has no measurable quality cost in that range, so the shorter recovery is taken. A real 1080p120 capture confirmed IDRs at exactly one-second spacing with an unchanged mean frame size and 19.95 Mbps delivered. This halves the worst case for a viewer that joins or loses data; it does not replace answering a PLI.
+
+**Resuming a paused view.** An unwatched share previously detached its decoder. Resuming then needed a keyframe the native sender cannot produce on request, which is the main reason the same share looked perfect once and stuttery the next time. The frozen tile now keeps the track attached and decoding and paints a still frame over it, so only the picture is frozen. The stream arrives whether or not a tile paints it, so this costs decode, not bandwidth.
+
+**Browser sharing.** Browser screen tracks now declare `contentHint`, and every screen sender sets `degradationPreference`, not only the native compatibility path. Chromium previously treated a shared screen like camera video and traded resolution away first, which is the wrong degradation for text. Capture constraints now follow the configured stream quality instead of a hardcoded 60 FPS ceiling, and Stream quality offers a 120 FPS ceiling for high-refresh displays.
+
+**Local preview.** The sender's own preview connection never leaves the machine, so it is no longer paced; pacing a loopback path only added latency.
+
+**A viewer the fixed bitrate does not fit.** The native encoder has no congestion control and one rate for every viewer, so a link that cannot carry that rate previously stayed broken indefinitely: the no-media timer only catches a stream that never arrives, not one that arrives and cannot be sustained. Each receiver now measures its own two-second windows of unrecovered loss and freeze time and, after three consecutive bad windows, moves itself to the compatibility route, which is lower quality but runs under the browser's own rate control. The switch is one-way, needs six seconds of sustained trouble, ignores windows carrying fewer than 100 packets, and marks the screen "Reduced quality". This changes the route, not the encoder.
+
+Not addressed, and still open: the selected bitrate is fixed for the session, and PLI cannot force an IDR. Both need the encoder to run in-process. The packaged runtime is a single statically linked `ffmpeg.exe` pinned by exact length and SHA-256 and verified in CI, with no shared libraries or headers to link against, so this is a packaging migration rather than a code change. webrtc-rs 0.17 also ships no bandwidth estimator, so congestion control needs one written before any transport-wide feedback is worth advertising. Routing a share through the server instead of peer-to-peer remains planned as a later native sharing setting.
+
+Validation: 64 native tests, 105 web unit tests, the frontend production build, `go vet ./...` and `go test ./...`, and the Playwright suite pass. Encoder changes were measured against real NVENC through the packaged FFmpeg 8.1. The browser assertions cover synthetic media; they do not prove native capture or cross-network behaviour.

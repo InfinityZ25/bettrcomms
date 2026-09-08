@@ -10,6 +10,17 @@ npm run dev
 npm run build
 ```
 
+`npm run dev` expects the local Go API and PostgreSQL to already be running.
+From the repository root, start them in a separate terminal first:
+
+```powershell
+docker compose up -d postgres
+./scripts/start-api.ps1 -DevAuth
+```
+
+The desktop launcher checks `http://127.0.0.1:8080/healthz` before starting
+Vite and Tauri and reports these commands if the API is unavailable.
+
 Development starts the sibling web app at `http://localhost:5173`. Production builds consume `../web/dist` (expressed as `../../web/dist` because Tauri resolves `frontendDist` from `src-tauri`). Rust and the Tauri Windows prerequisites are required. Bundling is disabled until installer identity, signing, icons, and updater policy are decided.
 
 The capability file grants only core app, event, and window defaults. There is no shell, filesystem, process, HTTP, or global-shortcut plugin.
