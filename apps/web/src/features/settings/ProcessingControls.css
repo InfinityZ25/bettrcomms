@@ -1,0 +1,139 @@
+.processing-controls {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #171e19;
+  padding: 20px;
+  margin: 24px 0;
+}
+.processing-controls > h3 {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  margin: 0 0 16px !important;
+}
+.processing-controls > p {
+  font-size: 12px;
+  color: #a8b7ac;
+  line-height: 1.7;
+  margin: 12px 0;
+}
+.processing-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr));
+  gap: 18px;
+  align-items: center;
+  margin: 18px 0;
+}
+.processing-options > label:not(.switch-row) {
+  display: grid;
+  gap: 10px;
+  font-size: 13px;
+}
+.processing-options .switch-row {
+  margin: 0;
+}
+.processing-range {
+  display: grid;
+  gap: 10px;
+  font-size: 13px;
+}
+.processing-range > span {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.processing-range output {
+  color: var(--brand-accent);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.processing-range input {
+  padding: 0;
+  height: 24px;
+  accent-color: var(--brand-accent);
+}
+.processing-engine {
+  padding: 16px;
+  background: #202b22;
+  border-radius: 10px;
+  margin: 18px 0;
+}
+.processing-advanced {
+  margin: 18px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding: 14px 0;
+}
+.processing-advanced > summary {
+  cursor: pointer;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+.processing-apply {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 18px;
+}
+.processing-apply > span {
+  font-size: 12px;
+  color: var(--brand-accent);
+}
+.switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.25rem;
+  margin: 1.25rem 0;
+}
+
+.switch-row strong {
+  font-size: 0.875rem;
+}
+
+.switch-row p {
+  margin-top: 0.25rem;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+}
+
+.switch-row input {
+  position: relative;
+  width: 2.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0;
+  appearance: none;
+  cursor: pointer;
+  border: 1px solid var(--input);
+  border-radius: 999px;
+  background: var(--input);
+  transition:
+    background-color 150ms,
+    border-color 150ms;
+}
+
+.switch-row input::before {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 999px;
+  background: var(--foreground);
+  transition: left 150ms;
+}
+
+.switch-row input:checked {
+  border-color: var(--primary);
+  background: var(--primary);
+}
+
+.switch-row input:checked::before {
+  left: 17px;
+  background: var(--primary-foreground);
+}

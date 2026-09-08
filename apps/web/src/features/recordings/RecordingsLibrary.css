@@ -1,0 +1,154 @@
+.library-storage {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: #adb5ad;
+  font-size: 12px;
+  margin: 18px 0 24px;
+}
+.library-storage svg {
+  flex-shrink: 0;
+  color: var(--brand-accent);
+}
+.library-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
+  gap: 16px;
+}
+.library-card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  background: #141918;
+  padding: 10px;
+}
+.library-open {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  text-align: left;
+  width: 100%;
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  padding: 0 0 14px;
+}
+.library-open strong {
+  font-size: 17px;
+  overflow-wrap: anywhere;
+}
+.library-open time,
+.library-open small {
+  color: #a5afa7;
+  font-size: 12px;
+}
+.library-cover {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  min-height: 110px;
+  width: 100%;
+  padding: 24px;
+  border-radius: 9px;
+  background: linear-gradient(120deg, #293828, #19221e);
+  color: var(--brand-accent);
+}
+.library-cover span {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+}
+.library-empty {
+  grid-column: 1/-1;
+  text-align: center;
+  padding: 60px 20px;
+  color: #aab6ae;
+}
+.library-empty svg {
+  color: var(--brand-accent);
+}
+.library-empty h2 {
+  color: #eef3ee;
+}
+.library-empty p {
+  max-width: 380px;
+  margin: auto;
+  line-height: 1.8;
+}
+.library-delete {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.recording-title-form {
+  display: flex;
+  gap: 10px;
+  margin: 18px 0;
+}
+.recording-title-form input {
+  flex: 1;
+  min-width: 0;
+  font-size: 18px;
+}
+.recording-exports {
+  margin-top: 24px;
+  border-top: 1px solid var(--line);
+  padding-top: 18px;
+  font-size: 12px;
+}
+.recording-exports summary {
+  cursor: pointer;
+  color: var(--brand-accent);
+}
+.recording-exports summary svg {
+  vertical-align: middle;
+  margin-right: 8px;
+}
+.recording-exports a {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid var(--line);
+  padding: 10px;
+  margin-top: 8px;
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+.recording-exports a span {
+  flex-shrink: 0;
+  color: #a5afa7;
+}
+.library-player-heading {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin: 12px 0 18px;
+}
+.library-player-heading > button {
+  flex-shrink: 0;
+}
+.library-player-heading .recording-title-form {
+  flex: 1;
+  margin: 0;
+  min-width: 0;
+}
+@media (max-width: 600px) {
+  .library-player-heading {
+    display: block;
+  }
+  .library-player-heading > button {
+    margin-bottom: 10px;
+  }
+  .library-storage {
+    margin: 14px 0;
+    font-size: 11px;
+  }
+}

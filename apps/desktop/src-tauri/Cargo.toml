@@ -16,6 +16,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 dunce = "1"
 libloading = "0.8"
+better-gui = { path = "../crates/better-gui" }
 getrandom = "0.2"
 rfd = "0.15"
 serde = { version = "1", features = ["derive"] }

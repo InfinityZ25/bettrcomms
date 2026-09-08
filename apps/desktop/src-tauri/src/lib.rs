@@ -157,6 +157,7 @@ fn desktop_media_capabilities() -> DesktopMediaCapabilities {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(better_gui::init())
         .manage(recording_export::RecordingExportState::default())
         .manage(push_to_talk::PushToTalkState::default())
         .manage(camera_overlay::CameraOverlayState::default())
