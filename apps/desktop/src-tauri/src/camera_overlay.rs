@@ -358,7 +358,7 @@ pub async fn camera_overlay_close(
     Ok(())
 }
 
-async fn on_main<T: Send + 'static>(
+pub(crate) async fn on_main<T: Send + 'static>(
     window: &WebviewWindow,
     task: impl FnOnce() -> T + Send + 'static,
 ) -> Result<T, String> {
@@ -372,7 +372,7 @@ async fn on_main<T: Send + 'static>(
         .map_err(|_| "Camera overlay UI task ended unexpectedly".into())
 }
 
-fn rgba_to_bgra_scaled(
+pub(crate) fn rgba_to_bgra_scaled(
     source: &[u8],
     sw: u32,
     sh: u32,
@@ -400,7 +400,7 @@ fn rgba_to_bgra_scaled(
 }
 
 #[cfg(windows)]
-mod platform {
+pub(crate) mod platform {
     use super::OverlayPosition;
     use std::{
         collections::HashMap,
@@ -688,7 +688,7 @@ mod platform {
     }
 }
 #[cfg(not(windows))]
-mod platform {
+pub(crate) mod platform {
     use super::OverlayPosition;
     use tauri::WebviewWindow;
     pub fn create(

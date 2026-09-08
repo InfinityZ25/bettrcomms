@@ -23,6 +23,34 @@ async function settings(page: Page) {
   await expect(page.getByRole('checkbox', { name: 'Push-to-talk', exact: true })).toBeVisible();
 }
 
+test('typing preference persists and permits PTT without swallowing text', async ({ page }) => {
+  await page.goto('/'); await settings(page);
+  await page.getByRole('checkbox', { name: 'Push-to-talk', exact: true }).check();
+  const preference = page.getByRole('checkbox', { name: 'Allow push-to-talk while typing in BetterComms', exact: true });
+  await expect(preference).not.toBeChecked();
+  await preference.check();
+  await page.reload(); await settings(page); await expect(preference).toBeChecked();
+  await page.evaluate(async () => {
+    const { CallMicrophone, writeTalkSettings, readTalkSettings } = await import('/src/media/pushToTalk.ts');
+    writeTalkSettings({ ...readTalkSettings(), binding: { kind: 'keyboard', code: 'KeyV' } });
+    const editor = document.createElement('textarea'); editor.id = 'ptt-editor-fixture';
+    (document.querySelector('[role="dialog"]') ?? document.body).append(editor);
+    const gate = new CallMicrophone(enabled => { (window as any).typingPtt = enabled; });
+    (window as any).stopTypingPtt = gate.subscribe(() => {}); gate.start();
+  });
+  try {
+    const editor = page.locator('#ptt-editor-fixture'); await editor.focus();
+    await page.keyboard.down('v'); await expect(editor).toHaveValue('v');
+    await expect.poll(() => page.evaluate(() => (window as any).typingPtt)).toBe(true);
+    await page.keyboard.up('v');
+    await expect.poll(() => page.evaluate(() => (window as any).typingPtt)).toBe(false);
+    await preference.uncheck(); await editor.focus(); await page.keyboard.down('v');
+    await expect(editor).toHaveValue('vv');
+    await expect.poll(() => page.evaluate(() => (window as any).typingPtt)).toBe(false);
+    await page.keyboard.up('v');
+  } finally { await page.evaluate(() => (window as any).stopTypingPtt()); }
+});
+
 test('side mouse buttons can be assigned and held without navigating browser history', async ({ page, context }) => {
   await page.goto('/');
   await settings(page);

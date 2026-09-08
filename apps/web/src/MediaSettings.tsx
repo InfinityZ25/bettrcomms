@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Headphones, Monitor, Radio } from 'lucide-react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import DeviceSettings from './DeviceSettings';
+import VisualCopilotSettings from './VisualCopilotSettings';
 import ProcessingControls from './ProcessingControls';
 import { readSpeakingThreshold, saveSpeakingThreshold } from './media/speakingSensitivity';
 import { readRecordingQuality } from './media/recordingQuality';
@@ -112,6 +113,7 @@ export default function MediaSettings() {
     <>
       <h3><Headphones size={17} /> Voice & devices</h3>
       <DeviceSettings />
+      <VisualCopilotSettings />
       <label>
         Speaking indicator threshold · {speakingThreshold} dBFS
         <input type="range" min="-65" max="-20" step="1"

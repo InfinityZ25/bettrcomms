@@ -2,6 +2,7 @@ use serde::Serialize;
 use url::Url;
 
 mod camera_overlay;
+mod copilot_overlay;
 mod deepfilter_audio;
 mod deepfilter_runtime;
 mod deepfilter_setup;
@@ -159,6 +160,7 @@ pub fn run() {
         .manage(recording_export::RecordingExportState::default())
         .manage(push_to_talk::PushToTalkState::default())
         .manage(camera_overlay::CameraOverlayState::default())
+        .manage(copilot_overlay::CopilotOverlayState::default())
         .manage(native_screen::NativeScreenState::default())
         .manage(native_system_audio::NativeSystemAudioState::default())
         .setup(|app| {
@@ -198,6 +200,8 @@ pub fn run() {
                 camera_overlay::camera_overlay_update,
                 camera_overlay::camera_overlay_frame,
                 camera_overlay::camera_overlay_close,
+                copilot_overlay::copilot_overlay_frame,
+                copilot_overlay::copilot_overlay_clear,
                 native_screen::native_screen_capabilities,
                 native_screen::native_screen_sources,
                 native_screen::native_screen_thumbnail,

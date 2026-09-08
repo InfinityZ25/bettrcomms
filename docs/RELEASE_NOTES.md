@@ -1,5 +1,11 @@
 # BetterComms preview release notes
 
+## Unreleased — configurable visual copilot preview
+
+Viewers can send quick signals on a shared video or freeze their own view and send a marked JPEG of that frame. The stream keeps running. Both clients opt in through Settings, and the sharer grants signals and captures separately to each device for the current share. Stopping/replacing the share, disabling reception, leaving or pausing revokes permission and clears indications. Settings include sizes, durations, corners, animation and optional foreground shortcuts with push-to-talk conflict checks.
+
+Indications use a bounded, versioned WebRTC data channel, independently of microphone, camera, screen and system-audio tracks. Marked images stay in endpoint memory. The current Windows native host can display click-through, capture-excluded signals and cards over the captured source, with geometry validation and a 1.2-second renderer lease. Application signals hide when another window is in front; source resizing requires a sharing restart. Browser and non-Windows clients retain in-app presentation. See [visual copilot use and limits](VISUAL_COPILOT.md).
+
 ## Unreleased — realtime conversations and presence
 
 Signed-in web and desktop clients now keep one authenticated app-level WebSocket open while the user browses. New messages arrive as complete message records, and call rosters update immediately when a participant joins, leaves, mutes, deafens, reconnects, or adds another device. Room creation, renames, membership changes, direct conversations, friend requests, and friendship changes send targeted invalidation events to affected accounts. Online/offline friend state follows authenticated event-stream connections and is aggregated across multiple open devices.

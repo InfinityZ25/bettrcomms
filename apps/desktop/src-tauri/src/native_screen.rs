@@ -207,10 +207,50 @@ pub struct NativeScreenDiagnostics {
     peers: Vec<crate::native_screen_rtc::NativePeerDiagnostics>,
 }
 struct Session {
+    source: Source,
     info: Started,
     hub: Arc<NativeScreenRtcHub>,
     child: Mutex<Child>,
     stopped: AtomicBool,
+}
+
+/// Resolve only the active capture's trusted source, never a frontend HWND.
+#[cfg(windows)]
+pub(crate) fn copilot_geometry(state: &NativeScreenState, session_id: &str, foreground: bool) -> Result<(i32, i32, u32, u32, u32, u32), String> {
+    let guard = state.session.lock().map_err(|_| "Capture state unavailable")?;
+    let session = guard.as_ref().filter(|s| s.info.session_id == session_id && !s.stopped.load(Ordering::Acquire)).ok_or("The native share ended or changed")?;
+    let (left, top, right, bottom) = copilot_source_rect(&session.source, foreground)?;
+    let (width, height) = ((right - left) as u32, (bottom - top) as u32);
+    if width != session.source.width || height != session.source.height {
+        return Err("The shared source changed size. Restart sharing to place signals accurately.".into());
+    }
+    Ok((left, top, width, height, session.info.width, session.info.height))
+}
+
+#[cfg(not(windows))]
+pub(crate) fn copilot_geometry(_: &NativeScreenState, _: &str, _: bool) -> Result<(i32, i32, u32, u32, u32, u32), String> {
+    Err("Visual overlays require Windows native sharing".into())
+}
+
+#[cfg(windows)]
+fn copilot_source_rect(source: &Source, foreground: bool) -> Result<(i32, i32, i32, i32), String> {
+    use windows::Win32::{Foundation::{HWND, RECT}, Graphics::{Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS}, Gdi::{GetMonitorInfoW, HMONITOR, MONITORINFO}}, UI::WindowsAndMessaging::{GetForegroundWindow, IsIconic, IsWindow, IsWindowVisible}};
+    let rect = if source.kind == "monitor" {
+        let mut monitor = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+        unsafe { GetMonitorInfoW(HMONITOR(source.handle as *mut _), &mut monitor) }.ok().map_err(|e| e.to_string())?;
+        monitor.rcMonitor
+    } else {
+        let hwnd = HWND(source.handle as *mut _);
+        if !unsafe { IsWindow(Some(hwnd)) }.as_bool() || !unsafe { IsWindowVisible(hwnd) }.as_bool() || unsafe { IsIconic(hwnd) }.as_bool() {
+            return Err("The shared window is unavailable or minimized".into());
+        }
+        if foreground && unsafe { GetForegroundWindow() } != hwnd { return Err("Signals are hidden while another window is in front".into()); }
+        let mut rect = RECT::default();
+        unsafe { DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, (&mut rect as *mut RECT).cast(), std::mem::size_of::<RECT>() as u32) }.map_err(|e| e.to_string())?;
+        rect
+    };
+    if rect.right <= rect.left || rect.bottom <= rect.top { return Err("The shared source has no visible area".into()); }
+    Ok((rect.left, rect.top, rect.right, rect.bottom))
 }
 impl Drop for Session {
     fn drop(&mut self) {
@@ -984,7 +1024,13 @@ pub async fn native_screen_start(
         h264_profile,
         bitrate_mbps,
     };
+    #[cfg(windows)]
+    if let Ok(rect) = copilot_source_rect(&source, false) {
+        source.width = (rect.2 - rect.0) as u32;
+        source.height = (rect.3 - rect.1) as u32;
+    }
     let session = Arc::new(Session {
+        source,
         info: info.clone(),
         hub,
         child: Mutex::new(child),

@@ -26,6 +26,17 @@
 .push-to-talk-settings__toggle input { width: 18px; height: 18px; accent-color: var(--accent, #b8ff42); }
 .push-to-talk-settings p { margin: 10px 0; color: var(--text-muted, #aeb6a6); font-size: 0.82rem; line-height: 1.5; }
 .push-to-talk-settings button { min-height: 36px; text-align: left; }
+.push-to-talk-settings { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); column-gap: 24px; align-items: start; }
+.push-to-talk-settings .push-to-talk-settings__toggle { gap: 16px; justify-content: flex-start; }
+.push-to-talk-settings__toggle input { flex: 0 0 18px; }
+.push-to-talk-settings p { margin: 6px 0 14px; }
+@media (min-width: 651px) {
+  .push-to-talk-settings > :nth-child(1) { grid-column: 1; grid-row: 1; }
+  .push-to-talk-settings > :nth-child(2) { grid-column: 1; grid-row: 2; }
+  .push-to-talk-settings > :nth-child(3) { grid-column: 2; grid-row: 1; }
+  .push-to-talk-settings > :nth-child(4) { grid-column: 2; grid-row: 2; }
+}
+@media (max-width: 650px) { .push-to-talk-settings { grid-template-columns: minmax(0,1fr); } }
 .device-volume {
   margin-top: 14px;
 }

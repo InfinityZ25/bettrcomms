@@ -55,6 +55,8 @@ import './CallLobby.css';
 import './CallWorkspace.css';
 import { useCallLayout } from './useCallLayout';
 import CameraOverlay from './CameraOverlay';
+import { CopilotPanel, CopilotViewerSlot, CopilotLocalMarks } from './VisualCopilot';
+import type { VisualCopilot } from './media/visualCopilot';
 
 export interface CallPresence {
   user_id: string;
@@ -915,6 +917,7 @@ export default function CallStage({
   }
   return (
     <div className="call-workspace" ref={workspace} data-controls-visible={!fullscreen || controlsVisible} onPointerMove={pointerActivity} onKeyDown={() => revealControls()}>
+      {engine.current && <CopilotPanel copilot={engine.current.copilot} names={names} />}
       <div className="call-layout-toolbar">
               {(recording || Object.values(remoteRecording).some(Boolean)) && (
                 <span className="recording-badge">
@@ -1078,6 +1081,8 @@ export default function CallStage({
                 {stageItems.map(item => (
                   <ZoomableStageItem
                     key={item.key}
+                    copilot={engine.current?.copilot}
+                    names={names}
                     item={item}
                     contentFit={contentFit}
                     canFocus={!focusedStageItem && stageItems.length > 1}
@@ -1257,6 +1262,8 @@ export default function CallStage({
 }
 
 function ZoomableStageItem({
+  copilot,
+  names,
   item,
   contentFit,
   canFocus,
@@ -1265,6 +1272,8 @@ function ZoomableStageItem({
   onToggleFit,
   onFullscreen,
 }: {
+  copilot?: VisualCopilot;
+  names: Record<string, string>;
   item: StageItem;
   contentFit: 'fit' | 'fill';
   canFocus: boolean;
@@ -1374,7 +1383,9 @@ function ZoomableStageItem({
       >
         <div className="zoom-surface" style={{ transform: `translate3d(${pan.x}px,${pan.y}px,0) scale(${zoom})` }}>
           <TrackVideo track={item.track} self={item.kind === 'camera' && item.self} showStatus={item.kind === 'screen'} onReceiving={item.kind === 'screen' ? setReceiving : undefined} />
+          {copilot && item.kind === 'screen' && item.self && <CopilotLocalMarks key={item.track.id} copilot={copilot} fit={contentFit} names={names} />}
         </div>
+        {copilot && item.kind === 'screen' && !item.self && <CopilotViewerSlot copilot={copilot} peerId={item.key.slice('screen:'.length)} track={item.track} viewport={viewport} />}
       </div>
       <div className="stage-bottomline">
         <span>{zoom > 1 ? 'Drag to move · scroll to zoom' : 'Scroll or pinch to zoom'}</span>
