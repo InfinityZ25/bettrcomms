@@ -12,15 +12,16 @@ use windows::Win32::{
     Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM},
     Graphics::Dwm::{
         DWMWA_BORDER_COLOR, DWMWA_COLOR_DEFAULT, DWMWA_USE_IMMERSIVE_DARK_MODE,
-        DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND, DwmSetWindowAttribute,
+        DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND, DwmDefWindowProc, DwmSetWindowAttribute,
     },
     UI::{
+        Input::KeyboardAndMouse::{TME_LEAVE, TME_NONCLIENT, TRACKMOUSEEVENT, TrackMouseEvent},
         Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass},
         WindowsAndMessaging::{
             GA_ROOT, GetAncestor, GetClientRect, IsZoomed, NCCALCSIZE_PARAMS, PostMessageW,
             SET_WINDOW_POS_FLAGS, SIZE_MINIMIZED, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE,
             SWP_NOSIZE, SWP_NOZORDER, SetWindowPos, WM_APP, WM_CLOSE, WM_NCCALCSIZE, WM_NCDESTROY,
-            WM_SIZE,
+            WM_NCHITTEST, WM_NCMOUSELEAVE, WM_NCMOUSEMOVE, WM_SIZE,
         },
     },
 };
@@ -29,6 +30,7 @@ use windows_core::{BOOL, Interface, PCWSTR, Type};
 use crate::visibility::{SizeChange, VisibilityAction, visibility_action};
 
 const VISIBILITY_SUBCLASS_ID: usize = 0x5258_4755;
+const CAPTION_INPUT_SUBCLASS_ID: usize = 0x5258_4756;
 const RESTORE_WEBVIEW_MESSAGE: u32 = WM_APP + 0x525;
 
 /// Largest top inset this crate will take back from the frame.
@@ -87,6 +89,21 @@ windows_core::imp::interface_hierarchy!(
 );
 
 impl ICoreWebView2ExperimentalWindowControlsOverlay {
+    unsafe fn height(&self) -> windows_core::Result<u32> {
+        let mut height = 0;
+        unsafe {
+            (Interface::vtable(self).height)(Interface::as_raw(self), &mut height).ok()?;
+        }
+        Ok(height)
+    }
+    unsafe fn is_enabled(&self) -> windows_core::Result<bool> {
+        let mut enabled = BOOL(0);
+        unsafe {
+            (Interface::vtable(self).is_enabled)(Interface::as_raw(self), &mut enabled).ok()?;
+        }
+        Ok(enabled.as_bool())
+    }
+
     unsafe fn set_background_color(&self, value: COREWEBVIEW2_COLOR) -> windows_core::Result<()> {
         unsafe {
             (Interface::vtable(self).set_background_color)(Interface::as_raw(self), value).ok()
@@ -278,9 +295,18 @@ pub(crate) fn install_window_frame_handler<R: Runtime>(webview: &Webview<R>) {
                 return;
             }
         };
+        let native_overlay = (|| unsafe {
+            core_webview
+                .cast::<ICoreWebView2Experimental31>()?
+                .window_controls_overlay()?
+                .is_enabled()
+        })()
+        .unwrap_or(false);
         let state = Box::new(WindowFrameState {
             controller,
             core_webview,
+            native_overlay,
+            caption_input: Cell::new(HWND::default()),
             is_minimized: Cell::new(false),
             restoring: Cell::new(false),
             label: callback_label.clone(),
@@ -311,6 +337,54 @@ pub(crate) fn install_window_frame_handler<R: Runtime>(webview: &Webview<R>) {
     }
 }
 
+// WebView2 installs another subclass during navigation. Keep the leave handler
+// ahead of it so a transition onto our input child does not clear DWM's hover.
+pub(crate) fn refresh_window_frame_handler<R: Runtime>(webview: &Webview<R>) {
+    let label = webview.label().to_owned();
+    let _ = webview.with_webview(move |platform| {
+        let Some(root) = root_window(&platform.controller(), &label) else {
+            return;
+        };
+        let mut state = 0;
+        unsafe {
+            if windows::Win32::UI::Shell::GetWindowSubclass(
+                root,
+                Some(parent_window_subclass_proc),
+                VISIBILITY_SUBCLASS_ID,
+                Some(&mut state),
+            )
+            .as_bool()
+            {
+                if !RemoveWindowSubclass(
+                    root,
+                    Some(parent_window_subclass_proc),
+                    VISIBILITY_SUBCLASS_ID,
+                )
+                .as_bool()
+                {
+                    return;
+                }
+                if !SetWindowSubclass(
+                    root,
+                    Some(parent_window_subclass_proc),
+                    VISIBILITY_SUBCLASS_ID,
+                    state,
+                )
+                .as_bool()
+                {
+                    let state = Box::from_raw(state as *mut WindowFrameState);
+                    if !state.caption_input.get().0.is_null() {
+                        let _ = windows::Win32::UI::WindowsAndMessaging::DestroyWindow(
+                            state.caption_input.get(),
+                        );
+                    }
+                    eprintln!("better-gui: could not refresh the frame handler for {label}");
+                }
+            }
+        }
+    });
+}
+
 /// El procedimiento de ventana es reentrante: restaurar el webview cambia el
 /// marco con `SWP_FRAMECHANGED` y Windows despacha otro `WM_SIZE` antes de que
 /// la llamada original termine. Por eso el estado se muta a traves de `Cell` y
@@ -320,6 +394,8 @@ pub(crate) fn install_window_frame_handler<R: Runtime>(webview: &Webview<R>) {
 struct WindowFrameState {
     controller: ICoreWebView2Controller,
     core_webview: ICoreWebView2,
+    native_overlay: bool,
+    caption_input: Cell<HWND>,
     is_minimized: Cell<bool>,
     restoring: Cell<bool>,
     label: String,
@@ -334,7 +410,9 @@ pub(crate) fn configure_native_window_frame<R: Runtime>(webview: &Webview<R>) {
             return;
         };
 
-        unsafe { apply_native_window_frame(hwnd, &callback_label) };
+        if let Ok(core) = unsafe { controller.CoreWebView2() } {
+            unsafe { apply_native_window_frame(hwnd, &callback_label, &core) };
+        }
     });
 
     if let Err(error) = scheduled {
@@ -344,7 +422,26 @@ pub(crate) fn configure_native_window_frame<R: Runtime>(webview: &Webview<R>) {
     }
 }
 
-unsafe fn apply_native_window_frame(hwnd: HWND, label: &str) {
+unsafe fn apply_native_window_frame(hwnd: HWND, label: &str, core: &ICoreWebView2) {
+    if let Ok(overlay) = unsafe {
+        core.cast::<ICoreWebView2Experimental31>()
+            .and_then(|core| core.window_controls_overlay())
+    } {
+        if unsafe { overlay.is_enabled() }.unwrap_or(false) {
+            if let Ok(height) = unsafe { overlay.height() } {
+                let margins = windows::Win32::UI::Controls::MARGINS {
+                    cyTopHeight: height.saturating_add(1).min(i32::MAX as u32) as i32,
+                    ..Default::default()
+                };
+                let result = unsafe {
+                    windows::Win32::Graphics::Dwm::DwmExtendFrameIntoClientArea(hwnd, &margins)
+                };
+                if let Err(error) = result {
+                    eprintln!("better-gui: could not extend caption frame for {label}: {error}");
+                }
+            }
+        }
+    }
     let corner_preference = DWMWCP_ROUND;
     let border_color = DWMWA_COLOR_DEFAULT;
     let use_dark_mode = BOOL(1);
@@ -407,6 +504,51 @@ unsafe extern "system" fn parent_window_subclass_proc(
     subclass_id: usize,
     state_ptr: usize,
 ) -> LRESULT {
+    if message == WM_NCMOUSELEAVE {
+        let state = unsafe { &*(state_ptr as *const WindowFrameState) };
+        let mut point = windows::Win32::Foundation::POINT::default();
+        if !state.caption_input.get().0.is_null()
+            && unsafe { windows::Win32::UI::WindowsAndMessaging::GetCursorPos(&mut point) }.is_ok()
+            && unsafe { windows::Win32::UI::WindowsAndMessaging::WindowFromPoint(point) }
+                == state.caption_input.get()
+        {
+            return LRESULT(0);
+        }
+    }
+    if message == windows::Win32::UI::WindowsAndMessaging::WM_WINDOWPOSCHANGED {
+        let state = unsafe { &*(state_ptr as *const WindowFrameState) };
+        if state.native_overlay {
+            unsafe { update_caption_input(hwnd, state) };
+        }
+    }
+
+    // WebView2 owns the overlay geometry. DWM must see non-client input before
+    // Tao's undecorated-window hit testing can turn the caption into a resize
+    // edge. In particular HTMAXBUTTON is the Windows 11 Snap Layout contract.
+    // Leave notification also has to reach DWM even when it returns unhandled.
+    if matches!(message, WM_NCHITTEST | WM_NCMOUSEMOVE | WM_NCMOUSELEAVE)
+        && unsafe { &*(state_ptr as *const WindowFrameState) }.native_overlay
+    {
+        if message == WM_NCMOUSEMOVE {
+            // Tracking is one-shot: re-arm on movement, including after a leave.
+            // Do this before DWM/WebView2 can consume the message.
+            let mut tracking = TRACKMOUSEEVENT {
+                cbSize: size_of::<TRACKMOUSEEVENT>() as u32,
+                dwFlags: TME_LEAVE | TME_NONCLIENT,
+                hwndTrack: hwnd,
+                dwHoverTime: 0,
+            };
+            let _ = unsafe { TrackMouseEvent(&mut tracking) };
+        }
+        let mut result = LRESULT(0);
+        let handled =
+            unsafe { DwmDefWindowProc(hwnd, message, wparam, lparam, &mut result) }.as_bool();
+
+        if handled {
+            return result;
+        }
+    }
+
     if message == WM_NCCALCSIZE {
         if let Some(result) = unsafe { reclaim_frame_top_inset(hwnd, wparam, lparam) } {
             return result;
@@ -459,6 +601,326 @@ unsafe extern "system" fn parent_window_subclass_proc(
     unsafe { DefSubclassProc(hwnd, message, wparam, lparam) }
 }
 
+// The windowed WebView owns mouse input in a different process. A paint-free
+// child above just the system caption bounds routes that input back to the
+// host. DWM supplies the rectangles and individual hit tests (no fixed button
+// widths); WebView2 continues drawing the controls and exposing accessibility.
+unsafe fn update_caption_input(root: HWND, state: &WindowFrameState) {
+    use windows::Win32::{
+        Foundation::POINT,
+        Graphics::{
+            Dwm::{DWMWA_CAPTION_BUTTON_BOUNDS, DwmGetWindowAttribute},
+            Gdi::ScreenToClient,
+        },
+        UI::WindowsAndMessaging::{
+            CreateWindowExW, DestroyWindow, GWL_STYLE, GetWindowLongPtrW, GetWindowRect, HWND_TOP,
+            IsIconic, SW_HIDE, SWP_SHOWWINDOW, ShowWindow, WS_CAPTION, WS_CHILD, WS_EX_NOACTIVATE,
+            WS_EX_TRANSPARENT,
+        },
+    };
+    let hide_input = || {
+        if !state.caption_input.get().0.is_null() {
+            let _ = unsafe { ShowWindow(state.caption_input.get(), SW_HIDE) };
+        }
+    };
+    if unsafe { IsIconic(root) }.as_bool()
+        || unsafe { GetWindowLongPtrW(root, GWL_STYLE) } as u32 & WS_CAPTION.0 != WS_CAPTION.0
+    {
+        hide_input();
+        return;
+    }
+    let mut buttons = RECT::default();
+    if unsafe {
+        DwmGetWindowAttribute(
+            root,
+            DWMWA_CAPTION_BUTTON_BOUNDS,
+            std::ptr::from_mut(&mut buttons).cast(),
+            size_of::<RECT>() as u32,
+        )
+    }
+    .is_err()
+    {
+        hide_input();
+        return;
+    }
+    if buttons.right <= buttons.left || buttons.bottom <= buttons.top {
+        hide_input();
+        return;
+    }
+    let mut window = RECT::default();
+    if unsafe { GetWindowRect(root, &mut window) }.is_err() {
+        hide_input();
+        return;
+    }
+    let mut origin = POINT {
+        x: window.left + buttons.left,
+        y: window.top + buttons.top,
+    };
+    if !unsafe { ScreenToClient(root, &mut origin) }.as_bool() {
+        hide_input();
+        return;
+    }
+    let mut client = RECT::default();
+    if unsafe { GetClientRect(root, &mut client) }.is_err() {
+        hide_input();
+        return;
+    }
+    let right = (origin.x + buttons.right - buttons.left).min(client.right);
+    let bottom = (origin.y + buttons.bottom - buttons.top).min(client.bottom);
+    origin.x = origin.x.max(client.left);
+    origin.y = origin.y.max(client.top);
+    if right <= origin.x || bottom <= origin.y {
+        hide_input();
+        return;
+    }
+    let mut child = state.caption_input.get();
+    if child.0.is_null() {
+        let Ok(created) = (unsafe {
+            CreateWindowExW(
+                WS_EX_NOACTIVATE | WS_EX_TRANSPARENT,
+                windows_core::w!("STATIC"),
+                windows_core::w!(""),
+                WS_CHILD,
+                0,
+                0,
+                0,
+                0,
+                Some(root),
+                None,
+                None,
+                None,
+            )
+        }) else {
+            return;
+        };
+        child = created;
+        let input = Box::into_raw(Box::new(CaptionInputState {
+            root,
+            pressed: Cell::new(None),
+        }));
+        if !unsafe {
+            SetWindowSubclass(
+                child,
+                Some(caption_input_proc),
+                CAPTION_INPUT_SUBCLASS_ID,
+                input as usize,
+            )
+        }
+        .as_bool()
+        {
+            unsafe { drop(Box::from_raw(input)) };
+            let _ = unsafe { DestroyWindow(child) };
+            return;
+        }
+        state.caption_input.set(child);
+    }
+    let _ = unsafe {
+        SetWindowPos(
+            child,
+            Some(HWND_TOP),
+            origin.x,
+            origin.y,
+            right - origin.x,
+            bottom - origin.y,
+            SWP_NOACTIVATE | SWP_SHOWWINDOW,
+        )
+    };
+}
+
+struct CaptionInputState {
+    root: HWND,
+    pressed: Cell<Option<u32>>,
+}
+
+#[cfg(test)]
+mod caption_tests {
+    use super::caption_command;
+    use windows::Win32::UI::WindowsAndMessaging::*;
+
+    #[test]
+    fn release_without_press_or_on_another_button_does_nothing() {
+        assert_eq!(caption_command(None, HTCLOSE, false), None);
+        assert_eq!(caption_command(Some(HTMAXBUTTON), HTCLOSE, false), None);
+        assert_eq!(caption_command(Some(HTCLOSE), HTCLIENT, false), None);
+    }
+
+    #[test]
+    fn maximize_restores_an_already_maximized_window() {
+        assert_eq!(
+            caption_command(Some(HTMAXBUTTON), HTMAXBUTTON, false),
+            Some(SC_MAXIMIZE)
+        );
+        assert_eq!(
+            caption_command(Some(HTMAXBUTTON), HTMAXBUTTON, true),
+            Some(SC_RESTORE)
+        );
+    }
+
+    #[test]
+    fn matching_release_minimizes_or_closes() {
+        assert_eq!(
+            caption_command(Some(HTMINBUTTON), HTMINBUTTON, false),
+            Some(SC_MINIMIZE)
+        );
+        assert_eq!(
+            caption_command(Some(HTCLOSE), HTCLOSE, false),
+            Some(SC_CLOSE)
+        );
+    }
+}
+
+fn caption_command(pressed: Option<u32>, released: u32, maximized: bool) -> Option<u32> {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        HTCLOSE, HTMAXBUTTON, HTMINBUTTON, SC_CLOSE, SC_MAXIMIZE, SC_MINIMIZE, SC_RESTORE,
+    };
+    if pressed != Some(released) {
+        return None;
+    }
+    match released {
+        HTMINBUTTON => Some(SC_MINIMIZE),
+        HTMAXBUTTON => Some(if maximized { SC_RESTORE } else { SC_MAXIMIZE }),
+        HTCLOSE => Some(SC_CLOSE),
+        _ => None,
+    }
+}
+
+unsafe fn caption_at_point(root: HWND, point: windows::Win32::Foundation::POINT) -> u32 {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        HTCLOSE, HTMAXBUTTON, HTMINBUTTON, SendMessageW, TITLEBARINFOEX, WM_GETTITLEBARINFOEX,
+    };
+    let mut info = TITLEBARINFOEX {
+        cbSize: size_of::<TITLEBARINFOEX>() as u32,
+        ..Default::default()
+    };
+    let _ = unsafe {
+        SendMessageW(
+            root,
+            WM_GETTITLEBARINFOEX,
+            None,
+            Some(LPARAM(std::ptr::from_mut(&mut info) as isize)),
+        )
+    };
+    for (index, hit) in [(2, HTMINBUTTON), (3, HTMAXBUTTON), (5, HTCLOSE)] {
+        let rect = info.rgrect[index];
+        // Unavailable, invisible or offscreen buttons cannot be activated.
+        if info.rgstate[index] & (0x1 | 0x8000 | 0x10000) == 0
+            && point.x >= rect.left
+            && point.x < rect.right
+            && point.y >= rect.top
+            && point.y < rect.bottom
+        {
+            return hit;
+        }
+    }
+    0
+}
+
+unsafe extern "system" fn caption_input_proc(
+    hwnd: HWND,
+    message: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+    id: usize,
+    state_ptr: usize,
+) -> LRESULT {
+    use windows::Win32::{
+        Graphics::Gdi::ValidateRect,
+        UI::Input::KeyboardAndMouse::{ReleaseCapture, SetCapture},
+        UI::WindowsAndMessaging::{
+            DefWindowProcW, HTCLOSE, HTMAXBUTTON, HTMINBUTTON, HTTRANSPARENT, SendMessageW,
+            WM_CANCELMODE, WM_CAPTURECHANGED, WM_ERASEBKGND, WM_LBUTTONUP, WM_NCLBUTTONDBLCLK,
+            WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_PAINT, WM_SYSCOMMAND,
+        },
+    };
+    let state = unsafe { &*(state_ptr as *const CaptionInputState) };
+    let root = state.root;
+    match message {
+        WM_NCHITTEST => {
+            let mut result = LRESULT(0);
+            if unsafe { DwmDefWindowProc(root, message, wparam, lparam, &mut result) }.as_bool()
+                && matches!(result.0 as u32, HTMINBUTTON | HTMAXBUTTON | HTCLOSE)
+            {
+                return result;
+            }
+            return LRESULT(HTTRANSPARENT as isize);
+        }
+        WM_NCMOUSEMOVE => {
+            let mut tracking = TRACKMOUSEEVENT {
+                cbSize: size_of::<TRACKMOUSEEVENT>() as u32,
+                dwFlags: TME_LEAVE | TME_NONCLIENT,
+                hwndTrack: hwnd,
+                dwHoverTime: 0,
+            };
+            let _ = unsafe { TrackMouseEvent(&mut tracking) };
+            let mut result = LRESULT(0);
+            let _ = unsafe { DwmDefWindowProc(root, message, wparam, lparam, &mut result) };
+            return unsafe { DefWindowProcW(root, message, wparam, lparam) };
+        }
+        WM_NCMOUSELEAVE => {
+            return unsafe { SendMessageW(root, message, Some(wparam), Some(lparam)) };
+        }
+        WM_NCLBUTTONDOWN | WM_NCLBUTTONDBLCLK => {
+            // DefWindowProc's modal caption loop expects the top-level HWND to
+            // own the hit target. Capture on this child instead, and dispatch a
+            // system command only after a matching release. Losing capture or
+            // releasing outside cancels the action.
+            state.pressed.set(Some(wparam.0 as u32));
+            let _ = unsafe { SetCapture(hwnd) };
+            return LRESULT(0);
+        }
+        WM_LBUTTONUP | WM_NCLBUTTONUP => {
+            let pressed = state.pressed.take();
+            // Use the release event's signed coordinates, not a later cursor
+            // position (which may already have moved when the queue is read).
+            let mut point = windows::Win32::Foundation::POINT {
+                x: lparam.0 as u16 as i16 as i32,
+                y: (lparam.0 >> 16) as u16 as i16 as i32,
+            };
+            let positioned = message == WM_NCLBUTTONUP
+                || unsafe { windows::Win32::Graphics::Gdi::ClientToScreen(hwnd, &mut point) }
+                    .as_bool();
+            // Take the press first: ReleaseCapture synchronously cancels state.
+            let _ = unsafe { ReleaseCapture() };
+            // Use the system's screen rectangles for a captured release. DWM's
+            // input hit test is meaningful on the non-client message path.
+            let hit = if positioned {
+                unsafe { caption_at_point(root, point) }
+            } else {
+                0
+            };
+            let command = caption_command(pressed, hit, unsafe { IsZoomed(root) }.as_bool());
+            if let Some(command) = command {
+                let _ = unsafe {
+                    PostMessageW(
+                        Some(root),
+                        WM_SYSCOMMAND,
+                        WPARAM(command as usize),
+                        LPARAM(0),
+                    )
+                };
+            }
+            return LRESULT(0);
+        }
+        WM_CANCELMODE | WM_CAPTURECHANGED => {
+            state.pressed.set(None);
+            if message == WM_CANCELMODE {
+                let _ = unsafe { ReleaseCapture() };
+            }
+        }
+        WM_ERASEBKGND => return LRESULT(1),
+        WM_PAINT => {
+            let _ = unsafe { ValidateRect(Some(hwnd), None) };
+            return LRESULT(0);
+        }
+        WM_NCDESTROY => {
+            let _ = unsafe { RemoveWindowSubclass(hwnd, Some(caption_input_proc), id) };
+            unsafe { drop(Box::from_raw(state_ptr as *mut CaptionInputState)) };
+        }
+        _ => {}
+    }
+    unsafe { DefSubclassProc(hwnd, message, wparam, lparam) }
+}
+
 /// Gives the page back the pixel the undecorated frame reserves at the top.
 ///
 /// On Windows 11 an undecorated window insets its client area by a pixel so the
@@ -504,7 +966,7 @@ unsafe fn restore_webview(state: &WindowFrameState, hwnd: HWND) {
     }
 
     let _ = unsafe { state.controller.SetIsVisible(true) };
-    unsafe { apply_native_window_frame(hwnd, &state.label) };
+    unsafe { apply_native_window_frame(hwnd, &state.label, &state.core_webview) };
     let mut bounds = RECT::default();
     if unsafe { GetClientRect(hwnd, &mut bounds) }.is_ok() {
         let _ = unsafe { state.controller.SetBounds(bounds) };

@@ -1,5 +1,29 @@
 # BetterComms preview release notes
 
+## Unreleased — Windows caption input
+
+`better-gui` extends DWM's caption frame to the WebView2 overlay height and
+routes input through a paint-free child covering the system caption buttons.
+This lets the host receive non-client input even when the windowed WebView2
+surface belongs to another process. DWM supplies the button bounds and hit
+testing; WebView2 keeps drawing the controls. Non-client leave tracking is
+re-armed during pointer movement so Windows can clear caption highlights.
+This path is enabled only when WebView2's experimental Window Controls Overlay
+reports that it is enabled.
+
+Windows 11 Snap Layouts appeared on maximize hover in a local development
+executable; moving into client content cleared the highlight and dismissed the
+flyout. Direct pointer exit across the outer window boundary still requires
+manual acceptance, as do maximize/restore clicks: the automation's caption
+clicks did not produce a successful maximize, and its injected coordinates
+disagreed with the cursor position reported to Win32. This is not yet a complete
+native acceptance pass. The existing 960 logical-pixel minimum width continues to
+limit which Snap zones can fit the app. This requires a rebuilt desktop host.
+
+Transparency and blur were researched only; see
+[window materials findings](WINDOW_MATERIALS_RESEARCH.md). No window material
+or transparency setting was changed.
+
 ## 0.1.15 — source resolution and stream startup fixes
 
 Match source now preserves a 1080p capture at 1080p instead of enlarging it to

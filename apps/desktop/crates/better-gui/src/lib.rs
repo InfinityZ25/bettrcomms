@@ -97,6 +97,8 @@ pub fn init_with_config<R: Runtime>(config: WindowControlsConfig) -> TauriPlugin
             configure(&webview, &ready_config, &ready_states);
         })
         .on_page_load(move |webview, _payload| {
+            #[cfg(windows)]
+            windows::refresh_window_frame_handler(&webview);
             // Una recarga borra el global. Sin volver a publicarlo la barra
             // vuelve sin saber quien dibuja los botones y pinta los suyos
             // encima de los nativos.
@@ -205,6 +207,7 @@ fn configure_windows<R: Runtime>(
                 resized_config.background,
                 None,
             );
+            windows::configure_native_window_frame(&resized_webview);
         }
     });
 }
