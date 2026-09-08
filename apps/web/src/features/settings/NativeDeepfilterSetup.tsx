@@ -71,13 +71,13 @@ export default function NativeDeepfilterSetup({
   if (!status) return null;
   if (status.ready)
     return (
-      <p className="friend-status">
+      <p className="text-xs leading-6 text-muted-foreground">
         DeepFilterNet is ready
         {status.adapterName ? ` on ${status.adapterName}` : ''}. {status.detail}
       </p>
     );
   return (
-    <div className="setting-note">
+    <div className="my-4 rounded-lg border bg-muted/40 p-3 text-xs leading-6 text-muted-foreground">
       <p>DeepFilterNet is unavailable: {status.detail}</p>
       {info && <p>{info.detail}</p>}
       {info?.supported && (
@@ -87,7 +87,11 @@ export default function NativeDeepfilterSetup({
             {Math.round(info.downloadBytes / 1024 / 1024)} MiB component and
             processes microphone audio on your local AMD or Intel GPU.
           </p>
-          <button className="text-button" disabled={busy} onClick={install}>
+          <button
+            className="my-3 p-0 text-xs font-medium text-primary hover:underline disabled:opacity-50"
+            disabled={busy}
+            onClick={install}
+          >
             {busy
               ? 'Installing DeepFilterNet…'
               : error

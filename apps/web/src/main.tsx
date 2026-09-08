@@ -1,7 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
-import DesktopFrame from './DesktopFrame';
+import DesktopFrame from '@/features/shell/DesktopFrame';
 import { ThemeProvider } from './components/theme-provider';
 import '@fontsource-variable/dm-sans';
 import '@fontsource-variable/manrope';

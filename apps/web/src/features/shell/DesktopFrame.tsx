@@ -53,7 +53,11 @@ export default function DesktopFrame({ children }: { children: ReactNode }) {
   const windowControls =
     controls.buttons.length > 0 ? (
       <div
-        className={`desktop-window-controls desktop-window-controls-${controls.platform}`}
+        className={
+          controls.platform === 'linux'
+            ? 'flex items-center gap-2 px-2.5'
+            : 'flex h-full'
+        }
         role="group"
         aria-label="Window controls"
       >
@@ -62,13 +66,14 @@ export default function DesktopFrame({ children }: { children: ReactNode }) {
             button={button}
             key={button}
             maximized={maximized}
+            compact={controls.platform === 'linux'}
             run={run}
           />
         ))}
       </div>
     ) : null;
   return (
-    <div className="desktop-frame">
+    <div data-desktop-frame className="flex h-dvh flex-col overflow-hidden">
       <div
         className={titlebarClassName(controls)}
         style={
@@ -81,7 +86,11 @@ export default function DesktopFrame({ children }: { children: ReactNode }) {
       >
         {controls.buttonSide === 'start' ? windowControls : null}
         <div
-          className="desktop-drag-area"
+          className={
+            controls.platform === 'macos'
+              ? 'flex h-full min-w-0 flex-1 items-center gap-2 pl-2 text-[0.7rem] text-muted-foreground [&>svg]:text-primary'
+              : 'flex h-full min-w-0 flex-1 items-center gap-2 pl-4 text-[0.7rem] text-muted-foreground [&>svg]:text-primary'
+          }
           onMouseDown={(event) => {
             if (event.button !== 0) return;
             if (event.detail === 2)
@@ -93,7 +102,7 @@ export default function DesktopFrame({ children }: { children: ReactNode }) {
           <span>BetterComms</span>
         </div>
         {error && (
-          <span className="desktop-window-error" role="alert">
+          <span className="text-xs text-destructive" role="alert">
             {error}
           </span>
         )}
@@ -107,15 +116,21 @@ export default function DesktopFrame({ children }: { children: ReactNode }) {
 function WindowControlButton({
   button,
   maximized,
+  compact,
   run,
 }: {
   button: WindowButton;
   maximized: boolean;
+  compact: boolean;
   run: (action: () => Promise<unknown>) => void;
 }) {
+  const buttonClass = compact
+    ? 'grid size-[22px] place-items-center rounded-full bg-muted transition-colors hover:bg-accent focus-visible:outline-offset-2'
+    : 'grid h-full w-[46px] place-items-center rounded-none transition-colors hover:bg-accent focus-visible:outline-offset-[-3px]';
   if (button === 'minimize') {
     return (
       <button
+        className={buttonClass}
         aria-label="Minimize window"
         title="Minimize"
         onClick={() => run(() => getCurrentWindow().minimize())}
@@ -128,6 +143,7 @@ function WindowControlButton({
   if (button === 'maximize') {
     return (
       <button
+        className={buttonClass}
         aria-label={maximized ? 'Restore window' : 'Maximize window'}
         title={maximized ? 'Restore' : 'Maximize'}
         onClick={() => run(() => getCurrentWindow().toggleMaximize())}
@@ -139,7 +155,7 @@ function WindowControlButton({
 
   return (
     <button
-      className="desktop-close"
+      className={`${buttonClass} hover:bg-destructive hover:text-white`}
       aria-label="Close window"
       title="Close"
       onClick={() => run(() => getCurrentWindow().close())}
@@ -150,7 +166,9 @@ function WindowControlButton({
 }
 
 function titlebarClassName(controls: WindowControlsState) {
-  const classes = ['desktop-titlebar', `desktop-titlebar-${controls.platform}`];
+  const classes = [
+    'flex h-(--desktop-titlebar-height) shrink-0 basis-(--desktop-titlebar-height) select-none items-center bg-sidebar ps-(--desktop-titlebar-inset-start) pe-(--desktop-titlebar-inset-end)',
+  ];
 
   // WebView2 solo trata la barra como region no cliente si lleva esta clase:
   // el propio host la usa para refrescar el arrastre al restaurar la ventana.

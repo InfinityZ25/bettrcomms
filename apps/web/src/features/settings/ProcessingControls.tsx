@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { SlidersHorizontal } from 'lucide-react';
-import { Button } from './components/ui/button';
+import { Button } from '@/components/ui/button';
 import {
   readProcessingSettings,
   saveProcessingSettings,
   type MicrophoneProcessingSettings,
-} from './media/processingSettings';
+} from '@/media/processingSettings';
 import './ProcessingControls.css';
 
 export default function ProcessingControls({ engine }: { engine: string }) {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Activity, Signal, X } from 'lucide-react';
-import type { PeerMediaStats } from './media';
+import type { PeerMediaStats } from '@/media';
 import './ConnectionStatus.css';
 
 export default function ConnectionStatus({

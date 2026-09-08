@@ -28,8 +28,16 @@ export default function NativeFfmpegSetup({
     void refresh().catch((cause) => {
       const message = String(cause);
       if (/not found|not allowed|unknown command/i.test(message)) {
-        setError('Update to BetterComms 0.1.1 or newer to use the in-app installer. Browser sharing is available below.');
-        setInfo({ supported: false, installed: false, downloadBytes: 0, installedBytes: 0, detail: 'This desktop version needs an update for guided setup.' });
+        setError(
+          'Update to BetterComms 0.1.1 or newer to use the in-app installer. Browser sharing is available below.',
+        );
+        setInfo({
+          supported: false,
+          installed: false,
+          downloadBytes: 0,
+          installedBytes: 0,
+          detail: 'This desktop version needs an update for guided setup.',
+        });
       } else setError(message);
     });
   }, []);
@@ -49,21 +57,38 @@ export default function NativeFfmpegSetup({
   }
 
   return (
-    <div className="setting-note" role="status">
+    <div
+      className="my-4 rounded-lg border bg-muted/40 p-3 text-xs leading-6 text-muted-foreground"
+      role="status"
+    >
       <p>{info?.detail ?? 'Checking the native sharing runtime…'}</p>
       {info?.supported && !info.installed && (
         <>
           <p>
-            Setup downloads a verified {Math.round(info.downloadBytes / 1024 / 1024)} MiB
-            FFmpeg 8.1 package and keeps the {Math.round(info.installedBytes / 1024 / 1024)} MiB
-            runtime in BetterComms app storage. It does not change Windows or your PATH.
+            Setup downloads a verified{' '}
+            {Math.round(info.downloadBytes / 1024 / 1024)} MiB FFmpeg 8.1
+            package and keeps the{' '}
+            {Math.round(info.installedBytes / 1024 / 1024)} MiB runtime in
+            BetterComms app storage. It does not change Windows or your PATH.
           </p>
-          <button className="text-button" disabled={busy} onClick={() => void install()}>
-            {busy ? 'Installing native sharing runtime…' : error ? 'Retry runtime setup' : 'Install native sharing runtime'}
+          <button
+            className="my-3 p-0 text-xs font-medium text-primary hover:underline disabled:opacity-50"
+            disabled={busy}
+            onClick={() => void install()}
+          >
+            {busy
+              ? 'Installing native sharing runtime…'
+              : error
+                ? 'Retry runtime setup'
+                : 'Install native sharing runtime'}
           </button>
         </>
       )}
-      <button className="text-button" disabled={busy} onClick={() => void onUseBrowser()}>
+      <button
+        className="my-3 p-0 text-xs font-medium text-primary hover:underline disabled:opacity-50"
+        disabled={busy}
+        onClick={() => void onUseBrowser()}
+      >
         Use browser sharing
       </button>
       {error && <p>Runtime setup failed: {error}</p>}

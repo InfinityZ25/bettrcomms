@@ -9,9 +9,9 @@ import {
   Volume2,
   VolumeX,
 } from 'lucide-react';
-import type { RecordingResult, RecordingTrackManifest } from './media/types';
+import type { RecordingResult, RecordingTrackManifest } from '@/media/types';
 import './RecordingPlayer.css';
-import { followElementOutput } from './media/output';
+import { followElementOutput } from '@/media/output';
 
 export interface RecordingPlayerProps {
   result: RecordingResult;

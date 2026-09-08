@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { CallParticipant } from './api';
+import type { CallParticipant } from '@/api';
 
 /** Presence is ephemeral. A failed refresh must never look like an empty call. */
 export function useCallPresence(userId?: string) {

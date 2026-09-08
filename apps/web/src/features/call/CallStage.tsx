@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent, type CSSProperties } from 'react';
-import { RecordingDownload } from './RecordingDownload';
+import { RecordingDownload } from '@/features/recordings/RecordingDownload';
 import ConnectionStatus from './ConnectionStatus';
-import { useSpeakingActivity } from './media/useSpeakingActivity';
+import { useSpeakingActivity } from '@/media/useSpeakingActivity';
 import {
   Circle,
   Download,
@@ -21,7 +21,7 @@ import {
   ZoomOut,
   Plus,
 } from 'lucide-react';
-import { Button } from './components/ui/button';
+import { Button } from '@/components/ui/button';
 import {
   MediaEngine,
   RoomWebSocketSignaling,
@@ -29,24 +29,25 @@ import {
   type MediaSourceKind,
   type RemoteTrack,
   type RecordingResult,
-} from './media';
-import { api, type User, type Room } from './api';
-import { attachRemoteAudio, prepareCallPlayback, disposeCallPlayback, readParticipantVolume, getCallPlaybackStatus } from './media/remoteAudio';
-import { allowDesktopCapture } from './media/permissions';
-import { saveRecording } from './media/recordingLibrary';
-import { readRecordingQuality } from './media/recordingQuality';
-import { microphoneCaptureOptions, readProcessingSettings } from './media/processingSettings';
-import { readSpeakingThreshold } from './media/speakingSensitivity';
+} from '@/media';
+import { api, type User, type Room } from '@/api';
+import { attachRemoteAudio, prepareCallPlayback, disposeCallPlayback, readParticipantVolume, getCallPlaybackStatus } from '@/media/remoteAudio';
+import { allowDesktopCapture } from '@/media/permissions';
+import { saveRecording } from '@/media/recordingLibrary';
+import { readRecordingQuality } from '@/media/recordingQuality';
+import { microphoneCaptureOptions, readProcessingSettings } from '@/media/processingSettings';
+import { readSpeakingThreshold } from '@/media/speakingSensitivity';
 import {
   cameraCaptureConstraints,
   readCameraSettings,
-} from './media/cameraSettings';
-import { readQuality } from './MediaSettings';
-import type { PeerMediaStats } from './media';
+} from '@/media/cameraSettings';
+import { readQuality } from '@/features/settings/MediaSettings';
+import type { PeerMediaStats } from '@/media';
 import { isTauri } from '@tauri-apps/api/core';
-import type { NativeScreenStartOptions } from './media/nativeScreen';
-import { setCallPlaybackDeafened } from './media/remoteAudio';
-import { saveRecordingAsset } from './media/recordingExport';
+import type { NativeScreenStartOptions } from '@/media/nativeScreen';
+import { setCallPlaybackDeafened } from '@/media/remoteAudio';
+import { saveRecordingAsset } from '@/media/recordingExport';
+import './CallBase.css';
 import './CallLobby.css';
 import './CallWorkspace.css';
 import { useCallLayout } from './useCallLayout';
@@ -769,7 +770,7 @@ export default function CallStage({
           ) : (
             <ul>{lobbyPresence.map((presence) => (
               <li key={presence.user_id}>
-                <span className="avatar">{(presence.name || names[presence.user_id] || 'Friend').slice(0, 2).toUpperCase()}</span>
+                <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-xl bg-muted text-xs font-semibold text-muted-foreground">{(presence.name || names[presence.user_id] || 'Friend').slice(0, 2).toUpperCase()}</span>
                 <strong>{presence.name || names[presence.user_id] || 'Friend'}</strong>
                 <span className="call-lobby__badges">
                   {presence.muted && <span><MicOff size={14} /> Muted</span>}
@@ -830,7 +831,7 @@ export default function CallStage({
             {locals.has('camera') ? (
               <TrackVideo track={locals.get('camera')!} self />
             ) : (
-              <span className="avatar avatar-large">
+              <span className="inline-flex size-14 shrink-0 items-center justify-center rounded-full bg-muted text-xl font-semibold text-muted-foreground">
                 {(user?.name ?? 'You').slice(0, 2).toUpperCase()}
               </span>
             )}
@@ -860,7 +861,7 @@ export default function CallStage({
                   }
                 />
               ) : (
-                <span className="avatar avatar-large">
+                <span className="inline-flex size-14 shrink-0 items-center justify-center rounded-full bg-muted text-xl font-semibold text-muted-foreground">
                   {(names[id] ?? 'Friend').slice(0, 2).toUpperCase()}
                 </span>
               )}

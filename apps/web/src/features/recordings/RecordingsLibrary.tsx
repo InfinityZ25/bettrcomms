@@ -7,7 +7,7 @@ import {
   Play,
   HardDrive,
 } from 'lucide-react';
-import { Button } from './components/ui/button';
+import { Button } from '@/components/ui/button';
 import { RecordingPlayer } from './RecordingPlayer';
 import { RecordingDownload } from './RecordingDownload';
 import {
@@ -16,8 +16,8 @@ import {
   deleteRecording,
   renameRecording,
   type SavedRecording,
-} from './media/recordingLibrary';
-import type { RecordingResult } from './media/types';
+} from '@/media/recordingLibrary';
+import type { RecordingResult } from '@/media/types';
 import './RecordingsLibrary.css';
 
 export default function RecordingsLibrary() {

@@ -3,8 +3,11 @@ import { Headphones, Monitor, Radio } from 'lucide-react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import DeviceSettings from './DeviceSettings';
 import ProcessingControls from './ProcessingControls';
-import { readSpeakingThreshold, saveSpeakingThreshold } from './media/speakingSensitivity';
-import { readRecordingQuality } from './media/recordingQuality';
+import {
+  readSpeakingThreshold,
+  saveSpeakingThreshold,
+} from '@/media/speakingSensitivity';
+import { readRecordingQuality } from '@/media/recordingQuality';
 import NativeDeepfilterSetup, {
   type DeepfilterStatus,
 } from './NativeDeepfilterSetup';
@@ -41,9 +44,15 @@ export function readQuality() {
   }
 }
 export default function MediaSettings() {
-  const [speakingThreshold, setSpeakingThreshold] = useState(readSpeakingThreshold);
-  const [voiceRoute, setVoiceRoute] = useState(() => localStorage.getItem('bc-voice-route') === 'relay' ? 'relay' : 'automatic');
-  const [recordingRate, setRecordingRate] = useState(() => readRecordingQuality().screenVideoBitsPerSecond / 1_000_000);
+  const [speakingThreshold, setSpeakingThreshold] = useState(
+    readSpeakingThreshold,
+  );
+  const [voiceRoute, setVoiceRoute] = useState(() =>
+    localStorage.getItem('bc-voice-route') === 'relay' ? 'relay' : 'automatic',
+  );
+  const [recordingRate, setRecordingRate] = useState(
+    () => readRecordingQuality().screenVideoBitsPerSecond / 1_000_000,
+  );
   const desktop = isTauri();
   const storedDenoiser = localStorage.getItem('bc-denoiser');
   const initialDenoiser =
@@ -110,18 +119,33 @@ export default function MediaSettings() {
   }
   return (
     <>
-      <h3><Headphones size={17} /> Voice & devices</h3>
+      <h3>
+        <Headphones size={17} /> Voice & devices
+      </h3>
       <DeviceSettings />
       <label>
         Speaking indicator threshold · {speakingThreshold} dBFS
-        <input type="range" min="-65" max="-20" step="1"
+        <input
+          type="range"
+          min="-65"
+          max="-20"
+          step="1"
           aria-label="Speaking indicator threshold"
           aria-describedby="speaking-threshold-help"
           value={speakingThreshold}
-          onChange={event => setSpeakingThreshold(saveSpeakingThreshold(Number(event.target.value)))} />
+          onChange={(event) =>
+            setSpeakingThreshold(
+              saveSpeakingThreshold(Number(event.target.value)),
+            )
+          }
+        />
       </label>
-      <p id="speaking-threshold-help" className="friend-status">
-        Lower values detect quieter voices. This changes the green border only, not microphone volume or what others hear.
+      <p
+        id="speaking-threshold-help"
+        className="text-xs leading-6 text-muted-foreground"
+      >
+        Lower values detect quieter voices. This changes the green border only,
+        not microphone volume or what others hear.
       </p>
       <label>
         Noise suppression engine
@@ -150,12 +174,12 @@ export default function MediaSettings() {
           )}
         </select>
       </label>
-      <p className="friend-status">
+      <p className="text-xs leading-6 text-muted-foreground">
         Used when noise suppression is switched on. Processing stays on this
         device.
       </p>
       {desktop && nvidia && !nvidia.ready && (
-        <div className="setting-note">
+        <div className="my-4 rounded-lg border bg-muted/40 p-3 text-xs leading-6 text-muted-foreground">
           <p>NVIDIA Audio Effects is unavailable: {nvidia.detail}</p>
           {nvidiaInfo && (
             <>
@@ -192,7 +216,7 @@ export default function MediaSettings() {
                     .
                   </p>
                   <button
-                    className="text-button"
+                    className="my-3 p-0 text-xs font-medium text-primary hover:underline disabled:opacity-50"
                     disabled={nvidiaBusy}
                     onClick={installNvidia}
                   >
@@ -215,7 +239,7 @@ export default function MediaSettings() {
         </div>
       )}
       {desktop && nvidia?.ready && (
-        <p className="friend-status">
+        <p className="text-xs leading-6 text-muted-foreground">
           NVIDIA Audio Effects is ready. {nvidia.detail}
         </p>
       )}
@@ -235,16 +259,35 @@ export default function MediaSettings() {
         />
       )}
       <ProcessingControls engine={denoiser} />
-      <h3><Monitor size={17} /> Recording quality</h3>
-      <label>Screen recording bitrate<select value={recordingRate} onChange={(event) => {
-        const value = Number(event.target.value); setRecordingRate(value);
-        localStorage.setItem('bc-recording-mbps', String(value));
-      }}>{[10, 20, 40, 80].map((value) => <option key={value} value={value}>{value} Mbps</option>)}</select></label>
-      <p className="setting-note">Applies to new browser and received-screen recordings. Native local shares preserve the selected stream encoder and bitrate. Higher bitrates use more storage; playback volume never changes the saved tracks.</p>
+      <h3>
+        <Monitor size={17} /> Recording quality
+      </h3>
+      <label>
+        Screen recording bitrate
+        <select
+          value={recordingRate}
+          onChange={(event) => {
+            const value = Number(event.target.value);
+            setRecordingRate(value);
+            localStorage.setItem('bc-recording-mbps', String(value));
+          }}
+        >
+          {[10, 20, 40, 80].map((value) => (
+            <option key={value} value={value}>
+              {value} Mbps
+            </option>
+          ))}
+        </select>
+      </label>
+      <p className="my-4 rounded-lg border bg-muted/40 p-3 text-xs leading-6 text-muted-foreground">
+        Applies to new browser and received-screen recordings. Native local
+        shares preserve the selected stream encoder and bitrate. Higher bitrates
+        use more storage; playback volume never changes the saved tracks.
+      </p>
       <h3>
         <Monitor size={17} /> Stream quality
       </h3>
-      <div className="settings-grid">
+      <div className="grid gap-3.5">
         <label>
           Video bitrate ceiling
           <select
@@ -287,7 +330,7 @@ export default function MediaSettings() {
           </select>
         </label>
       </div>
-      <p className="setting-note">
+      <p className="my-4 rounded-lg border bg-muted/40 p-3 text-xs leading-6 text-muted-foreground">
         Actual quality adapts to your connection and device. Each viewer uses
         additional upload bandwidth. Hardware encoding is selected by your
         browser when supported.
@@ -309,23 +352,30 @@ export default function MediaSettings() {
           }}
         />
       </label>
-      <p className="friend-status">
+      <p className="text-xs leading-6 text-muted-foreground">
         Connection mode applies when you next join a call.
       </p>
       <label className="device-select">
         Voice route
-        <select disabled={direct} value={voiceRoute} onChange={event => {
-          setVoiceRoute(event.target.value);
-          localStorage.setItem('bc-voice-route', event.target.value);
-        }}>
-          <option value="automatic">Automatic · direct first, server voice fallback</option>
+        <select
+          disabled={direct}
+          value={voiceRoute}
+          onChange={(event) => {
+            setVoiceRoute(event.target.value);
+            localStorage.setItem('bc-voice-route', event.target.value);
+          }}
+        >
+          <option value="automatic">
+            Automatic · direct first, server voice fallback
+          </option>
           <option value="relay">Server voice · compatibility mode</option>
         </select>
       </label>
-      <p className="setting-note">
+      <p className="my-4 rounded-lg border bg-muted/40 p-3 text-xs leading-6 text-muted-foreground">
         Server voice uses encrypted Opus audio, starting at 64 kbps per friend.
-        Camera, screen sharing, and shared app audio still need WebRTC connectivity.
-        Direct-only overrides this setting. Changes apply on your next call.
+        Camera, screen sharing, and shared app audio still need WebRTC
+        connectivity. Direct-only overrides this setting. Changes apply on your
+        next call.
       </p>
     </>
   );

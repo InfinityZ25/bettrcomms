@@ -1,7 +1,13 @@
-import { useEffect, useState, type FormEvent } from "react";
-import { Check, Plus, Search, Users, X } from "lucide-react";
-import { api, type User, type Room, type FriendRequest, type CallParticipant } from "./api";
-import { Button } from "./components/ui/button";
+import { useEffect, useState, type FormEvent } from 'react';
+import { Check, Plus, Search, Users, X } from 'lucide-react';
+import {
+  api,
+  type User,
+  type Room,
+  type FriendRequest,
+  type CallParticipant,
+} from '@/api';
+import { Button } from '@/components/ui/button';
 
 export default function FriendsPanel({
   user,
@@ -16,15 +22,15 @@ export default function FriendsPanel({
   onOpenRoom?: (room: Room) => void;
   callPresence?: Record<string, CallParticipant[]>;
 }) {
-  const [query, setQuery] = useState(""),
+  const [query, setQuery] = useState(''),
     [results, setResults] = useState<User[]>([]),
     [friends, setFriends] = useState<User[]>([]),
     [requests, setRequests] = useState<FriendRequest[]>([]),
-    [status, setStatus] = useState(""),
+    [status, setStatus] = useState(''),
     [busy, setBusy] = useState(false);
   async function refresh() {
     const r = await api<{ friends: User[]; requests: FriendRequest[] }>(
-      "/friends",
+      '/friends',
     );
     setFriends(r.friends ?? []);
     setRequests(r.requests ?? []);
@@ -47,22 +53,22 @@ export default function FriendsPanel({
     e.preventDefault();
     await action(async () => {
       const r = await api<{ users: User[] }>(
-        "/users?q=" + encodeURIComponent(query),
+        '/users?q=' + encodeURIComponent(query),
       );
       setResults(r.users ?? []);
       setStatus(
         r.users?.length
-          ? ""
-          : "No one found. Try their email or name. You can also paste their user ID below.",
+          ? ''
+          : 'No one found. Try their email or name. You can also paste their user ID below.',
       );
     });
   }
   return (
-    <div className="friends-content">
+    <div className="flex flex-col gap-4">
       <form onSubmit={search}>
-        <label>
+        <label className="block text-xs font-medium text-foreground/80">
           Find your people
-          <div className="search-field">
+          <div className="mt-2 flex items-center gap-2">
             <input
               placeholder="Search name or email"
               aria-label="Find friends"
@@ -83,15 +89,20 @@ export default function FriendsPanel({
         </label>
       </form>
       {status && (
-        <p className="friend-status" role="status">
+        <p className="text-xs leading-6 text-muted-foreground" role="status">
           {status}
         </p>
       )}
       {results.map((u) => (
-        <div className="friend-row" key={u.id}>
-          <span>
-            <strong>{u.name}</strong>
-            <small>{u.email}</small>
+        <div
+          className="flex items-center justify-between gap-2.5 border-b py-2 text-xs"
+          key={u.id}
+        >
+          <span className="min-w-0 flex-1">
+            <strong className="block">{u.name}</strong>
+            <small className="mt-1 block [overflow-wrap:anywhere] text-[0.7rem] text-muted-foreground">
+              {u.email}
+            </small>
           </span>
           <Button
             size="sm"
@@ -105,8 +116,8 @@ export default function FriendsPanel({
             }
             onClick={() =>
               action(async () => {
-                await api("/friends/requests", { user_id: u.id });
-                setStatus("Friend request sent.");
+                await api('/friends/requests', { user_id: u.id });
+                setStatus('Friend request sent.');
               })
             }
           >
@@ -114,15 +125,16 @@ export default function FriendsPanel({
           </Button>
         </div>
       ))}
-      <details className="add-by-id">
-        <summary>Add by user ID</summary>
+      <details className="text-xs text-muted-foreground">
+        <summary className="cursor-pointer">Add by user ID</summary>
         <form
+          className="mt-2.5 flex flex-col gap-3"
           onSubmit={(e) => {
             e.preventDefault();
-            const value = new FormData(e.currentTarget).get("userId");
+            const value = new FormData(e.currentTarget).get('userId');
             action(async () => {
-              await api("/friends/requests", { user_id: value });
-              setStatus("Friend request sent.");
+              await api('/friends/requests', { user_id: value });
+              setStatus('Friend request sent.');
             });
           }}
         >
@@ -137,15 +149,24 @@ export default function FriendsPanel({
           </Button>
         </form>
       </details>
-      {requests.length > 0 && <h3>Friend requests</h3>}
+      {requests.length > 0 && (
+        <h3 className="mt-2.5 flex items-center gap-2 text-sm font-semibold">
+          Friend requests
+        </h3>
+      )}
       {requests.map((r) => {
         const incoming = r.receiver.id === user.id;
         return (
-          <div className="friend-row" key={r.id}>
-            <span>
-              <strong>{incoming ? r.sender.name : r.receiver.name}</strong>
-              <small>
-                {incoming ? "Wants to be your friend" : "Request sent"}
+          <div
+            className="flex items-center justify-between gap-2.5 border-b py-2 text-xs"
+            key={r.id}
+          >
+            <span className="min-w-0 flex-1">
+              <strong className="block">
+                {incoming ? r.sender.name : r.receiver.name}
+              </strong>
+              <small className="mt-1 block text-[0.7rem] text-muted-foreground">
+                {incoming ? 'Wants to be your friend' : 'Request sent'}
               </small>
             </span>
             {incoming ? (
@@ -155,27 +176,27 @@ export default function FriendsPanel({
                 disabled={busy}
                 onClick={() =>
                   action(async () => {
-                    await api("/friends/requests/" + r.id + "/accept", {});
-                    setStatus("You’re now friends.");
+                    await api('/friends/requests/' + r.id + '/accept', {});
+                    setStatus('You’re now friends.');
                   })
                 }
               >
                 <Check size={14} /> Accept
               </Button>
             ) : (
-              <span className="friend-pending">Pending</span>
+              <span className="text-xs text-muted-foreground">Pending</span>
             )}
             <Button
               size="icon"
               variant="ghost"
               disabled={busy}
-              aria-label={incoming ? "Decline request" : "Cancel request"}
+              aria-label={incoming ? 'Decline request' : 'Cancel request'}
               onClick={() =>
                 action(async () => {
                   await api(
-                    "/friends/" + (incoming ? r.sender.id : r.receiver.id),
+                    '/friends/' + (incoming ? r.sender.id : r.receiver.id),
                     undefined,
-                    "DELETE",
+                    'DELETE',
                   );
                 })
               }
@@ -185,20 +206,32 @@ export default function FriendsPanel({
           </div>
         );
       })}
-      <h3>
-        <Users size={16} /> Your friends <span>{friends.length}</span>
+      <h3 className="mt-2.5 flex items-center gap-2 text-sm font-semibold">
+        <Users size={16} /> Your friends{' '}
+        <span className="ml-auto text-muted-foreground">{friends.length}</span>
       </h3>
       {!friends.length && (
-        <p className="friend-status">Every good room starts with a friend.</p>
+        <p className="text-xs leading-6 text-muted-foreground">
+          Every good room starts with a friend.
+        </p>
       )}
       {friends.map((f) => (
-        <div className="friend-row" key={f.id}>
-          <span>
-            <strong>{f.name}</strong>
-            <small>{(() => {
-              const state = Object.values(callPresence).flat().find(person => person.user_id === f.id);
-              return state ? `In a shared call${state.deafened ? ' · Deafened' : state.muted ? ' · Muted' : ''}` : f.email;
-            })()}</small>
+        <div
+          className="flex items-center justify-between gap-2.5 border-b py-2 text-xs"
+          key={f.id}
+        >
+          <span className="min-w-0 flex-1">
+            <strong className="block">{f.name}</strong>
+            <small className="mt-1 block [overflow-wrap:anywhere] text-[0.7rem] text-muted-foreground">
+              {(() => {
+                const state = Object.values(callPresence)
+                  .flat()
+                  .find((person) => person.user_id === f.id);
+                return state
+                  ? `In a shared call${state.deafened ? ' · Deafened' : state.muted ? ' · Muted' : ''}`
+                  : f.email;
+              })()}
+            </small>
           </span>
           <Button
             size="sm"
@@ -206,10 +239,13 @@ export default function FriendsPanel({
             disabled={busy}
             onClick={() =>
               action(async () => {
-                const r = await api<{ room: Room }>("/rooms/direct", {
+                const r = await api<{ room: Room }>('/rooms/direct', {
                   user_id: f.id,
                 });
-                onOpenRoom?.({ ...r.room, display_name: r.room.display_name || f.name });
+                onOpenRoom?.({
+                  ...r.room,
+                  display_name: r.room.display_name || f.name,
+                });
               })
             }
           >
@@ -222,7 +258,7 @@ export default function FriendsPanel({
               disabled={busy}
               onClick={() =>
                 action(async () => {
-                  await api("/rooms/" + room.id + "/members", {
+                  await api('/rooms/' + room.id + '/members', {
                     user_id: f.id,
                   });
                   setStatus(`${f.name} can now join ${room.name}.`);

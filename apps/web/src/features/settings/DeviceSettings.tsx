@@ -1,20 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { applyOutputDevice, followElementOutput, followOutputDevice } from './media/output';
+import { applyOutputDevice, followElementOutput, followOutputDevice } from '@/media/output';
 import {
   createOutputGain,
   readInputVolume,
   readOutputVolume,
   setInputVolume,
   setOutputVolume,
-} from './media/volumeSettings';
+} from '@/media/volumeSettings';
 import './DeviceSettings.css';
-import { MediaEngine } from './media/engine';
-import { allowDesktopCapture, isWindowsDesktop } from './media/permissions';
+import { MediaEngine } from '@/media/engine';
+import { allowDesktopCapture, isWindowsDesktop } from '@/media/permissions';
 import {
   microphoneCaptureOptions,
   readProcessingSettings,
-} from './media/processingSettings';
+} from '@/media/processingSettings';
 import {
   cameraCaptureConstraints,
   cameraFrameRates,
@@ -25,7 +25,7 @@ import {
   requestedCameraLabel,
   writeCameraSettings,
   type CameraSettings,
-} from './media/cameraSettings';
+} from '@/media/cameraSettings';
 
 type PermissionKind = 'microphone' | 'camera';
 const message = (error: unknown, kind?: PermissionKind) => {
@@ -700,14 +700,14 @@ export default function DeviceSettings() {
           </label>
           <div className="device-settings__actions">
             <button
-              className="text-button"
+              className="my-3 p-0 text-xs font-medium text-primary hover:underline disabled:opacity-50"
               type="button"
               onClick={() => void enable('microphone')}
             >
               Enable microphone
             </button>
             <button
-              className="text-button"
+              className="my-3 p-0 text-xs font-medium text-primary hover:underline disabled:opacity-50"
               type="button"
               disabled={recording}
               onClick={() => void testMicrophone()}
@@ -715,7 +715,7 @@ export default function DeviceSettings() {
               {recording ? 'Recording…' : 'Test microphone'}
             </button>
             <button
-              className="text-button"
+              className="my-3 p-0 text-xs font-medium text-primary hover:underline disabled:opacity-50"
               type="button"
               aria-pressed={monitoring}
               onClick={() => {
@@ -729,7 +729,7 @@ export default function DeviceSettings() {
             </button>
             {windowsDesktop && denied(micStatus) && (
               <button
-                className="text-button"
+                className="my-3 p-0 text-xs font-medium text-primary hover:underline disabled:opacity-50"
                 type="button"
                 onClick={() => void openPrivacy('microphone')}
               >
@@ -787,7 +787,7 @@ export default function DeviceSettings() {
               </p>
               <button
                 type="button"
-                className="text-button"
+                className="my-3 p-0 text-xs font-medium text-primary hover:underline disabled:opacity-50"
                 onClick={() => {
                   void navigator.clipboard
                     .writeText(JSON.stringify(micDiagnostic.current, null, 2))
@@ -861,7 +861,7 @@ export default function DeviceSettings() {
           </label>
           <div className="device-settings__actions">
             <button
-              className="text-button"
+              className="my-3 p-0 text-xs font-medium text-primary hover:underline disabled:opacity-50"
               type="button"
               onClick={() => void testOutput()}
             >
@@ -972,14 +972,14 @@ export default function DeviceSettings() {
           )}
           <div className="device-settings__actions">
             <button
-              className="text-button"
+              className="my-3 p-0 text-xs font-medium text-primary hover:underline disabled:opacity-50"
               type="button"
               onClick={() => void enable('camera')}
             >
               Enable camera
             </button>
             <button
-              className="text-button"
+              className="my-3 p-0 text-xs font-medium text-primary hover:underline disabled:opacity-50"
               type="button"
               onClick={() => void togglePreview()}
             >
@@ -987,7 +987,7 @@ export default function DeviceSettings() {
             </button>
             {windowsDesktop && denied(cameraStatus) && (
               <button
-                className="text-button"
+                className="my-3 p-0 text-xs font-medium text-primary hover:underline disabled:opacity-50"
                 type="button"
                 onClick={() => void openPrivacy('camera')}
               >

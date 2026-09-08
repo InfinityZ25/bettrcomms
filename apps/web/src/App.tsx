@@ -32,16 +32,23 @@ import {
 import { Button } from './components/ui/button';
 import { Dialog } from './components/ui/dialog';
 import { ModeToggle } from './components/mode-toggle';
-import { api, type User, type Room, type Message, type CallParticipant } from './api';
-import CallStage, { type NativeShareActions } from './CallStage';
-import NativeScreenPicker from './NativeScreenPicker';
-import FriendsPanel from './FriendsPanel';
-import MediaSettings from './MediaSettings';
-import RoomSettings from './RoomSettings';
-import RecordingsLibrary from './RecordingsLibrary';
-import WorkspaceScreen from './WorkspaceScreen';
-import RoomNavigation, { roomLabel } from './RoomNavigation';
-import { useCallPresence } from './useCallPresence';
+import {
+  api,
+  type User,
+  type Room,
+  type Message,
+  type CallParticipant,
+} from './api';
+import CallStage, { type NativeShareActions } from '@/features/call/CallStage';
+import { useCallPresence } from '@/features/call/useCallPresence';
+import FriendsPanel from '@/features/friends/FriendsPanel';
+import RecordingsLibrary from '@/features/recordings/RecordingsLibrary';
+import RoomNavigation, { roomLabel } from '@/features/rooms/RoomNavigation';
+import RoomSettings from '@/features/rooms/RoomSettings';
+import MediaSettings from '@/features/settings/MediaSettings';
+import NativeScreenPicker from '@/features/sharing/NativeScreenPicker';
+import WorkspaceScreen from '@/features/shell/WorkspaceScreen';
+import { cn } from '@/lib/utils';
 
 type Screen = 'call' | 'settings' | 'recordings' | 'share';
 const emptyCall: CallParticipant[] = [];
@@ -63,7 +70,12 @@ const initials = (name: string) =>
     .toUpperCase();
 function Avatar({ name, large = false }: { name: string; large?: boolean }) {
   return (
-    <span className={'avatar ' + (large ? 'avatar-large' : '')}>
+    <span
+      className={cn(
+        'inline-flex size-8 shrink-0 items-center justify-center rounded-xl bg-muted text-xs font-semibold text-muted-foreground',
+        large && 'size-14 rounded-full text-xl',
+      )}
+    >
       {initials(name)}
     </span>
   );
@@ -87,7 +99,11 @@ export default function App() {
   const [roomSettings, setRoomSettings] = useState(false),
     [callJoined, setCallJoined] = useState(false),
     [callFocused, setCallFocused] = useState(false),
-    [layout, setLayout] = useState(localStorage.getItem('bc-layout') === 'focus' ? 'top' : localStorage.getItem('bc-layout') ?? 'top'),
+    [layout, setLayout] = useState(
+      localStorage.getItem('bc-layout') === 'focus'
+        ? 'top'
+        : (localStorage.getItem('bc-layout') ?? 'top'),
+    ),
     [copied, setCopied] = useState(false),
     [busy, setBusy] = useState(false);
   const [noise, setNoise] = useState(
@@ -153,10 +169,20 @@ export default function App() {
     window.addEventListener('bc-output-error', failed);
     return () => window.removeEventListener('bc-output-error', failed);
   }, []);
-  useEffect(() => { if (callJoined) setChat(false); }, [callJoined]);
   useEffect(() => {
-    const restore = (event: KeyboardEvent) => { if (event.key === 'Escape' && !document.fullscreenElement && !document.querySelector('[role="dialog"]')) setCallFocused(false); };
-    window.addEventListener('keydown', restore); return () => window.removeEventListener('keydown', restore);
+    if (callJoined) setChat(false);
+  }, [callJoined]);
+  useEffect(() => {
+    const restore = (event: KeyboardEvent) => {
+      if (
+        event.key === 'Escape' &&
+        !document.fullscreenElement &&
+        !document.querySelector('[role="dialog"]')
+      )
+        setCallFocused(false);
+    };
+    window.addEventListener('keydown', restore);
+    return () => window.removeEventListener('keydown', restore);
   }, []);
   const messagesEnd = useRef<HTMLDivElement>(null);
   async function loadRooms() {
@@ -245,24 +271,37 @@ export default function App() {
   };
   if (loading)
     return (
-      <div className="boot">
+      <div className="flex h-dvh items-center justify-center gap-4 text-primary">
         <AudioLines size={36} />
         <span>Opening your space…</span>
       </div>
     );
   return (
-    <div className={`app-shell${callJoined ? " is-in-call" : ""}${callJoined && callFocused && screen === "call" ? " is-call-focused" : ""}`}>
+    <div
+      data-app-shell
+      data-in-call={callJoined}
+      data-call-focused={callJoined && callFocused && screen === 'call'}
+      className="flex h-dvh min-h-[600px] overflow-hidden min-[821px]:min-h-[680px]"
+    >
       <nav
-        className="space-rail"
+        className={cn(
+          'flex w-[52px] shrink-0 flex-col items-center gap-3 border-r bg-sidebar px-1.5 py-5 max-[480px]:gap-2 min-[481px]:w-[62px] min-[481px]:px-2 min-[1001px]:w-[76px] min-[1001px]:px-3 min-[1001px]:pt-6 min-[1001px]:pb-4',
+          callJoined && 'min-[821px]:w-[52px] min-[821px]:px-1',
+          callJoined && callFocused && screen === 'call' && 'hidden',
+        )}
         aria-label="Spaces"
         inert={screen === 'share'}
       >
-        <a className="brand-mark" href="/" aria-label="Bettercomms home">
+        <a
+          className="grid size-9 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground min-[481px]:size-11 min-[481px]:rounded-2xl [&_svg]:size-6 min-[481px]:[&_svg]:size-7"
+          href="/"
+          aria-label="Bettercomms home"
+        >
           <AudioLines />
         </a>
-        <div className="rail-divider" />
+        <div className="my-1 h-px w-6 bg-border" />
         <button
-          className="space-icon active"
+          className="grid size-9 shrink-0 place-items-center rounded-xl bg-accent font-bold text-accent-foreground transition-colors hover:bg-accent/80 min-[481px]:size-11 min-[481px]:rounded-2xl"
           onClick={() => setFriends(true)}
           aria-label="Friends"
         >
@@ -271,7 +310,10 @@ export default function App() {
         {rooms.slice(0, 5).map((r) => (
           <button
             key={r.id}
-            className={'space-icon ' + (room?.id === r.id ? 'selected' : '')}
+            className={cn(
+              'grid size-9 shrink-0 place-items-center rounded-xl font-bold text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground min-[481px]:size-11 min-[481px]:rounded-2xl',
+              room?.id === r.id && 'bg-accent text-accent-foreground',
+            )}
             onClick={() => {
               setRoom(r);
               navigate('call');
@@ -282,16 +324,17 @@ export default function App() {
           </button>
         ))}
         <button
-          className="space-icon add"
+          className="grid size-9 shrink-0 place-items-center rounded-xl border border-dashed text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground min-[481px]:size-11 min-[481px]:rounded-2xl"
           aria-label="Create a space"
           onClick={() => setCreate(true)}
         >
           <Plus />
         </button>
         <button
-          className={
-            'space-icon ' + (screen === 'recordings' ? 'selected' : '')
-          }
+          className={cn(
+            'grid size-9 shrink-0 place-items-center rounded-xl text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground min-[481px]:size-11 min-[481px]:rounded-2xl',
+            screen === 'recordings' && 'bg-accent text-accent-foreground',
+          )}
           aria-current={screen === 'recordings' ? 'page' : undefined}
           aria-label="Recordings"
           title="Recordings"
@@ -299,63 +342,119 @@ export default function App() {
         >
           <Clapperboard size={21} />
         </button>
-        <div className="rail-bottom">
+        <div className="mt-auto flex flex-col items-center gap-4">
           <button
-            className={
-              'space-icon ' + (screen === 'settings' ? 'selected' : '')
-            }
+            className={cn(
+              'grid size-9 shrink-0 place-items-center rounded-xl text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground min-[481px]:size-11 min-[481px]:rounded-2xl',
+              screen === 'settings' && 'bg-accent text-accent-foreground',
+            )}
             aria-current={screen === 'settings' ? 'page' : undefined}
             aria-label="Audio and video settings"
             onClick={() => setSettings(true)}
           >
             <Settings2 size={21} />
           </button>
-          {user ? <Avatar name={user.name} /> : <span className="online-dot" />}
+          {user ? (
+            <Avatar name={user.name} />
+          ) : (
+            <span className="size-1.5 rounded-full bg-primary" />
+          )}
         </div>
       </nav>
-      <aside className="sidebar" inert={screen === 'share'}>
-        <div className="workspace-name">
+      <aside
+        className={cn(
+          'hidden w-[170px] shrink-0 flex-col border-r bg-sidebar px-4 min-[821px]:flex min-[1251px]:w-[190px] min-[1400px]:w-[232px]',
+          callJoined && 'min-[821px]:hidden',
+          callJoined && callFocused && screen === 'call' && 'hidden',
+        )}
+        inert={screen === 'share'}
+      >
+        <div className="flex h-[70px] shrink-0 items-center justify-between px-2 font-heading text-base font-bold min-[1001px]:h-20">
           Your space <ChevronDown size={16} />
         </div>
-        <button className="nav-item" onClick={() => setFriends(true)}>
-          <Users size={18} /> Friends <span className="nav-arrow">↗</span>
+        <button
+          className="flex items-center gap-3 rounded-lg px-2.5 py-3 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+          onClick={() => setFriends(true)}
+        >
+          <Users size={18} /> Friends{' '}
+          <span className="ml-auto opacity-60">↗</span>
         </button>
-        <RoomNavigation rooms={rooms} selected={room?.id} presence={presence.rooms} known={presence.known}
-          onSelect={(next) => { setRoom(next); navigate('call'); }} onCreate={() => setCreate(true)} />
-        <div className="sidebar-note">
-          <span className="note-symbol">
+        <RoomNavigation
+          rooms={rooms}
+          selected={room?.id}
+          presence={presence.rooms}
+          known={presence.known}
+          onSelect={(next) => {
+            setRoom(next);
+            navigate('call');
+          }}
+          onCreate={() => setCreate(true)}
+        />
+        <div className="mx-2 mt-auto mb-6 pt-6">
+          <span className="mb-4 grid size-9 place-items-center rounded-xl bg-accent text-muted-foreground">
             <Headphones size={20} />
           </span>
-          <strong>
+          <strong className="font-heading text-sm leading-6 font-semibold text-foreground/75">
             Good company.
             <br />
             Room to be yourself.
           </strong>
-          <p>Your calls, the way you like them.</p>
+          <p className="mt-2 max-w-40 text-xs leading-5 text-muted-foreground">
+            Your calls, the way you like them.
+          </p>
         </div>
-        <div className="profile-bar">
+        <div className="flex min-w-0 items-center gap-2.5 border-t py-5">
           <Avatar name={user?.name ?? 'You'} />
-          <div>
-            <strong>{user?.name ?? 'Welcome in'}</strong>
-            <span>
-              <i className="online-dot" />
+          <div className="min-w-0 flex-1 overflow-hidden">
+            <strong className="block truncate text-xs">
+              {user?.name ?? 'Welcome in'}
+            </strong>
+            <span className="mt-1 flex items-center gap-1 text-[0.65rem] text-muted-foreground">
+              <i className="size-1.5 rounded-full bg-primary" />
               {user ? 'Available' : 'Make yourself at home'}
             </span>
           </div>
-          <button aria-label="Settings" onClick={() => setSettings(true)}>
+          <button
+            className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+            aria-label="Settings"
+            onClick={() => setSettings(true)}
+          >
             <Settings2 size={18} />
           </button>
         </div>
       </aside>
-      <main className="main" aria-label="Call" hidden={screen !== 'call'}>
-        <header className="room-header">
-          <div className="room-heading">
-            {room?.kind === 'direct' ? <MessageSquare size={22} /> : <Hash size={22} />}
-            <strong>{room ? roomLabel(room) : 'The living room'}</strong>
-            <span className="header-divider" />
-            <span className="room-description">{room?.kind === 'direct' ? 'Direct conversation' : 'A place to hang out'}</span>
+      <main
+        className={cn(
+          'min-w-0 flex-1 flex-col',
+          screen === 'call' ? 'flex' : 'hidden',
+        )}
+        aria-label="Call"
+        hidden={screen !== 'call'}
+      >
+        <header
+          className={cn(
+            'flex h-[70px] shrink-0 items-center justify-between gap-2.5 border-b px-3 min-[481px]:px-5 min-[1001px]:h-20 min-[1001px]:gap-5 min-[1001px]:px-7',
+            callJoined && 'h-14 min-[1001px]:h-14',
+            callJoined && callFocused && 'hidden',
+          )}
+        >
+          <div className="flex min-w-0 items-center gap-2 min-[481px]:gap-3.5 [&>svg]:shrink-0 [&>svg]:text-muted-foreground">
+            {room?.kind === 'direct' ? (
+              <MessageSquare size={22} />
+            ) : (
+              <Hash size={22} />
+            )}
+            <strong className="max-w-[125px] truncate text-sm min-[481px]:max-w-[170px] min-[821px]:max-w-xs">
+              {room ? roomLabel(room) : 'The living room'}
+            </strong>
+            <span className="hidden h-5 w-px bg-border min-[821px]:block" />
+            <span className="hidden text-xs text-muted-foreground min-[1251px]:inline">
+              {room?.kind === 'direct'
+                ? 'Direct conversation'
+                : 'A place to hang out'}
+            </span>
           </div>
-          <div className="header-actions">
+          <div className="flex items-center gap-1 min-[481px]:gap-3">
             <Button
               variant="ghost"
               size="icon"
@@ -365,7 +464,7 @@ export default function App() {
             >
               <Settings2 size={18} />
             </Button>
-            <span className="private-label">
+            <span className="hidden items-center gap-2 text-xs text-muted-foreground min-[1251px]:flex">
               <ShieldCheck size={15} /> Private room
             </span>
             <Button
@@ -386,29 +485,41 @@ export default function App() {
             </Button>
           </div>
         </header>
-        <div className="room-body">
-          <section className="call-area">
-            {!user && <div className="call-title">
-              <div>
-                <span className="eyebrow">MAKE ROOM FOR YOUR PEOPLE</span>
-                <h1>
-                  {user ? 'Better together.' : 'A little closer, wherever.'}
-                </h1>
-                <p>
-                  {user
-                    ? 'Start a call. Share something good. Stay a while.'
-                    : 'Clear conversations. Beautiful streams. A space that feels like yours.'}
-                </p>
+        <div className="relative flex min-h-0 flex-1">
+          <section
+            className={cn(
+              'flex min-w-0 flex-1 flex-col overflow-auto px-3 pt-5 pb-3 [scroll-padding-bottom:1.5rem] min-[481px]:px-5 min-[821px]:pb-0 min-[1251px]:px-8',
+              callJoined ? 'pt-5' : 'min-[821px]:pt-8',
+              callFocused &&
+                screen === 'call' &&
+                'p-0 min-[481px]:p-0 min-[821px]:p-0 min-[1251px]:p-0',
+            )}
+          >
+            {!user && (
+              <div className="mb-5 flex items-center justify-between min-[481px]:mb-7">
+                <div>
+                  <span className="text-[0.6rem] font-semibold tracking-[0.18em] text-muted-foreground">
+                    MAKE ROOM FOR YOUR PEOPLE
+                  </span>
+                  <h1 className="mt-3 font-heading text-2xl font-semibold tracking-tight min-[481px]:text-[clamp(1.5rem,2.1vw,2.125rem)]">
+                    {user ? 'Better together.' : 'A little closer, wherever.'}
+                  </h1>
+                  <p className="mt-3 max-w-96 text-xs leading-6 text-muted-foreground min-[481px]:text-sm">
+                    {user
+                      ? 'Start a call. Share something good. Stay a while.'
+                      : 'Clear conversations. Beautiful streams. A space that feels like yours.'}
+                  </p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Layout settings"
+                  onClick={() => setLayout(layout === 'top' ? 'focus' : 'top')}
+                >
+                  <LayoutPanelTop size={20} />
+                </Button>
               </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Layout settings"
-                onClick={() => setLayout(layout === 'top' ? 'focus' : 'top')}
-              >
-                <LayoutPanelTop size={20} />
-              </Button>
-            </div>}
+            )}
             <CallStage
               user={user}
               room={room}
@@ -416,10 +527,12 @@ export default function App() {
               onLayout={setLayout}
               onJoinedChange={setCallJoined}
               focused={callFocused}
-              onFocus={() => setCallFocused(value => !value)}
+              onFocus={() => setCallFocused((value) => !value)}
               noise={noise}
               balanced={balanced}
-              callPresence={room ? presence.rooms[room.id] ?? emptyCall : emptyCall}
+              callPresence={
+                room ? (presence.rooms[room.id] ?? emptyCall) : emptyCall
+              }
               presenceKnown={presence.known}
               onError={setError}
               onInvite={() => setFriends(true)}
@@ -432,10 +545,15 @@ export default function App() {
               }}
             />
             {!user && (
-              <div id="signin" className="signin-card">
+              <div
+                id="signin"
+                className="flex shrink-0 flex-col items-stretch justify-between gap-4 border-t py-5 min-[821px]:flex-row min-[821px]:flex-wrap min-[821px]:items-center min-[821px]:pb-6"
+              >
                 <div>
-                  <strong>Your people are one sign-in away.</strong>
-                  <p>
+                  <strong className="text-sm">
+                    Your people are one sign-in away.
+                  </strong>
+                  <p className="mt-1.5 text-xs text-muted-foreground">
                     Sign in securely to create rooms and invite your friends.
                   </p>
                 </div>
@@ -443,9 +561,15 @@ export default function App() {
                   Continue with WorkOS <ArrowRight size={17} />
                 </Button>
                 {devAuth && (
-                  <form className="dev-login" onSubmit={login}>
-                    <span>Local development</span>
+                  <form
+                    className="grid w-full grid-cols-1 items-center gap-2.5 pb-2.5 min-[821px]:flex min-[821px]:flex-wrap"
+                    onSubmit={login}
+                  >
+                    <span className="my-1 text-[0.65rem] text-muted-foreground min-[821px]:my-0 min-[821px]:shrink-0">
+                      Local development
+                    </span>
                     <input
+                      className="min-w-20 min-[821px]:flex-1"
                       aria-label="Your name"
                       placeholder="Your name"
                       value={name}
@@ -453,6 +577,7 @@ export default function App() {
                       required
                     />
                     <input
+                      className="min-w-20 min-[821px]:flex-1"
                       aria-label="Your email"
                       type="email"
                       placeholder="you@example.test"
@@ -469,50 +594,69 @@ export default function App() {
             )}
           </section>
           {chat && (
-            <aside className="chat-panel">
-              <div className="chat-heading">
-                <strong>Room chat</strong>
-                <button onClick={() => setChat(false)} aria-label="Close chat">
+            <aside
+              className={cn(
+                'absolute top-[70px] right-0 bottom-0 z-10 flex w-[calc(100vw-52px)] shrink-0 flex-col border-l bg-card shadow-[-20px_0_50px_rgb(0_0_0/0.25)] min-[481px]:w-[300px] min-[821px]:static min-[821px]:w-[230px] min-[821px]:shadow-none min-[1251px]:w-[250px] min-[1400px]:w-[300px]',
+                callJoined && callFocused && 'hidden',
+              )}
+            >
+              <div className="flex items-center justify-between px-5 pt-6 pb-5">
+                <strong className="text-sm font-semibold">Room chat</strong>
+                <button
+                  className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                  onClick={() => setChat(false)}
+                  aria-label="Close chat"
+                >
                   <X size={17} />
                 </button>
               </div>
-              <div className="chat-messages">
+              <div className="min-h-0 flex-1 overflow-auto p-5">
                 {!messages.length ? (
-                  <div className="chat-welcome">
-                    <span className="chat-welcome-icon">
+                  <div className="mt-4">
+                    <span className="grid size-12 place-items-center rounded-xl border bg-muted text-muted-foreground">
                       <MessageSquare size={24} />
                     </span>
-                    <h3>The conversation starts here.</h3>
-                    <p>
+                    <h3 className="mt-5 max-w-44 font-heading text-base leading-6 font-semibold">
+                      The conversation starts here.
+                    </h3>
+                    <p className="mt-2.5 text-xs leading-6 text-muted-foreground">
                       A link, a thought, a very important meme.
                       <br />
                       Drop it in.
                     </p>
-                    <span className="date-rule">TODAY</span>
+                    <span className="my-8 flex items-center gap-2 text-[0.6rem] tracking-widest text-muted-foreground before:h-px before:flex-1 before:bg-border after:h-px after:flex-1 after:bg-border">
+                      TODAY
+                    </span>
                   </div>
                 ) : (
                   messages.map((m) => (
-                    <div className="message" key={m.id}>
+                    <div className="mb-5 flex gap-2.5" key={m.id}>
                       <Avatar name={m.author.name} />
-                      <div>
-                        <div className="message-meta">
-                          <strong>{m.author.name}</strong>
-                          <time>
+                      <div className="min-w-0">
+                        <div className="flex items-baseline gap-2">
+                          <strong className="text-xs">{m.author.name}</strong>
+                          <time className="text-[0.6rem] text-muted-foreground">
                             {new Date(m.created_at).toLocaleTimeString([], {
                               hour: '2-digit',
                               minute: '2-digit',
                             })}
                           </time>
                         </div>
-                        <p>{m.body}</p>
+                        <p className="mt-1 [overflow-wrap:anywhere] whitespace-pre-wrap text-sm leading-6 text-foreground/80">
+                          {m.body}
+                        </p>
                       </div>
                     </div>
                   ))
                 )}
                 <div ref={messagesEnd} />
               </div>
-              <form className="chat-compose" onSubmit={send}>
+              <form
+                className="mx-4 mt-2.5 flex items-center rounded-xl border bg-muted pr-3 focus-within:ring-2 focus-within:ring-ring/40"
+                onSubmit={send}
+              >
                 <input
+                  className="min-w-0 border-0 bg-transparent px-3 py-3.5 text-xs shadow-none outline-none focus-visible:ring-0"
                   placeholder={
                     user ? 'Message your room…' : 'Sign in to say hello'
                   }
@@ -522,13 +666,14 @@ export default function App() {
                   disabled={!user || !room}
                 />
                 <button
+                  className="rounded-md p-1 text-primary transition-colors hover:bg-accent disabled:opacity-40"
                   aria-label="Send message"
                   disabled={!draft.trim() || busy}
                 >
                   <Send size={17} />
                 </button>
               </form>
-              <span className="chat-caption">
+              <span className="px-2 py-3 text-center text-[0.6rem] text-muted-foreground">
                 A little less distance. A little more us.
               </span>
             </aside>
@@ -564,10 +709,14 @@ export default function App() {
         />
       )}
       {error && (
-        <div className="toast" role="alert">
+        <div
+          className="fixed bottom-6 left-1/2 z-[60] flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-3 rounded-xl border bg-card px-4 py-3 text-sm text-card-foreground shadow-2xl"
+          role="alert"
+        >
           <CircleHelp size={18} />
           {error}
           <button
+            className="ml-3 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
             onClick={() => setError('')}
             aria-label="Dismiss notification"
           >
@@ -590,7 +739,7 @@ export default function App() {
         description="A private place for your calls, screen shares, and conversations."
       >
         <form
-          className="modal-form"
+          className="mt-6 flex flex-col gap-5"
           onSubmit={(e) => {
             e.preventDefault();
             run(async () => {
@@ -605,9 +754,10 @@ export default function App() {
             });
           }}
         >
-          <label>
+          <label className="block text-xs font-medium text-foreground/80">
             Room name
             <input
+              className="mt-2"
               autoFocus
               value={roomName}
               onChange={(e) => setRoomName(e.target.value)}
@@ -628,13 +778,13 @@ export default function App() {
         title="Better with friends"
         description="Share your user ID with a friend so they can send you a request."
       >
-        <div className="modal-form">
+        <div className="mt-6 flex flex-col gap-5">
           {user ? (
             <>
-              <label>
+              <label className="block text-xs font-medium text-foreground/80">
                 Your user ID
-                <div className="copy-field">
-                  <input readOnly value={user.id} />
+                <div className="mt-2 flex items-center gap-2">
+                  <input className="text-xs" readOnly value={user.id} />
                   <Button
                     variant="secondary"
                     size="icon"
@@ -676,16 +826,19 @@ export default function App() {
           description="Make it sound like you. Your preferences stay on this device."
           onBack={() => navigate('call')}
         >
-          <div className="settings-section">
-            <h3>
+          <div className="mt-6 max-w-[920px]">
+            <h3 className="mb-4 flex items-center gap-2.5 text-base font-semibold">
               <Mic size={17} /> Audio
             </h3>
-            <label className="switch-row">
+            <label className="my-5 flex items-center justify-between gap-5 text-sm">
               <div>
-                <strong>Noise suppression</strong>
-                <p>Reduce background noise from your microphone.</p>
+                <strong className="text-sm">Noise suppression</strong>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Reduce background noise from your microphone.
+                </p>
               </div>
               <input
+                className="relative m-0 h-5 w-9 shrink-0 cursor-pointer appearance-none rounded-full border bg-input p-0 transition-colors before:absolute before:top-[3px] before:left-[3px] before:size-3 before:rounded-full before:bg-foreground before:transition-[left] before:content-[''] checked:border-primary checked:bg-primary checked:before:left-[17px] checked:before:bg-primary-foreground"
                 type="checkbox"
                 checked={noise}
                 onChange={(e) => {
@@ -698,34 +851,40 @@ export default function App() {
                 }}
               />
             </label>
-            <label className="switch-row">
+            <label className="my-5 flex items-center justify-between gap-5 text-sm">
               <div>
-                <strong>Balance voices</strong>
-                <p>Gently even out the people you hear.</p>
+                <strong className="text-sm">Balance voices</strong>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Gently even out the people you hear.
+                </p>
               </div>
               <input
+                className="relative m-0 h-5 w-9 shrink-0 cursor-pointer appearance-none rounded-full border bg-input p-0 transition-colors before:absolute before:top-[3px] before:left-[3px] before:size-3 before:rounded-full before:bg-foreground before:transition-[left] before:content-[''] checked:border-primary checked:bg-primary checked:before:left-[17px] checked:before:bg-primary-foreground"
                 type="checkbox"
                 checked={balanced}
                 onChange={(e) => setBalanced(e.target.checked)}
               />
             </label>
             <MediaSettings />
-            <h3>
+            <h3 className="mt-7 mb-4 flex items-center gap-2.5 text-base font-semibold">
               <SunMoon size={17} /> Appearance
             </h3>
-            <div className="switch-row">
+            <div className="my-5 flex items-center justify-between gap-5">
               <div>
-                <strong>Theme</strong>
-                <p>Light, dark, or match your system.</p>
+                <strong className="text-sm">Theme</strong>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Light, dark, or match your system.
+                </p>
               </div>
               <ModeToggle />
             </div>
-            <h3>
+            <h3 className="mt-7 mb-4 flex items-center gap-2.5 text-base font-semibold">
               <LayoutPanelTop size={17} /> Layout
             </h3>
-            <label>
+            <label className="my-4 block text-xs font-medium leading-7 text-foreground/80">
               Camera placement
               <select
+                className="mt-2"
                 value={layout}
                 onChange={(e) => setLayout(e.target.value)}
               >
@@ -737,6 +896,7 @@ export default function App() {
             {user && (
               <Button
                 variant="ghost"
+                className="mt-6"
                 onClick={() =>
                   run(async () => {
                     await api('/auth/logout', {}, 'POST');

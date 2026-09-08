@@ -11,15 +11,15 @@ import {
   Search,
   Volume2,
 } from 'lucide-react';
-import { Button } from './components/ui/button';
+import { Button } from '@/components/ui/button';
 import type {
   NativeScreenCapabilities,
   NativeScreenSource,
   NativeScreenStartOptions,
-} from './media/nativeScreen';
+} from '@/media/nativeScreen';
 import './NativeScreenPicker.css';
 import NativeFfmpegSetup from './NativeFfmpegSetup';
-import type { NativeSystemAudioCapabilities } from './media/nativeSystemAudio';
+import type { NativeSystemAudioCapabilities } from '@/media/nativeSystemAudio';
 
 const previewQueue: Array<() => Promise<void>> = [];
 let activePreviews = 0;
