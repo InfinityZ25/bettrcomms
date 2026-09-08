@@ -71,6 +71,8 @@ type StageItem = {
   name: string;
   track: MediaStreamTrack;
   self?: boolean;
+  /** The sender fell back to re-encoding this screen through the call. */
+  reencoded?: boolean;
 };
 
 function readGalleryLayout(): GalleryLayout {
@@ -668,14 +670,8 @@ export default function CallStage({
         onShare: (options) => originatingEngine.captureNativeScreen(options),
         onBrowser: async () => {
           await originatingEngine.captureScreen(
-            {
-              video: {
-                width: { ideal: 2560 },
-                height: { ideal: 1440 },
-                frameRate: { ideal: 60, max: 60 },
-              },
-              systemAudio: true,
-            },
+            // Capture constraints follow the configured stream quality.
+            { systemAudio: true },
             () =>
               request === shareRequest.current &&
               originatingEngine === engine.current,
@@ -692,14 +688,8 @@ export default function CallStage({
   async function browserScreen() {
     await perform(async () => {
       if (!engine.current) return;
-      await engine.current.captureScreen({
-        video: {
-          width: { ideal: 2560 },
-          height: { ideal: 1440 },
-          frameRate: { ideal: 60, max: 60 },
-        },
-        systemAudio: true,
-      });
+      // Capture constraints follow the configured stream quality.
+      await engine.current.captureScreen({ systemAudio: true });
     });
   }
   async function camera() {
@@ -773,7 +763,7 @@ export default function CallStage({
   }
   const shares = [
     ...(locals.has('screen')
-      ? [{ id: 'local', name: 'Your screen', track: locals.get('screen')! }]
+      ? [{ id: 'local', name: 'Your screen', track: locals.get('screen')!, reencoded: false }]
       : []),
     ...remote
       .filter((t) => t.source === 'screen')
@@ -781,6 +771,9 @@ export default function CallStage({
         id: t.peerId,
         name: (names[t.peerId] ?? 'Friend') + '’s screen',
         track: t.track,
+        // The sender's direct native connection failed and it is re-encoding
+        // its own decoded preview. Say so instead of looking like a bad share.
+        reencoded: t.screenTransport === 'native-compatibility',
       })),
   ];
   const connected = Object.entries(peers).filter(
@@ -815,6 +808,7 @@ export default function CallStage({
       name: share.name,
       track: share.track,
       self: share.id === 'local',
+      reencoded: share.reencoded ?? false,
     })),
     ...cameraParticipants
       .filter((camera): camera is typeof camera & { track: MediaStreamTrack } => Boolean(camera.track))
@@ -1041,7 +1035,18 @@ export default function CallStage({
                     <MonitorUp size={14} /> {watching ? 'Stop watching' : 'Watch'}
                   </button>
                 </div>
-                <div className="tile-caption"><span>{screenShare.name}</span><MonitorUp size={13} /></div>
+                <div className="tile-caption">
+                  <span>{screenShare.name}</span>
+                  {screenShare.reencoded && (
+                    <span
+                      className="screen-share-degraded"
+                      title="The direct native connection failed, so this screen is being re-encoded through the call at reduced quality."
+                    >
+                      Reduced quality
+                    </span>
+                  )}
+                  <MonitorUp size={13} />
+                </div>
               </div>
             );
           })}
@@ -1357,6 +1362,14 @@ function ZoomableStageItem({
         <span>{item.kind === 'screen' ? <MonitorUp size={15} /> : <Video size={15} />}{item.name.toUpperCase()}</span>
         <div className="stage-pane-actions">
           {canFocus && <button aria-label={`Focus ${item.name}`} onClick={onFocus}><Pin size={14} /> Focus</button>}
+          {item.reencoded && (
+            <span
+              className="stage-badge stage-badge-degraded"
+              title="The direct native connection failed, so this screen is being re-encoded through the call at reduced quality."
+            >
+              Reduced quality
+            </span>
+          )}
           <span className="stage-badge">{item.kind === 'camera' || receiving ? 'Live' : 'Waiting for video'}</span>
           <button aria-label={item.kind === 'screen' ? `Stop watching ${item.name}` : `Return ${item.name} to the camera row`} onClick={onRemove}><X size={15} /></button>
         </div>
@@ -1416,8 +1429,11 @@ function FrozenTrackPreview({ track, name }: { track: MediaStreamTrack; name: st
       target.width = Math.max(1, Math.round(source.videoWidth * scale));
       target.height = Math.max(1, Math.round(source.videoHeight * scale));
       target.getContext('2d', { alpha: false })?.drawImage(source, 0, 0, target.width, target.height);
-      source.pause();
-      source.srcObject = null;
+      // The track keeps arriving whether or not this tile paints it, so freezing
+      // the picture must not tear the decoder down. A detached decoder needs a
+      // keyframe when watching resumes, and a native sender cannot supply one on
+      // request, which stalls the resumed view until the next scheduled IDR.
+      // Keep decoding into the offscreen element and show the still frame.
       setStatus('ready');
     };
     const queueCapture = () => {
@@ -1442,7 +1458,7 @@ function FrozenTrackPreview({ track, name }: { track: MediaStreamTrack; name: st
       <canvas ref={canvas} aria-label={`Preview of ${name}`} />
       {status === 'loading' && <span>Preparing preview…</span>}
       {status === 'unavailable' && <span>Preview unavailable</span>}
-      {status !== 'ready' && <video ref={video} muted playsInline aria-hidden="true" />}
+      <video ref={video} muted playsInline aria-hidden="true" />
     </div>
   );
 }

@@ -8,6 +8,8 @@ test('capture ownership stops user media and couples screen with system audio', 
     const { MediaEngine } = await import('/src/media/index.ts');
     const engine = new MediaEngine({
       signaling: { localPeerId: 'lifecycle-test', send() {} },
+      // Screen capture constraints must follow the configured stream quality.
+      quality: { maxFramerate: 120 },
     });
     const audioContext = new AudioContext();
     const audioDestination = audioContext.createMediaStreamDestination();
@@ -43,6 +45,9 @@ test('capture ownership stops user media and couples screen with system audio', 
     try {
       await engine.captureUserMedia({ camera: true, microphone: true });
       await engine.captureScreen({ systemAudio: true });
+      // Chromium trades resolution away first without an explicit hint, which is
+      // the wrong degradation for a screen full of text.
+      const screenContentHint = videoTrack.contentHint;
       videoTrack.stop();
       // MediaStreamTrack.stop() itself does not emit ended; browsers emit it when
       // the display source ends through the picker/browser chrome.
@@ -56,6 +61,7 @@ test('capture ownership stops user media and couples screen with system audio', 
       return {
         shareRemoved,
         requestedCapture,
+        screenContentHint,
         systemStopped,
         cameraStopped: camera.readyState === 'ended',
         microphoneStopped: microphone.readyState === 'ended',
@@ -75,7 +81,16 @@ test('capture ownership stops user media and couples screen with system audio', 
 
   expect(result).toEqual({
     shareRemoved: true,
-    requestedCapture: { video: true, audio: true, windowAudio: 'window' },
+    requestedCapture: {
+      video: {
+        width: { ideal: 2560 },
+        height: { ideal: 1440 },
+        frameRate: { ideal: 120, max: 120 },
+      },
+      audio: true,
+      windowAudio: 'window',
+    },
+    screenContentHint: 'detail',
     systemStopped: true,
     cameraStopped: true,
     microphoneStopped: true,

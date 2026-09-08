@@ -280,6 +280,7 @@ export default function MediaSettings() {
             <option value={15}>15 FPS · text</option>
             <option value={30}>30 FPS · balanced</option>
             <option value={60}>60 FPS · motion</option>
+            <option value={120}>120 FPS · high refresh</option>
           </select>
         </label>
         <label>

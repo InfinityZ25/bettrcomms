@@ -68,6 +68,12 @@ export interface RemoteTrack {
   source: MediaSourceKind;
   track: MediaStreamTrack;
   stream: MediaStream;
+  /**
+   * How a screen reached us. `native-compatibility` means the native peer
+   * connection failed and the sender is re-encoding its own decoded preview
+   * through the ordinary call, which costs a generation of quality.
+   */
+  screenTransport?: 'browser' | 'native-compatibility';
 }
 
 export interface CaptureOptions {
@@ -100,6 +106,8 @@ export interface MicrophoneProcessingSettings {
 export interface ScreenCaptureOptions {
   video?: boolean | MediaTrackConstraints;
   systemAudio?: boolean;
+  /** Tune browser encoding for motion or for fine text. Defaults to detail. */
+  contentHint?: 'motion' | 'detail';
 }
 
 export interface IceOptions {

@@ -390,7 +390,20 @@ export class MediaEngine extends EventTarget {
   ): Promise<void> {
     this.ensureActive();
     const captureOptions: DisplayMediaStreamOptions & { windowAudio: 'window' | 'exclude' } = {
-      video: options.video ?? true,
+      // Follow the configured stream quality rather than a fixed ceiling, so a
+      // high-refresh display is not silently halved before encoding starts.
+      video: options.video ?? {
+        width: { ideal: 2560 },
+        height: { ideal: 1440 },
+        ...(this.quality.maxFramerate
+          ? {
+              frameRate: {
+                ideal: this.quality.maxFramerate,
+                max: this.quality.maxFramerate,
+              },
+            }
+          : {}),
+      },
       audio: options.systemAudio ?? true,
       // Ask supporting browsers to scope window audio to the selected application.
       // This is a picker hint; the browser/OS still controls available audio sources.
@@ -406,6 +419,11 @@ export class MediaEngine extends EventTarget {
     try {
       const screen = stream.getVideoTracks()[0];
       const system = stream.getAudioTracks()[0];
+      // Without an explicit hint Chromium treats a screen like camera video and
+      // will trade resolution away first. Unreadable text is worse than a lower
+      // frame rate, so state the intent for every browser share, not only the
+      // native compatibility path.
+      if (screen) screen.contentHint = options.contentHint ?? 'detail';
       const endShare = () => {
         void Promise.all([
           this.setLocalTrack('screen', null),
@@ -1063,6 +1081,9 @@ export class MediaEngine extends EventTarget {
       source: descriptor.source,
       track,
       stream: new MediaStream([track]),
+      ...(descriptor.source === 'screen' && descriptor.screenTransport
+        ? { screenTransport: descriptor.screenTransport }
+        : {}),
     };
     if (descriptor.source === 'screen' && this.nativeRemote.delete(peerId))
       this.nativeScreen.finishReceiverFallback(peerId);
@@ -1216,25 +1237,26 @@ export class MediaEngine extends EventTarget {
     // negotiation; inventing one makes setParameters reject and can break capture.
     // Reapply after SDP negotiation when the browser exposes the actual entries.
     if (!parameters.encodings?.length) return;
-    const nativeCompatibility =
+    const isScreen =
       sender.track.kind === 'video' &&
-      sender.track === this.localTracks.get('screen') &&
-      this.nativeScreen.active;
+      sender.track === this.localTracks.get('screen');
+    const nativeCompatibility = isScreen && this.nativeScreen.active;
     const quality = nativeCompatibility
       ? this.nativeScreen.compatibilityQuality ?? this.quality
       : this.quality;
     let changed = false;
-    if (
-      nativeCompatibility &&
-      parameters.degradationPreference !==
-        (this.nativeScreen.compatibilityContentHint === 'motion'
-          ? 'balanced'
-          : 'maintain-resolution')
-    ) {
-      parameters.degradationPreference =
-        this.nativeScreen.compatibilityContentHint === 'motion'
-          ? 'balanced'
-          : 'maintain-resolution';
+    // Every screen sender degrades by dropping frames rather than resolution.
+    // Motion content is the one case where the reverse reads better.
+    const hint = nativeCompatibility
+      ? this.nativeScreen.compatibilityContentHint
+      : sender.track.contentHint;
+    const preference = isScreen
+      ? hint === 'motion'
+        ? 'balanced'
+        : 'maintain-resolution'
+      : undefined;
+    if (preference && parameters.degradationPreference !== preference) {
+      parameters.degradationPreference = preference;
       changed = true;
     }
     for (const encoding of parameters.encodings) {

@@ -544,6 +544,22 @@ h1 {
   padding: 4px 7px;
   background: #283224;
 }
+/* A screen the sender had to re-encode through the call reads as a bad share
+   otherwise, so name the cause instead of leaving the viewer to guess. */
+.stage-badge-degraded,
+.screen-share-degraded {
+  font-size: 10px;
+  color: #e6c07a;
+  border: 1px solid #6b5426;
+  border-radius: 5px;
+  padding: 3px 6px;
+  background: #34291399;
+  white-space: nowrap;
+}
+.screen-share-degraded {
+  margin-left: auto;
+  margin-right: 6px;
+}
 .stage-empty {
   flex: 1;
   display: flex;
