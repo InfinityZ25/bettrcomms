@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { PictureInPicture2 } from 'lucide-react';
 import { isWindowsDesktop } from '@/media/permissions';
+import { readStored, writeStored } from '@/lib/storage';
 import { CameraOverlayCanvas, type OverlayCamera } from '@/media/cameraOverlayCanvas';
 import './CameraOverlay.css';
 
@@ -10,7 +11,7 @@ type Session = { overlayId: string; width: number; height: number; maxFps: numbe
 const defaults: Settings = { position: 'top-right', size: 'small', clickThrough: true };
 function readSettings(): Settings {
   try {
-    const value = JSON.parse(localStorage.getItem('bc-camera-overlay') ?? '{}');
+    const value = JSON.parse(readStored('bc-camera-overlay') ?? '{}');
     return {
       position: ['top-left', 'top-right', 'bottom-left', 'bottom-right'].includes(value.position) ? value.position : defaults.position,
       size: ['small', 'medium', 'large'].includes(value.size) ? value.size : defaults.size,
@@ -81,7 +82,7 @@ export default function CameraOverlay({ cameras }: { cameras: OverlayCamera[] })
   const change = (patch: Partial<Settings>) => {
     const next = { ...settings, ...patch };
     setSettings(next);
-    localStorage.setItem('bc-camera-overlay', JSON.stringify(next));
+    writeStored('bc-camera-overlay', JSON.stringify(next));
   };
   return <details className="camera-overlay-controls">
     <summary><PictureInPicture2 size={16} /> Camera overlay{enabled ? ' · On' : ''}</summary>

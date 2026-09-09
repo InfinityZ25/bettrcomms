@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent, type KeyboardEvent } from 'react';
+import { readStoredNumber, removeStored, writeStored } from '@/lib/storage';
 type Dock = 'top' | 'left' | 'right';
-const readSize = (key: string, fallback: number) => { try { const n = Number(localStorage.getItem(key)); return n > 0 && Number.isFinite(n) ? n : fallback; } catch { return fallback; } };
+const readSize = (key: string, fallback: number) => { const stored = readStoredNumber(key, fallback); return stored > 0 ? stored : fallback; };
 export function useCallLayout(layout: string, onLayout?: (value: string) => void, joined = false) {
   const stage = useRef<HTMLDivElement>(null);
   const dock: Dock = layout === 'side' || layout === 'left' ? 'left' : layout === 'right' ? 'right' : 'top';
@@ -23,7 +24,7 @@ export function useCallLayout(layout: string, onLayout?: (value: string) => void
   const setSize = (value: number) => {
     const next = Math.max(minimum, Math.min(maximum, value));
     setSizes(old => ({ ...old, [horizontal ? 'top' : 'side']: next }));
-    try { localStorage.setItem(horizontal ? 'bc-camera-row-size' : 'bc-camera-side-size', String(next)); } catch { /* Session-only when storage is unavailable. */ }
+    writeStored(horizontal ? 'bc-camera-row-size' : 'bc-camera-side-size', String(next));
   };
   const setDock = (value: Dock) => onLayout?.(value === 'left' ? 'side' : value);
   const resizeHandlers = {
@@ -42,6 +43,6 @@ export function useCallLayout(layout: string, onLayout?: (value: string) => void
     else if (e.key === 'End') { e.preventDefault(); setSize(maximum); }
     else if (['ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowRight'].includes(e.key)) { e.preventDefault(); setSize(size + (['ArrowDown', 'ArrowRight'].includes(e.key) ? 16 : -16)); }
   }
-  function reset() { setDock('top'); setSizes({ top: 190, side: 300 }); try { localStorage.removeItem('bc-camera-row-size'); localStorage.removeItem('bc-camera-side-size'); } catch { /* Session-only. */ } }
+  function reset() { setDock('top'); setSizes({ top: 190, side: 300 }); removeStored('bc-camera-row-size'); removeStored('bc-camera-side-size'); }
   return { stage, dock, size, minimum, maximum, target, setDock, reset, moveHandlers, resizeHandlers, resizeKey };
 }

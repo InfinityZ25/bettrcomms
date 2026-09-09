@@ -1,3 +1,5 @@
+import { errorMessage } from '@/lib/errors';
+import { LinkButton } from '@/components/ui/link-button';
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 
@@ -36,7 +38,7 @@ export default function NativeDeepfilterSetup({
       setInfo(nextInfo);
       onStatus(nextStatus);
     } catch (cause) {
-      const detail = cause instanceof Error ? cause.message : String(cause);
+      const detail = errorMessage(cause);
       const unavailable = {
         ready: false,
         detail,
@@ -61,7 +63,7 @@ export default function NativeDeepfilterSetup({
     try {
       await invoke('deepfilter_install');
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(errorMessage(cause));
     } finally {
       setBusy(false);
       await refresh();
@@ -87,8 +89,7 @@ export default function NativeDeepfilterSetup({
             {Math.round(info.downloadBytes / 1024 / 1024)} MiB component and
             processes microphone audio on your local AMD or Intel GPU.
           </p>
-          <button
-            className="my-3 p-0 text-xs font-medium text-primary hover:underline disabled:opacity-50"
+          <LinkButton
             disabled={busy}
             onClick={install}
           >
@@ -97,7 +98,7 @@ export default function NativeDeepfilterSetup({
               : error
                 ? 'Retry DeepFilterNet setup'
                 : 'Download and set up DeepFilterNet'}
-          </button>
+          </LinkButton>
         </>
       )}
       {info && !info.supported && (

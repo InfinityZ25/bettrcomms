@@ -1,3 +1,4 @@
+import { errorMessage } from '@/lib/errors';
 import { useRef, useState, useSyncExternalStore, type RefObject, type KeyboardEvent } from 'react';
 import { Crosshair, Camera, X } from 'lucide-react';
 import { VisualCopilot, videoPoint, MAX_IMAGE, type CopilotMode } from '@/media/visualCopilot';
@@ -86,7 +87,7 @@ export function CopilotViewer({ copilot, peerId, viewport }: { copilot: VisualCo
       const rect = surface.getBoundingClientRect();
       setSentPoint({ x: (clientX - rect.left) / rect.width * 100, y: (clientY - rect.top) / rect.height * 100 });
       clearTimeout(pointTimer.current); pointTimer.current = setTimeout(() => setSentPoint(null), settings.duration * 1000);
-    } catch (error) { setError(error instanceof Error ? error.message : String(error)); }
+    } catch (error) { setError(errorMessage(error)); }
   }
   // Remount the keyed viewer on permission changes to immediately release frames.
   function select(next: CopilotMode) {
@@ -115,7 +116,7 @@ export function CopilotViewer({ copilot, peerId, viewport }: { copilot: VisualCo
       ctx.beginPath(); ctx.arc(point.x * canvas.width, point.y * canvas.height, 15, 0, Math.PI * 2); ctx.stroke();
       copilot.mark(peerId, 'snapshot', point.x, point.y, compress(canvas), performance.now() - frozen.at);
       cancel();
-    } catch (e) { setError(String(e instanceof Error ? e.message : e)); }
+    } catch (e) { setError(errorMessage(e)); }
   }
   function shortcut(event: KeyboardEvent) {
     if (event.key === 'Escape') { event.stopPropagation(); cancel(); return; }
@@ -132,7 +133,7 @@ export function CopilotViewer({ copilot, peerId, viewport }: { copilot: VisualCo
       if (e.key !== 'Enter' && e.key !== ' ') return;
       e.preventDefault(); e.stopPropagation();
       try { if (mode === 'snapshot') setPoint({ x: .5, y: .5 }); else copilot.mark(peerId, 'ping', .5, .5); }
-      catch (error) { setError(error instanceof Error ? error.message : String(error)); }
+      catch (error) { setError(errorMessage(error)); }
     }} onPointerDown={e => { e.preventDefault(); e.stopPropagation(); if (laser && mode === 'ping' && e.button === 0) { e.currentTarget.setPointerCapture(e.pointerId); indicate(e.currentTarget, e.clientX, e.clientY, true); } }}
     onPointerMove={e => { if (laser && mode === 'ping' && e.buttons === 1 && e.currentTarget.hasPointerCapture(e.pointerId)) indicate(e.currentTarget, e.clientX, e.clientY, true); }}
     onPointerUp={e => { if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId); }} onClick={e => {
@@ -147,7 +148,7 @@ export function CopilotViewer({ copilot, peerId, viewport }: { copilot: VisualCo
         if (!p) return;
         if (mode === 'snapshot') setPoint(p);
         else { copilot.mark(peerId, 'ping', p.x, p.y); }
-      } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+      } catch (e) { setError(errorMessage(e)); }
     }}>
       {sentPoint && <span className={`copilot-sent-point ${laser ? 'is-laser' : ''}`} style={{ left: `${sentPoint.x}%`, top: `${sentPoint.y}%` }} />}
       {frozen && <><img className="copilot-frozen" src={frozen.preview} alt="Frozen frame to mark" />{point && <svg className="copilot-frozen-marker" viewBox={`0 0 ${frozen.canvas.width} ${frozen.canvas.height}`}><circle cx={point.x * frozen.canvas.width} cy={point.y * frozen.canvas.height} r={15} /></svg>}</>}

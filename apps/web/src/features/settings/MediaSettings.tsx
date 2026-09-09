@@ -1,4 +1,7 @@
+import { errorMessage } from '@/lib/errors';
+import { LinkButton } from '@/components/ui/link-button';
 import { useEffect, useState } from 'react';
+import { readStored, writeStored } from '@/lib/storage';
 import { Headphones, Monitor, Radio } from 'lucide-react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import DeviceSettings from './DeviceSettings';
@@ -38,7 +41,7 @@ export function readQuality() {
   try {
     return {
       ...defaultQuality,
-      ...JSON.parse(localStorage.getItem('bc-quality') ?? '{}'),
+      ...JSON.parse(readStored('bc-quality') ?? '{}'),
     };
   } catch {
     return defaultQuality;
@@ -49,20 +52,20 @@ export default function MediaSettings() {
     readSpeakingThreshold,
   );
   const [voiceRoute, setVoiceRoute] = useState(() =>
-    localStorage.getItem('bc-voice-route') === 'relay' ? 'relay' : 'automatic',
+    readStored('bc-voice-route') === 'relay' ? 'relay' : 'automatic',
   );
   const [recordingRate, setRecordingRate] = useState(
     () => readRecordingQuality().screenVideoBitsPerSecond / 1_000_000,
   );
   const desktop = isTauri();
-  const storedDenoiser = localStorage.getItem('bc-denoiser');
+  const storedDenoiser = readStored('bc-denoiser');
   const initialDenoiser =
     (storedDenoiser === 'nvidia' || storedDenoiser === 'deepfilter') && !desktop
       ? 'standard'
       : (storedDenoiser ?? 'rnnoise');
   const [quality, setQuality] = useState(readQuality),
     [direct, setDirect] = useState(
-      localStorage.getItem('bc-direct') === 'true',
+      readStored('bc-direct') === 'true',
     ),
     [denoiser, setDenoiser] = useState(initialDenoiser),
     [nvidia, setNvidia] = useState<NvidiaStatus | null>(null),
@@ -79,13 +82,13 @@ export default function MediaSettings() {
       ]);
       setNvidia(status);
       setNvidiaInfo(info);
-      if (!status.ready && localStorage.getItem('bc-denoiser') === 'nvidia') {
+      if (!status.ready && readStored('bc-denoiser') === 'nvidia') {
         setDenoiser('rnnoise');
-        localStorage.setItem('bc-denoiser', 'rnnoise');
+        writeStored('bc-denoiser', 'rnnoise');
         window.dispatchEvent(new Event('bc-denoiser'));
       }
     } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
+      const detail = errorMessage(error);
       setNvidia({
         ready: false,
         detail,
@@ -106,7 +109,7 @@ export default function MediaSettings() {
       await invoke('nvidia_install');
     } catch (error) {
       setNvidiaInstallError(
-        error instanceof Error ? error.message : String(error),
+        errorMessage(error),
       );
     } finally {
       setNvidiaBusy(false);
@@ -115,7 +118,7 @@ export default function MediaSettings() {
   }
   function change(next: typeof quality) {
     setQuality(next);
-    localStorage.setItem('bc-quality', JSON.stringify(next));
+    writeStored('bc-quality', JSON.stringify(next));
     window.dispatchEvent(new Event('bc-quality'));
   }
   return (
@@ -155,7 +158,7 @@ export default function MediaSettings() {
           value={denoiser}
           onChange={(e) => {
             setDenoiser(e.target.value);
-            localStorage.setItem('bc-denoiser', e.target.value);
+            writeStored('bc-denoiser', e.target.value);
             window.dispatchEvent(new Event('bc-denoiser'));
           }}
         >
@@ -227,8 +230,7 @@ export default function MediaSettings() {
                     </a>
                     .
                   </p>
-                  <button
-                    className="my-3 p-0 text-xs font-medium text-primary hover:underline disabled:opacity-50"
+                  <LinkButton
                     disabled={nvidiaBusy}
                     onClick={installNvidia}
                   >
@@ -237,7 +239,7 @@ export default function MediaSettings() {
                       : nvidiaInstallError
                         ? 'Retry NVIDIA setup'
                         : 'Download and set up NVIDIA Audio Effects'}
-                  </button>
+                  </LinkButton>
                 </>
               )}
               {!nvidiaInfo.supported && (
@@ -261,10 +263,10 @@ export default function MediaSettings() {
             setDeepfilter(status);
             if (
               !status.ready &&
-              localStorage.getItem('bc-denoiser') === 'deepfilter'
+              readStored('bc-denoiser') === 'deepfilter'
             ) {
               setDenoiser('rnnoise');
-              localStorage.setItem('bc-denoiser', 'rnnoise');
+              writeStored('bc-denoiser', 'rnnoise');
               window.dispatchEvent(new Event('bc-denoiser'));
             }
           }}
@@ -281,7 +283,7 @@ export default function MediaSettings() {
           onChange={(event) => {
             const value = Number(event.target.value);
             setRecordingRate(value);
-            localStorage.setItem('bc-recording-mbps', String(value));
+            writeStored('bc-recording-mbps', String(value));
           }}
         >
           {[10, 20, 40, 80].map((value) => (
@@ -361,7 +363,7 @@ export default function MediaSettings() {
           checked={direct}
           onChange={(e) => {
             setDirect(e.target.checked);
-            localStorage.setItem('bc-direct', String(e.target.checked));
+            writeStored('bc-direct', String(e.target.checked));
           }}
         />
       </label>
@@ -375,7 +377,7 @@ export default function MediaSettings() {
           value={voiceRoute}
           onChange={(event) => {
             setVoiceRoute(event.target.value);
-            localStorage.setItem('bc-voice-route', event.target.value);
+            writeStored('bc-voice-route', event.target.value);
           }}
         >
           <option value="automatic">

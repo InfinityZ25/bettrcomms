@@ -1,3 +1,4 @@
+import { errorMessage } from '@/lib/errors';
 import { useEffect, useState } from 'react';
 import { DoorOpen, Trash2, UserMinus } from 'lucide-react';
 import { api, type Room, type User } from '@/api';
@@ -41,7 +42,7 @@ export default function RoomSettings({
       await fn();
       onChanged();
     } catch (e) {
-      onError(e instanceof Error ? e.message : String(e));
+      onError(errorMessage(e));
     } finally {
       setBusy(false);
     }

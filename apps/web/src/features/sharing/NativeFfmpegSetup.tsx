@@ -1,3 +1,5 @@
+import { errorMessage } from '@/lib/errors';
+import { LinkButton } from '@/components/ui/link-button';
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 
@@ -50,7 +52,7 @@ export default function NativeFfmpegSetup({
       await refresh();
       await onInstalled();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(errorMessage(cause));
     } finally {
       setBusy(false);
     }
@@ -71,8 +73,7 @@ export default function NativeFfmpegSetup({
             {Math.round(info.installedBytes / 1024 / 1024)} MiB runtime in
             BetterComms app storage. It does not change Windows or your PATH.
           </p>
-          <button
-            className="my-3 p-0 text-xs font-medium text-primary hover:underline disabled:opacity-50"
+          <LinkButton
             disabled={busy}
             onClick={() => void install()}
           >
@@ -81,16 +82,15 @@ export default function NativeFfmpegSetup({
               : error
                 ? 'Retry runtime setup'
                 : 'Install native sharing runtime'}
-          </button>
+          </LinkButton>
         </>
       )}
-      <button
-        className="my-3 p-0 text-xs font-medium text-primary hover:underline disabled:opacity-50"
+      <LinkButton
         disabled={busy}
         onClick={() => void onUseBrowser()}
       >
         Use browser sharing
-      </button>
+      </LinkButton>
       {error && <p>Runtime setup failed: {error}</p>}
     </div>
   );

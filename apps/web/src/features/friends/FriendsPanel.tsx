@@ -1,3 +1,4 @@
+import { errorMessage } from '@/lib/errors';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Check, Plus, Search, Users, X } from 'lucide-react';
 import {
@@ -48,7 +49,7 @@ export default function FriendsPanel({
       await fn();
       await refresh();
     } catch (e) {
-      onError(e instanceof Error ? e.message : String(e));
+      onError(errorMessage(e));
     } finally {
       setBusy(false);
     }

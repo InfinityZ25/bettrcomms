@@ -484,7 +484,7 @@ describe('native screen signaling lifecycle', () => {
   it('cleans up a native session that resolves after cancellation', async () => {
     let resolveStart!: (value: unknown) => void;
     mocks.invoke.mockImplementation(
-      (command: string, args: Record<string, unknown>) => {
+      (command: string, _args: Record<string, unknown>) => {
         if (command === 'native_screen_start')
           return new Promise((resolve) => {
             resolveStart = resolve;
