@@ -1,12 +1,20 @@
 import {
   useEffect,
+  useMemo,
   useState,
   useSyncExternalStore,
   type CSSProperties,
   type ReactNode,
 } from 'react';
-import { isTauri } from '@tauri-apps/api/core';
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import {
+  dragRegionStyle,
+  getDesktopRuntime,
+  getDesktopWindowApi,
+  isDesktopShell,
+  nativeNonClientRegion,
+  noDragStyle,
+  type DesktopWindowApi,
+} from '@/desktop';
 import { AudioLines, Minus, Square, Copy, X } from 'lucide-react';
 import {
   getWindowControls,
@@ -17,7 +25,13 @@ import {
 import { syncNativeCaptionTheme } from './nativeCaptionTheme';
 
 export default function DesktopFrame({ children }: { children: ReactNode }) {
-  const desktop = isTauri();
+  // Either desktop shell gets the custom frame; only the Tauri host owns the
+  // native caption theme, which better-gui publishes and Wails does not have.
+  const desktop = isDesktopShell();
+  const tauri = getDesktopRuntime() === 'tauri';
+  // Memoised because the api is a fresh object each call, and it is an effect
+  // dependency below.
+  const windowApi = useMemo(() => getDesktopWindowApi(), []);
   const controls = useSyncExternalStore(
     subscribeToWindowControls,
     getWindowControls,
@@ -25,28 +39,31 @@ export default function DesktopFrame({ children }: { children: ReactNode }) {
   const [maximized, setMaximized] = useState(false);
   const [error, setError] = useState('');
   useEffect(() => {
-    if (!desktop || !['native-frame', 'native-overlay'].includes(controls.mode)) return;
+    if (!tauri || !['native-frame', 'native-overlay'].includes(controls.mode))
+      return;
     return syncNativeCaptionTheme();
-  }, [desktop, controls.mode]);
+  }, [tauri, controls.mode]);
   useEffect(() => {
-    if (!desktop) return;
-    const appWindow = getCurrentWindow();
+    if (!windowApi) return;
     let disposed = false;
     const update = () =>
-      appWindow
+      windowApi
         .isMaximized()
         .then((value) => {
           if (!disposed) setMaximized(value);
         })
         .catch(() => {});
     void update();
-    const listener = appWindow.onResized(update);
+    // The webview resizes whenever the window does, on both hosts, so one DOM
+    // listener replaces the host-specific resize subscription.
+    window.addEventListener('resize', update);
     return () => {
       disposed = true;
-      void listener.then((unlisten) => unlisten());
+      window.removeEventListener('resize', update);
     };
-  }, [desktop]);
-  if (!desktop || controls.mode === 'native-frame') return children;
+  }, [windowApi]);
+  if (!desktop || !windowApi || controls.mode === 'native-frame')
+    return children;
   const run = (action: () => Promise<unknown>) => {
     setError('');
     void action().catch(() =>
@@ -65,9 +82,11 @@ export default function DesktopFrame({ children }: { children: ReactNode }) {
         }
         role="group"
         aria-label="Window controls"
+        style={noDragStyle()}
       >
         {controls.buttons.map((button) => (
           <WindowControlButton
+            api={windowApi}
             button={button}
             key={button}
             maximized={maximized}
@@ -96,11 +115,12 @@ export default function DesktopFrame({ children }: { children: ReactNode }) {
               ? 'flex h-full min-w-0 flex-1 items-center gap-2 pl-2 text-[0.7rem] text-muted-foreground [&>svg]:text-primary'
               : 'flex h-full min-w-0 flex-1 items-center gap-2 pl-4 text-[0.7rem] text-muted-foreground [&>svg]:text-primary'
           }
+          data-wails-non-client-region={nativeNonClientRegion('caption')}
+          style={dragRegionStyle()}
           onMouseDown={(event) => {
             if (event.button !== 0) return;
-            if (event.detail === 2)
-              run(() => getCurrentWindow().toggleMaximize());
-            else run(() => getCurrentWindow().startDragging());
+            if (event.detail === 2) run(() => windowApi.toggleMaximize());
+            else run(() => windowApi.startDragging());
           }}
         >
           <AudioLines size={14} aria-hidden="true" />
@@ -119,11 +139,13 @@ export default function DesktopFrame({ children }: { children: ReactNode }) {
 }
 
 function WindowControlButton({
+  api,
   button,
   maximized,
   compact,
   run,
 }: {
+  api: DesktopWindowApi;
   button: WindowButton;
   maximized: boolean;
   compact: boolean;
@@ -136,9 +158,10 @@ function WindowControlButton({
     return (
       <button
         className={buttonClass}
+        data-wails-non-client-region={nativeNonClientRegion(button)}
         aria-label="Minimize window"
         title="Minimize"
-        onClick={() => run(() => getCurrentWindow().minimize())}
+        onClick={() => run(() => api.minimize())}
       >
         <Minus size={15} />
       </button>
@@ -149,9 +172,10 @@ function WindowControlButton({
     return (
       <button
         className={buttonClass}
+        data-wails-non-client-region={nativeNonClientRegion(button)}
         aria-label={maximized ? 'Restore window' : 'Maximize window'}
         title={maximized ? 'Restore' : 'Maximize'}
-        onClick={() => run(() => getCurrentWindow().toggleMaximize())}
+        onClick={() => run(() => api.toggleMaximize())}
       >
         {maximized ? <Copy size={13} /> : <Square size={13} />}
       </button>
@@ -161,9 +185,10 @@ function WindowControlButton({
   return (
     <button
       className={`${buttonClass} hover:bg-destructive hover:text-white`}
+      data-wails-non-client-region={nativeNonClientRegion(button)}
       aria-label="Close window"
       title="Close"
-      onClick={() => run(() => getCurrentWindow().close())}
+      onClick={() => run(() => api.close())}
     >
       <X size={17} />
     </button>

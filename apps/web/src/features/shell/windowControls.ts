@@ -1,5 +1,5 @@
 /**
- * Reads the window-control state the `better-gui` Tauri plugin publishes.
+ * Reads the window-control state the desktop host publishes.
  *
  * Who draws the minimize/maximize/close buttons depends on the desktop, and
  * only the host can tell: Windows owns the non-client frame outside the page,
@@ -12,7 +12,13 @@
  * from the user agent and swaps to the real state when it arrives. The guess
  * matches what each platform ends up with in the common case, which keeps the
  * title bar from flashing a different set of buttons.
+ *
+ * The Wails v3 host publishes the same shape inside its boot report instead,
+ * which is already in the document before the first render. better-gui is not
+ * ported to that host; only this contract is shared.
  */
+
+import { readDesktopBootReport } from '@/desktop';
 
 export type WindowButton = 'minimize' | 'maximize' | 'close';
 export type ButtonSide = 'start' | 'end';
@@ -78,7 +84,9 @@ let cachedKey = JSON.stringify(cached);
  * to come back as the same object or React re-renders forever.
  */
 export function getWindowControls(): WindowControlsState {
-  const published = (window as WindowWithControls).__BETTER_WINDOW_CONTROLS__;
+  const published =
+    (window as WindowWithControls).__BETTER_WINDOW_CONTROLS__ ??
+    readDesktopBootReport()?.windowControls;
   const next = isWindowControlsState(published)
     ? published
     : defaultWindowControls();

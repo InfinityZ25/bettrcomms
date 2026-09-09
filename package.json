@@ -8,6 +8,8 @@
   "scripts": {
     "dev": "npm run dev -w apps/web",
     "dev:desktop": "npm --prefix apps/desktop run dev",
+    "dev:desktop-wails": "npm --prefix apps/desktop-wails run dev",
+    "build:desktop-wails": "npm --prefix apps/desktop-wails run build",
     "build": "npm run build -w apps/web",
     "test:e2e": "playwright test",
     "test": "npm run test -w apps/web"

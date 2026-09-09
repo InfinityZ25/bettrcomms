@@ -1,5 +1,41 @@
 # BetterComms preview release notes
 
+## Unreleased — Wails v3 host scaffold
+
+`apps/desktop-wails` is a new Wails v3 shell beside the unchanged Tauri host. It
+opens a native window over the same `apps/web` frontend — proxied from Vite in
+development, embedded from `apps/web/dist` in a build — and exposes boot
+configuration, a capability report, and window controls through generated Wails
+v3 service bindings. The API-origin policy matches the Tauri host. better-gui is not ported; the host
+publishes the existing window-control contract instead.
+
+This host contains no media code. Native capture, process audio, NVIDIA and
+DeepFilterNet processing, native recording and export, permission IPC, global
+input, and both overlays are absent and reported unavailable together with the
+browser path used instead. No parity with the Tauri host is claimed.
+
+`apps/web/src/desktop` is the new dual-runtime bridge: one synchronous answer to
+which shell is hosting, with native features still gated to Tauri. The
+connection diagnostic report now names the runtime and its capability states.
+
+The Go service and Wails APIs compile against pinned v3.0.0-beta.18, and the
+generated bindings are checked in so browser and Tauri builds do not require
+Wails at runtime. Packaged API routing/auth and native media remain explicit
+gaps; see [the migration notes](WAILS_MIGRATION.md).
+
+The Windows development launcher resolves the installed `npm.cmd` shim by its
+absolute path before starting Vite and terminates the complete child process
+tree on exit, avoiding both `Start-Process` resolution failures and orphaned
+port 5173 listeners.
+
+The Wails Windows host now combines WebView2 native `app-region` support with
+Wails composition-hosted non-client regions. Its HTML title area maps to the
+native caption and its buttons map to minimize, maximize, and close hit targets;
+the maximize target therefore participates in Windows 11 Snap Layouts. This
+path is Wails-owned and does not use `better-gui`. Physical-pointer, DPI,
+focus, resize, and media-rendering acceptance remains outstanding because
+composition hosting is experimental in Wails v3.
+
 ## Unreleased — custom Windows title bar restored
 
 Windows again uses the custom HTML title bar with WebView2's native Window

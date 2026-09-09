@@ -11,6 +11,7 @@ src/
 ├── api.ts             # Typed HTTP API boundary
 ├── styles.css         # Global tokens and application-wide styles
 ├── components/        # Reusable, feature-agnostic UI primitives
+├── desktop/           # Which desktop host is running, and what it can do
 ├── features/          # Product-facing React components grouped by domain
 │   ├── call/
 │   ├── friends/
@@ -37,5 +38,10 @@ src/
   multiple features.
 - Keep browser/native media lifecycle code in `media/`; React-facing orchestration
   belongs in the relevant feature.
+- Ask `desktop/` which host is running, not `@tauri-apps/api` directly. Gate
+  shell chrome on `isDesktopShell()` and native media features on
+  `hasTauriNativeCommands()`: the Wails host in `apps/desktop-wails` has none of
+  the native adapters, so those features must take their browser path there. See
+  [the migration notes](../../../docs/WAILS_MIGRATION.md).
 - Avoid feature barrel files unless they provide a deliberate public API. Direct
   imports make dependencies and future moves easier to trace.

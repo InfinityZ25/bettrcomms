@@ -1,0 +1,44 @@
+version: '3'
+
+# Task definitions for `wails3 dev`, `wails3 build`, and `wails3 package`.
+#
+# The equivalent PowerShell entry points in ../../scripts do the same work
+# without requiring Task, and are the documented path in README.md. Keep the
+# two in step if either changes.
+
+vars:
+  APP_NAME: bettercomms-wails
+  BIN_DIR: bin
+  WEB_DIR: ../web
+  STAGED_DIST: frontend/dist
+
+tasks:
+  # Builds the shared frontend and stages it for `go:embed`. apps/web is the
+  # single frontend source; this only copies its build output.
+  build:frontend:
+    dir: '{{.TASK_DIR}}'
+    cmds:
+      - wails3 generate bindings -ts -clean -d ../web/src/desktop/wailsbindings .
+      - npm --prefix {{.WEB_DIR}} run build
+      - powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/stage-wails-frontend.ps1
+
+  build:
+    deps: [build:frontend]
+    cmds:
+      - go build -tags production -o {{.BIN_DIR}}/{{.APP_NAME}}.exe .
+
+  # Development runs against the live Vite server rather than a staged copy, so
+  # frontend edits reload without a Go rebuild.
+  dev:
+    env:
+      BETTERCOMMS_DEV_SERVER: http://localhost:5173
+    cmds:
+      - go run .
+
+  test:
+    cmds:
+      - go test ./...
+
+  vet:
+    cmds:
+      - go vet ./...

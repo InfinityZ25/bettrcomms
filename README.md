@@ -86,6 +86,7 @@ Read [the product spec](docs/PRODUCT_SPEC.md), [implementation matrix](docs/IMPL
 ```text
 apps/web/       React client and browser media engine
 apps/desktop/   Tauri shell and native capability boundary
+apps/desktop-wails/  Wails v3 shell over the same frontend; no native media yet
 server/        Go API, signaling, migrations, authorization tests
 tests/         Browser integration and media tests
 scripts/       Local service launchers

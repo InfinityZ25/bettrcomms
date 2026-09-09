@@ -19,6 +19,7 @@
     "@sapphi-red/web-noise-suppressor": "^0.4.0",
     "@tailwindcss/vite": "^4.3.3",
     "@tauri-apps/api": "^2.11.1",
+    "@wailsio/runtime": "^3.0.0-beta.18",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cn": "^0.2.6",

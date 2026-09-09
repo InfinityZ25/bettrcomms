@@ -12,3 +12,11 @@ tests/screenshots/
 .local/
 server/bettercomms.exe
 apps/desktop/src-tauri/generated/
+
+# The Wails host embeds a staged copy of apps/web/dist. Keep the directory so
+# `//go:embed all:frontend/dist` still compiles on a clean checkout, but do not
+# commit the build output into it.
+!apps/desktop-wails/frontend/dist/
+apps/desktop-wails/frontend/dist/*
+!apps/desktop-wails/frontend/dist/.gitkeep
+apps/desktop-wails/bin/

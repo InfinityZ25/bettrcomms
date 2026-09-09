@@ -1,4 +1,5 @@
 import { isTauri } from '@tauri-apps/api/core';
+import { describeDesktopRuntime, isDesktopShell } from '@/desktop';
 import { getCallPlaybackStatus } from '@/media/remoteAudio';
 import { readProcessingSettings } from '@/media/processingSettings';
 import { readSpeakingThreshold } from '@/media/speakingSensitivity';
@@ -73,7 +74,15 @@ export async function buildDiagnosticReport({
   return {
     version: 2,
     time: new Date().toISOString(),
-    client: { native: isTauri(), nativeVersion, userAgent: navigator.userAgent },
+    client: {
+      native: isDesktopShell(),
+      nativeVersion,
+      userAgent: navigator.userAgent,
+      // Which shell is hosting, and what it actually reports it can do. A
+      // report from the Wails host must not be read as if it came from the
+      // Tauri host's native media paths.
+      desktop: describeDesktopRuntime(),
+    },
     serverRtt,
     playback: getCallPlaybackStatus(),
     screen: await engine?.getScreenDiagnostics(),

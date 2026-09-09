@@ -1,0 +1,15 @@
+{
+  "name": "@bettercomms/desktop-wails",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Wails v3 desktop host. Not an npm workspace member: it has no JavaScript dependencies and reuses apps/web as its frontend.",
+  "scripts": {
+    "dev": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/start-desktop-wails.ps1",
+    "build": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/build-desktop-wails.ps1",
+    "stage": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/stage-wails-frontend.ps1",
+    "test": "go test ./...",
+    "vet": "go vet ./...",
+    "fmt": "gofmt -l -w ."
+  }
+}

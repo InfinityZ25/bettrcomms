@@ -3,6 +3,29 @@
 @import 'shadcn/tailwind.css';
 @custom-variant dark (&:is(.dark *));
 
+/* Wails v3 Windows native non-client regions. The host enables both WebView2
+   app-region support and composition hosting; these markers produce native
+   caption dragging and HTMINBUTTON/HTMAXBUTTON/HTCLOSE hit targets. */
+[data-wails-non-client-region='caption'] {
+  app-region: drag;
+  --wails-non-client-region: caption;
+}
+
+[data-wails-non-client-region='minimize'] {
+  app-region: no-drag;
+  --wails-non-client-region: minimize;
+}
+
+[data-wails-non-client-region='maximize'] {
+  app-region: no-drag;
+  --wails-non-client-region: maximize;
+}
+
+[data-wails-non-client-region='close'] {
+  app-region: no-drag;
+  --wails-non-client-region: close;
+}
+
 :root {
   color-scheme: light;
   --background: oklch(1 0 0);
