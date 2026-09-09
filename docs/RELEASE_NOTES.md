@@ -1,27 +1,27 @@
 # BetterComms preview release notes
 
-## Unreleased — Windows native frame
+## Unreleased — custom Windows title bar restored
 
-Windows now uses its complete native title bar outside the WebView client area.
-The frontend removes its own title bar when the host publishes `native-frame`.
-This removes the overlapping renderers, oversized caption cutout, clipped
-maximized buttons and manual input routing. Windows owns caption dimensions,
-icons, clicks, hover cleanup and Snap Layouts. Title text and the application
-icon use Windows' native presentation; macOS and Linux keep their existing bars.
+Windows again uses the custom HTML title bar with WebView2's native Window
+Controls Overlay. The full Windows title bar and the previous DWM cutout/input
+routing have been removed. WebView2 owns the button geometry and clicks; the
+page reserves the overlay's CSS environment area. Snap Layouts are deliberately
+outside this change. macOS and Linux retain their existing title bars.
 
-The caption receives the frontend's actual sidebar palette, converted from CSS
-to sRGB, and updates when the page theme changes. Theme observers/listeners are
-released on unmount/window destruction. WebView composition still pauses while
-minimized, without manually overwriting its bounds when restored.
+The overlay follows the page's actual sidebar palette, including theme changes,
+and retains that palette across DPI updates. A 50 ms check while the host is
+active delivers missing mouse-leave notifications to the WebView's window tree
+when the pointer is outside the host. It does not synthesize clicks, change
+capture, toggle the overlay, or run while minimized/inactive. It waits until a
+held left button is released. The timer and theme listener are released when
+the window is destroyed.
 
-Native checks on Windows 11: repeated maximize/restore, a visible Snap Layout
-flyout, and hover/flyout cleanup on return to client content succeeded. Direct
-exit across the outer window edge and other monitor DPI settings were not
-independently exercised by the window-scoped automation. Browser tests verify
-that no HTML title bar duplicates the native frame and that palette changes
-and cleanup reach the host contract; they do not prove native mouse behavior.
-This requires a rebuilt desktop host. The existing 960 logical-pixel minimum
-width still limits which Snap zones can fit the app.
+The development executable maximized and restored with the custom title bar
+and complete buttons. Direct pointer exit across the outer window edge still
+needs physical-mouse acceptance; window-scoped automation does not establish
+that case. Validation: 23 Rust tests, 131 frontend tests, production frontend
+build, and 3 Playwright caption/accessibility tests passed. Requires a rebuilt
+host; the experimental overlay still depends on WebView2 runtime availability.
 
 Transparency and blur remain research only; see
 [window materials findings](WINDOW_MATERIALS_RESEARCH.md).

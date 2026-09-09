@@ -22,7 +22,7 @@ export default function WorkspaceScreen({
       className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background"
       aria-label={title}
     >
-      <header className="flex min-h-20 shrink-0 flex-wrap items-center justify-between gap-2 border-b px-3 py-3 sm:flex-nowrap sm:gap-4 sm:px-7 sm:py-4">
+      <header className="flex min-h-20 shrink-0 flex-wrap items-center justify-between gap-2  px-3 py-3 sm:flex-nowrap sm:gap-4 sm:px-7 sm:py-4">
         <Button variant="ghost" onClick={onBack}>
           <ArrowLeft size={17} /> Back to call
         </Button>

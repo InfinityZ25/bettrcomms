@@ -289,11 +289,11 @@ export default function App() {
       data-app-shell
       data-in-call={callJoined}
       data-call-focused={callJoined && callFocused && screen === 'call'}
-      className="flex h-dvh min-h-[600px] overflow-hidden min-[821px]:min-h-[680px]"
+      className="flex h-dvh min-h-[600px] overflow-hidden min-[821px]:min-h-[680px] select-none"
     >
       <nav
         className={cn(
-          'flex w-[52px] shrink-0 flex-col items-center gap-3 border-r bg-sidebar px-1.5 py-5 max-[480px]:gap-2 min-[481px]:w-[62px] min-[481px]:px-2 min-[1001px]:w-[76px] min-[1001px]:px-3 min-[1001px]:pt-6 min-[1001px]:pb-4',
+          'flex w-[52px] shrink-0 flex-col items-center gap-3 bg-sidebar px-1.5 py-5 max-[480px]:gap-2 min-[481px]:w-[62px] min-[481px]:px-2 min-[1001px]:w-[76px] min-[1001px]:px-3 min-[1001px]:pt-6 min-[1001px]:pb-4',
           callJoined && 'min-[821px]:w-[52px] min-[821px]:px-1',
           callJoined && callFocused && screen === 'call' && 'hidden',
         )}

@@ -25,7 +25,7 @@ export default function DesktopFrame({ children }: { children: ReactNode }) {
   const [maximized, setMaximized] = useState(false);
   const [error, setError] = useState('');
   useEffect(() => {
-    if (!desktop || controls.mode !== 'native-frame') return;
+    if (!desktop || !['native-frame', 'native-overlay'].includes(controls.mode)) return;
     return syncNativeCaptionTheme();
   }, [desktop, controls.mode]);
   useEffect(() => {

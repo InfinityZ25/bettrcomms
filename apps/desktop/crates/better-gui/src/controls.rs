@@ -2,7 +2,7 @@
 //!
 //! Every platform ends up in the same shape so the frontend has a single thing
 //! to read. What differs is who draws the buttons: Windows hands them to
-//! DWM, macOS keeps its own traffic lights, and Linux has no native
+//! WebView2, macOS keeps its own traffic lights, and Linux has no native
 //! overlay at all, so the page draws them in the order the desktop asks for.
 
 use serde::Serialize;
