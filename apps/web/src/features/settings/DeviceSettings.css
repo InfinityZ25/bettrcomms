@@ -9,7 +9,7 @@
 }
 .device-settings__card {
   padding: 14px;
-  border: 1px solid color-mix(in srgb, var(--accent, #b8ff42) 22%, transparent);
+  border: 1px solid color-mix(in srgb, var(--brand-accent, #b8ff42) 22%, transparent);
   border-radius: 12px;
   background: rgba(184, 255, 66, 0.035);
 }
@@ -23,7 +23,7 @@
   width: 100%;
 }
 .push-to-talk-settings .push-to-talk-settings__toggle { display: flex; align-items: center; justify-content: space-between; font-weight: 650; }
-.push-to-talk-settings__toggle input { width: 18px; height: 18px; accent-color: var(--accent, #b8ff42); }
+.push-to-talk-settings__toggle input { width: 18px; height: 18px; accent-color: var(--brand-accent, #b8ff42); }
 .push-to-talk-settings p { margin: 10px 0; color: var(--text-muted, #aeb6a6); font-size: 0.82rem; line-height: 1.5; }
 .push-to-talk-settings button { min-height: 36px; text-align: left; }
 .push-to-talk-settings { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); column-gap: 24px; align-items: start; }
@@ -48,14 +48,14 @@
   font-weight: 650;
 }
 .device-volume output {
-  color: var(--accent, #b8ff42);
+  color: var(--brand-accent, #b8ff42);
   font-variant-numeric: tabular-nums;
 }
 .device-volume input {
   width: 100%;
   height: 24px;
   padding: 0;
-  accent-color: var(--accent, #b8ff42);
+  accent-color: var(--brand-accent, #b8ff42);
 }
 .device-settings__actions {
   display: flex;

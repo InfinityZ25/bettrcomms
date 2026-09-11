@@ -86,7 +86,7 @@ async function mount(
       await import('/node_modules/.vite/deps/react.js');
     const { default: ReactDOMClient } =
       await import('/node_modules/.vite/deps/react-dom_client.js');
-    const { default: Picker } = await import('/src/NativeScreenPicker.tsx');
+    const { default: Picker } = await import('/src/features/sharing/NativeScreenPicker.tsx');
     document.body.innerHTML = '<div id="picker-test"></div>';
     const root = ReactDOMClient.createRoot(
       document.getElementById('picker-test')!,
