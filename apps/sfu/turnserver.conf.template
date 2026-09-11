@@ -1,0 +1,42 @@
+# Minimal coturn config for the Bettrcomms TURN fallback (Phase 11).
+# Deliberately separate from the SFU's own UDP 3478 — this listens on 3479
+# so the two processes never collide on the same host.
+listening-port=3479
+tls-listening-port=5350
+
+# TURN relay range: kept small and explicit rather than opening a huge
+# block. 40 ports covers a reasonable number of concurrent
+# TURN-relayed sessions for a fallback path (not the primary transport).
+# Must match the Linode firewall's TURN relay rule exactly.
+min-port=49160
+max-port=49199
+
+# Ephemeral, ID-bound credentials via the standard TURN REST API
+# convention — the SAME scheme server/internal/api/api.go's `ice()`
+# handler already generates (username "<expiry>:<user id>", credential
+# base64(HMAC-SHA1(secret, username))). Set static-auth-secret to the
+# exact value of Railway's TURN_SECRET; they must match byte-for-byte.
+use-auth-secret
+static-auth-secret=REPLACE_WITH_RAILWAY_TURN_SECRET
+realm=bettrcomms.com
+
+# This box's public addresses (see docs/MEDIA_ARCHITECTURE.md for the
+# current values) — coturn needs to know its own external address to
+# advertise correct relay candidates from behind any NAT.
+external-ip=74.207.235.154
+# external-ip=<public-ipv4>/<private-ipv4>   # only needed if NATted; this
+# box has a direct public IPv4, so a single address is enough.
+
+no-cli
+no-tlsv1
+no-tlsv1_1
+fingerprint
+no-multicast-peers
+no-loopback-peers
+# Never allow relaying to addresses inside the host's own private ranges —
+# closes off using this TURN server as an open relay into internal
+# infrastructure.
+denied-peer-ip=10.0.0.0-10.255.255.255
+denied-peer-ip=172.16.0.0-172.31.255.255
+denied-peer-ip=192.168.0.0-192.168.255.255
+denied-peer-ip=127.0.0.0-127.255.255.255

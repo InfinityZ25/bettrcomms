@@ -64,6 +64,9 @@ export default function MediaSettings() {
     [direct, setDirect] = useState(
       localStorage.getItem('bc-direct') === 'true',
     ),
+    [preferSfu, setPreferSfu] = useState(
+      localStorage.getItem('bc-prefer-sfu') !== 'false',
+    ),
     [denoiser, setDenoiser] = useState(initialDenoiser),
     [nvidia, setNvidia] = useState<NvidiaStatus | null>(null),
     [nvidiaInfo, setNvidiaInfo] = useState<NvidiaInstallInfo | null>(null),
@@ -389,6 +392,29 @@ export default function MediaSettings() {
         Camera, screen sharing, and shared app audio still need WebRTC
         connectivity. Direct-only overrides this setting. Changes apply on your
         next call.
+      </p>
+      <label className="switch-row">
+        <div>
+          <strong>Use a relay server when available</strong>
+          <p>
+            Group calls route camera, screen, and audio through Bettrcomms'
+            relay for better quality and reliability. Falls back to direct
+            connections automatically if the relay is unreachable — media
+            never passes through the app's own servers either way.
+          </p>
+        </div>
+        <input
+          type="checkbox"
+          checked={preferSfu}
+          onChange={(e) => {
+            setPreferSfu(e.target.checked);
+            localStorage.setItem('bc-prefer-sfu', String(e.target.checked));
+          }}
+        />
+      </label>
+      <p className="text-xs leading-6 text-muted-foreground">
+        Applies when you next join a call. 1:1 calls stay direct regardless of
+        this setting.
       </p>
     </>
   );

@@ -12,3 +12,4 @@ tests/screenshots/
 .local/
 server/bettercomms.exe
 apps/desktop/src-tauri/generated/
+apps/sfu/turnserver.conf
