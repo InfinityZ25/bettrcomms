@@ -372,9 +372,13 @@ export default function App() {
       <aside
         className={cn(
           'hidden w-[170px] shrink-0 flex-col border-r bg-sidebar px-4 min-[821px]:flex min-[1251px]:w-[190px] min-[1400px]:w-[232px]',
-          callJoined && 'min-[821px]:hidden',
-          callJoined && callFocused && screen === 'call' && 'hidden',
+          // A plain 'hidden' can't win over the min-[821px]:flex above at
+          // that breakpoint (Tailwind emits responsive variants after the
+          // base layer, so source order beats class-attribute order) — the
+          // override needs the same min-[821px] scope to actually apply.
+          callJoined && callFocused && screen === 'call' && 'min-[821px]:hidden',
         )}
+        aria-label="Conversations"
         inert={screen === 'share'}
       >
         <div className="flex h-[70px] shrink-0 items-center justify-between px-2 font-heading text-base font-bold min-[1001px]:h-20">
@@ -452,7 +456,10 @@ export default function App() {
             ) : (
               <Hash size={22} />
             )}
-            <strong className="max-w-[125px] truncate text-sm min-[481px]:max-w-[170px] min-[821px]:max-w-xs">
+            <strong
+              className="max-w-[125px] truncate text-sm min-[481px]:max-w-[170px] min-[821px]:max-w-xs"
+              data-testid="room-heading"
+            >
               {room ? roomLabel(room) : 'The living room'}
             </strong>
             <span className="hidden h-5 w-px bg-border min-[821px]:block" />

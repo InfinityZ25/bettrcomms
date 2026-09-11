@@ -65,7 +65,11 @@ func (a *API) Handler() http.Handler {
 	})
 	m.Handle("GET /api/v1/auth/login", a.rate("auth", 10, time.Minute, http.HandlerFunc(a.login)))
 	m.HandleFunc("GET /api/v1/auth/callback", a.callback)
-	m.Handle("POST /api/v1/auth/dev", a.rate("auth", 10, time.Minute, http.HandlerFunc(a.devLogin)))
+	// devLogin is loopback-only and disabled unless DEV_AUTH=true (see devLogin), so it never
+	// faces the abuse the production "auth" scope guards against. It gets its own, much larger
+	// budget: the Playwright e2e suite logs in many users per run from the same loopback IP and
+	// would otherwise exhaust the shared "auth" limit partway through, 429ing every test after it.
+	m.Handle("POST /api/v1/auth/dev", a.rate("dev-auth", 1000, time.Minute, http.HandlerFunc(a.devLogin)))
 	m.HandleFunc("POST /api/v1/auth/logout", func(w http.ResponseWriter, r *http.Request) {
 		uid, _ := a.Sessions.UserID(r)
 		if e := a.Sessions.Revoke(r); e != nil {

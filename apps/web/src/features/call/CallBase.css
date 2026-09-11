@@ -513,6 +513,13 @@ h1 {
   border-radius: 50%;
   background: #e4c581;
 }
+.online-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #abd98c;
+}
 @media (prefers-reduced-motion: reduce) {
   *,
   *:before,

@@ -10,7 +10,7 @@ async function mount(page: Page, props: Record<string, unknown>) {
       '/node_modules/.vite/deps/react-dom_client.js'
     )).default;
     const ConnectionStatus = (
-      await import('/src/ConnectionStatus.tsx')
+      await import('/src/features/call/ConnectionStatus.tsx')
     ).default;
     document.body.innerHTML = '<div id="connection-fixture"></div>';
     const root = ReactDOM.createRoot(
