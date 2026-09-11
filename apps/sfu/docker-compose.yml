@@ -1,0 +1,77 @@
+# Deployment definition for the Bettrcomms SFU host. Three containers,
+# each with one job:
+#
+#   caddy  - TLS termination + automatic Let's Encrypt cert (HTTP-01), then
+#            reverse-proxies signaling (HTTP/WS) to the sfu container.
+#            Never sees media traffic.
+#   sfu    - forwards RTP/RTCP. Publishes its single UDP media port
+#            directly (never proxied — WebRTC media must not go through an
+#            HTTP reverse proxy).
+#   coturn - TURN fallback for restrictive NATs, per Phase 11. Kept
+#            conceptually and operationally separate from the SFU: STUN
+#            address discovery / TURN relay is not the SFU's job.
+#
+# All three restart automatically (`unless-stopped`) so a VPS reboot brings
+# the stack back without manual intervention, as long as Docker itself is
+# enabled at boot (see docs/SFU_DEPLOYMENT.md).
+services:
+  sfu:
+    build: .
+    image: bettrcomms-sfu:latest
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "3478:3478/udp" # media: published directly, not proxied
+    networks: [internal]
+    mem_limit: 400m
+    cpus: 0.7
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80" # ACME HTTP-01 challenge + redirect to 443
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [internal]
+    mem_limit: 96m
+    cpus: 0.2
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  coturn:
+    image: coturn/coturn:4
+    restart: unless-stopped
+    # coturn needs to see real client source addresses and its own public
+    # IP directly; host networking avoids NATting inside Docker on top of
+    # the NAT traversal coturn already exists to solve.
+    network_mode: host
+    volumes:
+      - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
+    command: ["-c", "/etc/coturn/turnserver.conf", "--log-file=stdout"]
+    mem_limit: 128m
+    cpus: 0.2
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  internal:
+
+volumes:
+  caddy_data:
+  caddy_config:

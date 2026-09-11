@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha1"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
@@ -29,6 +30,15 @@ type Config struct {
 	TURNURLs                                                []string
 	TURNSecret                                              string
 	WebDist                                                 string
+	// SFUURL is the public wss:// endpoint clients open once they hold a
+	// join token (see sfuJoin). Empty means no SFU is configured yet and
+	// clients should stay on direct P2P.
+	SFUURL string
+	// SFUJoinSecret signs the short-lived join tokens sfuJoin issues.
+	// Must match the SFU process's own SFU_JOIN_SECRET byte-for-byte;
+	// this API never talks to the SFU directly, it only vouches for
+	// clients the same way TURNSecret vouches for TURN credentials.
+	SFUJoinSecret string
 }
 type API struct {
 	Store          Store
@@ -277,6 +287,43 @@ func (a *API) ice(w http.ResponseWriter, u User) {
 	}
 	a.json(w, 200, map[string]any{"ice_servers": servers, "ttl_seconds": 600})
 }
+
+// sfuJoin mints a short-lived, HMAC-signed token authorizing one client to
+// open a media session with the SFU for one room, without this API ever
+// touching RTP/media itself (see docs/MEDIA_ARCHITECTURE.md). Membership
+// is already enforced by room() before this is reached. The SFU verifies
+// this token with the same shared secret and never talks to Postgres or
+// WorkOS itself — this endpoint is its only source of authorization.
+func (a *API) sfuJoin(w http.ResponseWriter, r *http.Request, rid string, u User) {
+	if a.Config.SFUURL == "" || a.Config.SFUJoinSecret == "" {
+		a.fail(w, 503, "sfu_unavailable", "no SFU is configured for this deployment")
+		return
+	}
+	peerID := r.URL.Query().Get("peer_id")
+	if peerID == "" {
+		peerID = u.ID
+	}
+	if !uuidPattern.MatchString(peerID) {
+		a.fail(w, 400, "invalid_peer_id", "peer_id must be a UUID")
+		return
+	}
+	claims := struct {
+		RoomID string `json:"room_id"`
+		UserID string `json:"user_id"`
+		PeerID string `json:"peer_id"`
+		Exp    int64  `json:"exp"`
+	}{RoomID: rid, UserID: u.ID, PeerID: peerID, Exp: time.Now().Add(2 * time.Minute).Unix()}
+	payload, e := json.Marshal(claims)
+	if e != nil {
+		a.fail(w, 500, "internal", "could not build sfu join token")
+		return
+	}
+	payloadB64 := base64.RawURLEncoding.EncodeToString(payload)
+	mac := hmac.New(sha256.New, []byte(a.Config.SFUJoinSecret))
+	mac.Write([]byte(payloadB64))
+	token := payloadB64 + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	a.json(w, 200, map[string]any{"sfu_url": a.Config.SFUURL, "token": token, "ttl_seconds": 120})
+}
 func (a *API) rooms(w http.ResponseWriter, r *http.Request, u User) {
 	if r.Method == "GET" {
 		v, e := a.Store.ListRooms(u.ID)
@@ -351,6 +398,10 @@ func (a *API) room(w http.ResponseWriter, r *http.Request, u User, p []string) {
 	if len(p) == 3 && p[2] == "members" && r.Method == "GET" {
 		v, e := a.Store.ListRoomMembers(rid)
 		a.result(w, map[string]any{"members": v}, e)
+		return
+	}
+	if len(p) == 3 && p[2] == "sfu-join" && r.Method == "GET" {
+		a.sfuJoin(w, r, rid, u)
 		return
 	}
 	if len(p) == 3 && p[2] == "messages" {
