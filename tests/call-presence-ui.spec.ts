@@ -58,7 +58,7 @@ test('lobby and navigation show live mute and deafen presence', async ({ browser
     await ownerPage.getByRole('button', { name: 'Join call' }).click();
     await expect(ownerPage.getByRole('button', { name: 'Leave call' })).toBeVisible();
     await expect(guestPage.locator('.call-lobby')).toContainText('Lobby Ada');
-    await expect(guestPage.locator('.conversation-navigation')).toContainText('Lobby Ada');
+    await expect(guestPage.getByRole('complementary', { name: 'Conversations' })).toContainText('Lobby Ada');
     await ownerPage.screenshot({ path: 'tests/screenshots/call-presence-incall-desktop.png', fullPage: true });
     await ownerPage.setViewportSize({ width: 390, height: 844 });
     if (await ownerPage.getByRole('button', { name: 'Close chat' }).isVisible()) await ownerPage.getByRole('button', { name: 'Close chat' }).click();
@@ -69,7 +69,7 @@ test('lobby and navigation show live mute and deafen presence', async ({ browser
     await expect(guestPage.locator('.call-lobby')).toContainText('Muted');
     await ownerPage.getByRole('button', { name: 'Deafen call' }).click();
     await expect(guestPage.locator('.call-lobby')).toContainText('Deafened');
-    await expect(guestPage.locator('.conversation-navigation').getByLabel('Deafened')).toBeVisible();
+    await expect(guestPage.getByRole('complementary', { name: 'Conversations' }).getByLabel('Deafened')).toBeVisible();
     await ownerPage.getByRole('button', { name: 'Undeafen call' }).click();
     await expect(ownerPage.getByRole('button', { name: 'Unmute microphone' })).toBeVisible();
 

@@ -220,7 +220,7 @@ test('saved multitrack recording reloads, mixes, seeks, and deletes', async ({
   expect((await convertedDownload).suggestedFilename()).toMatch(/\.wav$/);
   await page.screenshot({ path: '.local/recording-export-formats.png', fullPage: true });
   await page
-    .locator('.workspace-screen__scroll')
+    .getByTestId('workspace-scroll')
     .evaluate((element) => (element.scrollTop = 0));
   await page.screenshot({
     path: '.local/recording-player.png',

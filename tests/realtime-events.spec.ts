@@ -72,7 +72,7 @@ test('chat, call activity, and friend availability update without polling', asyn
     await expect(guestPage.locator('.call-lobby')).toContainText('Muted', { timeout: 2_000 });
     expect(presencePolls).toBe(0);
 
-    await ownerPage.locator('.nav-item').filter({ hasText: 'Friends' }).click();
+    await ownerPage.getByRole('navigation', { name: 'Spaces' }).getByRole('button', { name: 'Friends' }).click();
     await expect(ownerPage.getByText(`Online · ${guest.email}`)).toBeVisible({ timeout: 2_000 });
     await guestContext.close();
     await expect(ownerPage.getByText(`Offline · ${guest.email}`)).toBeVisible({ timeout: 5_000 });

@@ -49,7 +49,10 @@ export default function WorkspaceScreen({
           </a>
         </nav>
       </header>
-      <div className="min-h-0 flex-1 overflow-auto overscroll-contain">
+      <div
+        className="min-h-0 flex-1 overflow-auto overscroll-contain"
+        data-testid="workspace-scroll"
+      >
         <div className="mx-auto max-w-6xl px-4 pt-6 pb-10 sm:px-8 sm:pt-10 sm:pb-14">
           <div className="mb-8">
             <span className="text-[0.65rem] font-semibold tracking-[0.18em] text-muted-foreground">
