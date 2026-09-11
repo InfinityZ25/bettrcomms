@@ -1,5 +1,6 @@
 import { errorMessage } from '@/lib/errors';
 import { LinkButton } from '@/components/ui/link-button';
+import { Switch } from '@/components/ui/switch';
 import { useEffect, useState } from 'react';
 import { readStored, writeStored } from '@/lib/storage';
 import { Headphones, Monitor, Radio } from 'lucide-react';
@@ -15,6 +16,9 @@ import { readRecordingQuality } from '@/media/recordingQuality';
 import NativeDeepfilterSetup, {
   type DeepfilterStatus,
 } from './NativeDeepfilterSetup';
+import { SettingsSection } from './SettingsSection';
+import { SettingRow } from './SettingRow';
+import { SettingsSelect, SettingsSlider } from './SettingsControls';
 
 interface NvidiaStatus {
   ready: boolean;
@@ -47,7 +51,7 @@ export function readQuality() {
     return defaultQuality;
   }
 }
-export default function MediaSettings() {
+export default function MediaSettings({ section }: { section: 'voice' | 'recording' | 'stream' | 'connection' }) {
   const [speakingThreshold, setSpeakingThreshold] = useState(
     readSpeakingThreshold,
   );
@@ -123,74 +127,48 @@ export default function MediaSettings() {
   }
   return (
     <>
-      <h3>
-        <Headphones size={17} /> Voice & devices
-      </h3>
+      {section === 'voice' && <SettingsSection
+        id="settings-voice"
+        icon={<Headphones size={18} />}
+        title="Voice & devices"
+        description="Pick what you use for calls and make sure everything sounds right."
+      >
       <DeviceSettings />
       <VisualCopilotSettings />
-      <label>
-        Speaking indicator threshold · {speakingThreshold} dBFS
-        <input
-          type="range"
-          min="-65"
-          max="-20"
-          step="1"
-          aria-label="Speaking indicator threshold"
-          aria-describedby="speaking-threshold-help"
-          value={speakingThreshold}
-          onChange={(event) =>
-            setSpeakingThreshold(
-              saveSpeakingThreshold(Number(event.target.value)),
-            )
-          }
-        />
+      <label className="grid gap-3">
+        <span className="flex justify-between gap-3">Voice activity <output>{speakingThreshold} dB</output></span>
+        <SettingsSlider ariaLabel="Speaking indicator threshold" value={speakingThreshold} min={-65} max={-20} step={1} onValueChange={(value) => setSpeakingThreshold(saveSpeakingThreshold(value))} />
       </label>
       <p
         id="speaking-threshold-help"
         className="text-xs leading-6 text-muted-foreground"
       >
-        Lower values detect quieter voices. This changes the green border only,
-        not microphone volume or what others hear.
+        Adjust when your speaking indicator lights up. This does not change your volume.
       </p>
-      <label>
-        Noise suppression engine
-        <select
+      <label className="grid gap-2">
+        Noise removal
+        <SettingsSelect
+          ariaLabel="Noise suppression engine"
           value={denoiser}
-          onChange={(e) => {
-            setDenoiser(e.target.value);
-            writeStored('bc-denoiser', e.target.value);
+          onValueChange={(value) => {
+            setDenoiser(value);
+            writeStored('bc-denoiser', value);
             window.dispatchEvent(new Event('bc-denoiser'));
           }}
-        >
-          <option value="deepfilter-wasm">
-            DeepFilterNet3 · experimental · WebAssembly
-          </option>
-          <option value="standard">Standard · browser processing</option>
-          <option value="rnnoise">Enhanced · RNNoise on this device</option>
-          <option value="speex">SpeexDSP · lightweight on this device</option>
-          {desktop && (
-            <option value="nvidia" disabled={!nvidia?.ready}>
-              NVIDIA Audio Effects ·{' '}
-              {nvidia?.ready ? 'ready' : 'setup required'}
-            </option>
-          )}
-          {desktop && (
-            <option value="deepfilter" disabled={!deepfilter?.ready}>
-              DeepFilterNet3 · AMD/Intel DirectML ·{' '}
-              {deepfilter?.ready ? 'ready' : 'setup required'}
-            </option>
-          )}
-        </select>
+          options={[
+            { value: 'rnnoise', label: 'Enhanced' },
+            { value: 'standard', label: 'Standard' },
+            { value: 'speex', label: 'Lightweight' },
+            { value: 'deepfilter-wasm', label: 'DeepFilter · experimental' },
+            ...(desktop ? [{ value: 'nvidia', label: nvidia?.ready ? 'NVIDIA · ready' : 'NVIDIA · setup needed', disabled: !nvidia?.ready }] : []),
+            ...(desktop ? [{ value: 'deepfilter', label: deepfilter?.ready ? 'DeepFilter · ready' : 'DeepFilter · setup needed', disabled: !deepfilter?.ready }] : []),
+          ]}
+        />
       </label>
-      <p className="text-xs leading-6 text-muted-foreground">
-        Used when noise suppression is switched on. Processing stays on this
-        device.
-      </p>
+      <p className="text-xs leading-6 text-muted-foreground">Choose how strongly BetterComms cleans up your microphone.</p>
       {denoiser === 'deepfilter-wasm' && (
         <p className="setting-note">
-          Experimental: the upstream WASM build is integrated for browser and
-          desktop testing, but it has not passed BetterComms quality acceptance.
-          RNNoise remains the default.
+          DeepFilter is still being tested. Enhanced is the safer choice for calls.
         </p>
       )}
       {desktop && nvidia && !nvidia.ready && (
@@ -273,125 +251,114 @@ export default function MediaSettings() {
         />
       )}
       <ProcessingControls engine={denoiser} />
-      <h3>
-        <Monitor size={17} /> Recording quality
-      </h3>
-      <label>
+      </SettingsSection>}
+      {section === 'recording' && <SettingsSection
+        id="settings-recording"
+        icon={<Monitor size={18} />}
+        title="Recording quality"
+        description="Choose how clear your saved screen recordings look."
+      >
+      <label className="grid gap-2">
         Screen recording bitrate
-        <select
+        <SettingsSelect
+          ariaLabel="Screen recording bitrate"
           value={recordingRate}
-          onChange={(event) => {
-            const value = Number(event.target.value);
+          onValueChange={(next) => {
+            const value = Number(next);
             setRecordingRate(value);
             writeStored('bc-recording-mbps', String(value));
           }}
-        >
-          {[10, 20, 40, 80].map((value) => (
-            <option key={value} value={value}>
-              {value} Mbps
-            </option>
-          ))}
-        </select>
+          options={[10, 20, 40, 80].map((value) => ({ value, label: `${value} Mbps` }))}
+        />
       </label>
       <p className="my-4 rounded-lg border bg-muted/40 p-3 text-xs leading-6 text-muted-foreground">
-        Applies to new browser and received-screen recordings. Native local
-        shares preserve the selected stream encoder and bitrate. Higher bitrates
-        use more storage; playback volume never changes the saved tracks.
+        Higher quality keeps text and motion sharper, but uses more storage.
       </p>
-      <h3>
-        <Monitor size={17} /> Stream quality
-      </h3>
+      </SettingsSection>}
+      {section === 'stream' && <SettingsSection
+        id="settings-stream"
+        icon={<Monitor size={18} />}
+        title="Stream quality"
+        description="Choose how sharp and smooth your shares can be."
+      >
       <div className="grid gap-3.5">
-        <label>
+        <label className="grid gap-2">
           Video bitrate ceiling
-          <select
+          <SettingsSelect
+            ariaLabel="Video bitrate ceiling"
             value={quality.maxVideoBitrate}
-            onChange={(e) =>
-              change({ ...quality, maxVideoBitrate: Number(e.target.value) })
+            onValueChange={(value) =>
+              change({ ...quality, maxVideoBitrate: Number(value) })
             }
-          >
-            <option value={4_000_000}>4 Mbps · save bandwidth</option>
-            <option value={10_000_000}>10 Mbps · balanced</option>
-            <option value={20_000_000}>20 Mbps · high quality</option>
-            <option value={40_000_000}>40 Mbps · maximum detail</option>
-          </select>
+            options={[{ value: 4_000_000, label: 'Data saver' }, { value: 10_000_000, label: 'Balanced' }, { value: 20_000_000, label: 'High quality' }, { value: 40_000_000, label: 'Maximum detail' }]}
+          />
         </label>
-        <label>
+        <label className="grid gap-2">
           Frame rate ceiling
-          <select
+          <SettingsSelect
+            ariaLabel="Frame rate ceiling"
             value={quality.maxFramerate}
-            onChange={(e) =>
-              change({ ...quality, maxFramerate: Number(e.target.value) })
+            onValueChange={(value) =>
+              change({ ...quality, maxFramerate: Number(value) })
             }
-          >
-            <option value={15}>15 FPS · text</option>
-            <option value={30}>30 FPS · balanced</option>
-            <option value={60}>60 FPS · motion</option>
-            <option value={120}>120 FPS · high refresh</option>
-          </select>
+            options={[{ value: 15, label: '15 FPS · text' }, { value: 30, label: '30 FPS · balanced' }, { value: 60, label: '60 FPS · smooth' }, { value: 120, label: '120 FPS · high refresh' }]}
+          />
         </label>
-        <label>
+        <label className="grid gap-2">
           Audio bitrate ceiling
-          <select
+          <SettingsSelect
+            ariaLabel="Audio bitrate ceiling"
             value={quality.maxAudioBitrate}
-            onChange={(e) =>
-              change({ ...quality, maxAudioBitrate: Number(e.target.value) })
+            onValueChange={(value) =>
+              change({ ...quality, maxAudioBitrate: Number(value) })
             }
-          >
-            <option value={64_000}>64 kbps · voice</option>
-            <option value={128_000}>128 kbps · balanced</option>
-            <option value={256_000}>256 kbps · high fidelity</option>
-            <option value={510_000}>510 kbps · maximum</option>
-          </select>
+            options={[{ value: 64_000, label: 'Voice' }, { value: 128_000, label: 'Balanced' }, { value: 256_000, label: 'High fidelity' }, { value: 510_000, label: 'Maximum' }]}
+          />
         </label>
       </div>
       <p className="my-4 rounded-lg border bg-muted/40 p-3 text-xs leading-6 text-muted-foreground">
-        Actual quality adapts to your connection and device. Each viewer uses
-        additional upload bandwidth. Hardware encoding is selected by your
-        browser when supported.
+        BetterComms will ease the quality down automatically when a connection needs it.
       </p>
-      <h3>
-        <Radio size={17} /> Connection
-      </h3>
-      <label className="switch-row">
-        <div>
-          <strong>Direct connections only</strong>
-          <p>Skip media relays. Some networks may not connect.</p>
-        </div>
-        <input
-          type="checkbox"
+      </SettingsSection>}
+      {section === 'connection' && <SettingsSection
+        id="settings-connection"
+        icon={<Radio size={18} />}
+        title="Connection"
+        description="Change this only if you have trouble joining calls."
+      >
+      <SettingRow
+        as="div"
+        title="Direct connections only"
+        description="Skip media relays. Some networks may not connect."
+        control={<Switch
+          aria-label="Direct connections only"
           checked={direct}
-          onChange={(e) => {
-            setDirect(e.target.checked);
-            writeStored('bc-direct', String(e.target.checked));
+          onCheckedChange={(checked) => {
+            setDirect(checked);
+            writeStored('bc-direct', String(checked));
           }}
-        />
-      </label>
+        />}
+      />
       <p className="text-xs leading-6 text-muted-foreground">
         Connection mode applies when you next join a call.
       </p>
-      <label className="device-select">
+      <label className="device-select grid gap-2">
         Voice route
-        <select
+        <SettingsSelect
+          ariaLabel="Voice route"
           disabled={direct}
           value={voiceRoute}
-          onChange={(event) => {
-            setVoiceRoute(event.target.value);
-            writeStored('bc-voice-route', event.target.value);
+          onValueChange={(value) => {
+            setVoiceRoute(value);
+            writeStored('bc-voice-route', value);
           }}
-        >
-          <option value="automatic">
-            Automatic · direct first, server voice fallback
-          </option>
-          <option value="relay">Server voice · compatibility mode</option>
-        </select>
+          options={[{ value: 'automatic', label: 'Automatic' }, { value: 'relay', label: 'Compatibility mode' }]}
+        />
       </label>
       <p className="my-4 rounded-lg border bg-muted/40 p-3 text-xs leading-6 text-muted-foreground">
-        Server voice uses encrypted Opus audio, starting at 64 kbps per friend.
-        Camera, screen sharing, and shared app audio still need WebRTC
-        connectivity. Direct-only overrides this setting. Changes apply on your
-        next call.
+        Automatic works best for most people. Try compatibility mode only when voice will not connect.
       </p>
+      </SettingsSection>}
     </>
   );
 }

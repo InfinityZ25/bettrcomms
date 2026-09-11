@@ -12,6 +12,7 @@ import {
 } from './DeviceControls';
 import { isDenied } from './deviceHelpers';
 import type { useMicrophoneTest } from './useMicrophoneTest';
+import { SettingsSlider } from '../SettingsControls';
 
 export default function MicrophoneCard({
   options,
@@ -73,19 +74,9 @@ export default function MicrophoneCard({
       {test.monitoring && (
         <label className="loopback-volume">
           Monitor volume · {Math.round(test.monitorVolume * 100)}%
-          <input
-            type="range"
-            aria-label="Monitor volume"
-            min="0"
-            max="1"
-            step="0.05"
-            value={test.monitorVolume}
-            onChange={(event) => test.setMonitorLevel(Number(event.target.value))}
-          />
+          <SettingsSlider ariaLabel="Monitor volume" value={test.monitorVolume} min={0} max={1} step={0.05} onValueChange={test.setMonitorLevel} />
           <span>
-            Continuous audio, one second behind. Use headphones: echo cancellation is off
-            during live monitoring. Your selected noise processing still applies. Nothing is
-            saved.
+            Use headphones to avoid echo. Nothing from this test is saved.
           </span>
         </label>
       )}

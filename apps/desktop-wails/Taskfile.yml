@@ -39,6 +39,20 @@ tasks:
     cmds:
       - go test ./...
 
+  # The NVIDIA Audio Effects acceptance test. It skips unless this machine has
+  # an NVIDIA Ada GPU and the pinned package unpacked into
+  # the app-private NVIDIA runtime directory under LOCALAPPDATA, and says which
+  # half is missing. Verbose because what it prints is the evidence: no NVIDIA
+  # GPU has ever run this adapter, and the report says so until one has.
+  test:nvidia:
+    cmds:
+      - go test ./internal/native/nvidiaaudio/ -v -run "Denoiser|Intensity|VoiceActivity|StoppingAndStarting"
+
+  # The deepfilter package converts one C return value to a pointer, which is
+  # the only way in Go to dereference memory a foreign library returned. Its
+  # unsafeptr finding is expected and documented at the conversion; every other
+  # analyzer still runs on it, and the full set runs everywhere else.
   vet:
     cmds:
-      - go vet ./...
+      - go vet $(go list ./... | grep -v internal/native/deepfilter)
+      - go vet -unsafeptr=false ./internal/native/deepfilter/

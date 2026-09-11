@@ -9,6 +9,11 @@ const mocks = vi.hoisted(() => ({
     IsMaximised: vi.fn(async () => true),
     IsFullscreen: vi.fn(async () => false),
   },
+  auth: {
+    BrowserSignInBegin: vi.fn(async () => ({ state: 'waiting', code: 'ACDE-2346', confirmUrl: 'https://api.test/confirm', detail: 'Finish in your browser.', expiresAt: 1234 })),
+    BrowserSignInStatus: vi.fn(async () => ({ state: 'complete', detail: 'Signed in.' })),
+    BrowserSignInCancel: vi.fn(async () => {}),
+  },
   tauri: {
     minimize: vi.fn(async () => {}),
     toggleMaximize: vi.fn(async () => {}),
@@ -21,6 +26,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@tauri-apps/api/core', () => ({ isTauri: mocks.isTauri }));
 vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => mocks.tauri }));
 vi.mock('./wailsbindings/bettercomms/desktop-wails/windowservice.js', () => mocks.wails);
+vi.mock('./wailsbindings/bettercomms/desktop-wails/authservice.js', () => mocks.auth);
 
 function wailsBoot() {
   const capability = { state: 'unavailable', detail: 'd', fallback: 'f' };
@@ -106,5 +112,57 @@ describe('window api selection', () => {
     expect(bridge.dragRegionStyle()).toEqual({ '--wails-draggable': 'drag' });
     expect(bridge.noDragStyle()).toEqual({ '--wails-draggable': 'no-drag' });
     expect(bridge.nativeNonClientRegion('maximize')).toBeUndefined();
+  });
+});
+
+describe('browser sign-in hand-off', () => {
+  function signInBoot() {
+    const boot = wailsBoot();
+    boot.authReturn = { state: 'experimental', detail: 'browser hand-off', fallback: '' };
+    return boot;
+  }
+
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+    mocks.isTauri.mockReturnValue(false);
+    Object.values(mocks.auth).forEach((fn) => fn.mockClear());
+  });
+
+  it('starts and polls the hand-off through the generated bindings', async () => {
+    const api = (await loadBridge(signInBoot())).getDesktopSignInApi()!;
+
+    expect(await api.begin()).toEqual({
+      state: 'waiting',
+      code: 'ACDE-2346',
+      confirmUrl: 'https://api.test/confirm',
+      detail: 'Finish in your browser.',
+      expiresAt: 1234,
+    });
+    expect(await api.status()).toEqual({ state: 'complete', detail: 'Signed in.' });
+    await api.cancel();
+    expect(mocks.auth.BrowserSignInBegin).toHaveBeenCalledOnce();
+    expect(mocks.auth.BrowserSignInCancel).toHaveBeenCalledOnce();
+  });
+
+  // Go's zero value for the state enum is the empty string. Treating it as
+  // "waiting" would leave the window polling a sign-in that is not running.
+  it('reports an unrecognised host state as a failure', async () => {
+    mocks.auth.BrowserSignInStatus.mockResolvedValueOnce({ state: '', detail: '' } as never);
+    const api = (await loadBridge(signInBoot())).getDesktopSignInApi()!;
+    const status = await api.status();
+    expect(status.state).toBe('failed');
+    expect(status.detail).not.toBe('');
+  });
+
+  it('offers no hand-off in a browser or in Tauri', async () => {
+    expect((await loadBridge()).getDesktopSignInApi()).toBeNull();
+    mocks.isTauri.mockReturnValue(true);
+    expect((await loadBridge()).getDesktopSignInApi()).toBeNull();
+  });
+
+  // A host with no API proxy has nowhere to put a session, and says so in the
+  // boot report. Opening a browser there would lead nowhere.
+  it('offers no hand-off when the host reports it unavailable', async () => {
+    expect((await loadBridge(wailsBoot())).getDesktopSignInApi()).toBeNull();
   });
 });

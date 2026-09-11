@@ -76,7 +76,41 @@ export interface DesktopBootReport {
   apiOrigin: string;
   /** Present instead of a silent fallback when apiOrigin is empty. */
   apiOriginError?: string;
+  /**
+   * Loopback origin this host proxies the API through in a packaged build.
+   * Absent in development and in the browser, where /api is already same-origin.
+   */
+  apiBase?: string;
+  /** Per-launch secret authorising requests to apiBase. */
+  apiToken?: string;
+  /**
+   * The per-launch secret a native call must present to prove it came from a
+   * document this host served. It stands in for the per-call origin check the
+   * Tauri host makes, which the Wails host cannot make.
+   */
+  pageToken?: string;
   authReturn: Capability;
   windowControls: DesktopWindowControls;
   capabilities: DesktopMediaCapabilities;
+}
+
+/** The stage a browser sign-in hand-off has reached on the desktop host. */
+export type DesktopSignInState = 'idle' | 'waiting' | 'complete' | 'failed';
+
+/**
+ * What the host reports while sign-in runs in the system browser.
+ *
+ * The page never sees the pairing, the verifier, or the session: those stay in
+ * the host process. It shows the code, waits, and reloads its session when the
+ * host says it has one.
+ */
+export interface DesktopSignInStatus {
+  state: DesktopSignInState;
+  /** The code the browser page displays, for the person to compare. */
+  code?: string;
+  /** The confirmation address, offered when the browser did not open. */
+  confirmUrl?: string;
+  detail: string;
+  /** When the attempt stops being claimable, in Unix milliseconds. */
+  expiresAt?: number;
 }

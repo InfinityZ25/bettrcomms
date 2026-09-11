@@ -1,4 +1,6 @@
 import { CircleHelp, X } from 'lucide-react';
+import { motion } from 'motion/react';
+import { spring } from '@/lib/motion';
 
 /** The single app-wide failure notice. */
 export default function ErrorToast({
@@ -9,7 +11,11 @@ export default function ErrorToast({
   onDismiss: () => void;
 }) {
   return (
-    <div
+    <motion.div
+      initial={{ opacity: 0, y: 18, x: '-50%', scale: 0.96 }}
+      animate={{ opacity: 1, y: 0, x: '-50%', scale: 1 }}
+      exit={{ opacity: 0, y: 12, x: '-50%', scale: 0.97 }}
+      transition={spring}
       className="fixed bottom-6 left-1/2 z-[60] flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-3 rounded-xl border bg-card px-4 py-3 text-sm text-card-foreground shadow-2xl"
       role="alert"
     >
@@ -22,6 +28,6 @@ export default function ErrorToast({
       >
         <X size={16} />
       </button>
-    </div>
+    </motion.div>
   );
 }

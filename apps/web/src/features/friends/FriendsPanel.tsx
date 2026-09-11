@@ -9,6 +9,7 @@ import {
   type CallParticipant,
 } from '@/api';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 export default function FriendsPanel({
   user,
@@ -74,7 +75,7 @@ export default function FriendsPanel({
         <label className="block text-xs font-medium text-foreground/80">
           Find your people
           <div className="mt-2 flex items-center gap-2">
-            <input
+            <Input
               placeholder="Search name or email"
               aria-label="Find friends"
               value={query}
@@ -143,7 +144,7 @@ export default function FriendsPanel({
             });
           }}
         >
-          <input
+          <Input
             name="userId"
             aria-label="Friend user ID"
             placeholder="Paste their user ID"

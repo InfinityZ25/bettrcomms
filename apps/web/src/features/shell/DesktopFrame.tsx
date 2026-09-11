@@ -15,7 +15,8 @@ import {
   noDragStyle,
   type DesktopWindowApi,
 } from '@/desktop';
-import { AudioLines, Minus, Square, Copy, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, AudioLines, Minus, Square, Copy, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import {
   getWindowControls,
   subscribeToWindowControls,
@@ -97,7 +98,7 @@ export default function DesktopFrame({ children }: { children: ReactNode }) {
       </div>
     ) : null;
   return (
-    <div data-desktop-frame className="flex h-dvh flex-col overflow-hidden">
+    <div data-desktop-frame className="flex h-dvh w-full flex-col overflow-hidden">
       <div
         className={titlebarClassName(controls)}
         style={
@@ -109,12 +110,35 @@ export default function DesktopFrame({ children }: { children: ReactNode }) {
         }
       >
         {controls.buttonSide === 'start' ? windowControls : null}
+        {/*
+          The sidebar toggle is not here. It belongs next to the sidebar it
+          opens, which is in the page; the title bar keeps only what is about
+          the window itself.
+        */}
+        <div className="flex items-center gap-0.5 px-2" style={noDragStyle()} aria-label="Navigation controls">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7 rounded-lg text-muted-foreground"
+            aria-label="Go back"
+            title="Back"
+            onClick={() => history.back()}
+          >
+            <ArrowLeft size={15} />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7 rounded-lg text-muted-foreground"
+            aria-label="Go forward"
+            title="Forward"
+            onClick={() => history.forward()}
+          >
+            <ArrowRight size={15} />
+          </Button>
+        </div>
         <div
-          className={
-            controls.platform === 'macos'
-              ? 'flex h-full min-w-0 flex-1 items-center gap-2 pl-2 text-[0.7rem] text-muted-foreground [&>svg]:text-primary'
-              : 'flex h-full min-w-0 flex-1 items-center gap-2 pl-4 text-[0.7rem] text-muted-foreground [&>svg]:text-primary'
-          }
+          className="h-full min-w-0 flex-1"
           data-wails-non-client-region={nativeNonClientRegion('caption')}
           style={dragRegionStyle()}
           onMouseDown={(event) => {
@@ -123,6 +147,8 @@ export default function DesktopFrame({ children }: { children: ReactNode }) {
             else run(() => windowApi.startDragging());
           }}
         >
+        </div>
+        <div className="pointer-events-none absolute left-1/2 flex -translate-x-1/2 items-center gap-2 text-[0.7rem] font-semibold text-muted-foreground [&>svg]:text-primary">
           <AudioLines size={14} aria-hidden="true" />
           <span>BetterComms</span>
         </div>
@@ -197,7 +223,7 @@ function WindowControlButton({
 
 function titlebarClassName(controls: WindowControlsState) {
   const classes = [
-    'flex h-(--desktop-titlebar-height) shrink-0 basis-(--desktop-titlebar-height) select-none items-center bg-sidebar ps-(--desktop-titlebar-inset-start) pe-(--desktop-titlebar-inset-end)',
+    'relative flex h-(--desktop-titlebar-height) shrink-0 basis-(--desktop-titlebar-height) select-none items-center bg-sidebar ps-(--desktop-titlebar-inset-start) pe-(--desktop-titlebar-inset-end)',
   ];
 
   // WebView2 solo trata la barra como region no cliente si lleva esta clase:

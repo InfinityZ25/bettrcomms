@@ -98,6 +98,20 @@ function parseBootReport(value: unknown): DesktopBootReport | null {
   const apiOrigin = parseApiOrigin(value.apiOrigin);
   if (apiOrigin === null) return null;
 
+  // A packaged host proxies the API through loopback. Both halves must be
+  // present and well formed together: a base without a token cannot be
+  // authorised, and a token without a base has nowhere to go.
+  const apiBase = parseApiBase(value.apiBase);
+  const apiToken = parseApiToken(value.apiToken);
+  if (apiBase === null || apiToken === null) return null;
+  if (Boolean(apiBase) !== Boolean(apiToken)) return null;
+
+  // The page token gates native calls. It is validated with the same rule as
+  // the launch token: a malformed one is a malformed report, not a token to
+  // send anyway and hope.
+  const pageToken = parseApiToken(value.pageToken);
+  if (pageToken === null) return null;
+
   return {
     schemaVersion: 1,
     runtime: 'wails',
@@ -109,10 +123,67 @@ function parseBootReport(value: unknown): DesktopBootReport | null {
       typeof value.apiOriginError === 'string'
         ? value.apiOriginError
         : undefined,
+    apiBase: apiBase || undefined,
+    apiToken: apiToken || undefined,
+    pageToken: pageToken || undefined,
     authReturn,
     windowControls,
     capabilities,
   };
+}
+
+/**
+ * Re-validates the loopback base the host proxies the API through.
+ *
+ * This value decides where every API request and WebSocket goes, so it is
+ * checked as strictly as apiOrigin and for the opposite reason: it must be
+ * loopback. A non-loopback base here would mean session traffic leaving the
+ * machine to somewhere the origin policy never approved.
+ */
+function parseApiBase(value: unknown): string | null {
+  if (value === undefined || value === '') return '';
+  if (typeof value !== 'string') return null;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'http:') return null;
+  if (!['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) return null;
+  if (
+    url.username !== '' ||
+    url.password !== '' ||
+    url.search !== '' ||
+    url.hash !== '' ||
+    (url.pathname !== '' && url.pathname !== '/')
+  ) {
+    return null;
+  }
+  return url.origin;
+}
+
+/**
+ * The launch token travels in a header and, for WebSockets, in a query string.
+ * Restricting it to URL-safe base64 keeps it from carrying a delimiter that
+ * would change the shape of either.
+ */
+function parseApiToken(value: unknown): string | null {
+  if (value === undefined || value === '') return '';
+  if (typeof value !== 'string') return null;
+  return /^[A-Za-z0-9_-]{32,}$/.test(value) ? value : null;
+}
+
+/**
+ * Where the frontend must send API traffic, and what authorises it.
+ *
+ * Null means the ordinary same-origin path: a browser tab, or a development
+ * build behind the Vite proxy.
+ */
+export function getDesktopApiTransport(): { base: string; token: string } | null {
+  const boot = readDesktopBootReport();
+  if (!boot?.apiBase || !boot.apiToken) return null;
+  return { base: boot.apiBase, token: boot.apiToken };
 }
 
 /**

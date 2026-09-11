@@ -8,6 +8,7 @@ import {
   HardDrive,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { RecordingPlayer } from './RecordingPlayer';
 import { RecordingDownload } from './RecordingDownload';
 import {
@@ -97,7 +98,7 @@ export default function RecordingsLibrary() {
                 }
               }}
             >
-              <input
+              <Input
                 aria-label="Recording title"
                 value={title}
                 maxLength={120}
@@ -156,7 +157,8 @@ export default function RecordingsLibrary() {
           ) : (
             items.map((item) => (
               <article className="library-card" key={item.id}>
-                <button
+                <Button
+                  variant="ghost"
                   className="library-open"
                   onClick={() => void show(item.id)}
                   disabled={loading}
@@ -173,12 +175,12 @@ export default function RecordingsLibrary() {
                     {Math.round(item.durationMs / 1000)} sec · {item.trackCount}{' '}
                     tracks · {(item.bytes / 1048576).toFixed(1)} MB
                   </small>
-                </button>
+                </Button>
                 {pendingDelete === item.id ? (
                   <div className="library-delete">
                     <span>Delete permanently?</span>
                     <Button
-                      variant="danger"
+                      variant="destructive"
                       onClick={async () => {
                         try {
                           await deleteRecording(item.id);

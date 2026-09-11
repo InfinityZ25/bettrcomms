@@ -114,14 +114,14 @@ func NewAssetHandler(opts AssetOptions) (http.Handler, error) {
 
 	mux := http.NewServeMux()
 	if opts.DevServer == "" {
-		// A packaged host serves the frontend from its own origin, where no Go
-		// API exists. Without this, "/api/..." would fall through to the SPA
+		// A packaged host serves the frontend from its own origin, where no API
+		// exists. Without this, "/api/..." would fall through to the SPA
 		// fallback and the client would parse an HTML document as a response.
-		// Failing loudly is the honest answer; the fix is for the web client to
-		// use the boot report's apiOrigin, which it does not do yet.
+		// Reaching here means the client ignored the boot report's apiBase, so
+		// say which contract it missed rather than returning a document.
 		mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {
 			writeJSON(w, http.StatusNotImplemented, map[string]string{
-				"error": "this desktop host serves no API; the client must use the boot report's apiOrigin",
+				"error": "this desktop host serves no API on its page origin; use the boot report's apiBase and apiToken",
 			})
 		})
 	}

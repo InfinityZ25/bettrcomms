@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-export type Screen = 'call' | 'settings' | 'recordings' | 'share';
+export type Screen = 'call' | 'recordings' | 'share';
 
+// Settings is deliberately absent. It is a dialog over the current screen
+// rather than a place you go, and routing it meant opening it changed the URL
+// and closing it walked the history back — a second, invisible navigation for
+// what is one button.
 const screens = {
-  '#/settings': 'settings',
   '#/recordings': 'recordings',
   '#/share': 'share',
 } as const satisfies Record<string, Screen>;
@@ -28,6 +31,7 @@ export function useScreenRoute() {
             ? document.activeElement
             : null;
       location.hash = next === 'call' ? '#/' : '#/' + next;
+      history.replaceState({ ...history.state, bettercommsScreen: next }, '');
     },
     [screen],
   );

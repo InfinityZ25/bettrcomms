@@ -3,10 +3,12 @@ import { Avatar, initials } from '@/components/avatar';
 import { roomLabel } from '@/features/rooms/RoomNavigation';
 import type { Room, User } from '@/api';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
+import { SidebarTrigger } from '@/components/ui/sidebar';
 import type { Screen } from './useScreenRoute';
 
-const railButton =
-  'grid size-9 shrink-0 place-items-center rounded-xl text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground min-[481px]:size-11 min-[481px]:rounded-2xl';
+const railButton = 'size-10 rounded-2xl min-[481px]:size-11';
 
 /** The always-visible icon rail: spaces, friends, recordings and settings. */
 export default function SpacesRail({
@@ -21,6 +23,8 @@ export default function SpacesRail({
   onFriends,
   onRecordings,
   onSettings,
+  onHome,
+  settingsOpen,
 }: {
   user: User | null;
   rooms: Room[];
@@ -33,35 +37,54 @@ export default function SpacesRail({
   onFriends: () => void;
   onRecordings: () => void;
   onSettings: () => void;
+  onHome: () => void;
+  /** Settings is a dialog, so its button reads its own state, not the screen. */
+  settingsOpen: boolean;
 }) {
   return (
     <nav
       className={cn(
-        'flex w-[52px] shrink-0 flex-col items-center gap-3 bg-sidebar px-1.5 py-5 max-[480px]:gap-2 min-[481px]:w-[62px] min-[481px]:px-2 min-[1001px]:w-[76px] min-[1001px]:px-3 min-[1001px]:pt-6 min-[1001px]:pb-4',
+        'space-rail flex w-[54px] shrink-0 flex-col items-center gap-2 bg-sidebar px-1 py-3 min-[481px]:w-[62px] min-[481px]:px-2 min-[1001px]:w-[68px] min-[1001px]:py-4',
         collapsed && 'min-[821px]:w-[52px] min-[821px]:px-1',
         hidden && 'hidden',
       )}
       aria-label="Spaces"
       inert={screen === 'share'}
     >
-      <a
-        className="grid size-9 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground min-[481px]:size-11 min-[481px]:rounded-2xl [&_svg]:size-6 min-[481px]:[&_svg]:size-7"
-        href="/"
+      {/*
+        A button, not a link. An <a href="/"> is a real navigation: the browser
+        throws the document away and builds it again, which in the desktop shell
+        tears down the call, its media engine and every socket with it. Returning
+        to the call screen is a state change, and it is made as one.
+      */}
+      <Button
+        size="icon"
+        className={cn(railButton, 'shadow-lg shadow-primary/15')}
+        onClick={onHome}
         aria-label="Bettercomms home"
       >
         <AudioLines />
-      </a>
-      <div className="my-1 h-px w-6 bg-border" />
-      <button
-        className={cn(railButton, 'bg-accent font-bold text-accent-foreground hover:bg-accent/80')}
+      </Button>
+      <SidebarTrigger
+        className={cn(railButton, 'text-muted-foreground')}
+        aria-label="Toggle sidebar"
+        title="Toggle sidebar"
+      />
+      <Separator className="my-1 w-6" />
+      <Button
+        variant="ghost"
+        size="icon"
+        className={cn(railButton, 'bg-sidebar-accent text-sidebar-accent-foreground')}
         onClick={onFriends}
         aria-label="Friends"
       >
         <Users size={22} />
-      </button>
+      </Button>
       {rooms.slice(0, 5).map((candidate) => (
-        <button
+        <Button
           key={candidate.id}
+          variant="ghost"
+          size="icon"
           className={cn(
             railButton,
             'font-bold',
@@ -71,16 +94,20 @@ export default function SpacesRail({
           title={roomLabel(candidate)}
         >
           {initials(roomLabel(candidate))}
-        </button>
+        </Button>
       ))}
-      <button
-        className={cn(railButton, 'border border-dashed')}
+      <Button
+        variant="ghost"
+        size="icon"
+        className={cn(railButton, 'border border-dashed border-sidebar-border')}
         aria-label="Create a space"
         onClick={onCreateRoom}
       >
         <Plus />
-      </button>
-      <button
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
         className={cn(railButton, screen === 'recordings' && 'bg-accent text-accent-foreground')}
         aria-current={screen === 'recordings' ? 'page' : undefined}
         aria-label="Recordings"
@@ -88,16 +115,18 @@ export default function SpacesRail({
         onClick={onRecordings}
       >
         <Clapperboard size={21} />
-      </button>
+      </Button>
       <div className="mt-auto flex flex-col items-center gap-4">
-        <button
-          className={cn(railButton, screen === 'settings' && 'bg-accent text-accent-foreground')}
-          aria-current={screen === 'settings' ? 'page' : undefined}
+        <Button
+          variant="ghost"
+          size="icon"
+          className={cn(railButton, settingsOpen && 'bg-accent text-accent-foreground')}
+          aria-expanded={settingsOpen}
           aria-label="Audio and video settings"
           onClick={onSettings}
         >
           <Settings2 size={21} />
-        </button>
+        </Button>
         {user ? (
           <Avatar name={user.name} />
         ) : (

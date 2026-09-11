@@ -1,7 +1,8 @@
 import type { FormEvent } from 'react';
 import { ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { signInWithWorkOS } from './useSession';
+import { Input } from '@/components/ui/input';
+import type { DesktopSignInStatus } from '@/desktop';
 
 /** Shown below the call stage until someone signs in. */
 export default function SignInPanel({
@@ -12,6 +13,9 @@ export default function SignInPanel({
   onNameChange,
   onEmailChange,
   onDevSignIn,
+  onSignIn,
+  onCancelSignIn,
+  signInStatus,
 }: {
   devAuth: boolean;
   busy: boolean;
@@ -20,7 +24,12 @@ export default function SignInPanel({
   onNameChange: (value: string) => void;
   onEmailChange: (value: string) => void;
   onDevSignIn: (event: FormEvent) => void;
+  onSignIn: () => void;
+  onCancelSignIn: () => void;
+  /** Set only on a host that signs in through the system browser. */
+  signInStatus: DesktopSignInStatus | null;
 }) {
+  const waiting = signInStatus?.state === 'waiting';
   return (
     <div
       id="signin"
@@ -32,9 +41,36 @@ export default function SignInPanel({
           Sign in securely to create rooms and invite your friends.
         </p>
       </div>
-      <Button onClick={signInWithWorkOS}>
-        Continue with WorkOS <ArrowRight size={17} />
-      </Button>
+      {waiting ? (
+        <div
+          className="flex flex-col gap-1.5 min-[821px]:items-end"
+          role="status"
+          aria-live="polite"
+        >
+          <span className="text-xs text-muted-foreground">
+            {signInStatus.detail}
+          </span>
+          {signInStatus.code && (
+            <strong className="font-mono text-lg tracking-[0.18em]">
+              {signInStatus.code}
+            </strong>
+          )}
+          <Button variant="secondary" onClick={onCancelSignIn}>
+            Cancel sign-in
+          </Button>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-1.5 min-[821px]:items-end">
+          <Button onClick={onSignIn}>
+            Continue with WorkOS <ArrowRight size={17} />
+          </Button>
+          {signInStatus?.state === 'failed' && (
+            <span className="text-xs text-destructive" role="alert">
+              {signInStatus.detail}
+            </span>
+          )}
+        </div>
+      )}
       {devAuth && (
         <form
           className="grid w-full grid-cols-1 items-center gap-2.5 pb-2.5 min-[821px]:flex min-[821px]:flex-wrap"
@@ -43,7 +79,7 @@ export default function SignInPanel({
           <span className="my-1 text-[0.65rem] text-muted-foreground min-[821px]:my-0 min-[821px]:shrink-0">
             Local development
           </span>
-          <input
+          <Input
             className="min-w-20 min-[821px]:flex-1"
             aria-label="Your name"
             placeholder="Your name"
@@ -51,7 +87,7 @@ export default function SignInPanel({
             onChange={(event) => onNameChange(event.target.value)}
             required
           />
-          <input
+          <Input
             className="min-w-20 min-[821px]:flex-1"
             aria-label="Your email"
             type="email"

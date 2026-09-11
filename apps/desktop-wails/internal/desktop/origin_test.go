@@ -91,3 +91,80 @@ func TestResolveAPIOriginReportsMissingValue(t *testing.T) {
 		t.Errorf("got %v, want ErrMissingAPIOrigin", err)
 	}
 }
+
+// The trusted set is what stops a webview that has navigated to an identity
+// provider from reaching a native command. It must be small and exact.
+func TestTrustedAppOriginAcceptsOnlyThisApplication(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		url        string
+		production bool
+		want       string
+	}{
+		{"the pinned hosted origin", ReleaseOrigin + "/rooms/1", false, ReleaseOrigin},
+		{"the Wails asset scheme", "wails://wails/index.html", false, "wails://wails"},
+		{"the WebView2 virtual host", "http://wails.localhost/", false, "http://wails.localhost"},
+		{"the virtual host over https", "https://wails.localhost/index.html", false, "https://wails.localhost"},
+		{"the dev server in development", "http://localhost:5173/", true, "http://localhost:5173"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := TrustedAppOrigin(test.url, test.production)
+			if err != nil {
+				t.Fatalf("TrustedAppOrigin(%q): %v", test.url, err)
+			}
+			if got != test.want {
+				t.Errorf("origin = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestTrustedAppOriginRejectsEverythingElse(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		url         string
+		development bool
+	}{
+		{"an identity provider", "https://api.workos.com/sso/authorize", false},
+		{"a lookalike host", "https://wails.localhost.example.com/", false},
+		{"a subdomain of the virtual host", "http://evil.wails.localhost/", false},
+		{"the virtual host on a port", "http://wails.localhost:8080/", false},
+		{"the hosted origin over http", "http://bettrcomms-production.up.railway.app/", false},
+		{"the hosted host on another port", "https://bettrcomms-production.up.railway.app:8443/", false},
+		{"the dev server in a release build", "http://localhost:5173/", false},
+		{"another localhost port in development", "http://localhost:3000/", true},
+		{"a file URL", "file:///C:/Windows/System32/", true},
+		{"a data URL", "data:text/html,<script>fetch('/api')</script>", true},
+		{"a relative URL", "/rooms/1", true},
+		{"nothing", "", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := TrustedAppOrigin(test.url, test.development); err == nil {
+				t.Errorf("TrustedAppOrigin(%q) was accepted", test.url)
+			}
+		})
+	}
+}
+
+// The origin the policy returns is what a permission record would be keyed on,
+// so it must carry the port and drop everything below the authority.
+func TestTrustedAppOriginReturnsABareOrigin(t *testing.T) {
+	got, err := TrustedAppOrigin("http://localhost:5173/rooms/7?join=1#top", true)
+	if err != nil {
+		t.Fatalf("TrustedAppOrigin: %v", err)
+	}
+	if got != "http://localhost:5173" {
+		t.Errorf("origin = %q, want the bare origin with its port", got)
+	}
+}
+
+// The hosted origin here and the one the Rust host pins must stay identical, or
+// the two hosts would trust different deployments.
+func TestTheHostedOriginIsTheOneBothHostsPin(t *testing.T) {
+	if ReleaseOrigin != "https://bettrcomms-production.up.railway.app" {
+		t.Errorf("ReleaseOrigin = %q; it must stay byte-identical to the Rust host's RELEASE_ORIGIN", ReleaseOrigin)
+	}
+	if _, err := TrustedAppOrigin(ReleaseOrigin, false); err != nil {
+		t.Errorf("the pinned origin is not trusted by its own policy: %v", err)
+	}
+}

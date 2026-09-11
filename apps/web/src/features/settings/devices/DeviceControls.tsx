@@ -1,4 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react';
+import { SettingsSelect, SettingsSlider } from '../SettingsControls';
 
 export type DeviceOption = { id: string; label: string };
 
@@ -17,14 +18,10 @@ export function DeviceSelect({
   return (
     <label>
       {label}
-      <select value={value} onChange={(event) => onChange(event.target.value)}>
-        <option value="">System default</option>
-        {options.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+      <SettingsSelect ariaLabel={label} value={value} onValueChange={onChange} options={[
+        { value: '', label: 'System default' },
+        ...options.map((option) => ({ value: option.id, label: option.label })),
+      ]} />
     </label>
   );
 }
@@ -45,16 +42,7 @@ export function VolumeSlider({
       <span>
         {label} <output>{percent}%</output>
       </span>
-      <input
-        aria-label={label}
-        aria-valuetext={`${percent} percent`}
-        type="range"
-        min="0"
-        max="2"
-        step="0.01"
-        value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
-      />
+      <SettingsSlider ariaLabel={label} value={value} min={0} max={2} step={0.01} onValueChange={onChange} />
     </label>
   );
 }

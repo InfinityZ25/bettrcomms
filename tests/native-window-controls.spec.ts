@@ -24,17 +24,21 @@ for (const mode of ['native-frame', 'native-overlay'] as const) {
       const { default: React } = await import('/node_modules/.vite/deps/react.js');
       const { default: ReactDOM } = await import('/node_modules/.vite/deps/react-dom_client.js');
       const { default: Frame } = await import('/src/features/shell/DesktopFrame.tsx');
+      const { SidebarProvider } = await import('/src/components/ui/sidebar.tsx');
       const fixture = document.createElement('div');
       document.body.replaceChildren(fixture);
       host.__captionRoot = ReactDOM.createRoot(fixture);
-      host.__captionRoot.render(React.createElement(Frame, null,
-        React.createElement('main', { 'data-testid': 'content' }, 'Client content')));
+      host.__captionRoot.render(React.createElement(SidebarProvider, null,
+        React.createElement(Frame, null,
+          React.createElement('main', { 'data-testid': 'content' }, 'Client content'))));
     }, mode);
     await expect(page.getByTestId('content')).toBeVisible();
     await expect(page.locator('[data-desktop-frame]')).toHaveCount(mode === 'native-overlay' ? 1 : 0);
     if (mode === 'native-overlay') {
       await expect(page.locator('.better-window-titlebar')).toBeVisible();
       await expect(page.getByText('BetterComms', { exact: true })).toHaveCount(1);
+      await expect(page.getByRole('button', { name: 'Go back' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Go forward' })).toBeVisible();
     }
     await expect(page.getByRole('button', { name: /window$/ })).toHaveCount(0);
     await expect.poll(() => page.evaluate(() => (window as any).__captionEvents.length)).toBeGreaterThan(0);

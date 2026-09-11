@@ -4,6 +4,10 @@ import { api, type Message, type Room, type User } from './api';
 import { useSession } from '@/features/auth/useSession';
 import SignInPanel from '@/features/auth/SignInPanel';
 import CallStage, { type NativeShareActions } from '@/features/call/CallStage';
+import {
+  CallSessionProvider,
+  type CallChrome,
+} from '@/features/call/CallSessionContext';
 import { useCallPresence } from '@/features/call/useCallPresence';
 import ChatPanel from '@/features/chat/ChatPanel';
 import { useRoomMessages } from '@/features/chat/useRoomMessages';
@@ -12,7 +16,7 @@ import RecordingsLibrary from '@/features/recordings/RecordingsLibrary';
 import CreateRoomDialog from '@/features/rooms/CreateRoomDialog';
 import RoomSettings from '@/features/rooms/RoomSettings';
 import { useRooms } from '@/features/rooms/useRooms';
-import SettingsScreen from '@/features/settings/SettingsScreen';
+import { SettingsDialog } from '@/components/settings-dialog';
 import { useCallPreferences } from '@/features/settings/useCallPreferences';
 import NativeScreenPicker from '@/features/sharing/NativeScreenPicker';
 import ErrorToast from '@/features/shell/ErrorToast';
@@ -24,13 +28,13 @@ import WorkspaceScreen from '@/features/shell/WorkspaceScreen';
 import { readScreen, useScreenRoute } from '@/features/shell/useScreenRoute';
 import { useAsyncAction } from '@/hooks/useAsyncAction';
 import { cn } from '@/lib/utils';
-
-const emptyCall: never[] = [];
+import { AnimatePresence, motion } from 'motion/react';
+import { softSpring } from '@/lib/motion';
 
 export default function App() {
   const [error, setError] = useState('');
   const { busy, run } = useAsyncAction(setError);
-  const { user, setUser, devAuth, loading, unwrap } = useSession();
+  const { user, setUser, devAuth, loading, unwrap, signIn } = useSession();
   const presence = useCallPresence(user?.id);
   const { screen, setScreen, navigate } = useScreenRoute();
   const preferences = useCallPreferences();
@@ -53,13 +57,16 @@ export default function App() {
   const [friendsOpen, setFriendsOpen] = useState(false);
   const [roomSettingsOpen, setRoomSettingsOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(window.innerWidth > 820);
-  const [callJoined, setCallJoined] = useState(false);
-  const [callRoom, setCallRoom] = useState<Room | null>(null);
+  // Chrome only. The call itself is owned by CallSessionProvider below, which
+  // outlives every screen; this is what the shell lays itself out against.
+  const [call, setCall] = useState<CallChrome>({ joined: false, room: null });
+  const callJoined = call.joined;
   const [callFocused, setCallFocused] = useState(false);
   const [shareActions, setShareActions] = useState<NativeShareActions | null>(null);
   const shareActionsRef = useRef<NativeShareActions | null>(null);
 
-  const openSettings = () => navigate('settings');
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const openSettings = () => setSettingsOpen(true);
   const openRecordings = () => navigate('recordings');
   const backToCall = () => navigate('call');
   const selectRoom = (next: Room) => {
@@ -139,7 +146,6 @@ export default function App() {
       backToCall();
     });
 
-  const activeRoom = callJoined ? callRoom : room;
   const immersive = callJoined && callFocused && screen === 'call';
 
   if (loading)
@@ -151,47 +157,39 @@ export default function App() {
     );
 
   return (
-    <div
-      data-app-shell
-      data-in-call={callJoined}
-      data-call-focused={immersive}
-      className="flex h-dvh min-h-[600px] overflow-hidden min-[821px]:min-h-[680px] select-none"
+    <CallSessionProvider
+      user={user}
+      browsingRoom={room}
+      noise={preferences.noise}
+      presenceByRoom={presence.rooms}
+      presenceKnown={presence.known}
+      onError={setError}
+      onCallChange={setCall}
+      onRequestShare={(actions) => {
+        if (document.fullscreenElement) void document.exitFullscreen();
+        shareActionsRef.current = actions;
+        setShareActions(actions);
+        navigate('share');
+      }}
     >
-      <SpacesRail
-        user={user}
-        rooms={rooms}
-        room={room}
-        screen={screen}
-        collapsed={callJoined}
-        hidden={immersive}
-        onSelectRoom={selectRoom}
-        onCreateRoom={() => setCreateOpen(true)}
-        onFriends={() => setFriendsOpen(true)}
-        onRecordings={openRecordings}
-        onSettings={openSettings}
-      />
-      <RoomSidebar
-        user={user}
-        rooms={rooms}
-        room={room}
-        presence={presence.rooms}
-        presenceKnown={presence.known}
-        screen={screen}
-        hiddenInCall={callJoined}
-        hidden={immersive}
-        onSelectRoom={selectRoom}
-        onCreateRoom={() => setCreateOpen(true)}
-        onFriends={() => setFriendsOpen(true)}
-        onSettings={openSettings}
-      />
+      <div
+        data-app-shell
+        data-in-call={callJoined}
+        data-call-focused={immersive}
+        className="app-shell flex h-dvh min-h-[600px] gap-1.5 overflow-hidden bg-sidebar p-2 min-[821px]:min-h-[680px] select-none"
+      >
+      <div className="relative min-w-0 flex-1 overflow-hidden">
       <main
-        className={cn('min-w-0 flex-1 flex-col', screen === 'call' ? 'flex' : 'hidden')}
+        className={cn(
+          'content-canvas absolute inset-0 min-w-0 flex-col overflow-hidden rounded-3xl border border-border/60 bg-background shadow-[0_20px_60px_rgb(0_0_0/0.16)]',
+          screen === 'call' ? 'flex' : 'hidden',
+        )}
         aria-label="Call"
         hidden={screen !== 'call'}
       >
         <RoomHeader
           room={room}
-          callRoom={callJoined ? callRoom : null}
+          callRoom={call.room}
           chatOpen={chatOpen}
           compact={callJoined}
           hidden={callJoined && callFocused}
@@ -219,30 +217,14 @@ export default function App() {
             )}
             <CallStage
               user={user}
-              room={activeRoom}
               layout={preferences.layout}
               onLayout={preferences.setLayout}
-              onJoinedChange={(joined) => {
-                setCallJoined(joined);
-                setCallRoom((current) => (joined ? (current ?? room) : null));
-              }}
               focused={callFocused}
               onFocus={() => setCallFocused((value) => !value)}
-              noise={preferences.noise}
               balanced={preferences.balanced}
-              callPresence={
-                activeRoom ? (presence.rooms[activeRoom.id] ?? emptyCall) : emptyCall
-              }
-              presenceKnown={presence.known}
               onError={setError}
               onInvite={() => setFriendsOpen(true)}
               onRecordings={openRecordings}
-              onRequestShare={(actions) => {
-                if (document.fullscreenElement) void document.exitFullscreen();
-                shareActionsRef.current = actions;
-                setShareActions(actions);
-                navigate('share');
-              }}
             />
             {!user && (
               <SignInPanel
@@ -253,51 +235,50 @@ export default function App() {
                 onNameChange={setName}
                 onEmailChange={setEmail}
                 onDevSignIn={devSignIn}
+                onSignIn={signIn.start}
+                onCancelSignIn={signIn.cancel}
+                signInStatus={signIn.status}
               />
             )}
           </section>
-          {chatOpen && (
-            <ChatPanel
-              messages={messages}
-              endRef={endRef}
-              draft={draft}
-              onDraftChange={setDraft}
-              onSubmit={send}
-              onClose={() => setChatOpen(false)}
-              canSend={Boolean(user && room)}
-              busy={busy}
-              hidden={callJoined && callFocused}
-            />
-          )}
+          <AnimatePresence initial={false}>
+            {chatOpen && (
+              <ChatPanel
+                messages={messages}
+                endRef={endRef}
+                draft={draft}
+                onDraftChange={setDraft}
+                onSubmit={send}
+                onClose={() => setChatOpen(false)}
+                canSend={Boolean(user && room)}
+                busy={busy}
+                hidden={callJoined && callFocused}
+              />
+            )}
+          </AnimatePresence>
         </div>
       </main>
-      {screen === 'recordings' && (
-        <WorkspaceScreen
-          title="Recordings"
-          description="Your moments, with every voice in your control."
-          onBack={backToCall}
-        >
-          <RecordingsLibrary />
-        </WorkspaceScreen>
-      )}
-      {screen === 'settings' && (
-        <WorkspaceScreen
-          title="Settings"
-          description="Make it sound like you. Your preferences stay on this device."
-          onBack={backToCall}
-        >
-          <SettingsScreen
-            noise={preferences.noise}
-            onNoiseChange={preferences.setNoise}
-            balanced={preferences.balanced}
-            onBalancedChange={preferences.setBalanced}
-            layout={preferences.layout}
-            onLayoutChange={preferences.setLayout}
-            signedIn={Boolean(user)}
-            onSignOut={signOut}
-          />
-        </WorkspaceScreen>
-      )}
+      <AnimatePresence mode="wait" initial={false}>
+        {screen === 'recordings' && (
+          <motion.div key="recordings" className="absolute inset-0 flex min-w-0" initial={{ opacity: 0, x: 14 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} transition={softSpring}>
+            <WorkspaceScreen title="Recordings" description="Watch, listen and export your saved calls.">
+              <RecordingsLibrary />
+            </WorkspaceScreen>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <SettingsDialog
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        noise={preferences.noise}
+        onNoiseChange={preferences.setNoise}
+        balanced={preferences.balanced}
+        onBalancedChange={preferences.setBalanced}
+        layout={preferences.layout}
+        onLayoutChange={preferences.setLayout}
+        signedIn={Boolean(user)}
+        onSignOut={signOut}
+      />
       {screen === 'share' && shareActions && (
         <NativeScreenPicker
           onShare={async (options) => {
@@ -315,7 +296,44 @@ export default function App() {
           onClose={backToCall}
         />
       )}
-      {error && <ErrorToast message={error} onDismiss={() => setError('')} />}
+      </div>
+      {/*
+        The navigation lives on the right. It comes after the content in the DOM
+        as well as on screen, so tabbing through the window follows what is
+        visible and anything reading the page in order reaches the call first.
+      */}
+      <RoomSidebar
+        user={user}
+        rooms={rooms}
+        room={room}
+        presence={presence.rooms}
+        presenceKnown={presence.known}
+        screen={screen}
+        hiddenInCall={callJoined}
+        hidden={immersive}
+        onSelectRoom={selectRoom}
+        onCreateRoom={() => setCreateOpen(true)}
+        onFriends={() => setFriendsOpen(true)}
+        onSettings={openSettings}
+      />
+      <SpacesRail
+        user={user}
+        rooms={rooms}
+        room={room}
+        screen={screen}
+        collapsed={callJoined}
+        hidden={immersive}
+        onSelectRoom={selectRoom}
+        onCreateRoom={() => setCreateOpen(true)}
+        onFriends={() => setFriendsOpen(true)}
+        onRecordings={openRecordings}
+        onSettings={openSettings}
+        onHome={backToCall}
+        settingsOpen={settingsOpen}
+      />
+      <AnimatePresence>
+        {error && <ErrorToast message={error} onDismiss={() => setError('')} />}
+      </AnimatePresence>
       <RoomSettings
         room={room}
         user={user}
@@ -346,7 +364,9 @@ export default function App() {
         refreshRevision={presence.friendsRevision + presence.syncRevision}
         onError={setError}
         onOpenRoom={openRoom}
+        onSignIn={signIn.start}
       />
-    </div>
+      </div>
+    </CallSessionProvider>
   );
 }

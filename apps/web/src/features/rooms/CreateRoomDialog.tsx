@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Dialog } from '@/components/ui/dialog';
+import { AppDialog } from '@/components/app-dialog';
+import { Input } from '@/components/ui/input';
 import { api, type Room } from '@/api';
 
 export default function CreateRoomDialog({
@@ -21,7 +22,7 @@ export default function CreateRoomDialog({
 }) {
   const [name, setName] = useState('');
   return (
-    <Dialog
+    <AppDialog
       open={open}
       onOpenChange={onOpenChange}
       title="Make a little room"
@@ -41,7 +42,7 @@ export default function CreateRoomDialog({
       >
         <label className="block text-xs font-medium text-foreground/80">
           Room name
-          <input
+          <Input
             className="mt-2"
             autoFocus
             value={name}
@@ -56,6 +57,6 @@ export default function CreateRoomDialog({
           Create room <ArrowRight size={16} />
         </Button>
       </form>
-    </Dialog>
+    </AppDialog>
   );
 }

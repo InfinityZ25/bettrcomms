@@ -1,4 +1,5 @@
 import type { MediaSignal, SignalingAdapter } from "./types";
+import { apiSocketUrl } from '@/desktop/apiTransport';
 
 export type RoomSocketEventMap = {
   peers: CustomEvent<{ peerIds: string[]; identities: Record<string, { userId: string; name?: string }> }>;
@@ -278,9 +279,9 @@ export class RoomWebSocketSignaling extends EventTarget implements SignalingAdap
 }
 
 function toWebSocketUrl(value: string): string {
-  const url = new URL(value, window.location.href);
-  if (url.protocol === "http:") url.protocol = "ws:";
-  if (url.protocol === "https:") url.protocol = "wss:";
-  if (url.protocol !== "ws:" && url.protocol !== "wss:") throw new TypeError("Signaling URL must use http(s) or ws(s)");
-  return url.href;
+  try {
+    return apiSocketUrl(value);
+  } catch {
+    throw new TypeError("Signaling URL must use http(s) or ws(s)");
+  }
 }

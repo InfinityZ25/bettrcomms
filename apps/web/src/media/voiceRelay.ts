@@ -1,4 +1,5 @@
 import { createVoiceDecoder, createVoiceEncoder } from './voiceCodec';
+import { apiSocketUrl } from '@/desktop/apiTransport';
 import {
   createVoiceKeyPair,
   VoiceCryptoSession,
@@ -455,14 +456,12 @@ export class VoiceRelay {
   private ensureSocket(): void {
     if (this.disposed || this.socket) return;
     const generation = ++this.socketGeneration;
-    const relayUrl = new URL(
-      this.options.url,
-      globalThis.location?.href ?? 'https://localhost',
-    );
-    if (relayUrl.protocol === 'http:') relayUrl.protocol = 'ws:';
-    if (relayUrl.protocol === 'https:') relayUrl.protocol = 'wss:';
-    if (!['ws:', 'wss:'].includes(relayUrl.protocol))
+    let relayUrl: string;
+    try {
+      relayUrl = apiSocketUrl(this.options.url);
+    } catch {
       throw new Error('Voice relay URL must use WebSocket transport');
+    }
     const socket = new WebSocket(relayUrl);
     const connectTimeout = globalThis.setTimeout(() => {
       if (

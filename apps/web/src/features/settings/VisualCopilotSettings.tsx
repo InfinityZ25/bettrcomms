@@ -1,7 +1,10 @@
 import { useState } from 'react';
+import { Switch } from '@/components/ui/switch';
 import { readTalkSettings } from '@/media/pushToTalk';
 import { readCopilotSettings, writeCopilotSettings, type CopilotSettings } from '@/media/visualCopilot';
 import { useMountEffect } from '@/hooks/useMountEffect';
+import { SettingRow } from './SettingRow';
+import { SettingsSelect } from './SettingsControls';
 import '@/features/call/VisualCopilot.css';
 
 export function useCopilotSettings() {
@@ -10,7 +13,10 @@ export function useCopilotSettings() {
     const update = () => setSettings(readCopilotSettings());
     window.addEventListener('bc-visual-copilot', update);
     window.addEventListener('storage', update);
-    return () => { window.removeEventListener('bc-visual-copilot', update); window.removeEventListener('storage', update); };
+    return () => {
+      window.removeEventListener('bc-visual-copilot', update);
+      window.removeEventListener('storage', update);
+    };
   });
   return settings;
 }
@@ -22,29 +28,37 @@ export default function VisualCopilotSettings() {
     try {
       const next = { ...settings, ...patch };
       const talk = readTalkSettings();
-      if (next.pingKey && next.pingKey === next.snapshotKey) throw new Error('Choose different shortcuts for each action.');
-      if (talk.enabled && talk.binding.kind === 'keyboard' && [next.pingKey, next.snapshotKey].includes(talk.binding.code)) throw new Error('That shortcut is assigned to push-to-talk.');
-      writeCopilotSettings(next); setError('');
-    } catch (e) { setError(e instanceof Error ? e.message : 'Could not save preferences.'); }
+      if (next.pingKey && next.pingKey === next.snapshotKey) throw new Error('Choose a different shortcut for each action.');
+      if (talk.enabled && talk.binding.kind === 'keyboard' && [next.pingKey, next.snapshotKey].includes(talk.binding.code)) throw new Error('That shortcut is already used for push-to-talk.');
+      writeCopilotSettings(next);
+      setError('');
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not save this setting.');
+    }
   }
-  return <section className="copilot-settings device-settings__card" aria-label="Visual copilot settings">
-    <h3>Visual copilot</h3>
-    <label><input type="checkbox" checked={settings.enabled} onChange={e => save({ enabled: e.target.checked })} /> Enable visual copilot on this device</label>
-    <p>Let friends point at your stream or send a marked frame. Choose who is allowed each time you share.</p>
-    <div className="copilot-settings-toggles">
-      <label><input type="checkbox" checked={settings.showPings} onChange={e => save({ showPings: e.target.checked })} /> Receive quick signals</label>
-      <label><input type="checkbox" checked={settings.showCards} onChange={e => save({ showCards: e.target.checked })} /> Receive marked captures</label>
-      <label><input type="checkbox" checked={settings.animate} onChange={e => save({ animate: e.target.checked })} /> Animate signals</label>
-    </div>
-    <div className="copilot-settings-grid">
-      <label>Signal duration<select value={settings.duration} onChange={e => save({ duration: +e.target.value })}>{[1, 2, 4].map(n => <option key={n} value={n}>{n} seconds</option>)}</select></label>
-      <label>Signal size<select value={settings.size} onChange={e => save({ size: +e.target.value })}>{[24, 40, 56].map((n, i) => <option key={n} value={n}>{['Small', 'Medium', 'Large'][i]}</option>)}</select></label>
-      <label>Capture corner<select value={settings.corner} onChange={e => save({ corner: e.target.value as CopilotSettings['corner'] })}>{(['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const).map(c => <option key={c} value={c}>{c.replace('-', ' ')}</option>)}</select></label>
-      <label>Capture size<select value={settings.cardWidth} onChange={e => save({ cardWidth: +e.target.value })}>{[240, 320, 400].map((n, i) => <option key={n} value={n}>{['Small', 'Medium', 'Large'][i]}</option>)}</select></label>
-      <label>Close captures<select value={settings.cardSeconds} onChange={e => save({ cardSeconds: +e.target.value })}>{[5, 15, 30].map(n => <option key={n} value={n}>After {n} seconds</option>)}<option value={0}>Manually (maximum 1 minute)</option></select></label>
-      {(['pingKey', 'snapshotKey'] as const).map(key => <label key={key}>{key === 'pingKey' ? 'Point shortcut' : 'Freeze shortcut'}<select value={settings[key]} onChange={e => save({ [key]: e.target.value })}><option value="">None</option>{['KeyP', 'KeyG', 'KeyJ', 'KeyK', 'F6', 'F7', 'F8', 'F9'].map(code => <option key={code} value={code}>{code.replace('Key', '')}</option>)}</select></label>)}
-    </div>
-    <p>Shortcuts work while the shared video is focused. Typing and push-to-talk take priority. Windows overlays require native sharing; browsers show indications inside BetterComms.</p>
-    {error && <p role="alert">{error}</p>}
-  </section>;
+  const sizes = [{ value: 24, label: 'Small' }, { value: 40, label: 'Medium' }, { value: 56, label: 'Large' }];
+  const cardSizes = [{ value: 240, label: 'Small' }, { value: 320, label: 'Medium' }, { value: 400, label: 'Large' }];
+  const shortcuts = [{ value: '', label: 'None' }, ...['KeyP', 'KeyG', 'KeyJ', 'KeyK', 'F6', 'F7', 'F8', 'F9'].map((value) => ({ value, label: value.replace('Key', '') }))];
+
+  return (
+    <section className="copilot-settings device-settings__card" aria-label="Visual copilot settings">
+      <h3>Shared-screen reactions</h3>
+      <SettingRow as="div" title="Allow reactions" description="Let friends point something out while you share." control={<Switch aria-label="Enable visual copilot on this device" checked={settings.enabled} onCheckedChange={(enabled) => save({ enabled })} />} />
+      <div className="copilot-settings-toggles">
+        <SettingRow as="div" title="Pointers" description="Show quick signals." control={<Switch aria-label="Receive quick signals" checked={settings.showPings} onCheckedChange={(showPings) => save({ showPings })} />} />
+        <SettingRow as="div" title="Marked captures" description="Show frames your friends mark up." control={<Switch aria-label="Receive marked captures" checked={settings.showCards} onCheckedChange={(showCards) => save({ showCards })} />} />
+        <SettingRow as="div" title="Motion" description="Animate incoming signals." control={<Switch aria-label="Animate signals" checked={settings.animate} onCheckedChange={(animate) => save({ animate })} />} />
+      </div>
+      <div className="copilot-settings-grid">
+        <label>Signal duration<SettingsSelect ariaLabel="Signal duration" value={settings.duration} onValueChange={(value) => save({ duration: Number(value) })} options={[1, 2, 4].map((value) => ({ value, label: `${value} second${value === 1 ? '' : 's'}` }))} /></label>
+        <label>Signal size<SettingsSelect ariaLabel="Signal size" value={settings.size} onValueChange={(value) => save({ size: Number(value) })} options={sizes} /></label>
+        <label>Capture corner<SettingsSelect ariaLabel="Capture corner" value={settings.corner} onValueChange={(corner) => save({ corner: corner as CopilotSettings['corner'] })} options={[{ value: 'top-left', label: 'Top left' }, { value: 'top-right', label: 'Top right' }, { value: 'bottom-left', label: 'Bottom left' }, { value: 'bottom-right', label: 'Bottom right' }]} /></label>
+        <label>Capture size<SettingsSelect ariaLabel="Capture size" value={settings.cardWidth} onValueChange={(value) => save({ cardWidth: Number(value) })} options={cardSizes} /></label>
+        <label>Close captures<SettingsSelect ariaLabel="Close captures" value={settings.cardSeconds} onValueChange={(value) => save({ cardSeconds: Number(value) })} options={[{ value: 5, label: 'After 5 seconds' }, { value: 15, label: 'After 15 seconds' }, { value: 30, label: 'After 30 seconds' }, { value: 0, label: 'Manually' }]} /></label>
+        <label>Point shortcut<SettingsSelect ariaLabel="Point shortcut" value={settings.pingKey} onValueChange={(pingKey) => save({ pingKey })} options={shortcuts} /></label>
+        <label>Capture shortcut<SettingsSelect ariaLabel="Freeze shortcut" value={settings.snapshotKey} onValueChange={(snapshotKey) => save({ snapshotKey })} options={shortcuts} /></label>
+      </div>
+      {error && <p role="alert">{error}</p>}
+    </section>
+  );
 }

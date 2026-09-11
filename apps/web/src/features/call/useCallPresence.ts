@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { CallParticipant, Message } from '@/api';
+import { apiSocketUrl } from '@/desktop/apiTransport';
 
 type RoomPresence = { room_id: string; participants: CallParticipant[] };
 type RealtimeMessage = { sequence: number; value: Message };
@@ -46,12 +47,14 @@ export function useCallPresence(userId?: string) {
 
     const connect = () => {
       if (stopped) return;
-      const url = new URL('/api/v1/events', window.location.href);
-      if (url.protocol === 'http:') url.protocol = 'ws:';
-      if (url.protocol === 'https:') url.protocol = 'wss:';
-      if (url.protocol !== 'ws:' && url.protocol !== 'wss:') return;
+      let href: string;
+      try {
+        href = apiSocketUrl('/api/v1/events');
+      } catch {
+        return;
+      }
 
-      const current = new WebSocket(url.href);
+      const current = new WebSocket(href);
       socket = current;
       current.onopen = () => {
         if (stopped || socket !== current) return;

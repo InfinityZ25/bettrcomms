@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { SlidersHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
+import { SettingsSelect, SettingsSlider } from './SettingsControls';
 import {
   readProcessingSettings,
   saveProcessingSettings,
@@ -39,15 +41,7 @@ export default function ProcessingControls({ engine }: { engine: string }) {
           {unit}
         </output>
       </span>
-      <input
-        aria-label={label}
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={draft[key]}
-        onChange={(e) => update({ [key]: Number(e.target.value) })}
-      />
+      <SettingsSlider ariaLabel={label} value={draft[key]} min={min} max={max} step={step} onValueChange={(value) => update({ [key]: value })} />
     </label>
   );
   return (
@@ -59,24 +53,13 @@ export default function ProcessingControls({ engine }: { engine: string }) {
         <SlidersHorizontal size={17} /> Fine-tune your microphone
       </h3>
       {engine === 'rnnoise' && (
-        <p>
-          RNNoise automatically identifies noise and has no built-in strength
-          setting. The optional gate below silences quiet sounds after RNNoise;
-          it does not change the model.
-        </p>
+        <p>Enhanced noise removal adjusts itself automatically.</p>
       )}
       {engine === 'speex' && (
-        <p>
-          SpeexDSP provides lightweight noise suppression. Its Web Audio
-          processor does not expose a suppression-strength setting; the optional
-          filters below run after Speex.
-        </p>
+        <p>A lighter option for older devices.</p>
       )}
       {engine === 'standard' && (
-        <p>
-          Your browser handles noise suppression. It exposes echo cancellation
-          and automatic gain, but no suppression-strength slider.
-        </p>
+        <p>Uses your system's built-in microphone cleanup.</p>
       )}
       {engine === 'nvidia' && (
         <div className="processing-engine">
@@ -88,7 +71,7 @@ export default function ProcessingControls({ engine }: { engine: string }) {
             0.05,
             '%',
           )}
-          <label className="switch-row">
+          <div className="switch-row">
             <div>
               <strong>Speech-only filtering (VAD)</strong>
               <p>
@@ -96,12 +79,12 @@ export default function ProcessingControls({ engine }: { engine: string }) {
                 speech.
               </p>
             </div>
-            <input
-              type="checkbox"
+            <Switch
+              aria-label="Speech-only filtering (VAD)"
               checked={draft.nvidiaVad}
-              onChange={(e) => update({ nvidiaVad: e.target.checked })}
+              onCheckedChange={(nvidiaVad) => update({ nvidiaVad })}
             />
-          </label>
+          </div>
         </div>
       )}
       {(engine === 'deepfilter' || engine === 'deepfilter-wasm') && (
@@ -114,56 +97,47 @@ export default function ProcessingControls({ engine }: { engine: string }) {
             1,
             ' dB',
           )}
-          <p>
-            Limits the most noise DeepFilterNet3 may remove. 100 dB applies the
-            model's maximum suppression. The WebAssembly engine uses SIMD and
-            falls back to RNNoise if it cannot start.
-          </p>
+          <p>Sets how much background sound can be removed.</p>
         </div>
       )}
       <details className="processing-advanced">
         <summary>Advanced audio controls</summary>
       <div className="processing-options">
-        <label className="switch-row">
+        <div className="switch-row">
           <div>
             <strong>Echo cancellation</strong>
             <p>Reduce speaker audio picked up by your microphone.</p>
           </div>
-          <input
-            type="checkbox"
+          <Switch
+            aria-label="Echo cancellation"
             checked={draft.echoCancellation}
-            onChange={(e) => update({ echoCancellation: e.target.checked })}
+            onCheckedChange={(echoCancellation) => update({ echoCancellation })}
           />
-        </label>
-        <label className="switch-row">
+        </div>
+        <div className="switch-row">
           <div>
             <strong>Automatic microphone gain</strong>
             <p>Let the capture backend automatically level changing speech. This is separate from Input volume.</p>
           </div>
-          <input
-            type="checkbox"
+          <Switch
+            aria-label="Automatic microphone gain"
             checked={draft.autoGainControl}
-            onChange={(e) => update({ autoGainControl: e.target.checked })}
+            onCheckedChange={(autoGainControl) => update({ autoGainControl })}
           />
-        </label>
+        </div>
       </div>
       <div className="processing-options">
         <label>
           Low-cut filter
-          <select
+          <SettingsSelect
+            ariaLabel="Low-cut filter"
             value={draft.highPassHz}
-            onChange={(e) => update({ highPassHz: Number(e.target.value) })}
-          >
-            <option value={0}>Off · preserve full range</option>
-            {[60, 80, 100, 120, 160].map((hz) => (
-              <option value={hz} key={hz}>
-                {hz} Hz · reduce low rumble
-              </option>
-            ))}
-          </select>
+            onValueChange={(value) => update({ highPassHz: Number(value) })}
+            options={[{ value: 0, label: 'Off' }, ...[60, 80, 100, 120, 160].map((hz) => ({ value: hz, label: `${hz} Hz` }))]}
+          />
         </label>
       </div>
-      <label className="switch-row">
+      <div className="switch-row">
         <div>
           <strong>Quiet-sound gate</strong>
           <p>
@@ -171,12 +145,12 @@ export default function ProcessingControls({ engine }: { engine: string }) {
             soft speech.
           </p>
         </div>
-        <input
-          type="checkbox"
+        <Switch
+          aria-label="Quiet-sound gate"
           checked={draft.gateEnabled}
-          onChange={(e) => update({ gateEnabled: e.target.checked })}
+          onCheckedChange={(gateEnabled) => update({ gateEnabled })}
         />
-      </label>
+      </div>
       {draft.gateEnabled && (
         <div className="processing-options">
           {slider('gateThresholdDb', 'Gate threshold', -60, -20, 1, ' dB')}
@@ -205,8 +179,7 @@ export default function ProcessingControls({ engine }: { engine: string }) {
         <span role="status">{status}</span>
       </div>
       <p>
-        These filters affect your outgoing microphone and its test sample. Apply
-        changes, then run a new microphone test to hear them.
+        Apply changes, then run a microphone test to hear the result.
       </p>
     </section>
   );

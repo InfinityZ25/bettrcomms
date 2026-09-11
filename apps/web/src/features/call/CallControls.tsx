@@ -50,7 +50,7 @@ export default function CallControls({
   return (
     <div className="call-controls">
       <Button
-        variant={muted ? 'danger' : 'secondary'}
+        variant={muted ? 'destructive' : 'secondary'}
         size="icon"
         aria-label={
           deafened
@@ -65,7 +65,7 @@ export default function CallControls({
         {muted ? <MicOff size={19} /> : <Mic size={19} />}
       </Button>
       <Button
-        variant={deafened ? 'danger' : 'secondary'}
+        variant={deafened ? 'destructive' : 'secondary'}
         size="icon"
         aria-label={deafened ? 'Undeafen call' : 'Deafen call'}
         onClick={onToggleDeafen}
@@ -93,7 +93,7 @@ export default function CallControls({
             <MonitorUp size={19} />
           </Button>
           <Button
-            variant={recording ? 'danger' : 'secondary'}
+            variant={recording ? 'destructive' : 'secondary'}
             size="icon"
             aria-label={recording ? 'Stop recording' : 'Record separate tracks'}
             onClick={onToggleRecord}
@@ -101,7 +101,7 @@ export default function CallControls({
           >
             {recording ? <Square size={16} /> : <Circle size={17} />}
           </Button>
-          <Button variant="danger" onClick={onLeave}>
+          <Button variant="destructive" onClick={onLeave}>
             <PhoneOff size={18} /> Leave call
           </Button>
         </>

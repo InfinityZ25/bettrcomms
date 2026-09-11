@@ -1,6 +1,10 @@
 import type { CSSProperties } from 'react';
 import { getDesktopRuntime, readDesktopBootReport } from './runtime';
-import type { DesktopWindowControls } from './types';
+import type {
+  DesktopSignInState,
+  DesktopSignInStatus,
+  DesktopWindowControls,
+} from './types';
 
 /**
  * The transport for host commands.
@@ -106,5 +110,67 @@ function tauriWindowApi(): DesktopWindowApi {
     close: async () => (await current()).close(),
     isMaximized: async () => (await current()).isMaximized(),
     startDragging: async () => (await current()).startDragging(),
+  };
+}
+
+/**
+ * The browser sign-in hand-off, where the host has one.
+ *
+ * Only the Wails host does: it serves the page from its own origin, so the page
+ * cannot navigate to the identity provider and come back with a usable session.
+ * Returns null everywhere else, where the page signs in by navigating itself.
+ */
+export interface DesktopSignInApi {
+  begin(): Promise<DesktopSignInStatus>;
+  status(): Promise<DesktopSignInStatus>;
+  cancel(): Promise<void>;
+}
+
+export function getDesktopSignInApi(): DesktopSignInApi | null {
+  if (getDesktopRuntime() !== 'wails') return null;
+  // A host that reports no auth return has no proxy to put a session in, and
+  // says so rather than opening a browser that leads nowhere.
+  if (readDesktopBootReport()?.authReturn.state === 'unavailable') return null;
+
+  const service = () =>
+    import('./wailsbindings/bettercomms/desktop-wails/authservice.js');
+  return {
+    begin: async () => toSignInStatus(await (await service()).BrowserSignInBegin()),
+    status: async () =>
+      toSignInStatus(await (await service()).BrowserSignInStatus()),
+    cancel: async () => {
+      await (await service()).BrowserSignInCancel();
+    },
+  };
+}
+
+const SIGN_IN_STATES: readonly DesktopSignInState[] = [
+  'idle',
+  'waiting',
+  'complete',
+  'failed',
+];
+
+/**
+ * Narrows the host's status to the four states the page knows.
+ *
+ * The generated binding also carries Go's zero value for the enum, which is the
+ * empty string. A window that treated that as "waiting" would poll forever, so
+ * anything unrecognised is reported as a failure with the host's own words.
+ */
+function toSignInStatus(raw: {
+  state: string;
+  code?: string;
+  confirmUrl?: string;
+  detail: string;
+  expiresAt?: number;
+}): DesktopSignInStatus {
+  const state = SIGN_IN_STATES.find((known) => known === raw.state);
+  return {
+    state: state ?? 'failed',
+    code: raw.code || undefined,
+    confirmUrl: raw.confirmUrl || undefined,
+    detail: raw.detail || 'The desktop host did not explain the sign-in state.',
+    expiresAt: raw.expiresAt || undefined,
   };
 }

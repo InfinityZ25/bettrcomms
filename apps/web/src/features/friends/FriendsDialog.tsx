@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import { Check, Copy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Dialog } from '@/components/ui/dialog';
+import { AppDialog } from '@/components/app-dialog';
 import FriendsPanel from './FriendsPanel';
-import { signInWithWorkOS } from '@/features/auth/useSession';
 import type { CallParticipant, Room, User } from '@/api';
 
 export default function FriendsDialog({
@@ -16,6 +15,7 @@ export default function FriendsDialog({
   refreshRevision,
   onError,
   onOpenRoom,
+  onSignIn,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -26,10 +26,11 @@ export default function FriendsDialog({
   refreshRevision: number;
   onError: (message: string) => void;
   onOpenRoom: (room: Room) => void;
+  onSignIn: () => void;
 }) {
   const [copied, setCopied] = useState(false);
   return (
-    <Dialog
+    <AppDialog
       open={open}
       onOpenChange={onOpenChange}
       title="Better with friends"
@@ -70,9 +71,9 @@ export default function FriendsDialog({
             />
           </>
         ) : (
-          <Button onClick={signInWithWorkOS}>Sign in to find your people</Button>
+          <Button onClick={onSignIn}>Sign in to find your people</Button>
         )}
       </div>
-    </Dialog>
+    </AppDialog>
   );
 }

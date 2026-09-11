@@ -15,6 +15,7 @@ import {
 } from './DeviceControls';
 import { isDenied } from './deviceHelpers';
 import type { useCameraPreview } from './useCameraPreview';
+import { SettingsSelect } from '../SettingsControls';
 
 export default function CameraCard({
   options,
@@ -42,46 +43,37 @@ export default function CameraCard({
       <div className="camera-quality" aria-label="Camera quality">
         <label>
           Resolution
-          <select
+          <SettingsSelect
+            ariaLabel="Resolution"
             value={quality.resolution}
-            onChange={(event) =>
+            onValueChange={(value) =>
               updateQuality({
                 ...quality,
-                resolution: event.target.value as CameraSettings['resolution'],
+                resolution: value as CameraSettings['resolution'],
               })
             }
-          >
-            {cameraResolutions.map((option) => {
+            options={cameraResolutions.map((option) => {
               const unsupported = !cameraResolutionSupported(option.value, capabilities);
-              return (
-                <option key={option.value} value={option.value} disabled={unsupported}>
-                  {option.label}
-                  {unsupported ? ' · unavailable' : ''}
-                </option>
-              );
+              return { value: option.value, label: option.label, disabled: unsupported };
             })}
-          </select>
+          />
         </label>
         <label>
           Frame rate
-          <select
+          <SettingsSelect
+            ariaLabel="Frame rate"
             value={quality.frameRate}
-            onChange={(event) =>
+            onValueChange={(value) =>
               updateQuality({
                 ...quality,
-                frameRate: Number(event.target.value) as CameraSettings['frameRate'],
+                frameRate: Number(value) as CameraSettings['frameRate'],
               })
             }
-          >
-            {cameraFrameRates.map((rate) => {
+            options={cameraFrameRates.map((rate) => {
               const unsupported = !cameraFrameRateSupported(rate, capabilities);
-              return (
-                <option key={rate} value={rate} disabled={unsupported}>
-                  {rate} FPS{unsupported ? ' · unavailable' : ''}
-                </option>
-              );
+              return { value: rate, label: `${rate} FPS`, disabled: unsupported };
             })}
-          </select>
+          />
         </label>
       </div>
       {previewing && actual && (

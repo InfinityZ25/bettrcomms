@@ -150,7 +150,8 @@ func TestPackagedAssetHandlerRefusesAPIPathsLoudly(t *testing.T) {
 	if w.Code != http.StatusNotImplemented {
 		t.Fatalf("status = %d, want 501", w.Code)
 	}
-	if !strings.Contains(w.Body.String(), "apiOrigin") {
+	// The client's way out is the loopback proxy, so name it.
+	if !strings.Contains(w.Body.String(), "apiBase") {
 		t.Errorf("body = %q, want the reason", w.Body.String())
 	}
 }

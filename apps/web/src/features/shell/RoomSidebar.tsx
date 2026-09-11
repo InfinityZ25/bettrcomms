@@ -1,9 +1,13 @@
-import { ChevronDown, Headphones, Settings2, Users } from 'lucide-react';
+import { ChevronDown, Settings2, Users } from 'lucide-react';
 import { Avatar } from '@/components/avatar';
+import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
+import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenuButton, useSidebar } from '@/components/ui/sidebar';
 import RoomNavigation from '@/features/rooms/RoomNavigation';
 import type { CallParticipant, Room, User } from '@/api';
-import { cn } from '@/lib/utils';
 import type { Screen } from './useScreenRoute';
+import { motion } from 'motion/react';
+import { softSpring } from '@/lib/motion';
 
 /** The wide-screen room list, hidden once a call takes over the layout. */
 export default function RoomSidebar({
@@ -33,46 +37,48 @@ export default function RoomSidebar({
   onFriends: () => void;
   onSettings: () => void;
 }) {
+  const { open } = useSidebar();
+  const visible = open && !hiddenInCall && !hidden;
   return (
-    <aside
-      className={cn(
-        'hidden w-[170px] shrink-0 flex-col border-r bg-sidebar px-4 min-[821px]:flex min-[1251px]:w-[190px] min-[1400px]:w-[232px]',
-        hiddenInCall && 'min-[821px]:hidden',
-        hidden && 'hidden',
-      )}
-      inert={screen === 'share'}
+    <motion.div
+      className="hidden h-full shrink-0 overflow-hidden min-[821px]:block [--room-sidebar-width:186px] min-[1251px]:[--room-sidebar-width:210px] min-[1400px]:[--room-sidebar-width:248px]"
+      initial={false}
+      animate={{
+        width: visible ? 'var(--room-sidebar-width)' : 0,
+        opacity: visible ? 1 : 0,
+      }}
+      transition={softSpring}
+      aria-hidden={!visible}
     >
-      <div className="flex h-[70px] shrink-0 items-center justify-between px-2 font-heading text-base font-bold min-[1001px]:h-20">
-        Your space <ChevronDown size={16} />
-      </div>
-      <button
-        className="flex items-center gap-3 rounded-lg px-2.5 py-3 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-        onClick={onFriends}
+      <Sidebar
+        collapsible="none"
+        className="sidebar h-full w-(--room-sidebar-width) shrink-0 rounded-2xl bg-sidebar"
+        inert={screen === 'share' || !visible}
       >
-        <Users size={18} /> Friends <span className="ml-auto opacity-60">↗</span>
-      </button>
-      <RoomNavigation
-        rooms={rooms}
-        selected={room?.id}
-        presence={presence}
-        known={presenceKnown}
-        onSelect={onSelectRoom}
-        onCreate={onCreateRoom}
-      />
-      <div className="mx-2 mt-auto mb-6 pt-6">
-        <span className="mb-4 grid size-9 place-items-center rounded-xl bg-accent text-muted-foreground">
-          <Headphones size={20} />
-        </span>
-        <strong className="font-heading text-sm leading-6 font-semibold text-foreground/75">
-          Good company.
-          <br />
-          Room to be yourself.
-        </strong>
-        <p className="mt-2 max-w-40 text-xs leading-5 text-muted-foreground">
-          Your calls, the way you like them.
-        </p>
-      </div>
-      <div className="flex min-w-0 items-center gap-2.5 border-t py-5">
+      <SidebarHeader className="px-2 pt-2 pb-1">
+        <Button variant="ghost" className="h-11 w-full justify-start px-3 font-semibold text-foreground">
+          <span className="grid size-7 place-items-center rounded-lg bg-primary text-[0.65rem] font-bold text-primary-foreground">BC</span>
+          <span className="min-w-0 flex-1 truncate text-left">Your space</span>
+          <ChevronDown size={15} />
+        </Button>
+        <SidebarMenuButton onClick={onFriends} isActive={screen === 'call' && !room}>
+          <Users /> <span className="flex-1">Friends</span>
+          <span className="text-[0.65rem] text-muted-foreground">⌘F</span>
+        </SidebarMenuButton>
+      </SidebarHeader>
+      <SidebarContent className="px-1">
+        <RoomNavigation
+          rooms={rooms}
+          selected={room?.id}
+          presence={presence}
+          known={presenceKnown}
+          onSelect={onSelectRoom}
+          onCreate={onCreateRoom}
+        />
+      </SidebarContent>
+      <SidebarFooter className="px-2 pb-2">
+        <Separator />
+        <div className="flex min-w-0 items-center gap-2.5 rounded-xl p-2 hover:bg-sidebar-accent/70">
         <Avatar name={user?.name ?? 'You'} />
         <div className="min-w-0 flex-1 overflow-hidden">
           <strong className="block truncate text-xs">
@@ -83,14 +89,18 @@ export default function RoomSidebar({
             {user ? 'Available' : 'Make yourself at home'}
           </span>
         </div>
-        <button
-          className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8"
           aria-label="Settings"
           onClick={onSettings}
         >
           <Settings2 size={18} />
-        </button>
-      </div>
-    </aside>
+        </Button>
+        </div>
+      </SidebarFooter>
+      </Sidebar>
+    </motion.div>
   );
 }

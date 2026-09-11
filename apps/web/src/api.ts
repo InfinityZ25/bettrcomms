@@ -1,3 +1,9 @@
+import {
+  apiAuthHeaders,
+  apiCredentials,
+  apiHttpUrl,
+} from "@/desktop/apiTransport";
+
 export interface User {
   id: string;
   name: string;
@@ -38,10 +44,13 @@ export async function api<T>(
   body?: unknown,
   method?: string,
 ): Promise<T> {
-  const response = await fetch("/api/v1" + path, {
-    credentials: "include",
+  const response = await fetch(apiHttpUrl("/api/v1" + path), {
+    credentials: apiCredentials(),
     method: method ?? (body ? "POST" : "GET"),
-    headers: body ? { "Content-Type": "application/json" } : undefined,
+    headers: {
+      ...apiAuthHeaders(),
+      ...(body ? { "Content-Type": "application/json" } : {}),
+    },
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!response.ok) {

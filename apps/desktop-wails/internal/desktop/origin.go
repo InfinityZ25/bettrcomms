@@ -71,3 +71,58 @@ func isLoopbackHost(host string) bool {
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
 }
+
+// AppOriginError reports a page that is not this application's own.
+var AppOriginError = errors.New("native commands are restricted to the BetterComms app origin")
+
+// TrustedAppOrigin validates that a page URL belongs to this application and
+// returns its origin.
+//
+// This is the same policy the Rust host applies, with this host's own asset
+// origins in place of Tauri's. It matters because a webview that has navigated
+// to an identity provider is still the same webview: without this check, a page
+// the application does not control could reach a native command.
+//
+// The trusted set is deliberately small:
+//
+//   - the pinned hosted origin, which is where the packaged app's own pages live
+//   - the Wails asset scheme, which serves the embedded frontend
+//   - the WebView2 virtual host the Windows backend serves that frontend from
+//   - in a development build only, the Vite dev server
+func TrustedAppOrigin(current string, allowDevelopment bool) (string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(current))
+	if err != nil || !parsed.IsAbs() {
+		return "", AppOriginError
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	host := strings.ToLower(parsed.Hostname())
+	port := parsed.Port()
+
+	switch {
+	case scheme == "https" && originOf(parsed) == ReleaseOrigin:
+		// The hosted deployment, matched on the whole origin rather than the
+		// host alone so a different port is not accepted.
+	case scheme == "wails":
+		// The asset scheme the macOS and Linux backends serve the frontend from.
+	case (scheme == "http" || scheme == "https") && host == "wails.localhost" && port == "":
+		// The WebView2 virtual host the Windows backend uses.
+	case allowDevelopment && scheme == "http" && host == "localhost" && port == "5173":
+		// The Vite dev server, in development builds only.
+	default:
+		return "", AppOriginError
+	}
+	return originOf(parsed), nil
+}
+
+// originOf serialises a URL's origin, which is what the trust decision and the
+// permission record are keyed on.
+func originOf(parsed *url.URL) string {
+	scheme := strings.ToLower(parsed.Scheme)
+	host := strings.ToLower(parsed.Host)
+	if host == "" {
+		// An opaque scheme such as wails:// has no authority; its origin is the
+		// scheme itself.
+		return scheme + "://"
+	}
+	return scheme + "://" + host
+}

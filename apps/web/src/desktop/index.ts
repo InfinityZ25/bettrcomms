@@ -11,7 +11,15 @@
  * what runs instead everywhere else.
  */
 export {
+  apiAuthHeaders,
+  apiCredentials,
+  apiHttpUrl,
+  apiSocketUrl,
+} from './apiTransport';
+
+export {
   getDesktopApiOrigin,
+  getDesktopApiTransport,
   getDesktopRuntime,
   hasTauriNativeCommands,
   isDesktopShell,
@@ -22,9 +30,11 @@ export {
 export {
   DesktopUnavailableError,
   dragRegionStyle,
+  getDesktopSignInApi,
   getDesktopWindowApi,
   nativeNonClientRegion,
   noDragStyle,
+  type DesktopSignInApi,
   type DesktopWindowApi,
 } from './bridge';
 
@@ -44,5 +54,7 @@ export type {
   DesktopCapabilityName,
   DesktopMediaCapabilities,
   DesktopRuntime,
+  DesktopSignInState,
+  DesktopSignInStatus,
   DesktopWindowControls,
 } from './types';

@@ -2,18 +2,21 @@ package desktop
 
 import (
 	"runtime"
+	"strings"
 	"testing"
 )
 
-// TestNativeCapabilitiesAreReportedUnavailable is the honesty guard for this
-// host. No native media adapter has been ported from apps/desktop, so none may
-// be reported as working. If a capability is genuinely implemented here later,
-// change it only together with an acceptance test that exercises it on this
-// host; a passing Tauri test is not evidence for this one.
-func TestNativeCapabilitiesAreReportedUnavailable(t *testing.T) {
+// TestEveryCapabilityExplainsItself is the honesty guard for this host.
+//
+// A capability may only be Implemented where an acceptance test exercises it
+// here; a passing Tauri test is not evidence, because the two hosts share no
+// media code. Anything unavailable must also name what the frontend does
+// instead, so a missing feature reads as a choice rather than a hole.
+func TestEveryCapabilityExplainsItself(t *testing.T) {
 	report := NewMediaCapabilities()
 
-	native := map[string]Capability{
+	every := map[string]Capability{
+		"browserMedia":        report.BrowserMedia,
 		"nativeGameVideo":     report.NativeGameVideo,
 		"nativeProcessAudio":  report.NativeProcessAudio,
 		"nativeMicrophoneDsp": report.NativeMicrophoneDSP,
@@ -22,20 +25,116 @@ func TestNativeCapabilitiesAreReportedUnavailable(t *testing.T) {
 		"globalInput":         report.GlobalInput,
 		"nativeOverlays":      report.NativeOverlays,
 	}
-	for name, capability := range native {
-		if capability.State != Unavailable {
-			t.Errorf("%s = %q, want unavailable", name, capability.State)
+	for name, capability := range every {
+		switch capability.State {
+		case Implemented, Experimental, Unavailable:
+		default:
+			t.Errorf("%s = %q, which is not a state the frontend knows", name, capability.State)
 		}
 		if capability.Detail == "" {
-			t.Errorf("%s has no detail; an unavailable capability must say why", name)
+			t.Errorf("%s has no detail; every capability must say what will happen", name)
 		}
-		if capability.Fallback == "" {
+		if capability.State == Unavailable && capability.Fallback == "" {
 			t.Errorf("%s has no fallback; the frontend needs to know what happens instead", name)
 		}
 	}
 }
 
-func TestBrowserMediaIsTheOnlyImplementedPath(t *testing.T) {
+// Microphone and camera permission is Experimental, not Implemented.
+//
+// The window's policy and the token gate that replaces the Tauri host's
+// per-call origin check both have tests, but nobody has watched a packaged
+// window open a device without a prompt. It must also not claim the two things
+// this host cannot do: revoke a grant, or scope it to an origin.
+func TestMediaPermissionsClaimsOnlyWhatThisHostDoes(t *testing.T) {
+	permissions := NewMediaCapabilities().MediaPermissions
+
+	if runtime.GOOS != "windows" {
+		if permissions.State != Unavailable {
+			t.Errorf("mediaPermissions = %q off Windows, want unavailable", permissions.State)
+		}
+		return
+	}
+	if permissions.State != Experimental {
+		t.Errorf("mediaPermissions = %q on Windows, want experimental", permissions.State)
+	}
+	for _, promise := range []string{"per capability rather than per origin", "cannot be revoked"} {
+		if !strings.Contains(permissions.Detail, promise) {
+			t.Errorf("the detail does not say it is %q: %q", promise, permissions.Detail)
+		}
+	}
+}
+
+// TestTheOverlayIsExperimentalOnWindows covers both overlay surfaces.
+//
+// They are Experimental rather than Implemented on purpose: the layered
+// windows, their placement and their capture exclusion are tested here, but no
+// person has yet watched either surface during a call.
+func TestTheOverlayIsExperimentalOnWindows(t *testing.T) {
+	overlays := NewMediaCapabilities().NativeOverlays
+
+	if overlays.Detail == "" {
+		t.Error("nativeOverlays has no detail")
+	}
+	if runtime.GOOS == "windows" {
+		if overlays.State != Experimental {
+			t.Errorf("nativeOverlays = %q on Windows, want experimental", overlays.State)
+		}
+		return
+	}
+	if overlays.State != Unavailable {
+		t.Errorf("nativeOverlays = %q off Windows, want unavailable", overlays.State)
+	}
+	if overlays.Fallback == "" {
+		t.Error("nativeOverlays has no fallback off Windows")
+	}
+}
+
+// TestPortedCapabilitiesAreImplementedOnWindows covers the three adapters that
+// have been ported and have acceptance tests here:
+//
+//   - nativeGameVideo: internal/native/nativescreen capture and
+//     internal/native/nativertc end-to-end viewer tests
+//   - nativeProcessAudio: internal/native/systemaudio activation and capture
+//   - nativeMicrophoneDsp: internal/native/deepfilter real DirectML inference
+//   - localTrackRecording: internal/native/nativescreen recording test
+//   - globalInput: internal/native/pushtotalk hook tests
+//
+// Off Windows they must still report unavailable with a fallback, because none
+// of the three has an implementation there.
+func TestPortedCapabilitiesAreImplementedOnWindows(t *testing.T) {
+	report := NewMediaCapabilities()
+
+	ported := map[string]Capability{
+		"nativeGameVideo":     report.NativeGameVideo,
+		"nativeProcessAudio":  report.NativeProcessAudio,
+		"nativeMicrophoneDsp": report.NativeMicrophoneDSP,
+		"localTrackRecording": report.LocalTrackRecording,
+		"globalInput":         report.GlobalInput,
+	}
+	for name, capability := range ported {
+		if capability.Detail == "" {
+			t.Errorf("%s has no detail", name)
+		}
+		if runtime.GOOS == "windows" {
+			if capability.State != Implemented {
+				t.Errorf("%s = %q on Windows, want implemented", name, capability.State)
+			}
+			if capability.Fallback != "" {
+				t.Errorf("%s is implemented but advertises the fallback %q", name, capability.Fallback)
+			}
+			continue
+		}
+		if capability.State != Unavailable {
+			t.Errorf("%s = %q off Windows, want unavailable", name, capability.State)
+		}
+		if capability.Fallback == "" {
+			t.Errorf("%s has no fallback off Windows", name)
+		}
+	}
+}
+
+func TestBrowserMediaIsAlwaysAvailable(t *testing.T) {
 	report := NewMediaCapabilities()
 	if report.BrowserMedia.State != Implemented {
 		t.Errorf("browserMedia = %q, want implemented", report.BrowserMedia.State)

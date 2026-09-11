@@ -17,7 +17,7 @@ export function SettingRow({
   return (
     <Wrapper
       className={cn(
-        'my-5 flex items-center justify-between gap-5',
+        'flex min-h-14 items-center justify-between gap-5 py-2',
         as === 'label' && 'text-sm',
       )}
     >

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Volume2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { talkBindingLabel } from '@/media/pushToTalk';
-import type { User, Room } from '@/api';
+import type { User } from '@/api';
 import ConnectionStatus from './ConnectionStatus';
 import CallControls from './CallControls';
 import CallLobby from './CallLobby';
@@ -14,7 +14,7 @@ import { CameraTile, ScreenShareTile } from './CameraTile';
 import { RemoteAudio } from './PeerAudio';
 import { CopilotPanel } from './VisualCopilot';
 import { useCallLayout } from './useCallLayout';
-import { useCallSession } from './useCallSession';
+import { useActiveCall } from './CallSessionContext';
 import { useGalleryPreferences } from './useGalleryPreferences';
 import { useImmersiveControls } from './useImmersiveControls';
 import { useStageSelection } from './useStageSelection';
@@ -26,7 +26,6 @@ import {
   type CameraParticipant,
   type ScreenShare,
 } from './stageItems';
-import { EMPTY_CALL_PRESENCE, type CallPresence } from './callTypes';
 import './CallBase.css';
 import './CallLobby.css';
 import './CallWorkspace.css';
@@ -35,38 +34,29 @@ export type { CallPresence, NativeShareActions } from './callTypes';
 
 export default function CallStage({
   user,
-  room,
   layout,
   onLayout,
-  onJoinedChange,
   focused = false,
   onFocus,
-  noise,
   balanced,
   onError,
   onInvite,
   onRecordings,
-  onRequestShare,
-  callPresence = EMPTY_CALL_PRESENCE,
-  presenceKnown = true,
 }: {
   user: User | null;
-  room: Room | null;
   layout: string;
   onLayout?: (layout: string) => void;
-  onJoinedChange?: (joined: boolean) => void;
   focused?: boolean;
   onFocus?: () => void;
-  noise: boolean;
   balanced: boolean;
   onError: (message: string) => void;
   onInvite: () => void;
   onRecordings: () => void;
-  onRequestShare: (actions: import('./callTypes').NativeShareActions) => void;
-  callPresence?: CallPresence[];
-  presenceKnown?: boolean;
 }) {
-  const call = useCallSession({ user, room, noise, callPresence, onError, onRequestShare });
+  // The session is owned by CallSessionProvider, above the screen tree. This
+  // screen renders it and is free to unmount without ending the call.
+  const call = useActiveCall();
+  const { room, callPresence, presenceKnown } = call;
   const {
     joined,
     busy,
@@ -86,10 +76,6 @@ export default function CallStage({
   const [cameraAspects, setCameraAspects] = useState<Record<string, number>>({});
   const [featuredCamera, setFeaturedCamera] = useState('self');
   const [showStats, setShowStats] = useState(false);
-
-  useEffect(() => {
-    onJoinedChange?.(joined);
-  }, [joined, onJoinedChange]);
 
   const shares: ScreenShare[] = [
     ...(locals.has('screen')

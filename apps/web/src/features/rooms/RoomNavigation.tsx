@@ -8,6 +8,9 @@ import {
 } from 'lucide-react';
 import type { CallParticipant, Room } from '@/api';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 
 export const roomLabel = (room: Room) => room.display_name || room.name;
 
@@ -27,44 +30,47 @@ export default function RoomNavigation({
   onCreate: () => void;
 }) {
   return (
-    <div className="min-h-0 overflow-x-hidden overflow-y-auto">
+    <div className="conversation-navigation min-h-0 overflow-x-hidden overflow-y-auto">
       {(['channel', 'direct'] as const).map((kind) => {
         const entries = rooms.filter(
           (room) => (room.kind ?? 'channel') === kind,
         );
         if (kind === 'direct' && !entries.length) return null;
         return (
-          <section
+          <SidebarGroup
             key={kind}
+            role="region"
             aria-label={kind === 'direct' ? 'Direct messages' : 'Rooms'}
           >
-            <div className="mx-2 mt-7 mb-3 flex items-center justify-between text-[0.7rem] font-bold tracking-[0.12em] text-muted-foreground">
+            <SidebarGroupLabel className="mt-3 justify-between">
               {kind === 'direct' ? 'DIRECT MESSAGES' : 'ROOMS'}
               {kind === 'channel' && (
-                <button
-                  className="rounded p-0.5 transition-colors hover:bg-accent hover:text-accent-foreground"
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-7 rounded-lg"
                   aria-label="Create room"
                   onClick={onCreate}
                 >
                   <Plus size={16} />
-                </button>
+                </Button>
               )}
-            </div>
+            </SidebarGroupLabel>
             {!entries.length && (
               <p className="px-2 py-1 text-xs leading-6 text-muted-foreground">
                 Create a room to bring your friends together.
               </p>
             )}
-            {entries.map((room) => {
+            <SidebarMenu>{entries.map((room) => {
               const callers = presence[room.id] ?? [];
               return (
-                <div key={room.id}>
-                  <button
+                <SidebarMenuItem key={room.id}>
+                  <SidebarMenuButton
                     className={cn(
-                      'mb-0.5 flex w-full min-w-0 items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground [&>svg]:shrink-0',
-                      selected === room.id &&
-                        'bg-accent text-accent-foreground',
+                      'h-10',
+                      selected === room.id && 'font-semibold',
                     )}
+                    isActive={selected === room.id}
                     aria-current={selected === room.id ? 'page' : undefined}
                     onClick={() => onSelect(room)}
                     title={roomLabel(room)}
@@ -78,15 +84,15 @@ export default function RoomNavigation({
                       {roomLabel(room)}
                     </span>
                     {known && callers.length > 0 && (
-                      <span
-                        className="inline-flex shrink-0 items-center gap-1 text-xs text-primary"
+                      <Badge
+                        className="h-5 gap-1 px-1.5"
                         aria-label={`${callers.length} in call`}
                       >
                         <Headphones size={12} />
                         {callers.length}
-                      </span>
+                      </Badge>
                     )}
-                  </button>
+                  </SidebarMenuButton>
                   {known && callers.length > 0 && (
                     <ul
                       className="mt-1 mb-3 ml-5 list-none border-l pl-3"
@@ -123,10 +129,10 @@ export default function RoomNavigation({
                       ))}
                     </ul>
                   )}
-                </div>
+                </SidebarMenuItem>
               );
-            })}
-          </section>
+            })}</SidebarMenu>
+          </SidebarGroup>
         );
       })}
       {!known && rooms.length > 0 && (

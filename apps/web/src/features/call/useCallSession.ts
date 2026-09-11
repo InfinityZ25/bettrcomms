@@ -194,9 +194,14 @@ export function useCallSession({
     };
   }, []);
 
-  // Switching room or identity ends the call rather than carrying it across.
+  // Signing in or out ends the call rather than carrying it across identities.
+  //
+  // A room change only reaches here when no call is live: CallSessionProvider
+  // pins `room` to the room the call was joined in, so browsing elsewhere never
+  // changes it mid-call. The guard keeps the release of that pin on hang-up — and
+  // the first run on mount — from repeating a teardown that already ran.
   useEffect(() => {
-    leave();
+    if (joined || engine.current || socket.current || recorder.current) leave();
   }, [room?.id, user?.id]);
 
   // Presence arriving over the app-wide stream seeds the roster, but once the
