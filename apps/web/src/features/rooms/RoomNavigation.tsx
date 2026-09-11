@@ -6,7 +6,8 @@ import {
   MicOff,
   Plus,
 } from 'lucide-react';
-import type { CallParticipant, Room } from '@/api';
+import type { CallParticipant, Room, User } from '@/api';
+import RoomContextMenu from './RoomContextMenu';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -16,18 +17,28 @@ export const roomLabel = (room: Room) => room.display_name || room.name;
 
 export default function RoomNavigation({
   rooms,
+  user,
   selected,
   presence,
   known,
   onSelect,
   onCreate,
+  onRoomSettings,
+  onInviteToRoom,
+  onRoomsChanged,
+  onError,
 }: {
   rooms: Room[];
+  user: User | null;
   selected?: string;
   presence: Record<string, CallParticipant[]>;
   known: boolean;
   onSelect: (room: Room) => void;
   onCreate: () => void;
+  onRoomSettings: (room: Room) => void;
+  onInviteToRoom: (room: Room) => void;
+  onRoomsChanged: () => void;
+  onError: (message: string) => void;
 }) {
   return (
     <div className="conversation-navigation min-h-0 overflow-x-hidden overflow-y-auto">
@@ -65,34 +76,43 @@ export default function RoomNavigation({
               const callers = presence[room.id] ?? [];
               return (
                 <SidebarMenuItem key={room.id}>
-                  <SidebarMenuButton
-                    className={cn(
-                      'h-10',
-                      selected === room.id && 'font-semibold',
-                    )}
-                    isActive={selected === room.id}
-                    aria-current={selected === room.id ? 'page' : undefined}
-                    onClick={() => onSelect(room)}
-                    title={roomLabel(room)}
+                  <RoomContextMenu
+                    room={room}
+                    user={user}
+                    onSettings={onRoomSettings}
+                    onInvite={onInviteToRoom}
+                    onChanged={onRoomsChanged}
+                    onError={onError}
                   >
-                    {kind === 'direct' ? (
-                      <MessageSquare size={18} />
-                    ) : (
-                      <Hash size={19} />
-                    )}
-                    <span className="min-w-0 flex-1 truncate">
-                      {roomLabel(room)}
-                    </span>
-                    {known && callers.length > 0 && (
-                      <Badge
-                        className="h-5 gap-1 px-1.5"
-                        aria-label={`${callers.length} in call`}
-                      >
-                        <Headphones size={12} />
-                        {callers.length}
-                      </Badge>
-                    )}
-                  </SidebarMenuButton>
+                    <SidebarMenuButton
+                      className={cn(
+                        'h-10',
+                        selected === room.id && 'font-semibold',
+                      )}
+                      isActive={selected === room.id}
+                      aria-current={selected === room.id ? 'page' : undefined}
+                      onClick={() => onSelect(room)}
+                      title={roomLabel(room)}
+                    >
+                      {kind === 'direct' ? (
+                        <MessageSquare size={18} />
+                      ) : (
+                        <Hash size={19} />
+                      )}
+                      <span className="min-w-0 flex-1 truncate">
+                        {roomLabel(room)}
+                      </span>
+                      {known && callers.length > 0 && (
+                        <Badge
+                          className="h-5 gap-1 px-1.5"
+                          aria-label={`${callers.length} in call`}
+                        >
+                          <Headphones size={12} />
+                          {callers.length}
+                        </Badge>
+                      )}
+                    </SidebarMenuButton>
+                  </RoomContextMenu>
                   {known && callers.length > 0 && (
                     <ul
                       className="mt-1 mb-3 ml-5 list-none border-l pl-3"

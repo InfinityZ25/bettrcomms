@@ -42,6 +42,7 @@ export default function CallStage({
   onError,
   onInvite,
   onRecordings,
+  hidden = false,
 }: {
   user: User | null;
   layout: string;
@@ -52,6 +53,12 @@ export default function CallStage({
   onError: (message: string) => void;
   onInvite: () => void;
   onRecordings: () => void;
+  /**
+   * Take the stage off screen without unmounting it. Home occupies the same
+   * space when nothing is open, and this screen holds the audio elements a
+   * call plays through: hiding it is safe where unmounting it would not be.
+   */
+  hidden?: boolean;
 }) {
   // The session is owned by CallSessionProvider, above the screen tree. This
   // screen renders it and is free to unmount without ending the call.
@@ -160,10 +167,13 @@ export default function CallStage({
       current[id] === ratio ? current : { ...current, [id]: ratio },
     );
 
+  // Home has the space when nothing is open, so the lobby would only repeat
+  // that nothing is selected. A finished recording still has to be offered,
+  // whatever is on screen.
   if (!joined)
     return (
       <>
-        <CallLobby
+        {hidden ? null : <CallLobby
           user={user}
           room={room}
           busy={busy}
@@ -171,7 +181,7 @@ export default function CallStage({
           callPresence={callPresence}
           presenceKnown={presenceKnown}
           onJoin={call.join}
-        />
+        />}
         {call.result && (
           <RecordingNotice
             variant="lobby"
@@ -187,6 +197,10 @@ export default function CallStage({
     <div
       className="call-workspace"
       ref={workspace}
+      // An inline style, because the `hidden` attribute is a user-agent rule
+      // and `.call-workspace` sets `display` in a stylesheet, which outranks it.
+      style={hidden ? { display: 'none' } : undefined}
+      inert={hidden}
       data-controls-visible={!immersive.fullscreen || immersive.controlsVisible}
       onPointerMove={immersive.onPointerMove}
       onKeyDown={() => immersive.reveal()}

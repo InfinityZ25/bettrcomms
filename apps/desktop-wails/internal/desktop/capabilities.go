@@ -128,7 +128,9 @@ func NewMediaCapabilities() MediaCapabilities {
 // page draws the buttons. macOS keeps its own traffic lights and the page only
 // reserves room for them.
 func DefaultWindowControls() WindowControls {
-	const titlebarHeight = 32
+	// Matches TITLEBAR_HEIGHT in windowControls.ts: the bar holds a search
+	// field and the notification button, not just a title.
+	const titlebarHeight = 40
 	// Matches MACOS_TRAFFIC_LIGHT_INSET in windowControls.ts.
 	const macTrafficLightInset = 78
 

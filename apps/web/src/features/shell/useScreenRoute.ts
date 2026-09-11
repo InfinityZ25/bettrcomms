@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { recordNavigation } from './historyNavigation';
 
 export type Screen = 'call' | 'recordings' | 'share';
 
@@ -32,6 +33,9 @@ export function useScreenRoute() {
             : null;
       location.hash = next === 'call' ? '#/' : '#/' + next;
       history.replaceState({ ...history.state, bettercommsScreen: next }, '');
+      // After the push, not before: the entry has to exist before its position
+      // can be written onto it.
+      recordNavigation();
     },
     [screen],
   );

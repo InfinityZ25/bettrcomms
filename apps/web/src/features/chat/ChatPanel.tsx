@@ -62,7 +62,7 @@ export default function ChatPanel({
         ) : (
           messages.map((message) => (
             <div className="mb-5 flex gap-2.5" key={message.id}>
-              <Avatar name={message.author.name} />
+              <Avatar name={message.author.name} src={message.author.avatar_url} />
               <div className="min-w-0">
                 <div className="flex items-baseline gap-2">
                   <strong className="text-xs">{message.author.name}</strong>

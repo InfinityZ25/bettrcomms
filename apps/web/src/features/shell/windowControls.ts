@@ -44,7 +44,10 @@ export interface WindowControlsState {
   buttonSide: ButtonSide;
 }
 
-const TITLEBAR_HEIGHT = 32;
+// The bar carries a search field and the notification button as well as the
+// window's own controls, so it is taller than a bar that only holds a title.
+// Has to agree with titlebarHeight in the Wails host's capabilities.go.
+const TITLEBAR_HEIGHT = 40;
 // Ancho de los semaforos de macOS mas su margen, en pixeles logicos. Tiene que
 // concordar con `trafficLightPosition` de tauri.macos.conf.json.
 const MACOS_TRAFFIC_LIGHT_INSET = 78;

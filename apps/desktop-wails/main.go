@@ -35,6 +35,16 @@ const hostVersion = "0.0.1-wails"
 //go:embed all:frontend/dist
 var frontendAssets embed.FS
 
+// appIcon is the application mark, the same artwork the Tauri host ships.
+//
+// On Windows the window and taskbar icons come from the executable's own
+// resource — rsrc_windows_amd64.syso, generated from build/windows/icon.ico —
+// which `go build` picks up without being asked. This copy is what the
+// application shows about itself, where a file resource is not what is wanted.
+//
+//go:embed build/appicon.png
+var appIcon []byte
+
 func main() {
 	if err := run(); err != nil {
 		log.Fatalf("bettercomms-wails: %v", err)
@@ -119,6 +129,7 @@ func run() error {
 	app := application.New(application.Options{
 		Name:        "BetterComms",
 		Description: "BetterComms desktop (Wails v3 host)",
+		Icon:        appIcon,
 		Assets: application.AssetOptions{
 			Handler: handler,
 		},

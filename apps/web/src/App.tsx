@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { AudioLines } from 'lucide-react';
-import { api, type Message, type Room, type User } from './api';
+import { api, type Room, type User } from './api';
 import { useSession } from '@/features/auth/useSession';
 import SignInPanel from '@/features/auth/SignInPanel';
 import CallStage, { type NativeShareActions } from '@/features/call/CallStage';
@@ -9,8 +9,6 @@ import {
   type CallChrome,
 } from '@/features/call/CallSessionContext';
 import { useCallPresence } from '@/features/call/useCallPresence';
-import ChatPanel from '@/features/chat/ChatPanel';
-import { useRoomMessages } from '@/features/chat/useRoomMessages';
 import FriendsDialog from '@/features/friends/FriendsDialog';
 import RecordingsLibrary from '@/features/recordings/RecordingsLibrary';
 import CreateRoomDialog from '@/features/rooms/CreateRoomDialog';
@@ -20,10 +18,10 @@ import { SettingsDialog } from '@/components/settings-dialog';
 import { useCallPreferences } from '@/features/settings/useCallPreferences';
 import NativeScreenPicker from '@/features/sharing/NativeScreenPicker';
 import ErrorToast from '@/features/shell/ErrorToast';
-import RoomHeader from '@/features/shell/RoomHeader';
 import RoomSidebar from '@/features/shell/RoomSidebar';
+import { sectionForRoom, type Section } from '@/features/shell/sections';
 import SpacesRail from '@/features/shell/SpacesRail';
-import WelcomeBanner from '@/features/shell/WelcomeBanner';
+import HomeScreen from '@/features/shell/HomeScreen';
 import WorkspaceScreen from '@/features/shell/WorkspaceScreen';
 import { readScreen, useScreenRoute } from '@/features/shell/useScreenRoute';
 import { useAsyncAction } from '@/hooks/useAsyncAction';
@@ -43,20 +41,12 @@ export default function App() {
     presence.roomsRevision + presence.syncRevision,
     setError,
   );
-  const { messages, append, endRef } = useRoomMessages({
-    room,
-    revision: presence.syncRevision,
-    incoming: presence.messages.map((event) => event.value),
-    onError: setError,
-  });
-
-  const [draft, setDraft] = useState('');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [friendsOpen, setFriendsOpen] = useState(false);
-  const [roomSettingsOpen, setRoomSettingsOpen] = useState(false);
-  const [chatOpen, setChatOpen] = useState(window.innerWidth > 820);
+  const [settingsRoom, setSettingsRoom] = useState<Room | null>(null);
+  const [inviteRoom, setInviteRoom] = useState<Room | null>(null);
   // Chrome only. The call itself is owned by CallSessionProvider below, which
   // outlives every screen; this is what the shell lays itself out against.
   const [call, setCall] = useState<CallChrome>({ joined: false, room: null });
@@ -65,12 +55,22 @@ export default function App() {
   const [shareActions, setShareActions] = useState<NativeShareActions | null>(null);
   const shareActionsRef = useRef<NativeShareActions | null>(null);
 
+  // Home is the call screen with nothing selected and no call running.
+  const atHome = screen === 'call' && !room && !callJoined;
   const [settingsOpen, setSettingsOpen] = useState(false);
   const openSettings = () => setSettingsOpen(true);
+  // Which list the sidebar is showing. Selecting a conversation moves the rail
+  // with it, so the two never disagree about where you are.
+  const [section, setSection] = useState<Section>('calls');
+  const showSection = (next: Section) => {
+    setSection(next);
+    navigate('call');
+  };
   const openRecordings = () => navigate('recordings');
   const backToCall = () => navigate('call');
   const selectRoom = (next: Room) => {
     setRoom(next);
+    setSection(sectionForRoom(next.kind));
     navigate('call');
   };
 
@@ -106,9 +106,6 @@ export default function App() {
     return () => window.removeEventListener('bc-output-error', failed);
   }, []);
   useEffect(() => {
-    if (callJoined) setChatOpen(false);
-  }, [callJoined]);
-  useEffect(() => {
     const restore = (event: KeyboardEvent) => {
       if (
         event.key === 'Escape' &&
@@ -121,17 +118,6 @@ export default function App() {
     return () => window.removeEventListener('keydown', restore);
   }, []);
 
-  const send = (event: FormEvent) => {
-    event.preventDefault();
-    if (!draft.trim() || !room) return;
-    void run(async () => {
-      const result = await api<{ message: Message }>('/rooms/' + room.id + '/messages', {
-        body: draft,
-      });
-      setDraft('');
-      append(result.message);
-    });
-  };
   const devSignIn = (event: FormEvent) => {
     event.preventDefault();
     void run(async () => {
@@ -176,7 +162,7 @@ export default function App() {
         data-app-shell
         data-in-call={callJoined}
         data-call-focused={immersive}
-        className="app-shell flex h-dvh min-h-[600px] gap-1.5 overflow-hidden bg-sidebar p-2 min-[821px]:min-h-[680px] select-none"
+        className="app-shell flex h-dvh min-h-[600px] gap-1.5 overflow-hidden bg-sidebar pb-2 px-2 min-[821px]:min-h-[680px] select-none"
       >
       <div className="relative min-w-0 flex-1 overflow-hidden">
       <main
@@ -187,76 +173,60 @@ export default function App() {
         aria-label="Call"
         hidden={screen !== 'call'}
       >
-        <RoomHeader
-          room={room}
-          callRoom={call.room}
-          chatOpen={chatOpen}
-          compact={callJoined}
-          hidden={callJoined && callFocused}
-          onToggleChat={() => setChatOpen(!chatOpen)}
-          onRoomSettings={() => setRoomSettingsOpen(true)}
-          onFriends={() => setFriendsOpen(true)}
-          onReturnToCall={setRoom}
-        />
-        <div className="relative flex min-h-0 flex-1">
-          <section
-            className={cn(
-              'flex min-w-0 flex-1 flex-col overflow-auto px-3 pt-5 pb-3 [scroll-padding-bottom:1.5rem] min-[481px]:px-5 min-[821px]:pb-0 min-[1251px]:px-8',
-              callJoined ? 'pt-5' : 'min-[821px]:pt-8',
-              callFocused &&
-                screen === 'call' &&
-                'p-0 min-[481px]:p-0 min-[821px]:p-0 min-[1251px]:p-0',
-            )}
-          >
-            {!user && (
-              <WelcomeBanner
-                onToggleLayout={() =>
-                  preferences.setLayout(preferences.layout === 'top' ? 'focus' : 'top')
-                }
-              />
-            )}
-            <CallStage
+        <section
+          className={cn(
+            'flex min-w-0 flex-1 flex-col overflow-auto px-3 pt-5 pb-3 [scroll-padding-bottom:1.5rem] min-[481px]:px-5 min-[821px]:pb-0 min-[1251px]:px-8',
+            callJoined ? 'pt-5' : 'min-[821px]:pt-8',
+            callFocused &&
+              screen === 'call' &&
+              'p-0 min-[481px]:p-0 min-[821px]:p-0 min-[1251px]:p-0',
+          )}
+        >
+          {/*
+            With nothing open there is no call to stage, so home takes the
+            space instead of a lobby explaining that nothing is selected. The
+            session itself lives above this tree, so nothing is torn down by
+            swapping what is on screen.
+          */}
+          {atHome ? (
+            <HomeScreen
               user={user}
-              layout={preferences.layout}
-              onLayout={preferences.setLayout}
-              focused={callFocused}
-              onFocus={() => setCallFocused((value) => !value)}
-              balanced={preferences.balanced}
-              onError={setError}
-              onInvite={() => setFriendsOpen(true)}
+              rooms={rooms}
+              presence={presence.rooms}
+              presenceKnown={presence.known}
+              onSelectRoom={selectRoom}
+              onCreateRoom={() => setCreateOpen(true)}
+              onFriends={() => setFriendsOpen(true)}
               onRecordings={openRecordings}
             />
-            {!user && (
-              <SignInPanel
-                devAuth={devAuth}
-                busy={busy}
-                name={name}
-                email={email}
-                onNameChange={setName}
-                onEmailChange={setEmail}
-                onDevSignIn={devSignIn}
-                onSignIn={signIn.start}
-                onCancelSignIn={signIn.cancel}
-                signInStatus={signIn.status}
-              />
-            )}
-          </section>
-          <AnimatePresence initial={false}>
-            {chatOpen && (
-              <ChatPanel
-                messages={messages}
-                endRef={endRef}
-                draft={draft}
-                onDraftChange={setDraft}
-                onSubmit={send}
-                onClose={() => setChatOpen(false)}
-                canSend={Boolean(user && room)}
-                busy={busy}
-                hidden={callJoined && callFocused}
-              />
-            )}
-          </AnimatePresence>
-        </div>
+          ) : null}
+          <CallStage
+            hidden={atHome}
+            user={user}
+            layout={preferences.layout}
+            onLayout={preferences.setLayout}
+            focused={callFocused}
+            onFocus={() => setCallFocused((value) => !value)}
+            balanced={preferences.balanced}
+            onError={setError}
+            onInvite={() => setFriendsOpen(true)}
+            onRecordings={openRecordings}
+          />
+          {!user && (
+            <SignInPanel
+              devAuth={devAuth}
+              busy={busy}
+              name={name}
+              email={email}
+              onNameChange={setName}
+              onEmailChange={setEmail}
+              onDevSignIn={devSignIn}
+              onSignIn={signIn.start}
+              onCancelSignIn={signIn.cancel}
+              signInStatus={signIn.status}
+            />
+          )}
+        </section>
       </main>
       <AnimatePresence mode="wait" initial={false}>
         {screen === 'recordings' && (
@@ -303,9 +273,10 @@ export default function App() {
         visible and anything reading the page in order reaches the call first.
       */}
       <RoomSidebar
-        user={user}
         rooms={rooms}
         room={room}
+        user={user}
+        section={section}
         presence={presence.rooms}
         presenceKnown={presence.known}
         screen={screen}
@@ -313,32 +284,37 @@ export default function App() {
         hidden={immersive}
         onSelectRoom={selectRoom}
         onCreateRoom={() => setCreateOpen(true)}
-        onFriends={() => setFriendsOpen(true)}
-        onSettings={openSettings}
+        onRoomSettings={setSettingsRoom}
+        onInviteToRoom={(next) => {
+          setInviteRoom(next);
+          setFriendsOpen(true);
+        }}
+        onRoomsChanged={refresh}
+        onError={setError}
       />
       <SpacesRail
         user={user}
-        rooms={rooms}
-        room={room}
         screen={screen}
+        section={section}
         collapsed={callJoined}
         hidden={immersive}
-        onSelectRoom={selectRoom}
-        onCreateRoom={() => setCreateOpen(true)}
+        onSection={showSection}
         onFriends={() => setFriendsOpen(true)}
         onRecordings={openRecordings}
         onSettings={openSettings}
+        onSignOut={signOut}
         onHome={backToCall}
-        settingsOpen={settingsOpen}
       />
       <AnimatePresence>
         {error && <ErrorToast message={error} onDismiss={() => setError('')} />}
       </AnimatePresence>
       <RoomSettings
-        room={room}
+        room={settingsRoom}
         user={user}
-        open={roomSettingsOpen}
-        onOpenChange={setRoomSettingsOpen}
+        open={settingsRoom !== null}
+        onOpenChange={(next) => {
+          if (!next) setSettingsRoom(null);
+        }}
         onChanged={refresh}
         onError={setError}
         refreshRevision={presence.roomsRevision + presence.syncRevision}
@@ -356,9 +332,12 @@ export default function App() {
       />
       <FriendsDialog
         open={friendsOpen}
-        onOpenChange={setFriendsOpen}
+        onOpenChange={(next) => {
+          setFriendsOpen(next);
+          if (!next) setInviteRoom(null);
+        }}
         user={user}
-        room={room}
+        room={inviteRoom ?? room}
         callPresence={presence.rooms}
         onlineUsers={presence.onlineUsers}
         refreshRevision={presence.friendsRevision + presence.syncRevision}

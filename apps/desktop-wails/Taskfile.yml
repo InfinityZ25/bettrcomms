@@ -35,6 +35,18 @@ tasks:
     cmds:
       - go run .
 
+  # The executable's icon and version metadata. Windows takes the window and
+  # taskbar icons from the .exe resource, so this is what puts the application
+  # mark on the window; the artwork is the same one the Tauri host ships.
+  #
+  # The .syso is committed because a plain `go build` needs it present. Rerun
+  # this after changing build/appicon.png.
+  icons:
+    dir: '{{.TASK_DIR}}'
+    cmds:
+      - wails3 generate icons -input build/appicon.png -windowsfilename build/windows/icon.ico
+      - wails3 generate syso -icon build/windows/icon.ico -manifest build/windows/wails.exe.manifest -info build/windows/info.json -arch amd64 -out rsrc_windows_amd64.syso
+
   test:
     cmds:
       - go test ./...

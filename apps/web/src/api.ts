@@ -8,6 +8,11 @@ export interface User {
   id: string;
   name: string;
   email: string;
+  /**
+   * The profile picture WorkOS supplied, its own or a provider's, or null when
+   * the account has none. The API has always carried it; nothing rendered it.
+   */
+  avatar_url?: string | null;
 }
 export interface Room {
   id: string;
