@@ -4,7 +4,7 @@
     "windows": [{
       "label": "main",
       "title": "BetterComms",
-      "url": "https://bettrcomms-production.up.railway.app",
+      "url": "https://app.bettrcomms.com",
       "width": 1440,
       "height": 900,
       "minWidth": 960,
