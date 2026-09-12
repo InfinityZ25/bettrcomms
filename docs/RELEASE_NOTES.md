@@ -1,5 +1,20 @@
 # BetterComms preview release notes
 
+## 0.1.16 — hosted app moved to app.bettrcomms.com
+
+The hosted app's primary domain moved from bettrcomms-production.up.railway.app
+to app.bettrcomms.com. The desktop app's trusted origin (release window URL,
+remote capability allowlist, and native media-permission checks) now points
+at the new domain; install this build to keep the desktop app connecting
+correctly, since the previous domain no longer accepts non-GET API calls or
+WebSocket connections from an older installed build.
+
+Also introduces the first version of a selective forwarding unit (SFU) for
+group calls, deployed alongside the existing direct peer-to-peer path — see
+[MEDIA_ARCHITECTURE.md](MEDIA_ARCHITECTURE.md) and
+[SFU_DEPLOYMENT.md](SFU_DEPLOYMENT.md). Not yet used by default; direct
+peer-to-peer calling is unchanged.
+
 ## 0.1.15 — source resolution and stream startup fixes
 
 Match source now preserves a 1080p capture at 1080p instead of enlarging it to
