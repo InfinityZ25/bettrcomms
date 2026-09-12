@@ -2,9 +2,17 @@ import { expect, test, type Page } from '@playwright/test';
 
 const baseURL = process.env.E2E_BASE_URL ?? 'http://localhost:5173';
 
-async function mount(page: Page, props: Record<string, unknown>) {
+// ConnectionStatus reads server RTT off a real signaling EventTarget's
+// 'latency' events rather than taking it as a plain prop (a state update on
+// every 5s ping otherwise re-rendered all of CallStage's inline, unmemoized
+// camera tiles just to update this panel's number). These fixtures stand
+// in a plain EventTarget for `signaling` and dispatch 'latency' themselves.
+async function mount(
+  page: Page,
+  props: Record<string, unknown> & { rttMs?: number | null },
+) {
   await page.goto(baseURL);
-  await page.evaluate(async (initialProps) => {
+  await page.evaluate(async ({ rttMs, ...initialProps }) => {
     const React = (await import('/node_modules/.vite/deps/react.js')).default;
     const ReactDOM = (await import(
       '/node_modules/.vite/deps/react-dom_client.js'
@@ -16,9 +24,12 @@ async function mount(page: Page, props: Record<string, unknown>) {
     const root = ReactDOM.createRoot(
       document.getElementById('connection-fixture')!,
     );
+    const signaling = new EventTarget();
+    (window as any).__signaling = signaling;
     (window as any).__renderConnection = (next: Record<string, unknown>) =>
       root.render(
         React.createElement(ConnectionStatus, {
+          signaling,
           ...next,
           onDetails: () => {
             document.body.dataset.details = 'opened';
@@ -26,13 +37,26 @@ async function mount(page: Page, props: Record<string, unknown>) {
         }),
       );
     (window as any).__renderConnection(initialProps);
+    if (rttMs !== undefined) {
+      // ConnectionStatus subscribes to 'latency' from a useEffect, which
+      // React flushes asynchronously after this render commits — a fixed
+      // delay here would be a guess. Retry dispatching against the actual
+      // rendered DOM instead, so this is correct regardless of how long
+      // that effect takes to attach.
+      for (let attempt = 0; attempt < 50; attempt += 1) {
+        signaling.dispatchEvent(new CustomEvent('latency', { detail: { rttMs } }));
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        const trigger = document.querySelector('.connection-trigger');
+        if (trigger && !trigger.textContent?.includes('Measuring')) break;
+      }
+    }
   }, props);
 }
 
 test('server voice is visible and does not present signaling ping as peer latency', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 760 });
   await mount(page, {
-    joined: true, peerCount: 1, serverRtt: 31, names: { friend: 'Sam' },
+    joined: true, peerCount: 1, rttMs: 31, names: { friend: 'Sam' },
     stats: [{ peerId: 'friend', timestamp: 1, connectionState: 'failed', tracks: [],
       voiceRelay: { state: 'relayed', verificationCode: '1111-2222-3333-4444-5555-6666-7777-8888' } }],
   });
@@ -55,7 +79,7 @@ test('server-only status reports signaling latency and closes with Escape', asyn
   await mount(page, {
     joined: true,
     peerCount: 0,
-    serverRtt: 42.4,
+    rttMs: 42.4,
     stats: [],
     names: {},
   });
@@ -80,7 +104,7 @@ test('call status preserves zero and unknown RTT, routes, and responsive bounds'
   await mount(page, {
     joined: true,
     peerCount: 2,
-    serverRtt: 18,
+    rttMs: 18,
     names: { direct: 'Alex', relay: 'A very long participant name for layout' },
     stats: [
       {

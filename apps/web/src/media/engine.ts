@@ -614,7 +614,10 @@ export class MediaEngine extends EventTarget {
     if (peerId === this.signaling.localPeerId || this.peers.has(peerId)) return;
     const config: RTCConfiguration = {
       iceServers: this.ice.iceServers ?? [],
-      iceTransportPolicy: 'all',
+      // 'relay' makes the browser gather only relay candidates (from the
+      // one configured TURN server), so this peer's media physically
+      // transits it regardless of what the other side does.
+      iceTransportPolicy: this.ice.mode === 'relay-only' ? 'relay' : 'all',
       bundlePolicy: this.ice.bundlePolicy ?? 'max-bundle',
     };
     const pc = new RTCPeerConnection(config);

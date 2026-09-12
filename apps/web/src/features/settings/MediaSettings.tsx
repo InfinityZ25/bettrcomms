@@ -44,6 +44,23 @@ export function readQuality() {
     return defaultQuality;
   }
 }
+
+export type ConnectionMode = 'automatic' | 'direct-only' | 'relay-only';
+
+/**
+ * One setting instead of stacked booleans, so "direct only" and "force
+ * relay" can't both end up set at once. Falls back to the older
+ * bc-direct flag so an existing "Direct connections only" choice survives
+ * this becoming a single control.
+ */
+export function readConnectionMode(): ConnectionMode {
+  const mode = localStorage.getItem('bc-connection-mode');
+  if (mode === 'direct-only' || mode === 'relay-only') return mode;
+  if (mode === 'automatic') return 'automatic';
+  return localStorage.getItem('bc-direct') === 'true'
+    ? 'direct-only'
+    : 'automatic';
+}
 export default function MediaSettings() {
   const [speakingThreshold, setSpeakingThreshold] = useState(
     readSpeakingThreshold,
@@ -61,11 +78,8 @@ export default function MediaSettings() {
       ? 'standard'
       : (storedDenoiser ?? 'rnnoise');
   const [quality, setQuality] = useState(readQuality),
-    [direct, setDirect] = useState(
-      localStorage.getItem('bc-direct') === 'true',
-    ),
-    [preferSfu, setPreferSfu] = useState(
-      localStorage.getItem('bc-prefer-sfu') !== 'false',
+    [connectionMode, setConnectionMode] = useState<ConnectionMode>(
+      readConnectionMode,
     ),
     [denoiser, setDenoiser] = useState(initialDenoiser),
     [nvidia, setNvidia] = useState<NvidiaStatus | null>(null),
@@ -354,27 +368,30 @@ export default function MediaSettings() {
       <h3>
         <Radio size={17} /> Connection
       </h3>
-      <label className="switch-row">
-        <div>
-          <strong>Direct connections only</strong>
-          <p>Skip media relays. Some networks may not connect.</p>
-        </div>
-        <input
-          type="checkbox"
-          checked={direct}
+      <label className="device-select">
+        Connection mode
+        <select
+          value={connectionMode}
           onChange={(e) => {
-            setDirect(e.target.checked);
-            localStorage.setItem('bc-direct', String(e.target.checked));
+            const next = e.target.value as ConnectionMode;
+            setConnectionMode(next);
+            localStorage.setItem('bc-connection-mode', next);
           }}
-        />
+        >
+          <option value="automatic">Automatic · direct first, relay fallback</option>
+          <option value="direct-only">Direct only · skip relays, some networks won't connect</option>
+          <option value="relay-only">Force relay (debug) · always via the Bettrcomms relay</option>
+        </select>
       </label>
       <p className="text-xs leading-6 text-muted-foreground">
-        Connection mode applies when you next join a call.
+        Connection mode applies when you next join a call. "Force relay" is a
+        debug option for verifying the relay path — it isn't meant for normal
+        calls.
       </p>
       <label className="device-select">
         Voice route
         <select
-          disabled={direct}
+          disabled={connectionMode === 'direct-only'}
           value={voiceRoute}
           onChange={(event) => {
             setVoiceRoute(event.target.value);
@@ -392,29 +409,6 @@ export default function MediaSettings() {
         Camera, screen sharing, and shared app audio still need WebRTC
         connectivity. Direct-only overrides this setting. Changes apply on your
         next call.
-      </p>
-      <label className="switch-row">
-        <div>
-          <strong>Use a relay server when available</strong>
-          <p>
-            Group calls route camera, screen, and audio through Bettrcomms'
-            relay for better quality and reliability. Falls back to direct
-            connections automatically if the relay is unreachable — media
-            never passes through the app's own servers either way.
-          </p>
-        </div>
-        <input
-          type="checkbox"
-          checked={preferSfu}
-          onChange={(e) => {
-            setPreferSfu(e.target.checked);
-            localStorage.setItem('bc-prefer-sfu', String(e.target.checked));
-          }}
-        />
-      </label>
-      <p className="text-xs leading-6 text-muted-foreground">
-        Applies when you next join a call. 1:1 calls stay direct regardless of
-        this setting.
       </p>
     </>
   );

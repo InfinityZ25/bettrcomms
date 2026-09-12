@@ -111,7 +111,15 @@ export interface ScreenCaptureOptions {
 }
 
 export interface IceOptions {
-  mode?: 'direct-only' | 'direct-preferred';
+  /**
+   * `relay-only` sets `iceTransportPolicy: 'relay'`: the browser gathers no
+   * host or server-reflexive candidates at all, only relay candidates from
+   * the configured TURN server. Since exactly one TURN server is ever
+   * configured (the Linode relay), this guarantees this peer's media
+   * physically transits that box — a debug/verification mode, not
+   * something a normal call should use.
+   */
+  mode?: 'direct-only' | 'direct-preferred' | 'relay-only';
   iceServers?: RTCIceServer[];
   bundlePolicy?: RTCBundlePolicy;
 }
