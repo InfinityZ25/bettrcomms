@@ -45,7 +45,7 @@ import {
   cameraCaptureConstraints,
   readCameraSettings,
 } from '@/media/cameraSettings';
-import { readQuality } from '@/features/settings/MediaSettings';
+import { readConnectionMode, readQuality } from '@/features/settings/MediaSettings';
 import type { PeerMediaStats } from '@/media';
 import { isTauri } from '@tauri-apps/api/core';
 import type { NativeScreenStartOptions } from '@/media/nativeScreen';
@@ -200,14 +200,19 @@ export default function CallStage({
     ),
     [audioBlocked, setAudioBlocked] = useState(false);
   const [saveStatus, setSaveStatus] = useState('');
-  const [serverRtt, setServerRtt] = useState<number | null>(null);
+  // Not reactive state on purpose: ConnectionStatus owns the reactive copy
+  // (subscribed directly to the signaling socket) so the 5s ping doesn't
+  // re-render this whole component's inline, unmemoized camera tiles.
+  // This ref exists only so downloadDiagnostics can read the latest value
+  // on demand.
+  const serverRttRef = useRef<number | null>(null);
   const [reportStatus, setReportStatus] = useState('');
   async function downloadDiagnostics() {
     try {
       const nativeVersion = isTauri() ? await import('@tauri-apps/api/app').then(api => api.getVersion()).catch(() => 'unknown') : undefined;
       const report = {
         version: 2, time: new Date().toISOString(), client: { native: isTauri(), nativeVersion, userAgent: navigator.userAgent },
-        serverRtt, playback: getCallPlaybackStatus(), screen: await engine.current?.getScreenDiagnostics(),
+        serverRtt: serverRttRef.current, playback: getCallPlaybackStatus(), screen: await engine.current?.getScreenDiagnostics(),
         peers: stats.map(({ peerId: _id, voiceRelay, ...peer }, index) => ({ peer: index + 1, ...peer, voiceRelay: voiceRelay ? { state: voiceRelay.state } : undefined })),
         videoElements: [...(workspace.current?.querySelectorAll('video') ?? [])].map(video => ({ self: video.classList.contains('self-video'), readyState: video.readyState, paused: video.paused, width: video.videoWidth, height: video.videoHeight, currentTime: video.currentTime, errorCode: video.error?.code })),
       };
@@ -296,7 +301,6 @@ export default function CallStage({
     engine.current = null;
     setJoined(false);
     setSignalingDown(false);
-    setServerRtt(null);
     setStats([]);
     setLocals(new Map());
     setRemote([]);
@@ -515,6 +519,7 @@ export default function CallStage({
         peerId,
         `/api/v1/rooms/${room.id}/ws?${query}`,
       );
+      const connectionMode = readConnectionMode();
       const e = new MediaEngine({
         signaling: s,
         voiceRelay: {
@@ -523,10 +528,7 @@ export default function CallStage({
         },
         quality: readQuality(),
         ice: {
-          mode:
-            localStorage.getItem('bc-direct') === 'true'
-              ? 'direct-only'
-              : 'direct-preferred',
+          mode: connectionMode === 'automatic' ? 'direct-preferred' : connectionMode,
           iceServers: config.ice_servers,
         },
       });
@@ -534,7 +536,7 @@ export default function CallStage({
       callMicrophone.start();
       socket.current = s;
       s.addEventListener('latency', (event) => {
-        if (socket.current === s) setServerRtt(event.detail.rttMs);
+        if (socket.current === s) serverRttRef.current = event.detail.rttMs;
       });
       e.addEventListener('local-track', () =>
         setLocals(new Map(e.getLocalTracks())),
@@ -656,7 +658,6 @@ export default function CallStage({
           engine.current = null;
           setJoined(false);
           setCallPlaybackDeafened(false);
-          setServerRtt(null);
           setStats([]);
           setRemote([]);
           setLocals(new Map());
@@ -1171,7 +1172,7 @@ export default function CallStage({
         <ConnectionStatus
           joined={joined}
           peerCount={Object.keys(peers).length}
-          serverRtt={serverRtt}
+          signaling={socket.current}
           stats={stats}
           names={names}
           onDetails={() => setShowStats(!showStats)}
@@ -1251,7 +1252,7 @@ export default function CallStage({
           <Button variant="secondary" onClick={() => void downloadDiagnostics()}>Download diagnostic report</Button>
           <Button variant="secondary" onClick={() => {
             const report = {
-              version: 1, time: new Date().toISOString(), serverRtt,
+              version: 1, time: new Date().toISOString(), serverRtt: serverRttRef.current,
               playback: getCallPlaybackStatus(),
               microphoneSettings: readProcessingSettings(),
               speakingIndicatorThresholdDb: readSpeakingThreshold(),
