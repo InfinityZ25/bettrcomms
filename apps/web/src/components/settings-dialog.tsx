@@ -1,14 +1,13 @@
 import { useState } from 'react';
-import { Cable, Headphones, Info, LogOut, Mic, MonitorUp, SlidersHorizontal, SunMoon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Cable, Headphones, LogOut, Mic, MonitorUp, SlidersHorizontal, SunMoon } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent,
   SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider,
 } from '@/components/ui/sidebar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import SettingsScreen, { type SettingsPage } from '@/features/settings/SettingsScreen';
+import type { User } from '@/api';
 
 const pages = [
   { id: 'audio', label: 'Audio', note: 'Quick call controls', icon: Mic },
@@ -19,9 +18,10 @@ const pages = [
   { id: 'appearance', label: 'Appearance', note: 'Theme and camera layout', icon: SunMoon },
 ] as const satisfies ReadonlyArray<{ id: SettingsPage; label: string; note: string; icon: typeof Mic }>;
 
-export function SettingsDialog({ open, onOpenChange, noise, onNoiseChange, balanced, onBalancedChange, layout, onLayoutChange, signedIn, onSignOut }: {
+export function SettingsDialog({ open, onOpenChange, user, noise, onNoiseChange, balanced, onBalancedChange, layout, onLayoutChange, signedIn, onSignOut }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  user: User | null;
   noise: boolean;
   onNoiseChange: (value: boolean) => void;
   balanced: boolean;
@@ -68,7 +68,7 @@ export function SettingsDialog({ open, onOpenChange, noise, onNoiseChange, balan
           </Sidebar>
 
           <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
-            <header className="shrink-0 px-5 py-4 pr-16 sm:px-7">
+            <header className="shrink-0 border-b border-border/60 px-5 py-4 pr-16 sm:px-7 sm:pr-16">
               <div className="mb-3 md:hidden">
                 <Select value={page} onValueChange={(value) => { if (value) setPage(value as SettingsPage); }}>
                   <SelectTrigger className="w-full"><SelectValue>{current.label}</SelectValue></SelectTrigger>
@@ -77,15 +77,10 @@ export function SettingsDialog({ open, onOpenChange, noise, onNoiseChange, balan
                   </SelectContent>
                 </Select>
               </div>
-              <div className="flex items-center gap-2">
-                <h2 className="font-heading text-xl font-semibold tracking-tight">{current.label}</h2>
-                <Tooltip>
-                  <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`About ${current.label}`} />}>
-                    <Info className="text-muted-foreground" />
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">{current.note}</TooltipContent>
-                </Tooltip>
-              </div>
+              {/* The note was behind an info button here and printed again
+                  inside the page's card. One copy, in plain sight. */}
+              <h2 className="font-heading text-lg font-semibold tracking-tight">{current.label}</h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">{current.note}</p>
             </header>
             {/*
               Settings does not animate. The dialog already has an entrance, and
@@ -93,8 +88,8 @@ export function SettingsDialog({ open, onOpenChange, noise, onNoiseChange, balan
               twice; switching pages in a settings list is navigation between
               forms, where a transition costs time and returns nothing.
             */}
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6">
-              <SettingsScreen page={page} noise={noise} onNoiseChange={onNoiseChange} balanced={balanced} onBalancedChange={onBalancedChange} layout={layout} onLayoutChange={onLayoutChange} />
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-3 sm:px-7 sm:py-4">
+              <SettingsScreen page={page} user={user} noise={noise} onNoiseChange={onNoiseChange} balanced={balanced} onBalancedChange={onBalancedChange} layout={layout} onLayoutChange={onLayoutChange} />
             </div>
           </main>
         </SidebarProvider>

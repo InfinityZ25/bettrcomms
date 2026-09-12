@@ -4,8 +4,7 @@ import { Button } from '@/components/ui/button';
 import { roomLabel } from '@/features/rooms/RoomNavigation';
 import type { CallParticipant, Room, User } from '@/api';
 import { cn } from '@/lib/utils';
-
-import { Blobatar } from "@blobatar/react";
+import { Mascot } from '@/components/mascot';
 
 /**
  * What you see with nothing open.
@@ -40,13 +39,7 @@ export default function HomeScreen({
 
   return (
     <div className="flex items-center flex-col justify-center h-full gap-3">
-      <div className="w-24">
-        <Blobatar
-          name="clara"
-          traits={{ shape: 0.825 }}
-          animate="always"
-        />
-      </div>
+      <Mascot />
       <header>
         <p className="text-center text-xl font-heading">
           {user ? greeting() : 'Hi!'} {user ? `${firstName(user.name)}, your people are here.` : 'A little closer, wherever.'}
@@ -154,8 +147,8 @@ function LiveRoom({
             <Avatar
               key={person.user_id}
               name={person.name || 'Friend'}
-              from="leading"
-              className="size-6 rounded-full text-[0.6rem] ring-2 ring-card"
+              id={person.user_id}
+              className="size-6"
             />
           ))}
         </span>

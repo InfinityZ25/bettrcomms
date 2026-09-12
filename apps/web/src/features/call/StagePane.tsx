@@ -46,8 +46,8 @@ export default function StagePane({
     >
       <div className="stage-topline">
         <span>
-          {item.kind === 'screen' ? <MonitorUp size={15} /> : <Video size={15} />}
-          {item.name.toUpperCase()}
+          {item.kind === 'screen' ? <MonitorUp size={14} /> : <Video size={14} />}
+          {item.name}
         </span>
         <div className="stage-pane-actions">
           {canFocus && (
@@ -111,7 +111,7 @@ export default function StagePane({
       </div>
       <div className="stage-bottomline">
         <span>{zoom > 1 ? 'Drag to move · scroll to zoom' : 'Scroll or pinch to zoom'}</span>
-        <div>
+        <div title={zoom > 1 ? 'Drag to move · scroll to zoom' : 'Scroll or pinch to zoom'}>
           <button aria-label={`Zoom out ${item.name}`} onClick={() => step(-0.1)}>
             <ZoomOut size={16} />
           </button>

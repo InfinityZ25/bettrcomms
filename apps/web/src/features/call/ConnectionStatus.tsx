@@ -142,23 +142,9 @@ export default function ConnectionStatus({
         }
         onClick={() => setOpen(!open)}
       >
-        <Signal size={21} />
-        <span>
-          <strong>
-            {joined
-              ? peerCount
-                ? relayed ? 'Voice via server' : stats.some((s) => s.connectionState === 'connected')
-                  ? 'Voice connected'
-                  : 'Connecting…'
-                : 'Waiting for your people'
-              : 'Not connected'}
-          </strong>
-          <small>
-            {joined
-              ? `${source} · ${value === null ? 'Measuring…' : ms(value)}`
-              : 'Join a call to see ping'}
-          </small>
-        </span>
+        {/* Bars alone. The numbers are one click away, which is the only
+            time anybody wants them. */}
+        <Signal size={18} aria-hidden="true" />
       </button>
       {open && (
         <div
@@ -173,7 +159,15 @@ export default function ConnectionStatus({
           }}
         >
           <header>
-            <strong>Connection</strong>
+            <strong>
+              {!joined
+                ? 'Not in a call'
+                : relayed
+                  ? 'Through the server'
+                  : peerCount
+                    ? 'Straight to your friends'
+                    : 'Waiting for company'}
+            </strong>
             <button
               aria-label="Close connection details"
               onClick={() => {
@@ -185,9 +179,8 @@ export default function ConnectionStatus({
             </button>
           </header>
           <div className={`connection-reading connection-${quality}`}>
-            <Signal size={23} />
-            <strong>{ms(value)}</strong>
-            <span>{source.toLowerCase()} ping</span>
+            <strong>{value === null ? '—' : Math.round(value)}</strong>
+            <span>ms round trip</span>
           </div>
           <svg
             viewBox="0 0 280 70"
@@ -199,7 +192,7 @@ export default function ConnectionStatus({
           </svg>
           <dl>
             <div>
-              <dt>Average ({source.toLowerCase()})</dt>
+              <dt>Average</dt>
               <dd>
                 {ms(
                   values.length
@@ -209,7 +202,7 @@ export default function ConnectionStatus({
               </dd>
             </div>
             <div>
-              <dt>Signaling server</dt>
+              <dt>Server</dt>
               <dd>{joined ? ms(serverRtt) : '—'}</dd>
             </div>
           </dl>
@@ -242,13 +235,12 @@ export default function ConnectionStatus({
               <code style={{ overflowWrap: 'anywhere' }}>{s.voiceRelay!.verificationCode}</code>
             </details>
           ))}
-          <p>
-            {!joined
-              ? 'Join a call to start measuring.'
-              : peerCount
-                ? relayed ? 'Server ping measures signaling, not the full relayed audio path. Server voice can pause while TCP recovers lost packets. Video still uses WebRTC.' : 'Call ping is the highest measured round-trip time to a connected friend. Voice travels directly or through TURN.'
-                : 'Server ping measures chat and signaling. Call ping appears when a friend connects.'}
-          </p>
+          {relayed && (
+            <p>
+              Voice is going through the server, so it can pause while a lost
+              packet is fetched again. Video still goes direct.
+            </p>
+          )}
           <button
             className="connection-more"
             onClick={() => {
@@ -257,7 +249,7 @@ export default function ConnectionStatus({
             }}
           >
             <Activity size={14} />
-            Advanced diagnostics
+            Everything else
           </button>
         </div>
       )}

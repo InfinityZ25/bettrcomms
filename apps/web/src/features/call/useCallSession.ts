@@ -26,7 +26,12 @@ import { isTauri } from '@tauri-apps/api/core';
 import { errorMessage } from '@/lib/errors';
 import { readStored } from '@/lib/storage';
 import { createCallPeerId } from './callPeerId';
-import type { CallPresence, JoinMode, NativeShareActions } from './callTypes';
+import type {
+  CallPresence,
+  JoinMode,
+  NativeShareActions,
+  RecordingSaveState,
+} from './callTypes';
 
 type PeerFlags = { muted: boolean; deafened: boolean };
 type RecordingMetadata = { title: string; labels: Record<string, string> };
@@ -63,7 +68,14 @@ export function useCallSession({
   const [names, setNames] = useState<Record<string, string>>({});
   const [recording, setRecording] = useState(false);
   const [result, setResult] = useState<RecordingResult | null>(null);
-  const [saveStatus, setSaveStatus] = useState('');
+  /*
+    What became of it, rather than a sentence about what became of it. The
+    words belong to whatever is showing the notice; this is the fact, and the
+    id is what makes the notice mortal: a confirmation that a recording was
+    saved must not outlive the recording.
+  */
+  const [saveState, setSaveState] = useState<RecordingSaveState>('saving');
+  const [savedId, setSavedId] = useState<string | null>(null);
   const [stats, setStats] = useState<PeerMediaStats[]>([]);
   const [serverRtt, setServerRtt] = useState<number | null>(null);
   const [audioBlocked, setAudioBlocked] = useState(false);
@@ -128,17 +140,34 @@ export function useCallSession({
   ) => {
     if (active.current) {
       setResult(finished);
-      setSaveStatus('Saving recording…');
+      setSavedId(null);
+      setSaveState('saving');
     }
     try {
-      await saveRecording(finished, metadata);
-      if (active.current) setSaveStatus('Saved to your recordings on this device.');
+      const saved = await saveRecording(finished, metadata);
+      if (active.current) {
+        setSavedId(saved.id);
+        setSaveState('saved');
+      }
     } catch (error) {
       if (active.current) {
-        setSaveStatus('Not saved. Download the original tracks below before closing.');
+        setSaveState('failed');
         onError(errorMessage(error));
       }
     }
+  };
+
+  /**
+   * Put the notice away.
+   *
+   * It used to stay until the next recording started, which meant a line
+   * saying where a recording went outlived leaving the call, and outlived the
+   * recording itself once it was deleted.
+   */
+  const dismissResult = () => {
+    setResult(null);
+    setSavedId(null);
+    setSaveState('saving');
   };
 
   const finishRecording = async () => {
@@ -158,6 +187,11 @@ export function useCallSession({
   const leave = () => {
     callMicrophone.stop();
     disposeCallPlayback();
+    // Clears the confirmation from an earlier recording; one that is still
+    // running is stopped and archived below and raises a fresh notice of its
+    // own. A failed save is the exception: that recording exists nowhere else,
+    // so its notice outlives the call until somebody deals with it.
+    if (saveState !== 'failed') dismissResult();
     void finishRecording();
     socket.current?.close();
     socket.current = null;
@@ -697,7 +731,9 @@ export function useCallSession({
     remoteRecording,
     recording,
     result,
-    saveStatus,
+    saveState,
+    savedId,
+    dismissResult,
     audioBlocked,
     speaking,
     microphone: microphoneState,

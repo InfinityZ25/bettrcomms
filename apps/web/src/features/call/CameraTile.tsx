@@ -3,19 +3,18 @@ import { Headphones, Mic, MicOff, MonitorUp, Pin, Volume2 } from 'lucide-react';
 import TrackVideo from './TrackVideo';
 import FrozenTrackPreview from './FrozenTrackPreview';
 import { PeerVolume } from './PeerAudio';
-import { leadingInitials } from '@/components/avatar';
+import { Avatar } from '@/components/avatar';
 import type { RemoteTrack } from '@/media';
 import type { ScreenShare } from './stageItems';
 
 const DEGRADED_HINT =
   'The direct native connection failed, so this screen is being re-encoded through the call at reduced quality.';
 
-const placeholder =
-  'inline-flex size-14 shrink-0 items-center justify-center rounded-full bg-muted text-xl font-semibold text-muted-foreground';
 
 /** One participant in the camera strip: their video, or their initials. */
 export function CameraTile({
   name,
+  peerId,
   caption,
   track,
   self,
@@ -33,6 +32,8 @@ export function CameraTile({
   volume,
 }: {
   name: string;
+  /** Whose face this is. Your own tile passes nothing and falls back to a name. */
+  peerId?: string;
   caption: string;
   track?: MediaStreamTrack;
   self?: boolean;
@@ -78,7 +79,14 @@ export function CameraTile({
       {track ? (
         <TrackVideo track={track} self={self} onAspectRatio={onAspectRatio} />
       ) : (
-        <span className={placeholder}>{leadingInitials(name)}</span>
+        /*
+          Two letters in a grey circle told you nothing about who was in the
+          tile beyond the letters. A blobatar is a face — the same one every
+          time for the same person — and it is already alive: it blinks and
+          breathes, which is the difference between a call that has people in
+          it and a call that has placeholders in it.
+        */
+        <Avatar name={name} id={peerId} speaking={speaking} className="tile-face" />
       )}
       <div className="tile-caption">
         <span>{caption}</span>

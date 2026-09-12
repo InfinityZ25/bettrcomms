@@ -78,7 +78,11 @@ export default function RoomSettings({
                 disabled={!owner}
               />
             </label>
-            {owner && <Button disabled={busy}>Save name</Button>}
+            {owner && (
+              <Button type="submit" disabled={busy}>
+                Save name
+              </Button>
+            )}
           </form>
           <div className="flex flex-col gap-4">
             <h3 className="text-sm font-semibold">People in this room</h3>

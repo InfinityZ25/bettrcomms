@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
 import { Volume2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { talkBindingLabel } from '@/media/pushToTalk';
@@ -6,9 +7,8 @@ import type { User } from '@/api';
 import ConnectionStatus from './ConnectionStatus';
 import CallControls from './CallControls';
 import CallLobby from './CallLobby';
-import CallToolbar from './CallToolbar';
+import CallToolbar, { RecordingFlag } from './CallToolbar';
 import ConnectionDetails from './ConnectionDetails';
-import RecordingNotice from './RecordingNotice';
 import StageArea from './StageArea';
 import { CameraTile, ScreenShareTile } from './CameraTile';
 import { RemoteAudio } from './PeerAudio';
@@ -27,7 +27,6 @@ import {
   type ScreenShare,
 } from './stageItems';
 import './CallBase.css';
-import './CallLobby.css';
 import './CallWorkspace.css';
 
 export type { CallPresence, NativeShareActions } from './callTypes';
@@ -41,7 +40,8 @@ export default function CallStage({
   balanced,
   onError,
   onInvite,
-  onRecordings,
+  onChat,
+  chatOpen = false,
   hidden = false,
 }: {
   user: User | null;
@@ -51,8 +51,11 @@ export default function CallStage({
   onFocus?: () => void;
   balanced: boolean;
   onError: (message: string) => void;
-  onInvite: () => void;
-  onRecordings: () => void;
+  onInvite?: () => void;
+  /** Present in a direct room, where the conversation is the other half. */
+  onChat?: () => void;
+  /** The conversation is beside this, so the call has less width to work in. */
+  chatOpen?: boolean;
   /**
    * Take the stage off screen without unmounting it. Home occupies the same
    * space when nothing is open, and this screen holds the audio elements a
@@ -168,29 +171,19 @@ export default function CallStage({
     );
 
   // Home has the space when nothing is open, so the lobby would only repeat
-  // that nothing is selected. A finished recording still has to be offered,
-  // whatever is on screen.
-  if (!joined)
-    return (
-      <>
-        {hidden ? null : <CallLobby
-          user={user}
-          room={room}
-          busy={busy}
-          names={names}
-          callPresence={callPresence}
-          presenceKnown={presenceKnown}
-          onJoin={call.join}
-        />}
-        {call.result && (
-          <RecordingNotice
-            variant="lobby"
-            result={call.result}
-            saveStatus={call.saveStatus}
-            onRecordings={onRecordings}
-          />
-        )}
-      </>
+  // that nothing is selected. A finished recording is announced by the shell's
+  // own notice, which is still on screen after the call ends.
+  if (!joined || hidden)
+    return hidden ? null : (
+      <CallLobby
+        user={user}
+        room={room}
+        busy={busy}
+        names={names}
+        callPresence={callPresence}
+        presenceKnown={presenceKnown}
+        onJoin={call.join}
+      />
     );
 
   return (
@@ -201,53 +194,29 @@ export default function CallStage({
       // and `.call-workspace` sets `display` in a stylesheet, which outranks it.
       style={hidden ? { display: 'none' } : undefined}
       inert={hidden}
-      data-controls-visible={!immersive.fullscreen || immersive.controlsVisible}
+      data-chat={chatOpen}
+      data-controls-visible={immersive.controlsVisible}
       onPointerMove={immersive.onPointerMove}
+      onPointerDown={immersive.onPointerDown}
       onKeyDown={() => immersive.reveal()}
     >
+      {/*
+        Two sparks leave the record button, trace the window's edge and meet at
+        the top, and what they leave behind breathes for as long as it runs.
+        Drawn on the body rather than in here: this workspace is inset from the
+        window by the shell's own padding, and a ring floating somewhere inside
+        the layout reads as a box rather than as the app itself recording.
+      */}
+      {call.recording &&
+        createPortal(
+          <div className="recording-frame" aria-hidden="true" />,
+          document.body,
+        )}
       {call.engine && <CopilotPanel copilot={call.engine.copilot} names={names} />}
-      <CallToolbar
+      <RecordingFlag
         recording={call.recording}
         remoteRecording={call.remoteRecording}
         names={names}
-        galleryLayout={gallery.galleryLayout}
-        onGalleryLayout={gallery.setGalleryLayout}
-        galleryFit={gallery.galleryFit}
-        onToggleGalleryFit={gallery.toggleGalleryFit}
-        hasStageContent={hasStageContent}
-        showAllMedia={gallery.galleryLayout === 'all' && Boolean(focusedStageItem)}
-        watchedScreenCount={focusedStageItem ? watchedScreens.length : 0}
-        onClearFocus={() => selection.setFocusedStageKey(null)}
-        docking={docking}
-        overlayCameras={[
-          ...(locals.get('camera')
-            ? [
-                {
-                  id: 'self',
-                  name: 'You',
-                  track: locals.get('camera')!,
-                  speaking: speaking.has('self'),
-                  muted,
-                  deafened,
-                },
-              ]
-            : []),
-          ...remote
-            .filter((track) => track.source === 'camera')
-            .map((track) => ({
-              id: track.peerId,
-              name: names[track.peerId] ?? 'Friend',
-              track: track.track,
-              speaking: speaking.has(track.peerId),
-              muted: remotePresence[track.peerId]?.muted,
-              deafened: remotePresence[track.peerId]?.deafened,
-            })),
-        ]}
-        focused={focused}
-        fullscreen={immersive.fullscreen}
-        onInvite={() => immersive.leavingFullscreen(onInvite)}
-        onFocus={onFocus}
-        onFullscreen={immersive.toggleFullscreen}
       />
       <div
         ref={docking.stage}
@@ -274,6 +243,7 @@ export default function CallStage({
               <CameraTile
                 key={camera.id}
                 name={camera.name}
+                peerId={camera.self ? user?.id : camera.id}
                 caption={camera.self ? `${camera.name} · you` : camera.name}
                 track={camera.track}
                 self={camera.self}
@@ -417,6 +387,48 @@ export default function CallStage({
           onLeave={call.leave}
           onJoin={() => call.join('replace')}
         />
+        <CallToolbar
+          galleryLayout={gallery.galleryLayout}
+          onGalleryLayout={gallery.setGalleryLayout}
+          galleryFit={gallery.galleryFit}
+          onToggleGalleryFit={gallery.toggleGalleryFit}
+          hasStageContent={hasStageContent}
+          showAllMedia={gallery.galleryLayout === 'all' && Boolean(focusedStageItem)}
+          watchedScreenCount={focusedStageItem ? watchedScreens.length : 0}
+          onClearFocus={() => selection.setFocusedStageKey(null)}
+          docking={docking}
+          overlayCameras={[
+            ...(locals.get('camera')
+              ? [
+                  {
+                    id: 'self',
+                    name: 'You',
+                    track: locals.get('camera')!,
+                    speaking: speaking.has('self'),
+                    muted,
+                    deafened,
+                  },
+                ]
+              : []),
+            ...remote
+              .filter((track) => track.source === 'camera')
+              .map((track) => ({
+                id: track.peerId,
+                name: names[track.peerId] ?? 'Friend',
+                track: track.track,
+                speaking: speaking.has(track.peerId),
+                muted: remotePresence[track.peerId]?.muted,
+                deafened: remotePresence[track.peerId]?.deafened,
+              })),
+          ]}
+          focused={focused}
+          fullscreen={immersive.fullscreen}
+          onInvite={onInvite && (() => immersive.leavingFullscreen(onInvite))}
+          onChat={onChat && (() => immersive.leavingFullscreen(onChat))}
+          chatOpen={chatOpen}
+          onFocus={onFocus}
+          onFullscreen={immersive.toggleFullscreen}
+        />
       </div>
       {showStats && (
         <ConnectionDetails
@@ -427,14 +439,6 @@ export default function CallStage({
           remote={remote}
           engine={call.engine}
           workspace={workspace.current}
-        />
-      )}
-      {call.result && (
-        <RecordingNotice
-          variant="call"
-          result={call.result}
-          saveStatus={call.saveStatus}
-          onRecordings={() => immersive.leavingFullscreen(onRecordings)}
         />
       )}
     </div>

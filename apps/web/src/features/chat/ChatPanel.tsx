@@ -1,8 +1,9 @@
 import type { FormEvent, RefObject } from 'react';
-import { MessageSquare, Send, X } from 'lucide-react';
+import { Send, X } from 'lucide-react';
 import { Avatar } from '@/components/avatar';
 import type { Message } from '@/api';
 import { cn } from '@/lib/utils';
+import { Mascot } from '@/components/mascot';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { motion } from 'motion/react';
@@ -62,7 +63,11 @@ export default function ChatPanel({
         ) : (
           messages.map((message) => (
             <div className="mb-5 flex gap-2.5" key={message.id}>
-              <Avatar name={message.author.name} src={message.author.avatar_url} />
+              <Avatar
+                name={message.author.name}
+                id={message.author.id}
+                src={message.author.avatar_url}
+              />
               <div className="min-w-0">
                 <div className="flex items-baseline gap-2">
                   <strong className="text-xs">{message.author.name}</strong>
@@ -92,6 +97,7 @@ export default function ChatPanel({
           disabled={!canSend}
         />
         <Button
+          type="submit"
           variant="ghost"
           size="icon"
           className="size-8 text-primary"
@@ -111,9 +117,7 @@ export default function ChatPanel({
 function EmptyConversation() {
   return (
     <div className="mt-4">
-      <span className="grid size-12 place-items-center rounded-xl border bg-muted text-muted-foreground">
-        <MessageSquare size={24} />
-      </span>
+      <Mascot className="w-14" />
       <h3 className="mt-5 max-w-44 font-heading text-base leading-6 font-semibold">
         The conversation starts here.
       </h3>

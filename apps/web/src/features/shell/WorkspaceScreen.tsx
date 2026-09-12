@@ -1,12 +1,19 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 
+/**
+ * The frame a full-screen section is drawn in.
+ *
+ * It used to open with a lettered brand pill, a three-line heading and a
+ * sentence explaining the page below it — the shape of a landing page, on a
+ * screen somebody reached by clicking "Recordings". The heading stays, because
+ * moving focus to it is how the section announces itself; the marketing around
+ * it is gone, and the page's own first line can be about the contents.
+ */
 export default function WorkspaceScreen({
   title,
-  description,
   children,
 }: {
   title: 'Recordings';
-  description: string;
   children: ReactNode;
 }) {
   const heading = useRef<HTMLHeadingElement>(null);
@@ -19,22 +26,14 @@ export default function WorkspaceScreen({
       aria-label={title}
     >
       <div className="min-h-0 flex-1 overflow-auto overscroll-contain">
-        <div className="mx-auto max-w-6xl px-4 pt-6 pb-10 sm:px-8 sm:pt-9 sm:pb-14">
-          <div className="mb-8 max-w-2xl">
-            <span className="inline-flex rounded-full bg-primary/8 px-3 py-1 text-[0.65rem] font-semibold tracking-[0.16em] text-primary">
-              BETTERCOMMS
-            </span>
-            <h1
-              className="my-2.5 font-heading text-3xl font-semibold tracking-tight outline-none"
-              tabIndex={-1}
-              ref={heading}
-            >
-              {title}
-            </h1>
-            <p className="text-sm leading-6 text-muted-foreground">
-              {description}
-            </p>
-          </div>
+        <div className="mx-auto max-w-6xl px-4 pt-5 pb-10 sm:px-8 sm:pt-7 sm:pb-14">
+          <h1
+            className="mb-4 font-heading text-xl font-semibold tracking-tight outline-none"
+            tabIndex={-1}
+            ref={heading}
+          >
+            {title}
+          </h1>
           {children}
         </div>
       </div>

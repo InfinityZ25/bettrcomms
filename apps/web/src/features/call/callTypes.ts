@@ -11,6 +11,14 @@ export interface CallPresence {
 
 export const EMPTY_CALL_PRESENCE: CallPresence[] = [];
 
+/**
+ * Where a finished recording ended up.
+ *
+ * `failed` means the only copy is the one still held in memory, which is why
+ * a notice about it has to stay until somebody deals with it.
+ */
+export type RecordingSaveState = 'saving' | 'saved' | 'failed';
+
 /** `replace` moves the call to this device; `additional` keeps the other one connected. */
 export type JoinMode = 'replace' | 'additional';
 

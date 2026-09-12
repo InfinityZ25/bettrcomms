@@ -1,5 +1,6 @@
 import { Headphones, Plus } from 'lucide-react';
 import { Avatar } from '@/components/avatar';
+import { Mascot } from '@/components/mascot';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -32,7 +33,6 @@ export default function RoomSidebar({
   presence,
   presenceKnown,
   screen,
-  hiddenInCall,
   hidden,
   onSelectRoom,
   onCreateRoom,
@@ -48,7 +48,6 @@ export default function RoomSidebar({
   presence: Record<string, CallParticipant[]>;
   presenceKnown: boolean;
   screen: Screen;
-  hiddenInCall: boolean;
   hidden: boolean;
   onSelectRoom: (room: Room) => void;
   onCreateRoom: () => void;
@@ -58,7 +57,11 @@ export default function RoomSidebar({
   onError: (message: string) => void;
 }) {
   const { open } = useSidebar();
-  const visible = open && !hiddenInCall && !hidden;
+  // Being in a call used to hide this outright. Whether the room list is on
+  // screen is the reader's choice, made with the toggle, and a call is not a
+  // reason to take it away from them; full-focus mode still hides everything,
+  // because that is what asking for it means.
+  const visible = open && !hidden;
 
   const messages = section === 'messages';
   const listed = rooms.filter(
@@ -107,6 +110,7 @@ export default function RoomSidebar({
           {listed.length ? (
             <RoomNavigation
               rooms={listed}
+              kind={messages ? 'direct' : 'channel'}
               user={user}
               selected={room?.id}
               presence={presence}
@@ -177,6 +181,7 @@ function Empty({
 }) {
   return (
     <div className="px-3 py-4">
+      <Mascot className="mb-2 w-12" />
       <p className="text-xs leading-5 text-muted-foreground">
         {messages
           ? 'No conversations yet. Add a friend to start one.'

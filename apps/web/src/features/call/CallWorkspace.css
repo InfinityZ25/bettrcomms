@@ -1,21 +1,198 @@
+/*
+  The call is the media, and the rest floats on top of it.
+
+  This was a column of four bands: the copilot's permissions, a strip of layout
+  buttons, the stage, and the controls. The two above the stage spent something
+  like ninety pixels of height saying nothing while people talked, and the
+  cameras were what got squeezed for it. Every piece of that chrome is
+  positioned over the stage now, and the stage has the workspace to itself.
+*/
 .call-workspace {
   --camera-size: 148px;
+  /* How much room the floating controls need at the bottom of the stage. */
+  --chrome-bottom: 66px;
+  position: relative;
   display: flex;
   flex: 1;
   min-width: 0;
   min-height: 0;
   flex-direction: column;
   overflow: hidden;
+  background: var(--background);
 }
 
-.call-layout-toolbar {
+/*
+  Recording, drawn on the frame.
+
+  Two sparks start where the record button is — bottom centre — run in
+  opposite directions along the edge and meet at the top, leaving a thin red
+  line that breathes while the recording runs. It is the whole edge because
+  that is the thing being recorded, and it is faint because it stays there:
+  anything strong enough to notice twice is too strong to sit through.
+
+  The sparks are one conic gradient each, masked to the border so only the
+  ring shows, with the gradient's own start angle animated — rotating the
+  element instead would skew the corners of a box this wide.
+*/
+@property --recording-sweep {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 180deg;
+}
+
+.recording-frame {
+  --recording-line: color-mix(in oklch, var(--destructive) 60%, transparent);
+  --recording-spark: color-mix(in oklch, var(--destructive) 70%, white);
+  position: fixed;
+  z-index: 60;
+  inset: 0;
+  pointer-events: none;
+  /* The window's own corners, not a panel's. */
+  border-radius: 10px;
+  box-shadow:
+    inset 0 0 0 1px var(--recording-line),
+    inset 0 0 30px -8px var(--recording-line);
+  opacity: 0;
+  animation:
+    recording-settle 640ms ease-out 640ms forwards,
+    recording-breathe 4.5s ease-in-out 1.3s infinite;
+}
+
+.recording-frame::before,
+.recording-frame::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  padding: 2px;
+  border-radius: inherit;
+  /* Ring only: the box minus its own content area. */
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  filter: blur(1.5px);
+  animation: recording-spark-right 820ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.recording-frame::before {
+  background: conic-gradient(
+    from var(--recording-sweep),
+    var(--recording-spark) 0deg,
+    transparent 26deg
+  );
+}
+
+/* The mirrored spark trails the other way, so its bright end is the one
+   pointing where it is going. */
+.recording-frame::after {
+  background: conic-gradient(
+    from var(--recording-sweep),
+    transparent 334deg,
+    var(--recording-spark) 360deg
+  );
+  animation-name: recording-spark-left;
+}
+
+@keyframes recording-spark-right {
+  from {
+    --recording-sweep: 180deg;
+    opacity: 1;
+  }
+  75% {
+    opacity: 1;
+  }
+  to {
+    --recording-sweep: 360deg;
+    opacity: 0;
+  }
+}
+
+@keyframes recording-spark-left {
+  from {
+    --recording-sweep: 180deg;
+    opacity: 1;
+  }
+  75% {
+    opacity: 1;
+  }
+  to {
+    --recording-sweep: 0deg;
+    opacity: 0;
+  }
+}
+
+@keyframes recording-settle {
+  to {
+    opacity: 0.5;
+  }
+}
+
+@keyframes recording-breathe {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+/* Layout, invite, focus and fullscreen: the third column of the footer grid,
+   empty since the controls took the middle one. */
+.call-chrome-actions {
+  grid-row: 1;
+  grid-column: 3;
   display: flex;
-  min-height: 38px;
-  flex: 0 0 auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 2px 0 10px;
+  justify-self: end;
+  gap: 2px;
+}
+
+/*
+  What the sharer has allowed, and what the native overlay is doing: the first
+  band of the old column, now a quiet stack in the bottom-left corner.
+
+  That is the corner a viewer's own copilot controls use on the screen they are
+  watching, which puts both halves of the feature in the same place. The top of
+  the workspace could not have it: that is where the cameras are.
+*/
+.copilot-sharer {
+  position: absolute;
+  z-index: 28;
+  bottom: var(--chrome-bottom);
+  left: 12px;
+  display: flex;
+  max-width: min(340px, calc(100% - 24px));
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+/*
+  Recording, which does not hide.
+
+  It used to travel with the layout buttons. Those now leave the screen when
+  the pointer goes still, and an indicator that somebody is being recorded is
+  the one thing here that has to be readable without touching the mouse first.
+  It is the only piece of chrome the stage gives up room for, and only while it
+  is true — covering a face to say a face is being recorded would be absurd.
+*/
+.call-workspace > .recording-badge {
+  position: absolute;
+  z-index: 29;
+  top: 8px;
+  left: 50%;
+  margin: 0;
+  padding: 3px 10px;
+  transform: translateX(-50%);
+  border-radius: var(--radius-lg);
+  background: color-mix(in oklch, var(--background) 82%, transparent);
+  backdrop-filter: blur(10px);
+  font-size: 11px;
+}
+
+.call-workspace:has(> .recording-badge) > .stage {
+  padding-top: 32px;
 }
 
 .call-workspace > .stage {
@@ -25,6 +202,13 @@
   min-height: 0;
   gap: 0;
   overflow: hidden;
+}
+
+/* A shared screen keeps its own controls in its bottom corners, so it ends
+   above the call's. A gallery of cameras is centred instead, and only its last
+   row has to clear them — that is the strip's padding further down. */
+.call-workspace > .stage[data-has-share='true'] {
+  padding-bottom: var(--chrome-bottom);
 }
 
 .call-workspace .camera-dock {
@@ -41,7 +225,6 @@
   min-height: 0;
   gap: 10px;
   padding: 2px;
-  scrollbar-width: thin;
 }
 
 .call-workspace .camera-tile {
@@ -56,7 +239,7 @@
   z-index: 5;
   border: 0;
   border-radius: 999px;
-  background: #71806f;
+  background: var(--muted-foreground);
   box-shadow: 0 1px 6px #0008;
   opacity: 0;
   transition: opacity 120ms ease, background 120ms ease;
@@ -85,7 +268,7 @@
   content: '';
   position: absolute;
   border-radius: 999px;
-  background: #343d38;
+  background: var(--muted);
   transition: background 120ms ease;
 }
 
@@ -189,6 +372,7 @@
   grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
   grid-auto-rows: minmax(160px, 1fr);
   align-content: center;
+  padding: 2px 2px var(--chrome-bottom);
   overflow: auto;
 }
 
@@ -213,9 +397,44 @@
   z-index: 8;
 }
 
+/*
+  The controls leave downwards.
+
+  They rest on the stage rather than under it, so when the mouse goes still
+  they slide out of the frame completely instead of fading and leaving an empty
+  band where they were. Any movement in the call brings them back.
+*/
 .call-workspace > .call-footer {
-  min-height: 64px;
-  padding: 8px 0;
+  position: absolute;
+  z-index: 30;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  min-height: 0;
+  padding: 26px 14px 10px;
+  background: linear-gradient(
+    transparent,
+    color-mix(in oklch, var(--background) 86%, transparent) 55%
+  );
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.call-workspace[data-controls-visible='false'] > .call-footer {
+  opacity: 0;
+  transform: translateY(100%);
+  pointer-events: none;
+}
+
+/* Whatever the clock says, they stay while they are in use: under the pointer,
+   holding focus, or with a menu or panel of their own open. Equal specificity
+   to the rule above, so source order decides it and this one is later. */
+.call-workspace > .call-footer:hover,
+.call-workspace > .call-footer:focus-within,
+.call-workspace > .call-footer:has([aria-expanded='true']),
+.call-workspace > .call-footer:has([open]) {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
 }
 
 .call-workspace.is-focused {
@@ -223,7 +442,7 @@
   inset: 0;
   z-index: 40;
   padding: 12px;
-  background: #111513;
+  background: var(--background);
 }
 
 .desktop-frame .call-workspace.is-focused {
@@ -304,38 +523,89 @@
     overflow-y: auto;
   }
   .call-workspace .stage[data-has-share='false'] .camera-tile { width: 100%; }
-  .call-layout-toolbar { overflow-x: auto; }
-  .call-workspace > .call-footer { min-height: 58px; }
+  .call-workspace > .call-footer { padding-bottom: 8px; }
 }
+/*
+  Too narrow for three columns.
+
+  The controls stay centred only while the columns either side of them are the
+  same width, and the layout cluster is wider than the connection chip. Below
+  this the whole row wraps and centres instead, which needs a taller gutter at
+  the bottom of the stage.
+*/
+@media (max-width: 1100px) {
+  .call-workspace {
+    --chrome-bottom: 96px;
+  }
+  .call-workspace > .call-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 6px 10px;
+  }
+  .call-chrome-actions {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+}
+
+/* Same story with a conversation beside the call: the window is wide, the
+   call is not. */
+.call-workspace[data-chat='true'] {
+  --chrome-bottom: 96px;
+}
+.call-workspace[data-chat='true'] > .call-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px 10px;
+}
+.call-workspace[data-chat='true'] .call-chrome-actions {
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* The line still says it is recording; it just stops moving. */
+@media (prefers-reduced-motion: reduce) {
+  .recording-frame {
+    opacity: 0.55;
+    animation: none;
+  }
+  .recording-frame::before,
+  .recording-frame::after {
+    display: none;
+  }
+}
+
 /* Keep the entire call together in fullscreen, including cameras and controls. */
-.call-workspace:fullscreen { width: 100vw; height: 100dvh; padding: 12px 16px 0; background: #0c100e; box-sizing: border-box; }
+.call-workspace:fullscreen { width: 100vw; height: 100dvh; padding: 12px 16px 0; background: var(--background); box-sizing: border-box; }
 .call-workspace .stage { position: relative; }
-.call-layout-toolbar { font-size: 12px; justify-content: flex-end; }
-.call-layout-toolbar label { display: flex; align-items: center; gap: 8px; margin-right: auto; }
-.call-layout-toolbar select { width: auto; padding: 6px 26px 6px 10px; font-size: 12px; }
-.call-layout-toolbar button { display: inline-flex; gap: 6px; align-items: center; padding: 7px 10px; border-radius: 7px; color: #c0cbc3; white-space: nowrap; }
-.call-layout-toolbar button:hover, .call-layout-toolbar button[aria-pressed='true'] { background: #2a382c; color: #ceefaa; }
-.call-workspace .stage[data-dock] .camera-dock-handle { width: auto; height: 24px; inset: 6px auto auto 50%; transform: translateX(-50%); padding: 3px 12px; font-size: 10px; color: #e5eedf; background: #26332bed; white-space: nowrap; cursor: grab; touch-action: none; }
+.call-chrome-actions { font-size: 12px; }
+.call-chrome-actions button { display: inline-flex; gap: 6px; align-items: center; border-radius: var(--radius-lg); color: var(--muted-foreground); white-space: nowrap; }
+.call-chrome-actions button:hover, .call-chrome-actions button[aria-pressed='true'] { color: var(--foreground); }
+.call-workspace .stage[data-dock] .camera-dock-handle { width: auto; height: 24px; inset: 6px auto auto 50%; transform: translateX(-50%); padding: 3px 12px; font-size: 10px; color: var(--primary); background: color-mix(in oklch, var(--accent) 93%, transparent); white-space: nowrap; cursor: grab; touch-action: none; }
 .call-workspace .camera-dock-handle:active { cursor: grabbing; }
 .call-workspace .stage[data-dock='top'] .camera-strip { overflow-x: auto; overflow-y: hidden; }
 .call-workspace .stage[data-dock='top'] .camera-tile { width: auto; flex: 0 0 auto; aspect-ratio: 16 / 9; }
 .call-workspace .stage[data-dock='left'] .camera-tile, .call-workspace .stage[data-dock='right'] .camera-tile { height: auto; aspect-ratio: 16 / 9; }
 .call-workspace .stage[data-has-share='false'] .camera-tile { width: 100%; aspect-ratio: auto; }
-.call-workspace .content-stage { padding: 8px; border-radius: 10px; background: #080c09; }
+/* One frame around a shared screen, not two. The pane inside it draws the
+   border; an outer box with its own border and padding made every share look
+   like a picture of a picture. */
+.call-workspace .content-stage { background: var(--background); }
 .call-workspace .stage-topline, .call-workspace .stage-bottomline { flex-shrink: 0; padding: 4px; }
 .call-workspace .video-viewport { min-height: 0; flex: 1; }
 .call-workspace .call-footer { margin: 0; gap: 12px; }
-.push-to-talk-status { font-size: 12px; color: #b9c6bc; }
-.call-workspace > .recording-downloads { flex: 0 0 auto; max-height: 110px; overflow: auto; margin: 0; }
+.push-to-talk-status { font-size: 12px; color: var(--muted-foreground); }
 .call-workspace > .stats-panel { flex: 0 0 auto; max-height: 30vh; overflow: auto; }
 .dock-targets { position: absolute; inset: 0; z-index: 20; pointer-events: none; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; padding: 14px; }
-.dock-targets span { display: grid; place-items: center; background: #18271eaa; border: 2px dashed #789565; border-radius: 14px; color: #d5efc8; }
-.dock-targets span[data-active='true'] { background: #57713caa; border-color: #c3eb93; }
+.dock-targets span { display: grid; place-items: center; background: color-mix(in oklch, var(--card) 67%, transparent); border: 2px dashed var(--ring); border-radius: 14px; color: var(--primary); }
+.dock-targets span[data-active='true'] { background: color-mix(in oklch, var(--ring) 67%, transparent); border-color: var(--primary); }
 .app-shell.is-call-focused .main { flex: 1; }
 @media (max-width: 700px) {
- .call-layout-toolbar { flex-wrap: wrap; justify-content: flex-start; gap: 2px 4px; overflow: visible; }
- .call-layout-toolbar label { flex: 1 0 100%; }
- .call-layout-toolbar button { padding: 5px 7px; }
+ .call-chrome-actions button { padding: 5px 7px; }
  .call-workspace .stage[data-dock] .camera-tile { width: auto; height: 100%; aspect-ratio: 16/9; }
  .call-workspace .stage[data-has-share='false'] .camera-tile { width: 100%; aspect-ratio: auto; }
  .call-workspace > .call-footer { flex-wrap: wrap; gap: 4px; }
@@ -344,12 +614,12 @@
  .app-shell.is-in-call .call-area { padding: 6px; }
 }
 .call-workspace .content-stage .video-viewport { min-height: 0; }
-.call-recording-notice { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; padding: 6px 0; font-size: 11px; color: #a5b6a6; flex-shrink: 0; max-height: 100px; overflow: auto; }
-.call-recording-notice button { color: #c1e99d; }
 .app-shell.is-in-call .profile-bar { margin-top: auto; }
-.call-workspace .call-recording-notice { display: flex; flex-direction: row; margin: 0; padding: 6px 0; }
-.call-recording-notice details { flex: 0 1 auto; }
-.call-recording-notice details[open] { flex-basis: 100%; }
+
+/* The diagnostics panel opens from the controls, so it keeps clear of them. */
+.call-workspace > .stats-panel {
+  margin-bottom: var(--chrome-bottom);
+}
 
 /* A call without shared content is a gallery, not a shallow camera dock. */
 .gallery-layout-tools {
@@ -358,9 +628,9 @@
   gap: 6px;
   margin-right: auto;
   padding: 3px;
-  border: 1px solid #2d3731;
+  border: 1px solid var(--muted);
   border-radius: 9px;
-  background: #171d19;
+  background: var(--card);
 }
 
 .gallery-layout-tools label { margin: 0; }
@@ -370,17 +640,14 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #d8edc9;
-  border-color: #43543d;
-  background: #263323;
+  color: var(--primary);
+  border-color: var(--ring);
+  background: var(--accent);
 }
 
 .call-workspace .stage[data-has-share='false'] {
   min-height: 0;
   border-radius: 14px;
-  background:
-    radial-gradient(circle at 50% 20%, #1a211d 0, #111513 58%),
-    #111513;
 }
 
 .call-workspace .stage[data-has-share='false'] .camera-strip {
@@ -400,8 +667,8 @@
   min-height: 0;
   max-height: none;
   border-radius: 14px;
-  border-color: #354039;
-  background: #171d1a;
+  border-color: var(--muted);
+  background: var(--card);
   box-shadow: 0 12px 34px #0003;
 }
 
@@ -495,7 +762,7 @@
 
 .call-workspace .stage[data-camera-fit='contain'] .camera-tile video {
   object-fit: contain;
-  background: #090c0a;
+  background: var(--background);
 }
 
 .camera-focus-button {
@@ -510,8 +777,8 @@
   padding: 0;
   border: 1px solid #ffffff1c;
   border-radius: 8px;
-  color: #dbe8d8;
-  background: #101612c9;
+  color: var(--primary);
+  background: color-mix(in oklch, var(--background) 79%, transparent);
   opacity: 0;
   transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
 }
@@ -520,7 +787,7 @@
 .camera-focus-button:focus-visible,
 .camera-focus-button[aria-pressed='true'] { opacity: 1; }
 .camera-focus-button:hover,
-.camera-focus-button[aria-pressed='true'] { color: #c8f09f; background: #263423e8; }
+.camera-focus-button[aria-pressed='true'] { color: var(--primary); background: color-mix(in oklch, var(--accent) 91%, transparent); }
 
 @media (max-width: 900px) {
   .call-workspace .stage[data-has-share='false'][data-camera-count] .camera-strip,
@@ -593,39 +860,9 @@
   overflow: hidden;
 }
 
-.call-workspace:fullscreen > .call-layout-toolbar,
+/* The chrome floats in a window too, so fullscreen only widens its margins. */
 .call-workspace:fullscreen > .call-footer {
-  position: absolute;
-  z-index: 30;
-  left: 0;
-  right: 0;
-  opacity: 1;
-  transition: opacity 180ms ease, transform 180ms ease;
-}
-
-.call-workspace:fullscreen > .call-layout-toolbar {
-  top: 0;
-  min-height: 62px;
-  padding: 12px 16px 22px;
-  background: linear-gradient(#080c0bea 45%, transparent);
-}
-
-.call-workspace:fullscreen > .call-footer {
-  bottom: 0;
-  min-height: 76px;
-  padding: 24px 16px 12px;
-  justify-content: center;
-  background: linear-gradient(transparent, #080c0bea 55%);
-}
-
-.call-workspace:fullscreen > .call-footer > .connection-status {
-  position: absolute;
-  left: 16px;
-  bottom: 12px;
-}
-
-.call-workspace:fullscreen > .call-footer > .call-controls {
-  margin-inline: auto;
+  padding: 30px 18px 14px;
 }
 
 /* Two cameras read as one centered conversation, rather than a row pinned to the ceiling. */
@@ -644,8 +881,7 @@
   max-height: calc(100dvh - 28px);
 }
 
-.call-workspace:fullscreen > .stats-panel,
-.call-workspace:fullscreen > .call-recording-notice {
+.call-workspace:fullscreen > .stats-panel {
   display: none;
 }
 
@@ -655,49 +891,22 @@
   }
 }
 
-.call-workspace:fullscreen[data-controls-visible='false'] > .call-layout-toolbar,
-.call-workspace:fullscreen[data-controls-visible='false'] > .call-footer {
-  opacity: 0;
-  pointer-events: none;
-}
-.call-workspace:fullscreen[data-controls-visible='false'] > .call-layout-toolbar { transform: translateY(-10px); }
-.call-workspace:fullscreen[data-controls-visible='false'] > .call-footer { transform: translateY(10px); }
-
-.call-workspace:fullscreen > .call-layout-toolbar:hover,
-.call-workspace:fullscreen > .call-footer:hover {
-  opacity: 1;
-  transform: none;
-  pointer-events: auto;
-}
-
-.call-workspace:fullscreen .stage[data-has-share='true'] .content-stage {
+/* Fullscreen media meets the edges of the screen. */
+.call-workspace:fullscreen .stage[data-has-share='true'] .stage-content-pane {
   border: 0;
   border-radius: 0;
-  padding: 0;
 }
 
 .call-workspace .content-stage[data-content-fit='fill'] .zoom-surface video {
   object-fit: cover;
 }
 
+/* A pane's own labels are pills in their corners in every mode. Planks across
+   the top and bottom of the picture in fullscreen alone would be a second
+   design of the same thing. */
 .call-workspace:fullscreen .content-stage .stage-topline,
 .call-workspace:fullscreen .content-stage .stage-bottomline {
-  position: absolute;
   z-index: 31;
-  left: 0;
-  right: 0;
-  opacity: 1;
-  transition: opacity 180ms ease;
-}
-.call-workspace:fullscreen .content-stage .stage-topline {
-  top: 0;
-  padding: 16px;
-  background: linear-gradient(#080c0bc7, transparent);
-}
-.call-workspace:fullscreen .content-stage .stage-bottomline {
-  bottom: 0;
-  padding: 18px 16px;
-  background: linear-gradient(transparent, #080c0bc7);
 }
 .call-workspace:fullscreen .content-stage .video-viewport {
   position: absolute;
@@ -711,8 +920,8 @@
 
 /* Screen shares remain visible as selectable participants and can share the stage. */
 .screen-share-tile {
-  border-color: #647b58;
-  background: #090d0a;
+  border-color: var(--ring);
+  background: var(--background);
 }
 
 .frozen-track-preview {
@@ -721,8 +930,8 @@
   display: grid;
   place-items: center;
   overflow: hidden;
-  color: #9eada1;
-  background: #090d0a;
+  color: var(--muted-foreground);
+  background: var(--background);
   font-size: 12px;
 }
 
@@ -755,7 +964,7 @@
   display: grid;
   place-items: center;
   pointer-events: none;
-  background: #060a0670;
+  background: color-mix(in oklch, var(--background) 44%, transparent);
   opacity: 0;
   transition: opacity 120ms ease;
 }
@@ -771,10 +980,10 @@
   align-items: center;
   gap: 6px;
   padding: 7px 10px;
-  border: 1px solid #b8e98c66;
+  border: 1px solid color-mix(in oklch, var(--primary) 40%, transparent);
   border-radius: 8px;
-  color: #dff8c7;
-  background: #19251be8;
+  color: var(--primary);
+  background: color-mix(in oklch, var(--card) 91%, transparent);
   pointer-events: auto;
 }
 
@@ -807,6 +1016,16 @@
   grid-template-rows: repeat(2, minmax(0, 1fr));
 }
 
+/*
+  The shared screen is the content; everything else is chrome over it.
+
+  This pane used to spend two solid bands on that chrome — a 50px strip above
+  the video for a name and a badge, another below it for zoom buttons and a
+  sentence about the scroll wheel — so a 16:9 screen arrived letterboxed inside
+  a box with a hundred pixels of furniture. Both bands are overlays now, resting
+  on the picture and appearing when the pointer is in the pane, which gives the
+  screen the whole frame and puts the controls where the eye already is.
+*/
 .stage-content-pane {
   position: relative;
   display: flex;
@@ -814,9 +1033,9 @@
   min-height: 0;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid #303a33;
-  border-radius: 9px;
-  background: #050806;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2xl);
+  background: var(--background);
 }
 
 .stage-pane-actions {
@@ -830,7 +1049,7 @@
   align-items: center;
   gap: 5px;
   padding: 4px 6px;
-  color: #b9c8bb;
+  color: var(--muted-foreground);
 }
 
 .content-security {
@@ -843,8 +1062,8 @@
   gap: 6px;
   padding: 4px 7px;
   border-radius: 7px;
-  color: #8fa08f;
-  background: #071008b8;
+  color: var(--muted-foreground);
+  background: color-mix(in oklch, var(--background) 72%, transparent);
   font-size: 9px;
   pointer-events: none;
 }

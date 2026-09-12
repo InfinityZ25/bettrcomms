@@ -8,6 +8,7 @@ import {
   Users,
 } from 'lucide-react';
 import { Avatar } from '@/components/avatar';
+import { useOwnFace } from '@/features/settings/blobatarIdentity';
 import type { User } from '@/api';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -63,6 +64,7 @@ export default function SpacesRail({
 }) {
   // A section button is current when the sidebar is showing it and no other
   // screen has taken over.
+  const ownFace = useOwnFace();
   const inSection = (candidate: Section) =>
     screen === 'call' && section === candidate;
 
@@ -130,7 +132,7 @@ export default function SpacesRail({
             }
           >
             {user ? (
-              <Avatar name={user.name} src={user.avatar_url} />
+              <Avatar name={user.name} id={user.id} src={user.avatar_url} prefer={ownFace} />
             ) : (
               <span className="size-2 rounded-full bg-primary" />
             )}

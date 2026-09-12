@@ -15,8 +15,17 @@ import { SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, Sideba
 
 export const roomLabel = (room: Room) => room.display_name || room.name;
 
+/**
+ * The rooms of one kind, as the sidebar's list.
+ *
+ * This grouped its own rooms by kind, which it no longer has any business
+ * doing: the rail picks a section and the sidebar hands over the rooms of that
+ * kind. Doing both meant a conversation list that opened with an empty ROOMS
+ * heading telling you to create a room.
+ */
 export default function RoomNavigation({
   rooms,
+  kind,
   user,
   selected,
   presence,
@@ -29,6 +38,7 @@ export default function RoomNavigation({
   onError,
 }: {
   rooms: Room[];
+  kind: 'channel' | 'direct';
   user: User | null;
   selected?: string;
   presence: Record<string, CallParticipant[]>;
@@ -42,37 +52,25 @@ export default function RoomNavigation({
 }) {
   return (
     <div className="conversation-navigation min-h-0 overflow-x-hidden overflow-y-auto">
-      {(['channel', 'direct'] as const).map((kind) => {
-        const entries = rooms.filter(
-          (room) => (room.kind ?? 'channel') === kind,
-        );
-        if (kind === 'direct' && !entries.length) return null;
-        return (
-          <SidebarGroup
-            key={kind}
-            role="region"
-            aria-label={kind === 'direct' ? 'Direct messages' : 'Rooms'}
-          >
-            <SidebarGroupLabel className="mt-3 justify-between">
-              {kind === 'direct' ? 'DIRECT MESSAGES' : 'ROOMS'}
-              {kind === 'channel' && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-7 rounded-lg"
-                  aria-label="Create room"
-                  onClick={onCreate}
-                >
-                  <Plus size={16} />
-                </Button>
-              )}
-            </SidebarGroupLabel>
-            {!entries.length && (
-              <p className="px-2 py-1 text-xs leading-6 text-muted-foreground">
-                Create a room to bring your friends together.
-              </p>
-            )}
-            <SidebarMenu>{entries.map((room) => {
+      <SidebarGroup
+        role="region"
+        aria-label={kind === 'direct' ? 'Direct messages' : 'Rooms'}
+      >
+        <SidebarGroupLabel className="justify-between">
+          {kind === 'direct' ? 'Conversations' : 'Rooms'}
+          {kind === 'channel' && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7 rounded-lg"
+              aria-label="Create room"
+              onClick={onCreate}
+            >
+              <Plus size={16} />
+            </Button>
+          )}
+        </SidebarGroupLabel>
+        <SidebarMenu>{rooms.map((room) => {
               const callers = presence[room.id] ?? [];
               return (
                 <SidebarMenuItem key={room.id}>
@@ -152,9 +150,7 @@ export default function RoomNavigation({
                 </SidebarMenuItem>
               );
             })}</SidebarMenu>
-          </SidebarGroup>
-        );
-      })}
+      </SidebarGroup>
       {!known && rooms.length > 0 && (
         <p className="mx-2 my-3 text-xs text-muted-foreground">
           Call activity unavailable

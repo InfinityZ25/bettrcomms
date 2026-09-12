@@ -3,7 +3,6 @@ import { LinkButton } from '@/components/ui/link-button';
 import { Switch } from '@/components/ui/switch';
 import { useEffect, useState } from 'react';
 import { readStored, writeStored } from '@/lib/storage';
-import { Headphones, Monitor, Radio } from 'lucide-react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import DeviceSettings from './DeviceSettings';
 import VisualCopilotSettings from './VisualCopilotSettings';
@@ -17,7 +16,7 @@ import NativeDeepfilterSetup, {
   type DeepfilterStatus,
 } from './NativeDeepfilterSetup';
 import { SettingsSection } from './SettingsSection';
-import { SettingRow } from './SettingRow';
+import { SettingBlock, SettingRow } from './SettingRow';
 import { SettingsSelect, SettingsSlider } from './SettingsControls';
 
 interface NvidiaStatus {
@@ -127,27 +126,23 @@ export default function MediaSettings({ section }: { section: 'voice' | 'recordi
   }
   return (
     <>
-      {section === 'voice' && <SettingsSection
-        id="settings-voice"
-        icon={<Headphones size={18} />}
-        title="Voice & devices"
-        description="Pick what you use for calls and make sure everything sounds right."
-      >
+      {section === 'voice' && <SettingsSection id="settings-voice" title="Voice & devices">
       <DeviceSettings />
       <VisualCopilotSettings />
-      <label className="grid gap-3">
-        <span className="flex justify-between gap-3">Voice activity <output>{speakingThreshold} dB</output></span>
-        <SettingsSlider ariaLabel="Speaking indicator threshold" value={speakingThreshold} min={-65} max={-20} step={1} onValueChange={(value) => setSpeakingThreshold(saveSpeakingThreshold(value))} />
-      </label>
-      <p
-        id="speaking-threshold-help"
-        className="text-xs leading-6 text-muted-foreground"
+      <SettingBlock
+        title="Voice activity"
+        value={`${speakingThreshold} dB`}
+        description="When your speaking indicator lights up. It does not change how loud you are."
       >
-        Adjust when your speaking indicator lights up. This does not change your volume.
-      </p>
-      <label className="grid gap-2">
-        Noise removal
-        <SettingsSelect
+        <SettingsSlider ariaLabel="Speaking indicator threshold" value={speakingThreshold} min={-65} max={-20} step={1} onValueChange={(value) => setSpeakingThreshold(saveSpeakingThreshold(value))} />
+      </SettingBlock>
+      <SettingRow
+        as="div"
+        title="Noise removal"
+        description={denoiser === 'deepfilter-wasm'
+          ? 'DeepFilter is still being tested. Enhanced is the safer choice for calls.'
+          : 'How strongly your microphone is cleaned up before anyone hears it.'}
+        control={<SettingsSelect
           ariaLabel="Noise suppression engine"
           value={denoiser}
           onValueChange={(value) => {
@@ -163,16 +158,10 @@ export default function MediaSettings({ section }: { section: 'voice' | 'recordi
             ...(desktop ? [{ value: 'nvidia', label: nvidia?.ready ? 'NVIDIA · ready' : 'NVIDIA · setup needed', disabled: !nvidia?.ready }] : []),
             ...(desktop ? [{ value: 'deepfilter', label: deepfilter?.ready ? 'DeepFilter · ready' : 'DeepFilter · setup needed', disabled: !deepfilter?.ready }] : []),
           ]}
-        />
-      </label>
-      <p className="text-xs leading-6 text-muted-foreground">Choose how strongly BetterComms cleans up your microphone.</p>
-      {denoiser === 'deepfilter-wasm' && (
-        <p className="setting-note">
-          DeepFilter is still being tested. Enhanced is the safer choice for calls.
-        </p>
-      )}
+        />}
+      />
       {desktop && nvidia && !nvidia.ready && (
-        <div className="my-4 rounded-lg border bg-muted/40 p-3 text-xs leading-6 text-muted-foreground">
+        <div className="my-3 rounded-xl border border-border/60 bg-muted/40 p-3 text-xs leading-6 text-muted-foreground">
           <p>NVIDIA Audio Effects is unavailable: {nvidia.detail}</p>
           {nvidiaInfo && (
             <>
@@ -252,15 +241,12 @@ export default function MediaSettings({ section }: { section: 'voice' | 'recordi
       )}
       <ProcessingControls engine={denoiser} />
       </SettingsSection>}
-      {section === 'recording' && <SettingsSection
-        id="settings-recording"
-        icon={<Monitor size={18} />}
-        title="Recording quality"
-        description="Choose how clear your saved screen recordings look."
-      >
-      <label className="grid gap-2">
-        Screen recording bitrate
-        <SettingsSelect
+      {section === 'recording' && <SettingsSection id="settings-recording" title="Recording quality">
+      <SettingRow
+        as="div"
+        title="Screen recording bitrate"
+        description="Higher keeps text and motion sharper, and uses more storage."
+        control={<SettingsSelect
           ariaLabel="Screen recording bitrate"
           value={recordingRate}
           onValueChange={(next) => {
@@ -269,67 +255,55 @@ export default function MediaSettings({ section }: { section: 'voice' | 'recordi
             writeStored('bc-recording-mbps', String(value));
           }}
           options={[10, 20, 40, 80].map((value) => ({ value, label: `${value} Mbps` }))}
-        />
-      </label>
-      <p className="my-4 rounded-lg border bg-muted/40 p-3 text-xs leading-6 text-muted-foreground">
-        Higher quality keeps text and motion sharper, but uses more storage.
-      </p>
+        />}
+      />
       </SettingsSection>}
-      {section === 'stream' && <SettingsSection
-        id="settings-stream"
-        icon={<Monitor size={18} />}
-        title="Stream quality"
-        description="Choose how sharp and smooth your shares can be."
-      >
-      <div className="grid gap-3.5">
-        <label className="grid gap-2">
-          Video bitrate ceiling
-          <SettingsSelect
-            ariaLabel="Video bitrate ceiling"
-            value={quality.maxVideoBitrate}
-            onValueChange={(value) =>
-              change({ ...quality, maxVideoBitrate: Number(value) })
-            }
-            options={[{ value: 4_000_000, label: 'Data saver' }, { value: 10_000_000, label: 'Balanced' }, { value: 20_000_000, label: 'High quality' }, { value: 40_000_000, label: 'Maximum detail' }]}
-          />
-        </label>
-        <label className="grid gap-2">
-          Frame rate ceiling
-          <SettingsSelect
-            ariaLabel="Frame rate ceiling"
-            value={quality.maxFramerate}
-            onValueChange={(value) =>
-              change({ ...quality, maxFramerate: Number(value) })
-            }
-            options={[{ value: 15, label: '15 FPS · text' }, { value: 30, label: '30 FPS · balanced' }, { value: 60, label: '60 FPS · smooth' }, { value: 120, label: '120 FPS · high refresh' }]}
-          />
-        </label>
-        <label className="grid gap-2">
-          Audio bitrate ceiling
-          <SettingsSelect
-            ariaLabel="Audio bitrate ceiling"
-            value={quality.maxAudioBitrate}
-            onValueChange={(value) =>
-              change({ ...quality, maxAudioBitrate: Number(value) })
-            }
-            options={[{ value: 64_000, label: 'Voice' }, { value: 128_000, label: 'Balanced' }, { value: 256_000, label: 'High fidelity' }, { value: 510_000, label: 'Maximum' }]}
-          />
-        </label>
-      </div>
-      <p className="my-4 rounded-lg border bg-muted/40 p-3 text-xs leading-6 text-muted-foreground">
-        BetterComms will ease the quality down automatically when a connection needs it.
-      </p>
+      {section === 'stream' && <SettingsSection id="settings-stream" title="Stream quality">
+      <SettingRow
+        as="div"
+        title="Video bitrate ceiling"
+        description="The most a share may use. It eases down on its own when a connection needs it."
+        control={<SettingsSelect
+          ariaLabel="Video bitrate ceiling"
+          value={quality.maxVideoBitrate}
+          onValueChange={(value) =>
+            change({ ...quality, maxVideoBitrate: Number(value) })
+          }
+          options={[{ value: 4_000_000, label: 'Data saver' }, { value: 10_000_000, label: 'Balanced' }, { value: 20_000_000, label: 'High quality' }, { value: 40_000_000, label: 'Maximum detail' }]}
+        />}
+      />
+      <SettingRow
+        as="div"
+        title="Frame rate ceiling"
+        description="Higher is smoother for motion; lower is sharper for text."
+        control={<SettingsSelect
+          ariaLabel="Frame rate ceiling"
+          value={quality.maxFramerate}
+          onValueChange={(value) =>
+            change({ ...quality, maxFramerate: Number(value) })
+          }
+          options={[{ value: 15, label: '15 FPS · text' }, { value: 30, label: '30 FPS · balanced' }, { value: 60, label: '60 FPS · smooth' }, { value: 120, label: '120 FPS · high refresh' }]}
+        />}
+      />
+      <SettingRow
+        as="div"
+        title="Audio bitrate ceiling"
+        description="Voice is enough for talking; the rest is for music and games."
+        control={<SettingsSelect
+          ariaLabel="Audio bitrate ceiling"
+          value={quality.maxAudioBitrate}
+          onValueChange={(value) =>
+            change({ ...quality, maxAudioBitrate: Number(value) })
+          }
+          options={[{ value: 64_000, label: 'Voice' }, { value: 128_000, label: 'Balanced' }, { value: 256_000, label: 'High fidelity' }, { value: 510_000, label: 'Maximum' }]}
+        />}
+      />
       </SettingsSection>}
-      {section === 'connection' && <SettingsSection
-        id="settings-connection"
-        icon={<Radio size={18} />}
-        title="Connection"
-        description="Change this only if you have trouble joining calls."
-      >
+      {section === 'connection' && <SettingsSection id="settings-connection" title="Connection">
       <SettingRow
         as="div"
         title="Direct connections only"
-        description="Skip media relays. Some networks may not connect."
+        description="Skip media relays. Some networks will not connect at all this way."
         control={<Switch
           aria-label="Direct connections only"
           checked={direct}
@@ -339,12 +313,11 @@ export default function MediaSettings({ section }: { section: 'voice' | 'recordi
           }}
         />}
       />
-      <p className="text-xs leading-6 text-muted-foreground">
-        Connection mode applies when you next join a call.
-      </p>
-      <label className="device-select grid gap-2">
-        Voice route
-        <SettingsSelect
+      <SettingRow
+        as="div"
+        title="Voice route"
+        description="Automatic suits most people. Compatibility mode is for when voice will not connect at all."
+        control={<SettingsSelect
           ariaLabel="Voice route"
           disabled={direct}
           value={voiceRoute}
@@ -353,10 +326,10 @@ export default function MediaSettings({ section }: { section: 'voice' | 'recordi
             writeStored('bc-voice-route', value);
           }}
           options={[{ value: 'automatic', label: 'Automatic' }, { value: 'relay', label: 'Compatibility mode' }]}
-        />
-      </label>
-      <p className="my-4 rounded-lg border bg-muted/40 p-3 text-xs leading-6 text-muted-foreground">
-        Automatic works best for most people. Try compatibility mode only when voice will not connect.
+        />}
+      />
+      <p className="pt-3 text-xs leading-6 text-muted-foreground">
+        Both apply the next time you join a call.
       </p>
       </SettingsSection>}
     </>

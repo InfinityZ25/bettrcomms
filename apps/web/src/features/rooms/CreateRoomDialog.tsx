@@ -53,7 +53,13 @@ export default function CreateRoomDialog({
           />
         </label>
         {!signedIn && <p>Sign in before creating your first room.</p>}
-        <Button disabled={!signedIn || busy}>
+        {/*
+          The submit type below is not optional. The shared Button renders the
+          Base UI button primitive, which defaults every button it draws to
+          type="button" — inert inside a form. Without it the click does nothing
+          at all: no request, no error, no closed dialog.
+        */}
+        <Button type="submit" disabled={!signedIn || busy}>
           Create room <ArrowRight size={16} />
         </Button>
       </form>

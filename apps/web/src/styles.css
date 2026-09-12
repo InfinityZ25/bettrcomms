@@ -197,59 +197,16 @@
 /* Unified product surfaces. These overrides intentionally absorb legacy feature
    styles while the components move onto the shared shadcn primitives. */
 .content-canvas { isolation: isolate; }
-.room-heading { background: color-mix(in oklch, var(--background) 94%, transparent); backdrop-filter: blur(18px); }
 
-.call-lobby {
-  border-color: color-mix(in oklch, var(--border) 85%, transparent) !important;
-  border-radius: var(--radius-3xl) !important;
-  background: var(--card) !important;
-  box-shadow: 0 18px 55px rgb(0 0 0 / 0.12);
-}
-.call-lobby__hero { background: transparent !important; border: 0 !important; }
-.call-lobby__roster,
-.call-lobby__device-choice {
-  border-color: var(--border) !important;
-  border-radius: var(--radius-2xl) !important;
-  background: color-mix(in oklch, var(--muted) 72%, transparent) !important;
-}
-.call-lobby__eyebrow { color: var(--primary) !important; }
-.call-lobby__roster li { border-radius: var(--radius-xl) !important; background: color-mix(in oklch, var(--background) 58%, transparent) !important; }
-
-.call-workspace,
-.content-stage,
-.camera-tile,
-.screen-share-tile {
-  border-color: var(--border) !important;
-  border-radius: var(--radius-2xl) !important;
-}
-.call-workspace { background: var(--card) !important; box-shadow: 0 18px 55px rgb(0 0 0 / 0.16); }
-.content-stage { background: var(--background) !important; }
-.camera-tile { background: var(--muted) !important; }
-.camera-tile.self { background: color-mix(in oklch, var(--muted) 84%, var(--primary) 16%) !important; }
-.call-layout-toolbar button,
-.stage button,
-.recording-exports summary {
+/* The call's own stylesheets read the theme's tokens directly now, so the
+   shapes they share with the rest of the product are all that is left here. */
+.stage button {
   border-radius: var(--radius-lg) !important;
 }
-.call-layout-toolbar button:hover,
-.call-layout-toolbar button[aria-pressed='true'] { background: var(--accent) !important; color: var(--accent-foreground) !important; }
-.call-layout-toolbar select { background-color: var(--muted) !important; color: var(--foreground) !important; }
-.call-controls { padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius-2xl); background: color-mix(in oklch, var(--card) 90%, transparent); box-shadow: 0 12px 36px rgb(0 0 0 / 0.2); }
 
-.device-settings__card,
-.processing-controls,
-.recording-player,
-.recording-exports,
-.library-card,
-.library-storage {
-  border-color: var(--border) !important;
-  border-radius: var(--radius-2xl) !important;
-  background: var(--card) !important;
-  box-shadow: 0 10px 35px rgb(0 0 0 / 0.08);
-}
-.processing-engine { border-radius: var(--radius-xl) !important; background: var(--muted) !important; }
-.device-settings__meter { background: var(--muted) !important; }
-.device-settings__meter span { background: var(--primary) !important; }
+/* Recordings and the settings screens have both left this block: their own
+   stylesheets read the theme's tokens now, and what was here was overriding
+   them back with a card, a shadow and a radius they had not asked for. */
 
 .native-screen-picker,
 .share-picker-shell { background: var(--background) !important; }
@@ -260,4 +217,47 @@
 @media (max-width: 820px) {
   [data-app-shell] { gap: 0.25rem; padding: 0.375rem; }
   .content-canvas { border-radius: var(--radius-2xl); }
+}
+
+/*
+  Scrollbars, everywhere there is one.
+
+  The platform's own is a wide grey slab with arrow buttons on Windows, drawn
+  over the top of rounded panels it knows nothing about. This is the same
+  scrollbar on every scrolling surface in the app: no track, a thumb inset from
+  the edge so it reads as floating, and the theme's own ink so it works in both
+  light and dark.
+*/
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  /* A transparent border plus content-box clipping is what insets the thumb;
+     padding is not a thing a scrollbar part has. */
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-color: color-mix(in oklch, var(--foreground) 20%, transparent);
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in oklch, var(--foreground) 34%, transparent);
+}
+::-webkit-scrollbar-thumb:active {
+  background-color: color-mix(in oklch, var(--foreground) 45%, transparent);
+}
+
+/* Browsers without the WebKit parts still get the shape, one property at a
+   time. Chromium ignores the parts above wherever these two are set, so they
+   are kept out of its way. */
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklch, var(--foreground) 24%, transparent)
+      transparent;
+  }
 }

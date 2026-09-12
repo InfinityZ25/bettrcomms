@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/coder/websocket"
 )
 
 type testStore struct {
@@ -252,6 +254,80 @@ func TestWebSocketOriginRequiresExactSchemeAndHost(t *testing.T) {
 		r.Header.Set("Origin", tc.origin)
 		if got := a.websocketOriginAllowed(r); got != tc.allowed {
 			t.Fatalf("origin %s allowed=%v want %v", tc.origin, got, tc.allowed)
+		}
+	}
+}
+
+// The desktop host reaches this API as a native client through its own loopback
+// proxy, which sends no Origin because the only one it could send describes the
+// proxy rather than the application. A browser is required to send one, so an
+// absent Origin cannot be a page, and refusing it only blocks the native client:
+// joining a room's voice from the packaged app failed for exactly this reason.
+func TestWebSocketAcceptsANativeClientWithNoOrigin(t *testing.T) {
+	for _, app := range []string{"https://chat.example", ""} {
+		a := New(testStore{}, newTestSessions(false), Config{AppURL: app})
+		r := httptest.NewRequest("GET", "https://chat.example/api/v1/rooms/x/ws", nil)
+		if !a.websocketOriginAllowed(r) {
+			t.Errorf("AppURL=%q refused a handshake carrying no Origin", app)
+		}
+	}
+}
+
+// The whole way in, over a real connection.
+//
+// The checks above are on the gate alone; this drives the handler the desktop
+// host actually reaches — session cookie, no Origin, real handshake — and
+// requires it to reach a joined call rather than a 403. A recorder cannot do
+// this: the upgrade hijacks the connection, so it needs a listening server.
+func TestNativeClientJoinsARoomWebSocket(t *testing.T) {
+	u := User{ID: "user-1", Email: "a@example.test", Name: "A"}
+	sessions := newTestSessions(false)
+	a := New(testStore{user: u}, sessions, Config{AppURL: "https://chat.example"})
+
+	issue := httptest.NewRecorder()
+	if e := sessions.Set(httptest.NewRequest("GET", "http://localhost/", nil), issue, u.ID); e != nil {
+		t.Fatal(e)
+	}
+	cookie := issue.Result().Cookies()[0]
+
+	server := httptest.NewServer(a.Handler())
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	conn, _, err := websocket.Dial(ctx, strings.Replace(server.URL, "http://", "ws://", 1)+
+		"/api/v1/rooms/room-1/ws?peer_id=6f2b1d5e-6c5a-4a1f-9f2e-7a3b4c5d6e7f&join_mode=replace",
+		&websocket.DialOptions{HTTPHeader: http.Header{"Cookie": []string{cookie.Name + "=" + cookie.Value}}},
+	)
+	if err != nil {
+		t.Fatalf("a native client could not join the call: %v", err)
+	}
+	defer conn.CloseNow()
+
+	// The server greets a joined peer with the roster, so receiving it is proof
+	// the connection is in the hub and not merely upgraded.
+	_, data, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if !strings.Contains(string(data), `"peers"`) {
+		t.Errorf("first frame = %s, want the peer roster", data)
+	}
+}
+
+// Admitting the native client must not admit a page on another site, which
+// always identifies itself.
+func TestWebSocketStillRefusesAnotherSite(t *testing.T) {
+	a := New(testStore{}, newTestSessions(false), Config{AppURL: "https://chat.example", DevAuth: true})
+	for _, origin := range []string{
+		"https://evil.example",
+		"https://chat.example.evil.example",
+		"null",
+	} {
+		r := httptest.NewRequest("GET", "https://chat.example/api/v1/rooms/x/ws", nil)
+		r.Header.Set("Origin", origin)
+		if a.websocketOriginAllowed(r) {
+			t.Errorf("origin %q was allowed", origin)
 		}
 	}
 }

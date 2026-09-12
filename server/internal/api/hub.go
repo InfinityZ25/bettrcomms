@@ -457,8 +457,20 @@ func (a *API) websocket(w http.ResponseWriter, r *http.Request, u User, room str
 }
 func (a *API) websocketOriginAllowed(r *http.Request) bool {
 	o := r.Header.Get("Origin")
+	// A handshake with no Origin did not come from a page.
+	//
+	// RFC 6455 obliges a browser to send one on every WebSocket handshake, so
+	// its absence means a native client — the desktop host's loopback proxy is
+	// one, and it strips the header precisely because the origin it would carry
+	// describes the proxy, not the application. Such a client still has to
+	// present a session cookie to get this far, which is the same protection
+	// the HTTP side relies on in sameOrigin, and the websocket library itself
+	// reasons the same way: its own origin check passes an absent Origin.
+	//
+	// Refusing it here is what made joining a room's voice fail in the packaged
+	// desktop app while the browser, which always sends an Origin, connected.
 	if o == "" {
-		return false
+		return true
 	}
 	got, e := url.Parse(o)
 	if e != nil {

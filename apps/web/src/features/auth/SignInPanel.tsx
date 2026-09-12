@@ -96,7 +96,7 @@ export default function SignInPanel({
             onChange={(event) => onEmailChange(event.target.value)}
             required
           />
-          <Button variant="secondary" disabled={busy}>
+          <Button type="submit" variant="secondary" disabled={busy}>
             Enter local workspace
           </Button>
         </form>
