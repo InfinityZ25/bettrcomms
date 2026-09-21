@@ -22,6 +22,7 @@ import (
 	"bettercomms/desktop-wails/internal/desktop"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/services/notifications"
 )
 
 // hostVersion tracks the Wails host separately from the Tauri host's version,
@@ -92,6 +93,11 @@ func run() error {
 	signIn := desktop.NewBrowserSignIn(apiProxy)
 	defer signIn.Cancel()
 
+	// Native toasts. The page sends them through the generated bindings; this
+	// host only needs to exist for the service to be bound, and to bring the
+	// window back when one is clicked.
+	toasts := notifications.New()
+
 	holder := &WindowService{}
 	boot := func() desktop.BootReport {
 		report := desktop.BootReport{
@@ -133,7 +139,7 @@ func run() error {
 		Assets: application.AssetOptions{
 			Handler: handler,
 		},
-		Services: services(holder, &AuthService{signIn: signIn}, media),
+		Services: services(holder, &AuthService{signIn: signIn}, media, toasts),
 		Windows: application.WindowsOptions{
 			AdditionalBrowserArgs: []string{
 				"--autoplay-policy=no-user-gesture-required",
@@ -175,6 +181,7 @@ func run() error {
 		},
 	})
 	holder.window = window
+	attachNotifications(toasts, window)
 	if media != nil {
 		// The window is how push-to-talk reports focus and publishes snapshots;
 		// the gate is how a native call proves it came from this host's page.
@@ -236,13 +243,21 @@ func authReturn(proxy *desktop.APIProxy) desktop.Capability {
 // native media surface. Media is omitted rather than registered broken, so a
 // page that probes for it gets a clear absence instead of methods that always
 // fail.
-func services(holder *WindowService, auth *AuthService, media *NativeMediaService) []application.Service {
+func services(
+	holder *WindowService,
+	auth *AuthService,
+	media *NativeMediaService,
+	toasts *notifications.NotificationService,
+) []application.Service {
 	registered := []application.Service{
 		application.NewService(holder),
 		application.NewService(auth),
 	}
 	if media != nil {
 		registered = append(registered, application.NewService(media))
+	}
+	if toasts != nil {
+		registered = append(registered, application.NewService(toasts))
 	}
 	return registered
 }

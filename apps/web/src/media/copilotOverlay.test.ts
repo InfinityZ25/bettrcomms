@@ -21,7 +21,7 @@ describe('external copilot availability', () => {
     try {
       await flush();
       const expected = { browser: 'Browser sharing', 'old-host': 'External overlay unavailable', 'browser-capture': 'Desktop browser capture', 'native-capture': 'Native overlay ready' }[kind]!;
-      expect(status).toHaveBeenLastCalledWith(expect.stringContaining(expected));
+      await vi.waitFor(() => expect(status).toHaveBeenLastCalledWith(expect.stringContaining(expected)));
       const calls = host.invoke.mock.calls.length;
       await vi.advanceTimersByTimeAsync(5000);
       expect(host.invoke).toHaveBeenCalledTimes(calls);

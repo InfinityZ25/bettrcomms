@@ -503,6 +503,7 @@ describe('native screen signaling lifecycle', () => {
       cursor: false,
     });
     await transport.stop();
+    await vi.waitFor(() => expect(resolveStart).toBeTypeOf('function'));
     resolveStart({ sessionId: 'late-session' });
     await starting;
     expect(mocks.invoke).toHaveBeenCalledWith('native_screen_stop', {

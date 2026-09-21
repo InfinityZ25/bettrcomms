@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invokeNativeCapture as invoke } from '@/desktop/capture';
 import type {
   NativeScreenCapabilities,
   NativeScreenSource,

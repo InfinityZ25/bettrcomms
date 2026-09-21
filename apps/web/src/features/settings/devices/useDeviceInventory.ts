@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { isWindowsDesktop } from '@/media/permissions';
-import { invoke } from '@tauri-apps/api/core';
+import { isWindowsDesktop, openDesktopPrivacySettings } from '@/media/permissions';
 import { readStored, writeStored } from '@/lib/storage';
 import { deviceError, ensureDesktopPermission, type PermissionKind } from './deviceHelpers';
 
@@ -85,7 +84,7 @@ export function useDeviceInventory({
 
   const openPrivacySettings = async (kind: PermissionKind) => {
     try {
-      await invoke('open_media_privacy_settings', { kind });
+      await openDesktopPrivacySettings(kind);
     } catch (error) {
       (kind === 'camera' ? onCameraStatus : onMicrophoneStatus)(deviceError(error));
     }

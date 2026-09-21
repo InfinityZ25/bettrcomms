@@ -23,6 +23,8 @@ if (-not (Test-Path $Wails3)) {
     throw "wails3 v3.0.0-beta.18 is required at $Wails3 to generate bindings and build the host."
 }
 
+& (Join-Path $PSScriptRoot 'stage-wails-native-assets.ps1')
+
 Write-Host '== Generating Wails service bindings =='
 Push-Location $app
 try {

@@ -1,6 +1,7 @@
 import { screenReceiverDiagnostics, videoCapabilities } from './screenDiagnostics';
-import { invoke, isTauri } from '@tauri-apps/api/core';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { invokeNativeCapture as invoke, onNativeCaptureEnded } from '../desktop/capture';
+import { hasNativeMediaHost } from '../desktop/nativeMedia';
+type UnlistenFn = () => void;
 import type { MediaQualityOptions, MediaSignal, SignalingAdapter } from './types';
 import { isRelayCandidate } from './utils';
 import { registerNativeScreenTrack } from './nativeCaptureRegistry';
@@ -262,8 +263,7 @@ export class NativeScreenTransport {
     this.activeContentHint = contentHint;
     this.log('self', 'capture-started', h264Profile);
     try {
-      const unlisten = await listen<{ sessionId: string; reason: string }>(
-        'native-screen-ended',
+      const unlisten = await onNativeCaptureEnded(
         ({ payload }) => {
           if (payload.sessionId !== this.session?.sessionId) return;
           this.onEnded(payload.reason);
@@ -368,7 +368,7 @@ export class NativeScreenTransport {
             kind: 'native-screen-profile-reply',
             nonce: data.nonce,
             profiles,
-            runtime: isTauri() ? 'desktop' : 'browser',
+            runtime: hasNativeMediaHost() ? 'desktop' : 'browser',
           },
         } as unknown as MediaSignal);
         return true;

@@ -22,7 +22,7 @@ import { createNvidiaDenoiser } from './nvidiaDenoise';
 import { createDeepfilterDenoiser } from './deepfilterDenoise';
 import { createDeepfilterWasmDenoiser } from './deepfilterWasmDenoise';
 import { createMicrophoneEffects } from './microphoneEffects';
-import { isTauri } from '@tauri-apps/api/core';
+import { hasNativeMediaHost } from '../desktop/nativeMedia';
 import { createNativeSystemAudio, type NativeSystemAudioTrack } from './nativeSystemAudio';
 import type { DenoisedTrack } from './denoise';
 import type { MicrophoneProcessingSettings } from './types';
@@ -50,6 +50,21 @@ export interface MediaEngineOptions {
   ice?: IceOptions;
   quality?: MediaQualityOptions;
   voiceRelay?: { url: string; mode?: 'automatic' | 'relay' };
+}
+
+/**
+ * Raised when work finishes after the engine was torn down.
+ *
+ * Not a failure: it is what leaving a call in the middle of opening a device
+ * looks like, and the person who pressed Leave does not need to be told that
+ * the microphone they no longer want could not be attached. Callers report
+ * every other error and swallow this one.
+ */
+export class MediaEngineDisposedError extends Error {
+  constructor() {
+    super('MediaEngine has been disposed');
+    this.name = 'MediaEngineDisposedError';
+  }
 }
 
 export class MediaEngine extends EventTarget {
@@ -158,7 +173,7 @@ export class MediaEngine extends EventTarget {
     const requestedDenoiser = options.denoiser ?? 'standard';
     const denoiser =
       (requestedDenoiser === 'nvidia' || requestedDenoiser === 'deepfilter') &&
-      !isTauri()
+      !hasNativeMediaHost()
         ? 'standard'
         : requestedDenoiser;
     const processing: MicrophoneProcessingSettings = options.processing ?? {
@@ -207,7 +222,7 @@ export class MediaEngine extends EventTarget {
       audio,
     });
     try {
-      if (this.disposed) throw new Error('MediaEngine has been disposed');
+      if (this.disposed) throw new MediaEngineDisposedError();
       const video = stream.getVideoTracks()[0];
       const microphone = stream.getAudioTracks()[0];
       if (video) await this.replaceLocalTrack('camera', video);
@@ -265,7 +280,7 @@ export class MediaEngine extends EventTarget {
             processing,
           );
           effects = createdEffects;
-          if (this.disposed) throw new Error('MediaEngine has been disposed');
+          if (this.disposed) throw new MediaEngineDisposedError();
           await this.replaceLocalTrack(
             'microphone',
             createdEffects.track,
@@ -366,7 +381,7 @@ export class MediaEngine extends EventTarget {
       } else if (microphone) {
         const effects = await createMicrophoneEffects(microphone, processing);
         try {
-          if (this.disposed) throw new Error('MediaEngine has been disposed');
+          if (this.disposed) throw new MediaEngineDisposedError();
           await this.replaceLocalTrack('microphone', effects.track, () => {
             effects.dispose();
             microphone.stop();
@@ -1234,7 +1249,7 @@ export class MediaEngine extends EventTarget {
   }
 
   private ensureActive(): void {
-    if (this.disposed) throw new Error('MediaEngine has been disposed');
+    if (this.disposed) throw new MediaEngineDisposedError();
   }
 
   private async applyQuality(sender: RTCRtpSender): Promise<void> {

@@ -1,4 +1,5 @@
-import { invoke, isTauri } from '@tauri-apps/api/core';
+import { invokeNativeCapture } from '../desktop/capture';
+import { hasNativeMediaHost } from '../desktop/nativeMedia';
 import workletUrl from './nativeSystemAudio.worklet.js?url&no-inline';
 
 export interface NativeSystemAudioCapabilities {
@@ -19,11 +20,11 @@ export type SystemAudioInvoke = (
 
 export async function createNativeSystemAudio(
   signal: AbortSignal,
-  nativeInvoke: SystemAudioInvoke = invoke,
+  nativeInvoke: SystemAudioInvoke = invokeNativeCapture,
   sourceId?: string,
   excludeCallAudio = true,
 ): Promise<NativeSystemAudioTrack> {
-  if (!isTauri())
+  if (!hasNativeMediaHost())
     throw new Error('Native system audio is available only in the desktop app');
   if (signal.aborted) throw new DOMException('Sharing canceled', 'AbortError');
   let sessionId: string | undefined;

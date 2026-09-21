@@ -16,7 +16,21 @@ export function SettingsSelect({ value, onValueChange, options, ariaLabel, disab
   const normalize = (optionValue: string | number) => optionValue === '' ? '__system_default__' : String(optionValue);
   return (
     <Select value={normalize(value)} onValueChange={(next) => onValueChange(next === '__system_default__' ? '' : String(next))} disabled={disabled}>
-      <SelectTrigger aria-label={ariaLabel} className={className ?? 'w-full'}><SelectValue>{selected?.label}</SelectValue></SelectTrigger>
+      {/*
+        A real device name is "Communications - Altavoces (Realtek(R) Audio)".
+        The trigger cannot wrap it and the value is a flex box, where an
+        ellipsis has nothing to apply to — so the label is its own element,
+        allowed to shrink, and the whole name is on the title.
+      */}
+      <SelectTrigger
+        aria-label={ariaLabel}
+        title={selected?.label}
+        className={className ?? 'w-full'}
+      >
+        <SelectValue>
+          <span className="min-w-0 truncate">{selected?.label}</span>
+        </SelectValue>
+      </SelectTrigger>
       <SelectContent>
         {options.map((option) => <SelectItem key={normalize(option.value)} value={normalize(option.value)} disabled={option.disabled}>{option.label}</SelectItem>)}
       </SelectContent>

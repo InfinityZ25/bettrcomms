@@ -37,7 +37,11 @@ export function readStoredFlag(key: string, whenTrue: string, fallback: boolean)
 
 /** Reads a stored number, falling back when it is missing or not finite. */
 export function readStoredNumber(key: string, fallback: number): number {
-  const value = Number(readStored(key));
+  const stored = readStored(key);
+  // Not a formality: Number(null) is 0, and 0 is finite, so without this a key
+  // that was never written reads back as zero rather than the fallback.
+  if (stored === null) return fallback;
+  const value = Number(stored);
   return Number.isFinite(value) ? value : fallback;
 }
 

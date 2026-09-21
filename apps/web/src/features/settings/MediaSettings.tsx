@@ -3,7 +3,8 @@ import { LinkButton } from '@/components/ui/link-button';
 import { Switch } from '@/components/ui/switch';
 import { useEffect, useState } from 'react';
 import { readStored, writeStored } from '@/lib/storage';
-import { invoke, isTauri } from '@tauri-apps/api/core';
+import { invokeAudioSetup } from '@/desktop/audio';
+import { hasNativeMediaHost } from '@/desktop/nativeMedia';
 import DeviceSettings from './DeviceSettings';
 import VisualCopilotSettings from './VisualCopilotSettings';
 import ProcessingControls from './ProcessingControls';
@@ -60,7 +61,7 @@ export default function MediaSettings({ section }: { section: 'voice' | 'recordi
   const [recordingRate, setRecordingRate] = useState(
     () => readRecordingQuality().screenVideoBitsPerSecond / 1_000_000,
   );
-  const desktop = isTauri();
+  const desktop = hasNativeMediaHost();
   const storedDenoiser = readStored('bc-denoiser');
   const initialDenoiser =
     (storedDenoiser === 'nvidia' || storedDenoiser === 'deepfilter') && !desktop
@@ -80,8 +81,8 @@ export default function MediaSettings({ section }: { section: 'voice' | 'recordi
     if (!desktop) return;
     try {
       const [status, info] = await Promise.all([
-        invoke<NvidiaStatus>('nvidia_status'),
-        invoke<NvidiaInstallInfo>('nvidia_install_info'),
+        invokeAudioSetup<NvidiaStatus>('nvidia_status'),
+        invokeAudioSetup<NvidiaInstallInfo>('nvidia_install_info'),
       ]);
       setNvidia(status);
       setNvidiaInfo(info);
@@ -109,7 +110,7 @@ export default function MediaSettings({ section }: { section: 'voice' | 'recordi
     setNvidiaBusy(true);
     setNvidiaInstallError('');
     try {
-      await invoke('nvidia_install');
+      await invokeAudioSetup('nvidia_install');
     } catch (error) {
       setNvidiaInstallError(
         errorMessage(error),

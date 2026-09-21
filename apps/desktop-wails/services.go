@@ -5,7 +5,9 @@ import (
 	"errors"
 
 	"bettercomms/desktop-wails/internal/desktop"
+	"bettercomms/desktop-wails/internal/native/audiostream"
 	"bettercomms/desktop-wails/internal/native/deepfilter"
+	"bettercomms/desktop-wails/internal/native/dspsetup"
 	"bettercomms/desktop-wails/internal/native/ffmpegsetup"
 	"bettercomms/desktop-wails/internal/native/gpudevices"
 	"bettercomms/desktop-wails/internal/native/nativerecording"
@@ -40,6 +42,7 @@ type NativeMediaService struct {
 	audio      *systemaudio.Manager
 	nvidia     *nvidiaaudio.Engine
 	deepfilter *deepfilter.Engine
+	streams    *audiostream.Manager
 
 	// app is how a save dialog is opened. Only the host sets it.
 	app *application.App
@@ -76,6 +79,7 @@ func NewNativeMediaService() (*NativeMediaService, error) {
 		audio:      systemaudio.NewManager(),
 		nvidia:     nvidiaaudio.NewEngine(),
 		deepfilter: deepfilter.NewEngine(),
+		streams:    audiostream.NewManager(),
 	}, nil
 }
 
@@ -87,11 +91,15 @@ func (s *NativeMediaService) attach(app *application.App, window *application.We
 	s.app = app
 	s.window = window
 	s.gate = gate
+	s.screen.SetEndedHandler(func(sessionID, reason string) {
+		window.EmitEvent("native-screen-ended", map[string]string{"sessionId": sessionID, "reason": reason})
+	})
 }
 
 // ServiceShutdown releases every native resource. Wails calls it on shutdown,
 // so no encoder, muxer, or input hook outlives the process.
 func (s *NativeMediaService) ServiceShutdown() error {
+	s.streams.Close()
 	s.talk.Close()
 	s.screen.Close()
 	s.recordings.Close()
@@ -142,8 +150,18 @@ func (s *NativeMediaService) NativeScreenCapabilities(ctx context.Context) nativ
 }
 
 // NativeScreenSources lists what can be shared.
-func (s *NativeMediaService) NativeScreenSources() ([]nativescreen.Source, error) {
+func (s *NativeMediaService) NativeScreenSources(hostToken string) ([]nativescreen.Source, error) {
+	if err := s.authorise(hostToken); err != nil {
+		return nil, err
+	}
 	return s.screen.Sources()
+}
+
+func (s *NativeMediaService) NativeScreenThumbnail(ctx context.Context, hostToken, sourceID string) ([]byte, error) {
+	if err := s.authorise(hostToken); err != nil {
+		return nil, err
+	}
+	return s.screen.Thumbnail(ctx, sourceID)
 }
 
 // NativeScreenStart begins a capture.
@@ -155,12 +173,18 @@ func (s *NativeMediaService) NativeScreenStart(ctx context.Context, hostToken st
 }
 
 // NativeScreenStop ends a capture.
-func (s *NativeMediaService) NativeScreenStop(sessionID string) error {
+func (s *NativeMediaService) NativeScreenStop(hostToken, sessionID string) error {
+	if err := s.authorise(hostToken); err != nil {
+		return err
+	}
 	return s.screen.Stop(sessionID)
 }
 
 // NativeScreenDiagnostics reports what a running capture is doing.
-func (s *NativeMediaService) NativeScreenDiagnostics(sessionID string) (NativeScreenReport, error) {
+func (s *NativeMediaService) NativeScreenDiagnostics(hostToken, sessionID string) (NativeScreenReport, error) {
+	if err := s.authorise(hostToken); err != nil {
+		return NativeScreenReport{}, err
+	}
 	info, detail, err := s.screen.Diagnostics(sessionID)
 	if err != nil {
 		return NativeScreenReport{}, err
@@ -185,9 +209,12 @@ type NativeScreenReport struct {
 
 // NativeScreenPeerOffer offers the capture to one viewer.
 func (s *NativeMediaService) NativeScreenPeerOffer(
-	ctx context.Context, sessionID, peerID string,
+	ctx context.Context, hostToken, sessionID, peerID string,
 	iceServers []nativertc.IceServer, directOnly bool,
 ) (nativertc.Offer, error) {
+	if err := s.authorise(hostToken); err != nil {
+		return nativertc.Offer{}, err
+	}
 	hub, err := s.screen.Hub(sessionID)
 	if err != nil {
 		return nativertc.Offer{}, err
@@ -196,7 +223,10 @@ func (s *NativeMediaService) NativeScreenPeerOffer(
 }
 
 // NativeScreenPeerAnswer accepts a viewer's answer.
-func (s *NativeMediaService) NativeScreenPeerAnswer(sessionID, peerID, sdp string) error {
+func (s *NativeMediaService) NativeScreenPeerAnswer(hostToken, sessionID, peerID, sdp string) error {
+	if err := s.authorise(hostToken); err != nil {
+		return err
+	}
 	hub, err := s.screen.Hub(sessionID)
 	if err != nil {
 		return err
@@ -205,7 +235,10 @@ func (s *NativeMediaService) NativeScreenPeerAnswer(sessionID, peerID, sdp strin
 }
 
 // NativeScreenPeerCandidate trickles one ICE candidate in.
-func (s *NativeMediaService) NativeScreenPeerCandidate(sessionID, peerID string, candidate nativertc.IceCandidate) error {
+func (s *NativeMediaService) NativeScreenPeerCandidate(hostToken, sessionID, peerID string, candidate nativertc.IceCandidate) error {
+	if err := s.authorise(hostToken); err != nil {
+		return err
+	}
 	hub, err := s.screen.Hub(sessionID)
 	if err != nil {
 		return err
@@ -214,7 +247,10 @@ func (s *NativeMediaService) NativeScreenPeerCandidate(sessionID, peerID string,
 }
 
 // NativeScreenPeerRemove detaches one viewer.
-func (s *NativeMediaService) NativeScreenPeerRemove(sessionID, peerID string) error {
+func (s *NativeMediaService) NativeScreenPeerRemove(hostToken, sessionID, peerID string) error {
+	if err := s.authorise(hostToken); err != nil {
+		return err
+	}
 	hub, err := s.screen.Hub(sessionID)
 	if err != nil {
 		return err
@@ -225,23 +261,35 @@ func (s *NativeMediaService) NativeScreenPeerRemove(sessionID, peerID string) er
 // --- Native recording ----------------------------------------------------
 
 // NativeScreenRecordingStart records the live capture without re-encoding it.
-func (s *NativeMediaService) NativeScreenRecordingStart(sessionID string) (nativerecording.Started, error) {
+func (s *NativeMediaService) NativeScreenRecordingStart(hostToken, sessionID string) (nativerecording.Started, error) {
+	if err := s.authorise(hostToken); err != nil {
+		return nativerecording.Started{}, err
+	}
 	return s.recordings.Start(sessionID)
 }
 
 // NativeScreenRecordingStop finalises the MP4 and returns its handle.
-func (s *NativeMediaService) NativeScreenRecordingStop(recordingID string) (nativerecording.Asset, error) {
+func (s *NativeMediaService) NativeScreenRecordingStop(hostToken, recordingID string) (nativerecording.Asset, error) {
+	if err := s.authorise(hostToken); err != nil {
+		return nativerecording.Asset{}, err
+	}
 	return s.recordings.Stop(recordingID)
 }
 
 // NativeScreenRecordingRead returns one chunk of a finished recording. The page
 // never learns where the file lives.
-func (s *NativeMediaService) NativeScreenRecordingRead(assetID string, offset int64, length int) ([]byte, error) {
+func (s *NativeMediaService) NativeScreenRecordingRead(hostToken, assetID string, offset int64, length int) ([]byte, error) {
+	if err := s.authorise(hostToken); err != nil {
+		return nil, err
+	}
 	return s.recordings.Read(assetID, offset, length)
 }
 
 // NativeScreenRecordingRelease deletes a finished recording.
-func (s *NativeMediaService) NativeScreenRecordingRelease(assetID string) error {
+func (s *NativeMediaService) NativeScreenRecordingRelease(hostToken, assetID string) error {
+	if err := s.authorise(hostToken); err != nil {
+		return err
+	}
 	return s.recordings.Release(assetID)
 }
 
@@ -272,12 +320,18 @@ func (s *NativeMediaService) PushToTalkStart(hostToken string, binding pushtotal
 }
 
 // PushToTalkHeartbeat renews the session lease.
-func (s *NativeMediaService) PushToTalkHeartbeat(sessionID string) (pushtotalk.Snapshot, error) {
+func (s *NativeMediaService) PushToTalkHeartbeat(hostToken, sessionID string) (pushtotalk.Snapshot, error) {
+	if err := s.authorise(hostToken); err != nil {
+		return pushtotalk.Snapshot{}, err
+	}
 	return s.talk.Heartbeat(sessionID)
 }
 
 // PushToTalkStop ends the session and removes the hook.
-func (s *NativeMediaService) PushToTalkStop(sessionID string) error {
+func (s *NativeMediaService) PushToTalkStop(hostToken, sessionID string) error {
+	if err := s.authorise(hostToken); err != nil {
+		return err
+	}
 	return s.talk.Stop(sessionID)
 }
 
@@ -392,7 +446,10 @@ func (s *NativeMediaService) CameraOverlayOpen(hostToken string, options overlay
 }
 
 // CameraOverlayUpdate moves or resizes an open overlay.
-func (s *NativeMediaService) CameraOverlayUpdate(overlayID string, change overlay.Update) (overlay.Info, error) {
+func (s *NativeMediaService) CameraOverlayUpdate(hostToken, overlayID string, change overlay.Update) (overlay.Info, error) {
+	if err := s.authorise(hostToken); err != nil {
+		return overlay.Info{}, err
+	}
 	return s.overlays.Update(overlayID, change)
 }
 
@@ -400,12 +457,18 @@ func (s *NativeMediaService) CameraOverlayUpdate(overlayID string, change overla
 //
 // The frame arrives as bytes rather than a data URL: a 320x180 tile at 24 fps
 // is about 5 MB a second, and base64 would add a third to that for nothing.
-func (s *NativeMediaService) CameraOverlayFrame(overlayID string, width, height uint32, rgba []byte) error {
+func (s *NativeMediaService) CameraOverlayFrame(hostToken, overlayID string, width, height uint32, rgba []byte) error {
+	if err := s.authorise(hostToken); err != nil {
+		return err
+	}
 	return s.overlays.Frame(overlayID, width, height, rgba)
 }
 
 // CameraOverlayClose hides the overlay.
-func (s *NativeMediaService) CameraOverlayClose(overlayID string) error {
+func (s *NativeMediaService) CameraOverlayClose(hostToken, overlayID string) error {
+	if err := s.authorise(hostToken); err != nil {
+		return err
+	}
 	return s.overlays.Close(overlayID)
 }
 
@@ -446,8 +509,12 @@ func (s *NativeMediaService) CopilotOverlayFrame(hostToken string, frame overlay
 // CopilotOverlayClear takes every signal off the desktop. The page calls it
 // when the marks expire, when sharing stops, and once at startup to find out
 // whether this host supports the overlay at all.
-func (s *NativeMediaService) CopilotOverlayClear() {
+func (s *NativeMediaService) CopilotOverlayClear(hostToken string) error {
+	if err := s.authorise(hostToken); err != nil {
+		return err
+	}
 	s.copilot.Clear()
+	return nil
 }
 
 // --- System and application audio ----------------------------------------
@@ -470,12 +537,18 @@ func (s *NativeMediaService) NativeSystemAudioStart(hostToken string, options sy
 
 // NativeSystemAudioRead returns the next chunk of captured audio as 48 kHz
 // stereo 32-bit float frames.
-func (s *NativeMediaService) NativeSystemAudioRead(sessionID string) ([]byte, error) {
+func (s *NativeMediaService) NativeSystemAudioRead(hostToken, sessionID string) ([]byte, error) {
+	if err := s.authorise(hostToken); err != nil {
+		return nil, err
+	}
 	return s.audio.Read(sessionID)
 }
 
 // NativeSystemAudioStop ends a capture.
-func (s *NativeMediaService) NativeSystemAudioStop(sessionID string) error {
+func (s *NativeMediaService) NativeSystemAudioStop(hostToken, sessionID string) error {
+	if err := s.authorise(hostToken); err != nil {
+		return err
+	}
 	return s.audio.Stop(sessionID)
 }
 
@@ -487,61 +560,50 @@ func (s *NativeMediaService) NativeSystemAudioStop(sessionID string) error {
 // It answers before anything is loaded, so a settings screen can offer an
 // install, say which card would be needed, or point at DeepFilterNet — rather
 // than offering a several-hundred-megabyte download that would not work.
-func (s *NativeMediaService) NvidiaInstallInfo() nvidiaaudio.InstallInfo {
-	return nvidiaaudio.Describe()
+func (s *NativeMediaService) NvidiaInstallInfo() dspsetup.Info {
+	return dspsetup.Describe("nvidia")
+}
+
+func (s *NativeMediaService) NvidiaInstall(ctx context.Context, hostToken string) (dspsetup.Result, error) {
+	if err := s.authorise(hostToken); err != nil {
+		return dspsetup.Result{}, err
+	}
+	result, err := dspsetup.Install(ctx, "nvidia")
+	if err == nil {
+		s.nvidia.InvalidateStatus()
+	}
+	return result, err
+}
+
+func (s *NativeMediaService) DeepfilterInstallInfo() dspsetup.Info {
+	return dspsetup.Describe("deepfilter")
+}
+
+func (s *NativeMediaService) DeepfilterInstall(ctx context.Context, hostToken string) (dspsetup.Result, error) {
+	if err := s.authorise(hostToken); err != nil {
+		return dspsetup.Result{}, err
+	}
+	return dspsetup.Install(ctx, "deepfilter")
 }
 
 // NvidiaStatus reports whether the SDK is installed and whether this machine's
 // GPU will actually run it.
-func (s *NativeMediaService) NvidiaStatus() nvidiaaudio.Status {
-	return s.nvidia.Status()
-}
-
-// NvidiaStart loads the denoiser and returns the frame size it requires. The
-// page must send exactly that many samples per call.
-func (s *NativeMediaService) NvidiaStart(intensity float32, vad bool) (uint32, error) {
-	return s.nvidia.Start(intensity, vad)
-}
-
-// NvidiaProcess denoises one frame of 48 kHz mono audio.
-func (s *NativeMediaService) NvidiaProcess(samples []float32) ([]float32, error) {
-	return s.nvidia.Process(samples)
-}
-
-// NvidiaStop releases the effect but keeps the SDK loaded, so turning the
-// denoiser back on does not pay for a GPU context again.
-func (s *NativeMediaService) NvidiaStop() {
-	s.nvidia.Stop()
+func (s *NativeMediaService) NvidiaStatus(hostToken string) (nvidiaaudio.Status, error) {
+	if err := s.authorise(hostToken); err != nil {
+		return nvidiaaudio.Status{}, err
+	}
+	return s.nvidia.Status(), nil
 }
 
 // --- DeepFilterNet through DirectML --------------------------------------
 
 // DeepfilterStatus reports whether the package is installed and which GPU the
 // graph would run on.
-func (s *NativeMediaService) DeepfilterStatus() deepfilter.Status {
-	return s.deepfilter.Status()
-}
-
-// DeepfilterStart loads the model with the given maximum attenuation in
-// decibels.
-func (s *NativeMediaService) DeepfilterStart(attenuationDB float32) error {
-	return s.deepfilter.Load(attenuationDB)
-}
-
-// DeepfilterProcess denoises one 512-sample frame of 48 kHz mono audio.
-func (s *NativeMediaService) DeepfilterProcess(samples []float32) ([]float32, error) {
-	return s.deepfilter.Process(samples)
-}
-
-// DeepfilterReset clears the recurrent state, which a new call needs so the
-// previous one's tail does not bleed into it.
-func (s *NativeMediaService) DeepfilterReset() error {
-	return s.deepfilter.Reset()
-}
-
-// DeepfilterStop releases the session.
-func (s *NativeMediaService) DeepfilterStop() {
-	s.deepfilter.Close()
+func (s *NativeMediaService) DeepfilterStatus(hostToken string) (deepfilter.Status, error) {
+	if err := s.authorise(hostToken); err != nil {
+		return deepfilter.Status{}, err
+	}
+	return s.deepfilter.Status(), nil
 }
 
 // --- Microphone and camera permission ------------------------------------

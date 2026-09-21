@@ -1,7 +1,7 @@
 import { errorMessage } from '@/lib/errors';
 import { LinkButton } from '@/components/ui/link-button';
 import { useEffect, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invokeNativeCapture as invoke } from '@/desktop/capture';
 
 interface FfmpegInstallInfo {
   supported: boolean;

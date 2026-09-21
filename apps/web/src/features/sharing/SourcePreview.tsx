@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invokeNativeCapture as invoke } from '@/desktop/capture';
 import { Monitor, PanelsTopLeft } from 'lucide-react';
 import { errorMessage } from '@/lib/errors';
 import type { NativeScreenSource } from '@/media/nativeScreen';

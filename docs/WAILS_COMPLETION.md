@@ -1,0 +1,132 @@
+# Wails migration completion ledger
+
+Target: finish the desktop migration and deliver a reviewed, tested PR. Deployment
+is excluded. The latest goal includes screen sharing, superseding the earlier
+audit's screen-sharing exclusion. Preserve Tauri and the shared web frontend.
+
+Baseline: `notzair/wails-v3-migration`, initially `dc930ba`; remote main from the
+audit is `691f3e5`. Revalidate the remote before integrating it.
+
+## Existing local work
+
+At the beginning of goal work, notifications, call alerts/sounds, settings and
+call UI changes were already dirty. These belong to the user and must be
+preserved. `apps/mobile` also contains unrelated dirty work and must not be
+included in the desktop PR. Do not claim the goal complete from unit tests alone.
+
+## Requirements and evidence still needed
+
+- [ ] Integrate current main: production domain, SFU client/server and connection
+  mode/RTT fixes, preserving Wails API proxy authentication and current UI.
+- [ ] Native frontend adapter for all implemented desktop features, without
+  pretending Wails has Tauri IPC.
+  - Export/save and conversion: wired; unit tests check base64 byte fidelity,
+    cancellation, dialog dismissal, token authorisation and unified Go finish.
+    Native dialog/real-file acceptance still required.
+  - Global PTT: wired; unit tests check Wails events, session ordering, disposal
+    and token authorisation. Real background key/mouse acceptance still required.
+  - Media privacy settings: wired; native UI acceptance still required.
+  - Camera overlay: frontend adapter connected, with bounded base64 RGBA for
+    Go bindings and the existing single-frame-in-flight lifecycle. Tests cover
+    byte fidelity, authorisation, size limits, frame acknowledgement/failure
+    and preservation of Tauri binary IPC. Real Windows overlay acceptance and
+    sustained transport performance remain required.
+  - Screen picker/FFmpeg setup, capture, native WebRTC, process audio and native
+    recording now use a Wails adapter. It wraps source lists, normalises SDP
+    offers/answers, decodes bounded base64 PCM/MP4 chunks, supplies the MP4 MIME
+    type, and routes capture-ended events. Tauri's path remains intact.
+    Wails adds bounded source thumbnails (two jobs, three seconds, 512 KiB) and
+    cleans up and emits an event on unexpected encoder termination.
+    Full Wails-window sharing/recording acceptance remains. Copilot now has a
+    Wails adapter with validated dimensions/coordinates and bounded base64 RGBA;
+    interactive overlay/expiry acceptance remains outstanding.
+- [ ] Authenticated, bounded worker/worklet DSP transport with independent
+  sessions, cleanup, fallback and native acceptance for DeepFilterNet/NVIDIA.
+  - Added `internal/native/audiostream`: loopback binary PCM websocket matching
+    the existing audio Worker protocol, exact caller-supplied origin policy,
+    first-message token authentication, fixed finite frames, single client,
+    idle/unused-grant expiry and one OS thread per independent effect.
+  - Manager limits starting/live sessions to three and handles shutdown during
+    effect construction. Authorised AudioStreamStart/Stop services now create
+    isolated NVIDIA/DirectML effects, enforce exact audio origins, and expose
+    generated bindings used by the existing Worker/AudioWorklet frontend.
+    Removed unused, unauthorised JSON-per-frame DSP service methods. Engine and
+    stored-processing selection recognise Wails. Settings status/install UI now
+    uses the Wails adapter; readiness maps actual GPU probe results, not file
+    presence. Native probes and install actions require page authorisation.
+- [ ] Optional runtime installers and their trust/verification tests.
+  - DSP installers now embed the existing Tauri pinned scripts, model and
+    licences. The staging script and source-equality/hash tests prevent drift.
+    Private staging, reparse checks, bounded stderr, Windows job ownership and
+    cancellation/timeout cleanup are implemented. UI buttons are connected.
+    Fresh-install, rollback and cancellation acceptance still required; no
+    existing runtime has been replaced to test this path.
+- [ ] Native service security and resource lifecycle audit, including DSP entry
+  points, page navigation, revoked sessions and binary transport limits.
+  - Page authorisation now also protects native session continuation/teardown,
+    screen-source enumeration, signaling, file reads, system audio reads and
+    camera/copilot operations. Regression invokes sensitive methods against
+    uninitialised managers and proves they reject before touching resources.
+    Final capability-probe, navigation and resource-lifecycle review remains.
+- [ ] Production API domain/version, packaged HTTP/WebSocket auth/session tests.
+- [ ] Windows distributable/installer and release build automation; no deploy.
+- [ ] Reconcile capability reporting and stale scaffold documentation with the
+  actually connected and validated functionality.
+- [ ] Final build, unit/backend suites, real API/database Playwright checks,
+  native and packaged acceptance. Report hardware limitations honestly.
+- [ ] Commit relevant work, push branch, create PR and attach it to the task.
+
+## Validation during implementation
+
+2026-09-21: initial PTT/export adapter passes frontend production build and all
+200 unit tests (29 files). Vite requires execution outside the sandbox because
+Windows blocks its native dependency processes in the sandbox. This evidence
+covers the adapter contracts, not a real native user interaction.
+
+2026-09-21: privacy-settings and camera-overlay adapters bring the full frontend
+suite to 209 passing tests (31 files). Production build passes. Remote main was
+fetched again and remains at 691f3e5; it has not yet been integrated. Camera
+frame transfer uses generated JSON/base64 bindings, not zero-copy binary IPC;
+native load/latency acceptance must establish whether this meets the budget.
+The targeted Playwright camera-overlay test also passes in Chromium: synthetic
+camera compositing produces the expected RGBA pixels and disposal preserves
+the original media track. This does not exercise the native overlay window.
+
+2026-09-21: audio transport/manager tests pass using real loopback WebSockets,
+including malformed frames, rejected auth/origins, independent sessions, expiry,
+slot limits and startup/shutdown races. Targeted `go vet` passes. Full Wails
+`go test ./...` passes; full `go vet ./...` fails on the existing foreign-return
+pointer conversion at `internal/native/deepfilter/ort_windows.go:130`. This
+needs a reviewed FFI solution, not disabling the analyser. No GPU acceptance
+claim is implied by tests using a synthetic processor.
+
+2026-09-21: connected DSP service/Worker adapter passes 213 frontend tests and
+production build; Wails Go suite passes. A fresh Windows acceptance test drove
+30 actual 512-sample binary frames through AudioStreamStart and installed
+DirectML on AMD Radeon(TM) Graphics, checked finite, changed output, and passed.
+The standalone DirectML model acceptance also passed. NVIDIA acceptance was
+explicitly skipped: no supported NVIDIA GPU/package here. Renderer-stall,
+audible quality, sustained load, simultaneous microphone/call effects and
+fallback acceptance remain outstanding. The full-vet foreign-pointer issue
+noted above remains unresolved; no analyser has been disabled.
+
+2026-09-21: DSP settings and installers pass all 215 frontend tests and production
+build, all Wails Go tests, and targeted vet for dspsetup/audiostream. Tests cover
+embedded parity with Tauri assets, the model's pinned hash, required notices,
+cancelled/unknown install requests, and page authorisation before downloads or
+GPU probes. No installer download was performed. NVIDIA's capability cache is
+invalidated after successful setup so the settings refresh does not retain an
+old unavailable result. Full vet still needs the foreign-pointer fix.
+
+2026-09-21: native capture adapter passes 221 frontend tests (33 files), frontend
+production build and the Wails Go suite. Adapter tests cover SDP, collection
+shapes, call-audio exclusion defaults, bounded recording reads, MIME, thumbnail
+authorisation and ended events. A real Windows monitor thumbnail test decoded a
+640x360 JPEG in 0.40 seconds; the image remained in memory and was not displayed
+or persisted. This verifies thumbnail capture only, not end-to-end calls.
+
+2026-09-21: copilot and expanded per-call native authorisation pass 224 frontend
+tests (34 files), production build and all Wails Go tests. Tauri's existing
+copilot availability test now waits for lazy bridge imports rather than assuming
+a fixed number of microtasks. No assertions were removed. Native security tests
+cover denied start, continuation, read, clear, stop, install and GPU-probe calls.

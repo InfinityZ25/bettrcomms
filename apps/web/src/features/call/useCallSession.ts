@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
   MediaEngine,
+  MediaEngineDisposedError,
   RoomWebSocketSignaling,
   TrackRecordingSession,
   type MediaSourceKind,
@@ -22,7 +23,7 @@ import {
 } from '@/media/remoteAudio';
 import { useSpeakingActivity } from '@/media/useSpeakingActivity';
 import { readQuality } from '@/features/settings/MediaSettings';
-import { isTauri } from '@tauri-apps/api/core';
+import { hasNativeMediaHost } from '@/desktop/nativeMedia';
 import { errorMessage } from '@/lib/errors';
 import { readStored } from '@/lib/storage';
 import { createCallPeerId } from './callPeerId';
@@ -128,7 +129,9 @@ export function useCallSession({
     try {
       await task();
     } catch (error) {
-      onError(errorMessage(error));
+      // Tearing the call down mid-operation is not something to report.
+      if (!(error instanceof MediaEngineDisposedError))
+        onError(errorMessage(error));
     } finally {
       if (active.current) setBusy(false);
     }
@@ -613,7 +616,7 @@ export function useCallSession({
       });
       return;
     }
-    if (!isTauri()) {
+    if (!hasNativeMediaHost()) {
       // Capture constraints follow the configured stream quality.
       await perform(async () => {
         await engine.current?.captureScreen({ systemAudio: true });

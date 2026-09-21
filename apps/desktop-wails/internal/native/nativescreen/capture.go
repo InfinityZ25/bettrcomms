@@ -63,10 +63,18 @@ type Manager struct {
 	sources  map[string]Source
 	active   *session
 	recorder Recorder
+	onEnded  func(string, string)
 }
 
 // NewManager returns a manager with no capture running.
 func NewManager() *Manager { return &Manager{sources: map[string]Source{}} }
+
+// SetEndedHandler reports unexpected capture termination after native cleanup.
+func (m *Manager) SetEndedHandler(handler func(string, string)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.onEnded = handler
+}
 
 // SetRecorder attaches a recording store. Captures started afterwards offer
 // their access units to it.
@@ -403,6 +411,26 @@ func (m *Manager) Start(ctx context.Context, options StartOptions) (Started, err
 
 	go running.collectDiagnostics(stderr)
 	go running.pump(stdout)
+	go func() {
+		<-running.done
+		m.mu.Lock()
+		if m.active != running {
+			m.mu.Unlock()
+			return
+		}
+		m.active = nil
+		handler := m.onEnded
+		m.mu.Unlock()
+		running.cancel()
+		_ = running.cmd.Wait()
+		running.hub.Close()
+		if running.recorder != nil {
+			running.recorder.CaptureEnded(sessionID)
+		}
+		if handler != nil {
+			handler(sessionID, "Native capture ended. The source or encoder is no longer available.")
+		}
+	}()
 
 	return info, nil
 }

@@ -28,7 +28,12 @@ export type CallSession = ReturnType<typeof useCallSession> & {
 };
 
 /** What the shell needs to know about the call to lay itself out. */
-export type CallChrome = { joined: boolean; room: Room | null };
+export type CallChrome = {
+  joined: boolean;
+  room: Room | null;
+  /** The shell draws the recording frame, which is the canvas's own edge. */
+  recording: boolean;
+};
 
 const CallSessionContext = createContext<CallSession | null>(null);
 
@@ -103,8 +108,12 @@ export function CallSessionProvider({
   }, [joined]);
 
   useEffect(() => {
-    onCallChange?.({ joined, room: joined ? room : null });
-  }, [joined, room, onCallChange]);
+    onCallChange?.({
+      joined,
+      room: joined ? room : null,
+      recording: session.recording,
+    });
+  }, [joined, room, session.recording, onCallChange]);
 
   return (
     <CallSessionContext.Provider

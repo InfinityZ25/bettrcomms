@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { invokeNativeAudio } from '../desktop/audio';
 import {
   createNvidiaDenoiser,
   type NvidiaDenoisedTrack,
@@ -8,7 +8,7 @@ import {
 /** DeepFilterNet uses the same bounded 48 kHz worker/worklet transport as NVIDIA. */
 export async function createDeepfilterDenoiser(
   rawTrack: MediaStreamTrack,
-  nativeInvoke: NvidiaInvoke = invoke,
+  nativeInvoke: NvidiaInvoke = invokeNativeAudio,
   attenuationDb = 100,
 ): Promise<NvidiaDenoisedTrack> {
   return createNvidiaDenoiser(rawTrack, nativeInvoke, {

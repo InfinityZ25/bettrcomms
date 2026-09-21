@@ -36,7 +36,7 @@ describe('native push-to-talk registration', () => {
     expect(status).toHaveBeenLastCalledWith('unavailable', expect.any(String));
     event(snapshot(3, true)); expect(pressed.mock.lastCall?.[0]).toBe(false);
     expect(mocks.unlisten).toHaveBeenCalledOnce();
-    expect(mocks.invoke).toHaveBeenCalledWith('push_to_talk_stop', { sessionId: 'test-session' });
+    await vi.waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('push_to_talk_stop', { sessionId: 'test-session' }));
   });
   it('fails closed when the heartbeat cannot complete', async () => {
     await start(); event(snapshot(1, true));
@@ -51,7 +51,7 @@ describe('native push-to-talk registration', () => {
       ? new Promise(done => { resolve = done; }) : Promise.resolve({ available: true }));
     const pending = start(); await vi.advanceTimersByTimeAsync(0);
     input.dispose(); resolve(snapshot()); await pending;
-    expect(mocks.invoke).toHaveBeenCalledWith('push_to_talk_stop', { sessionId: 'test-session' });
+    await vi.waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('push_to_talk_stop', { sessionId: 'test-session' }));
     expect(mocks.unlisten).toHaveBeenCalledOnce();
     expect(status).not.toHaveBeenCalledWith('active', expect.anything());
   });

@@ -201,6 +201,14 @@ type Engine struct {
 // NewEngine returns an engine with nothing loaded yet.
 func NewEngine() *Engine { return &Engine{} }
 
+// InvalidateStatus makes an explicit successful install visible immediately,
+// without replacing the engine or racing an in-progress capability probe.
+func (e *Engine) InvalidateStatus() {
+	e.probeMu.Lock()
+	defer e.probeMu.Unlock()
+	e.probedAt = time.Time{}
+}
+
 // Status reports whether the SDK is installed and usable, caching a result for
 // a minute so rendering a settings screen does not reload a GPU model.
 func (e *Engine) Status() Status {

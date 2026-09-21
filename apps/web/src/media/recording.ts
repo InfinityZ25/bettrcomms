@@ -4,7 +4,7 @@ import type {
   RecordingResult,
   RecordingTrackManifest,
 } from './types';
-import { invoke } from '@tauri-apps/api/core';
+import { invokeNativeCapture as invoke } from '../desktop/capture';
 import { nativeScreenSessionForTrack } from './nativeCaptureRegistry';
 
 export interface RecordableTrack {

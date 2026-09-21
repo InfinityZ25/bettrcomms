@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import { createPortal } from 'react-dom';
 import { Volume2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { talkBindingLabel } from '@/media/pushToTalk';
@@ -200,18 +199,6 @@ export default function CallStage({
       onPointerDown={immersive.onPointerDown}
       onKeyDown={() => immersive.reveal()}
     >
-      {/*
-        Two sparks leave the record button, trace the window's edge and meet at
-        the top, and what they leave behind breathes for as long as it runs.
-        Drawn on the body rather than in here: this workspace is inset from the
-        window by the shell's own padding, and a ring floating somewhere inside
-        the layout reads as a box rather than as the app itself recording.
-      */}
-      {call.recording &&
-        createPortal(
-          <div className="recording-frame" aria-hidden="true" />,
-          document.body,
-        )}
       {call.engine && <CopilotPanel copilot={call.engine.copilot} names={names} />}
       <RecordingFlag
         recording={call.recording}

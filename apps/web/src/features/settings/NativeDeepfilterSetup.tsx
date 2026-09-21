@@ -1,7 +1,7 @@
 import { errorMessage } from '@/lib/errors';
 import { LinkButton } from '@/components/ui/link-button';
 import { useEffect, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invokeAudioSetup } from '@/desktop/audio';
 
 export interface DeepfilterStatus {
   ready: boolean;
@@ -31,8 +31,8 @@ export default function NativeDeepfilterSetup({
   async function refresh() {
     try {
       const [nextStatus, nextInfo] = await Promise.all([
-        invoke<DeepfilterStatus>('deepfilter_status'),
-        invoke<DeepfilterInstallInfo>('deepfilter_install_info'),
+        invokeAudioSetup<DeepfilterStatus>('deepfilter_status'),
+        invokeAudioSetup<DeepfilterInstallInfo>('deepfilter_install_info'),
       ]);
       setStatus(nextStatus);
       setInfo(nextInfo);
@@ -61,7 +61,7 @@ export default function NativeDeepfilterSetup({
     setBusy(true);
     setError('');
     try {
-      await invoke('deepfilter_install');
+      await invokeAudioSetup('deepfilter_install');
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {

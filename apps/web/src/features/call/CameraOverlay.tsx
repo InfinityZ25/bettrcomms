@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { invoke, isTauri } from '@tauri-apps/api/core';
+import { hasNativeMediaHost } from '@/desktop/nativeMedia';
+import { openCameraOverlay, updateCameraOverlay, sendCameraOverlayFrame, closeCameraOverlay, type CameraOverlaySession } from '@/desktop/cameraOverlay';
 import { PictureInPicture2 } from 'lucide-react';
 import { isWindowsDesktop } from '@/media/permissions';
 import { readStored, writeStored } from '@/lib/storage';
@@ -7,7 +8,7 @@ import { CameraOverlayCanvas, type OverlayCamera } from '@/media/cameraOverlayCa
 import './CameraOverlay.css';
 
 type Settings = { position: string; size: string; clickThrough: boolean };
-type Session = { overlayId: string; width: number; height: number; maxFps: number };
+type Session = CameraOverlaySession;
 const defaults: Settings = { position: 'top-right', size: 'small', clickThrough: true };
 function readSettings(): Settings {
   try {
@@ -37,7 +38,7 @@ export default function CameraOverlay({ cameras }: { cameras: OverlayCamera[] })
     let applied = '';
     const canvas = new CameraOverlayCanvas();
     const close = () => {
-      if (session) { const id = session.overlayId; session = undefined; void invoke('camera_overlay_close', { overlayId: id }).catch(() => {}); }
+      if (session) { const id = session.overlayId; session = undefined; void closeCameraOverlay(id).catch(() => {}); }
     };
     const tick = async () => {
       const started = performance.now();
@@ -47,19 +48,15 @@ export default function CameraOverlay({ cameras }: { cameras: OverlayCamera[] })
         const options = { ...current.settings, rows: Math.max(1, visible.length) };
         const key = JSON.stringify(options);
         if (!session) {
-          session = await invoke<Session>('camera_overlay_open', options);
+          session = await openCameraOverlay(options);
           applied = key;
         } else if (applied !== key) {
-          session = await invoke<Session>('camera_overlay_update', { overlayId: session.overlayId, ...options });
+          session = await updateCameraOverlay(session.overlayId, options);
           applied = key;
         }
         if (stopped) { close(); return; }
         const rgba = canvas.render(visible, session.width, session.height);
-        await invoke('camera_overlay_frame', rgba, { headers: {
-          'x-bettercomms-overlay-id': session.overlayId,
-          'x-bettercomms-frame-width': String(session.width),
-          'x-bettercomms-frame-height': String(session.height),
-        } });
+        await sendCameraOverlayFrame(session, rgba);
         // Modern hosts pace the single in-flight frame on an absolute native
         // deadline. A second JS timer would add scheduling drift. Older hosts
         // still discard early frames, so preserve their advertised cadence.
@@ -78,7 +75,7 @@ export default function CameraOverlay({ cameras }: { cameras: OverlayCamera[] })
     window.addEventListener('pagehide', unload);
     return () => { unload(); window.removeEventListener('pagehide', unload); };
   }, [enabled, supported]);
-  if (!isTauri() || !supported) return null;
+  if (!hasNativeMediaHost() || !supported) return null;
   const change = (patch: Partial<Settings>) => {
     const next = { ...settings, ...patch };
     setSettings(next);

@@ -1,4 +1,8 @@
-export { MediaEngine, type MediaEngineOptions } from './engine';
+export {
+  MediaEngine,
+  MediaEngineDisposedError,
+  type MediaEngineOptions,
+} from './engine';
 export { AudioLeveler, type AudioLevelerOptions } from './audio';
 export { prepareCallPlayback, disposeCallPlayback } from './remoteAudio';
 export {

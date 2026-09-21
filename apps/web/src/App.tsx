@@ -9,8 +9,11 @@ import {
   type CallChrome,
 } from '@/features/call/CallSessionContext';
 import CallDock from '@/features/call/CallDock';
+import CallAlerts from '@/features/call/CallAlerts';
+import IncomingCall from '@/features/call/IncomingCall';
 import RecordingNotice from '@/features/call/RecordingNotice';
 import { useCallPresence } from '@/features/call/useCallPresence';
+import { onDesktopNotificationClick } from '@/desktop/notifications';
 import DirectConversation from '@/features/chat/DirectConversation';
 import FriendsDialog from '@/features/friends/FriendsDialog';
 import RecordingsLibrary from '@/features/recordings/RecordingsLibrary';
@@ -52,7 +55,11 @@ export default function App() {
   const [inviteRoom, setInviteRoom] = useState<Room | null>(null);
   // Chrome only. The call itself is owned by CallSessionProvider below, which
   // outlives every screen; this is what the shell lays itself out against.
-  const [call, setCall] = useState<CallChrome>({ joined: false, room: null });
+  const [call, setCall] = useState<CallChrome>({
+    joined: false,
+    room: null,
+    recording: false,
+  });
   const callJoined = call.joined;
   const callRoom = call.room;
   const [callFocused, setCallFocused] = useState(false);
@@ -84,6 +91,23 @@ export default function App() {
     to it except the sidebar.
   */
   const [chatColumn, setChatColumn] = useState(true);
+  /** Opens a room somebody named rather than picked from the list. */
+  const openRoomById = (roomId: string) => {
+    const found = rooms.find((candidate) => candidate.id === roomId);
+    if (found) selectRoom(found);
+  };
+  /*
+    Clicking a desktop notification. The host brings the window back, which is
+    the half the page cannot do; this is the half it cannot: opening what the
+    notification was about, so the reply box is already in front of you.
+  */
+  useEffect(
+    () =>
+      onDesktopNotificationClick(({ data }) => {
+        if (typeof data.roomId === 'string') openRoomById(data.roomId);
+      }),
+    [rooms],
+  );
   const selectRoom = (next: Room) => {
     setRoom(next);
     setSection(sectionForRoom(next.kind));
@@ -100,6 +124,18 @@ export default function App() {
   useEffect(() => {
     if (room) setSection(sectionForRoom(room.kind));
   }, [room?.id]);
+  /*
+    The end of a call in a conversation hands the screen back to the
+    conversation. It used to leave the call's own empty lobby up, offering to
+    join the call that had just ended. Watched as a transition rather than as
+    a state, so pressing Call — which opens the view before the join lands —
+    is not immediately undone.
+  */
+  const wasInCall = useRef(callJoined);
+  useEffect(() => {
+    if (wasInCall.current && !callJoined) setCallOpen(false);
+    wasInCall.current = callJoined;
+  }, [callJoined]);
 
   const inDirectRoom = Boolean(room && (room.kind ?? 'channel') === 'direct');
   /*
@@ -199,7 +235,7 @@ export default function App() {
         data-app-shell
         data-in-call={callJoined}
         data-call-focused={immersive}
-        className="app-shell flex h-dvh min-h-[600px] gap-1.5 overflow-hidden bg-sidebar pb-2 px-2 min-[821px]:min-h-[680px] select-none"
+        className="app-shell flex h-dvh min-h-[600px] gap-1.5 overflow-hidden bg-sidebar px-2 py-2 min-[821px]:min-h-[680px] select-none [[data-desktop-frame]_&]:pt-0"
       >
       <div className="relative min-w-0 flex-1 overflow-hidden">
       <main
@@ -210,6 +246,21 @@ export default function App() {
         aria-label="Call"
         hidden={screen !== 'call'}
       >
+        {/*
+          Recording, on the edge of the canvas itself.
+
+          Two sparks leave the record button at the bottom, run up both sides
+          and bloom where they meet at the top, leaving a line that breathes
+          while it records. It lives here rather than inside the call screen
+          because the edge people see is this one: the call's own boxes are all
+          inset from it, and a ring floating inside the black read as a box
+          around nothing.
+        */}
+        {call.recording && (
+          <div className="recording-frame" aria-hidden="true">
+            <span className="recording-frame-meet" />
+          </div>
+        )}
         <section
           className={cn(
             'relative flex min-w-0 flex-1 flex-col overflow-auto px-3 pt-5 pb-3 [scroll-padding-bottom:1.5rem] min-[481px]:px-5 min-[821px]:pb-0 min-[1251px]:px-8',
@@ -407,6 +458,22 @@ export default function App() {
         onCreated={async (created) => {
           await reload();
           setRoom(created);
+        }}
+      />
+      <CallAlerts
+        user={user}
+        viewing={conversation || chatBeside ? room : null}
+        messages={presence.messages}
+      />
+      <IncomingCall
+        user={user}
+        rooms={rooms}
+        presence={presence.rooms}
+        onAnswer={(roomId) => {
+          openRoomById(roomId);
+          // Answering is asking for the call, so the call is what opens; the
+          // conversation keeps its column beside it.
+          setCallOpen(true);
         }}
       />
       {!callOnScreen && (

@@ -6,60 +6,6 @@
 import { Create as $Create } from "@wailsio/runtime";
 
 /**
- * InstallInfo is what a settings screen renders before anything is installed.
- */
-export class InstallInfo {
-    "schemaVersion": number;
-
-    /**
-     * Supported reports NVIDIA hardware the pinned package targets.
-     */
-    "supported": boolean;
-
-    /**
-     * Installed reports a complete package on disk.
-     */
-    "installed": boolean;
-
-    /**
-     * GPUName is the adapter this decision was made about, when there is one.
-     */
-    "gpuName"?: string;
-
-    /**
-     * Package names the pinned build, so a report says which one.
-     */
-    "package"?: string;
-    "detail": string;
-
-    /** Creates a new InstallInfo instance. */
-    constructor($$source: Partial<InstallInfo> = {}) {
-        if (!("schemaVersion" in $$source)) {
-            this["schemaVersion"] = 0;
-        }
-        if (!("supported" in $$source)) {
-            this["supported"] = false;
-        }
-        if (!("installed" in $$source)) {
-            this["installed"] = false;
-        }
-        if (!("detail" in $$source)) {
-            this["detail"] = "";
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new InstallInfo instance from a string or object.
-     */
-    static createFrom($$source: any = {}): InstallInfo {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new InstallInfo($$parsedSource as Partial<InstallInfo>);
-    }
-}
-
-/**
  * Status is what the settings screen renders.
  */
 export class Status {

@@ -1,5 +1,6 @@
 import { isTauri } from '@tauri-apps/api/core';
 import { describeDesktopRuntime, isDesktopShell } from '@/desktop';
+import { hasNativeMediaHost } from '@/desktop/nativeMedia';
 import { getCallPlaybackStatus } from '@/media/remoteAudio';
 import { readProcessingSettings } from '@/media/processingSettings';
 import { readSpeakingThreshold } from '@/media/speakingSensitivity';
@@ -105,7 +106,7 @@ export async function saveReport(report: unknown) {
     name: 'bettercomms-diagnostics-' + Date.now() + '.json',
     blob: new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' }),
   };
-  if (isTauri()) {
+  if (hasNativeMediaHost()) {
     await saveRecordingAsset(file, new AbortController().signal, () => {});
     return;
   }
