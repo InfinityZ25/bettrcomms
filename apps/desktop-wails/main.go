@@ -9,6 +9,7 @@ package main
 import (
 	"context"
 	"embed"
+	"encoding/json"
 	"io/fs"
 	"log"
 	"os"
@@ -25,6 +26,17 @@ import (
 // hostVersion tracks the Wails host separately from the Tauri host's version,
 // so a report cannot imply Tauri's feature set.
 const hostVersion = "0.0.1-wails"
+
+// Set only by the release build's linker flag. Empty means the repository's
+// production origin; runtime/development overrides do not alter this metadata.
+var bakedAPIOrigin string
+
+func releaseAPIOrigin() string {
+	if bakedAPIOrigin != "" {
+		return bakedAPIOrigin
+	}
+	return desktop.ReleaseOrigin
+}
 
 // frontendAssets holds the staged copy of apps/web/dist. The build task copies
 // it in; apps/web remains the single frontend source. The `all:` prefix keeps
@@ -44,6 +56,20 @@ var frontendAssets embed.FS
 var appIcon []byte
 
 func main() {
+	// Offline packaging verification: no window, credentials, proxy or GPU starts.
+	if len(os.Args) == 2 && os.Args[1] == "--print-build-info" {
+		origin, err := desktop.ResolveAPIOrigin(releaseAPIOrigin(), false)
+		if err != nil {
+			log.Fatal("invalid packaged API origin")
+		}
+		if err := json.NewEncoder(os.Stdout).Encode(struct {
+			Version   string `json:"version"`
+			APIOrigin string `json:"apiOrigin"`
+		}{hostVersion, origin}); err != nil {
+			log.Fatal("could not write build metadata")
+		}
+		return
+	}
 	if err := run(); err != nil {
 		log.Fatalf("bettercomms-wails: %v", err)
 	}
@@ -317,7 +343,7 @@ func configuredAPIOrigin(debug bool) string {
 	if debug {
 		return "http://127.0.0.1:8080"
 	}
-	return desktop.ReleaseOrigin
+	return releaseAPIOrigin()
 }
 
 // WindowService is the intentionally small Wails binding surface used by the

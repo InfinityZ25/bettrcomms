@@ -6,6 +6,30 @@ import (
 	"bettercomms/desktop-wails/internal/desktop"
 )
 
+func TestPackagedAPIOriginAndRuntimeOverrides(t *testing.T) {
+	previous := bakedAPIOrigin
+	t.Cleanup(func() { bakedAPIOrigin = previous })
+	t.Setenv("BETTERCOMMS_API_ORIGIN", "")
+	bakedAPIOrigin = ""
+	if configuredAPIOrigin(false) != desktop.ReleaseOrigin {
+		t.Fatal("default release origin differs from the Tauri contract")
+	}
+	bakedAPIOrigin = "https://packaging.example:8443"
+	if configuredAPIOrigin(false) != bakedAPIOrigin {
+		t.Fatal("release ignored its compiled API origin")
+	}
+	if configuredAPIOrigin(true) != "http://127.0.0.1:8080" {
+		t.Fatal("development must keep its local API default")
+	}
+	t.Setenv("BETTERCOMMS_API_ORIGIN", "https://runtime.example")
+	if configuredAPIOrigin(false) != "https://runtime.example" {
+		t.Fatal("explicit runtime configuration was ignored")
+	}
+	if releaseAPIOrigin() != "https://packaging.example:8443" {
+		t.Fatal("runtime configuration changed build metadata")
+	}
+}
+
 func TestNativeWindowsNonClientRegionsAreEnabled(t *testing.T) {
 	options := nativeWindowsWindowOptions()
 	if !options.NonClientRegionSupport {

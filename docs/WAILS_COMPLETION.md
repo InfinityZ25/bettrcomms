@@ -78,6 +78,20 @@ included in the desktop PR. Do not claim the goal complete from unit tests alone
 
 ## Validation during implementation
 
+2026-09-21: fixed the custom packaged API origin discovered in the previous
+audit. Both the Wails build task and PowerShell entry point now use a validated
+HTTPS authority and a linker-injected default. Build configuration uses its own
+environment variable and is restored on exit, separate from runtime overrides.
+The offline --print-build-info path starts no window, media, credentials or
+network listeners. A real compiled executable retained packaging.example:8443
+with both build/runtime environment variables removed; the test restored the
+normal executable afterward. Rejected origins cover HTTP, userinfo, paths,
+queries/fragments, invalid ports and linker-option injection. Added this binary
+acceptance to Windows CI. Go configuration regression, full Go tests and full
+vet pass. Full build-desktop-wails.ps1 and actionlint passed; the restored binary
+reports https://app.bettrcomms.com. Hosted workflow execution and packaged
+interactive auth remain open.
+
 2026-09-21: added a Windows Wails job to the existing PR/push validation workflow:
 Go 1.26, pinned Wails CLI, full build/vet/tests, staged FFmpeg acceptance without
 a private install, native-asset source parity, and a seven-day portable CI

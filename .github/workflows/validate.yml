@@ -31,6 +31,8 @@ jobs:
         run: |
           $env:BETTERCOMMS_TEST_BUNDLE_DIR = Join-Path $PWD 'bin'
           go test -count=1 -v ./internal/native/ffmpegsetup -run 'TestBundledRuntime|TestStagedBundle'
+      - name: Verify custom API origin survives packaging
+        run: ./scripts/test-wails-build-origin.ps1
       # Hardware-dependent tests explicitly report missing devices/runtimes.
       # A hosted-runner pass does not establish NVIDIA/AMD or interactive UI acceptance.
       - name: Verify staged native assets match their checked-in sources

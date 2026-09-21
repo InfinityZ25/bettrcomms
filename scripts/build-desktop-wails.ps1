@@ -1,9 +1,8 @@
 # Production build for the Wails v3 host.
 #
 # Builds the shared frontend, stages it for embedding, then builds the Go
-# binary. `wails3 build` is used when the pinned CLI is present, because it also
-# applies platform metadata and icons; otherwise this falls back to `go build`,
-# which produces a working, unbranded executable.
+# binary through the pinned Wails task. The custom API origin is linked into
+# that binary, independently of the environment on the machine running it.
 
 [CmdletBinding()]
 param(
@@ -18,6 +17,8 @@ $ErrorActionPreference = 'Stop'
 
 $repo = Split-Path -Parent $PSScriptRoot
 $app = Join-Path $repo 'apps/desktop-wails'
+. (Join-Path $PSScriptRoot 'wails-build-origin.ps1')
+$canonicalOrigin = ConvertTo-WailsBuildOrigin $ApiOrigin
 
 if (-not (Test-Path $Wails3)) {
     throw "wails3 v3.0.0-beta.18 is required at $Wails3 to generate bindings and build the host."
@@ -41,11 +42,9 @@ if ($LASTEXITCODE -ne 0) { throw 'The frontend build failed.' }
 Write-Host '== Staging apps/web/dist for embedding =='
 & (Join-Path $PSScriptRoot 'stage-wails-frontend.ps1')
 
-if ($ApiOrigin) {
-    $env:BETTERCOMMS_API_ORIGIN = $ApiOrigin
-}
-
+$previousBuildOrigin = $env:BETTERCOMMS_BUILD_API_ORIGIN
 try {
+    $env:BETTERCOMMS_BUILD_API_ORIGIN = $canonicalOrigin
     Push-Location $app
     if (-not (Test-Path (Join-Path $app 'go.sum'))) {
         Write-Host '== Resolving Go dependencies =='
@@ -64,6 +63,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'wails3 build failed.' }
 } finally {
     Pop-Location
+    $env:BETTERCOMMS_BUILD_API_ORIGIN = $previousBuildOrigin
 }
 
 Write-Host 'Done. Distribute the Wails executable together with its bin/ffmpeg directory. Native acceptance status is tracked in docs/WAILS_COMPLETION.md.'

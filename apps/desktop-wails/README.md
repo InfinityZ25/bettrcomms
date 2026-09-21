@@ -37,7 +37,12 @@ Vite on port 5173; frontend source is never duplicated.
 ./scripts/build-desktop-wails.ps1
 ```
 
-Optionally pass `-ApiOrigin https://your-host.example`. The script stages model
+Optionally pass `-ApiOrigin https://your-host.example`; this HTTPS origin is
+validated and linked into the executable, not left in the build machine's
+environment. `bettercomms-wails.exe --print-build-info` prints non-secret build
+metadata without opening a window or starting network/media services. An explicit
+`BETTERCOMMS_API_ORIGIN` runtime override remains supported and validated.
+The script stages model
 assets, generates bindings, builds and embeds the frontend, runs Go vet/tests,
 and builds the host. The build task stages pinned, hash-verified FFmpeg files:
 
@@ -64,6 +69,10 @@ cd apps/desktop-wails
 $env:BETTERCOMMS_TEST_BUNDLE_DIR = (Join-Path $PWD 'bin')
 go test -count=1 -v ./internal/native/ffmpegsetup -run TestStagedBundle
 ```
+
+From the repository root, `./scripts/test-wails-build-origin.ps1` checks rejected
+origins and compiles a custom-origin binary, verifies it without environment
+overrides, then restores the normal binary. The Windows CI job runs this check.
 
 ## Boundaries and remaining acceptance
 
