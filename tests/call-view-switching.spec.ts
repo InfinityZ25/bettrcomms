@@ -30,9 +30,14 @@ async function createRoom(context: BrowserContext, name: string) {
  * what these tests are about.
  */
 async function openScreen(page: Page, screen: 'recordings' | 'settings') {
-  const label = screen === 'settings' ? 'Audio and video settings' : 'Recordings';
-  await page.getByRole('button', { name: label }).click();
-  await expect(page.getByRole('main', { name: screen === 'settings' ? 'Settings' : 'Recordings' })).toBeVisible();
+  if (screen === 'settings') {
+    await page.getByRole('button', { name: 'Views Ada and account options' }).click();
+    await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Settings', exact: true })).toBeVisible();
+  } else {
+    await page.getByRole('button', { name: 'Recordings', exact: true }).click();
+    await expect(page.getByRole('main', { name: 'Recordings' })).toBeVisible();
+  }
 }
 
 async function backToCall(page: Page) {
@@ -81,8 +86,8 @@ test('the call survives every screen change', async ({ browser }) => {
 
 /**
  * Browsing another room while a call is live must not move or end the call. The
- * session is pinned to the room it was joined in, and the header offers the way
- * back rather than dragging the call along.
+ * session is pinned to the room it was joined in. Sidebar selection and live
+ * participant lists distinguish the browsed room from the actual call room.
  */
 test('browsing another room leaves the call in the room it started in', async ({ browser }) => {
   test.setTimeout(120_000);
@@ -101,14 +106,17 @@ test('browsing another room leaves the call in the room it started in', async ({
     await expect(page.getByRole('button', { name: 'Unmute microphone' })).toBeVisible();
 
     await page.getByRole('button', { name: otherRoom.name }).click();
-    await expect(page.locator('.room-heading strong')).toHaveText(otherRoom.name);
+    await expect(page.getByRole('button', { name: otherRoom.name, exact: true })).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByRole('list', { name: `${room.name} call participants`, exact: true })).toContainText('Views Ada');
+    await expect(page.getByRole('list', { name: `${otherRoom.name} call participants`, exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Unmute microphone' })).toBeVisible();
 
     // Opening a screen from the other room still does not disturb the call.
     await openScreen(page, 'recordings');
     await backToCall(page);
-    await expect(page.getByRole('button', { name: `Return to ${room.name}` })).toBeVisible();
+    await expect(page.getByRole('button', { name: otherRoom.name, exact: true })).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByRole('list', { name: `${room.name} call participants`, exact: true })).toContainText('Views Ada');
     await expect(page.getByRole('button', { name: 'Unmute microphone' })).toBeVisible();
   } finally {
     await context.close();

@@ -1,14 +1,9 @@
 // Command bettercomms-wails is the Wails v3 desktop host for BetterComms.
 //
-// It is deliberately thin. Its job is to open a native window over the shared
-// apps/web frontend, serve that frontend, and expose a narrow Wails service
-// for window controls. It
-// contains no media code: see internal/desktop.NewMediaCapabilities for the
-// list of native capabilities this host does not have, and docs/WAILS_MIGRATION.md
-// for what the frontend does instead.
-//
-// The Tauri host in apps/desktop is unchanged and remains the only shell with
-// native capture, native audio processing, and native recording.
+// It serves the shared apps/web frontend and binds window, authentication and
+// native media services. Native implementations live in internal/native;
+// docs/WAILS_COMPLETION.md tracks acceptance separately from implementation.
+// The existing Tauri host remains available alongside this migration.
 package main
 
 import (
@@ -17,9 +12,11 @@ import (
 	"io/fs"
 	"log"
 	"os"
+	"path/filepath"
 	"runtime"
 
 	"bettercomms/desktop-wails/internal/desktop"
+	"bettercomms/desktop-wails/internal/native/ffmpegsetup"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/services/notifications"
@@ -53,6 +50,13 @@ func main() {
 }
 
 func run() error {
+	// Resolve relative to the executable, never the launcher's working directory.
+	// The packaged layout keeps the verified runtime and its notices beside it.
+	executable, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	ffmpegsetup.ConfigureBundledRuntime(filepath.Dir(executable))
 	devServer := os.Getenv("BETTERCOMMS_DEV_SERVER")
 	debug := devServer != ""
 

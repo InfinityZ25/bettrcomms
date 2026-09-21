@@ -78,6 +78,42 @@ included in the desktop PR. Do not claim the goal complete from unit tests alone
 
 ## Validation during implementation
 
+2026-09-21: added a Windows Wails job to the existing PR/push validation workflow:
+Go 1.26, pinned Wails CLI, full build/vet/tests, staged FFmpeg acceptance without
+a private install, native-asset source parity, and a seven-day portable CI
+artifact (not a published release or deployment). actionlint v1.7.7 passed.
+The workflow has not yet run on GitHub; hosted-runner/hardware behaviour is not
+claimed. The prior ten-test browser run finished with ten failures, including
+stale settings navigation and room-heading selectors. Trace inspection proved
+Recordings navigation itself passed. Updated both call-view-switching tests to
+use the Settings account menu/dialog and room selection/participant-list state,
+retaining mute and session persistence assertions. Both passed with real local
+API/database and synthetic browser media. The remaining eight browser failures
+(connection diagnostics, device settings and direct navigation) still need review.
+Also found that build-desktop-wails.ps1's ApiOrigin option currently sets only
+the build process environment, not a linker-embedded default; fix and test before
+claiming custom-origin portable builds work.
+
+2026-09-21: the DeepFilterNet foreign pointer return now uses typed purego
+bindings, pinned at v0.11.0. Full Wails vet passes without disabling unsafeptr;
+the task definition no longer disables that analyser. Actual AMD model load,
+processing, reset and attenuation acceptance passed; measured processing was
+3.698 ms per 512-sample frame (10.667 ms budget). This is not sustained call or
+NVIDIA acceptance.
+
+2026-09-21: connected the bundled FFmpeg directory to host startup, resolved
+relative to the executable. Wails builds stage the exact pinned executable,
+licence, setup metadata and source notice beside the app. Source/destination
+hash checks passed. A new opt-in acceptance test ran the packaged FFmpeg 8.1
+from an unrelated working directory with an empty private application-data
+directory. Configuration also rejects subsequent redirection. Wails build and
+frontend production build passed, as did 232 frontend tests, all Go packages
+and full vet. Native enumeration required execution outside the sandbox.
+The first nested Windows PowerShell build could not find Get-FileHash; explicit
+loading of that shell's own Utility module fixed it and the build passed.
+Updated the host README to reflect implemented adapters and outstanding gates.
+This prepares a portable directory, not an installer; release CI remains open.
+
 2026-09-21: initial PTT/export adapter passes frontend production build and all
 200 unit tests (29 files). Vite requires execution outside the sandbox because
 Windows blocks its native dependency processes in the sandbox. This evidence

@@ -12,6 +12,7 @@ import (
 
 	"bettercomms/desktop-wails/internal/native/gpudevices"
 
+	"github.com/ebitengine/purego"
 	"golang.org/x/sys/windows"
 )
 
@@ -117,22 +118,19 @@ func (r *ortRuntime) call(slot int, args ...uintptr) uintptr {
 	return result
 }
 
-// callPointer invokes a foreign function that returns a pointer.
-//
-// A C function's return value arrives as an integer, and there is no way in Go
-// to dereference foreign memory without converting one back to a pointer. This
-// is the only place that happens, and it is sound here: every pointer it
-// produces is into memory owned by onnxruntime.dll, which Go's collector
-// neither owns nor moves, and which outlives every use below because the
-// library is never unloaded.
-func callPointer(fn uintptr, args ...uintptr) unsafe.Pointer {
-	result, _, _ := syscall.SyscallN(fn, args...)
-	return unsafe.Pointer(result)
+// pointerResult0 binds a C pointer return as a pointer, not as an integer to
+// reinterpret later. ONNX owns this memory; the module remains loaded for the
+// process lifetime. purego supplies the platform ABI conversion.
+func pointerResult0(fn uintptr) unsafe.Pointer {
+	var call func() unsafe.Pointer
+	purego.RegisterFunc(&call, fn)
+	return call()
 }
 
-// callPointerSlot is callPointer for an OrtApi entry.
-func (r *ortRuntime) callPointerSlot(slot int, args ...uintptr) unsafe.Pointer {
-	return callPointer(r.api[slot], args...)
+func pointerResult1(fn, arg uintptr) unsafe.Pointer {
+	var call func(uintptr) unsafe.Pointer
+	purego.RegisterFunc(&call, fn)
+	return call(arg)
 }
 
 // status turns an OrtStatus into an error and releases it.
@@ -144,7 +142,7 @@ func (r *ortRuntime) status(handle uintptr, what string) error {
 		return nil
 	}
 	code := r.call(slotGetErrorCode, handle)
-	message := r.callPointerSlot(slotGetErrorMessage, handle)
+	message := pointerResult1(r.api[slotGetErrorMessage], handle)
 	detail := ""
 	if message != nil {
 		detail = windows.BytePtrToString((*byte)(message))
@@ -202,7 +200,7 @@ func loadRuntimeOnce(resolved install) (*ortRuntime, error) {
 		return nil, errors.New("this ONNX Runtime build has no DirectML provider")
 	}
 
-	basePtr := callPointer(base)
+	basePtr := pointerResult0(base)
 	if basePtr == nil {
 		procFreeLibrary.Call(library)
 		procRemoveDllDirectory.Call(cookie)
@@ -215,7 +213,7 @@ func loadRuntimeOnce(resolved install) (*ortRuntime, error) {
 	// returns null for a version it does not implement.
 	var api unsafe.Pointer
 	for version := newestKnownAPIVersion; version >= oldestUsableAPIVersion; version-- {
-		if api = callPointer(getAPI, uintptr(version)); api != nil {
+		if api = pointerResult1(getAPI, uintptr(version)); api != nil {
 			break
 		}
 	}

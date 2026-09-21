@@ -26,6 +26,7 @@ tasks:
     deps: [build:frontend]
     cmds:
       - go build -tags production -o {{.BIN_DIR}}/{{.APP_NAME}}.exe .
+      - powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/stage-wails-ffmpeg.ps1
 
   # Development runs against the live Vite server rather than a staged copy, so
   # frontend edits reload without a Go rebuild.
@@ -60,11 +61,6 @@ tasks:
     cmds:
       - go test ./internal/native/nvidiaaudio/ -v -run "Denoiser|Intensity|VoiceActivity|StoppingAndStarting"
 
-  # The deepfilter package converts one C return value to a pointer, which is
-  # the only way in Go to dereference memory a foreign library returned. Its
-  # unsafeptr finding is expected and documented at the conversion; every other
-  # analyzer still runs on it, and the full set runs everywhere else.
   vet:
     cmds:
-      - go vet $(go list ./... | grep -v internal/native/deepfilter)
-      - go vet -unsafeptr=false ./internal/native/deepfilter/
+      - go vet ./...

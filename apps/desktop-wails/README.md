@@ -1,49 +1,25 @@
 # BetterComms Wails v3 host
 
-A second desktop shell, alongside the Tauri 2 host in `apps/desktop`. It opens a
-native window over the shared `apps/web` frontend and exposes a small generated
-Wails service for window controls.
+A second desktop shell beside Tauri, using the same React/Vite frontend in
+`apps/web`. Wails v3.0.0-beta.18 is pinned. No better-gui port is used.
 
-`apps/desktop` is unchanged and remains the only shell with native media.
+## Status
 
-## What this host does and does not do
+Native Windows capture, H.264 WebRTC, process audio, recording, Save As/conversion,
+background push-to-talk, camera/copilot overlays and optional NVIDIA/DeepFilterNet
+processing have Go implementations and shared frontend adapters. Passing module
+tests is not full desktop acceptance. See [the completion ledger](../../docs/WAILS_COMPLETION.md)
+for verified results and outstanding native, packaged and hardware gates.
 
-Implemented here:
+The host embeds frontend assets, proxies HTTP/WebSocket API traffic through an
+authenticated loopback service, and opens sign-in in the system browser. Windows
+session persistence uses the OS credential store; other platforms lack persistence.
 
-- a native window, frameless on Windows and Linux so the page draws the existing
-  custom title bar, and decorated on macOS
-- the shared frontend, served from an embedded copy of `apps/web/dist` in a
-  build, or proxied live from the Vite dev server during development
-- a validated API origin, using the same policy as the Tauri host
-- an honest capability report, injected into the document before any bundle runs
-- minimise, maximise/restore, and close through generated Wails v3 bindings
-- native Windows non-client regions for caption dragging and custom caption
-  buttons, including the `HTMAXBUTTON` route used by Windows 11 Snap Layouts
+## Development
 
-Not ported, and reported as unavailable:
-
-| Capability | Tauri host | This host | What happens instead |
-|---|---|---|---|
-| Window/display capture | Windows Graphics Capture | none | browser `getDisplayMedia` |
-| Process/system audio | Windows process loopback | none | browser display-capture audio |
-| GPU microphone denoise | NVIDIA Audio Effects, DirectML DeepFilterNet | none | RNNoise, SpeexDSP, or DeepFilterNet WASM in the page |
-| Native recording/export | H.264 remux to MP4, native Save As | none | `MediaRecorder` and browser export |
-| Media permission IPC | WebView2 Profile4 | none | the webview's own permission handling |
-| Global input hooks | keyboard and mouse hooks | none | foreground push-to-talk |
-| Native overlays | camera overlay, visual copilot | none | in-app presentation |
-| Packaged auth return | not implemented there either | none | same-origin sign-in only |
-
-No parity with `apps/desktop` is claimed. `internal/desktop/capabilities_test.go`
-fails if any of those rows is quietly promoted.
-
-## Requirements
-
-- Go 1.25 or newer
-- The pinned Wails CLI, `v3.0.0-beta.18`, at `%USERPROFILE%\go\bin\wails3.exe`
-- Its platform prerequisites (WebView2 on Windows); run `wails3 doctor`
-- One network-enabled `go mod tidy` to produce `go.sum`
-
-## Running it
+Use Go matching `go.mod`, the pinned CLI at
+`%USERPROFILE%\go\bin\wails3.exe`, and Windows WebView2. Run `wails3 doctor`
+to check prerequisites. Install frontend dependencies with root `npm ci`.
 
 From the repository root, in separate terminals:
 
@@ -52,54 +28,56 @@ From the repository root, in separate terminals:
 ./scripts/start-desktop-wails.ps1
 ```
 
-The runner starts Vite on 5173 if it is not already running, sets
-`BETTERCOMMS_DEV_SERVER`, and runs the Go host against it. Frontend edits reload
-without a Go rebuild.
+Development authentication remains opt-in and loopback-only. The launcher uses
+Vite on port 5173; frontend source is never duplicated.
 
-Build:
+## Windows build
 
 ```powershell
-./scripts/build-desktop-wails.ps1 -ApiOrigin https://your-host.example
+./scripts/build-desktop-wails.ps1
 ```
 
-That regenerates the typed Wails bindings, builds `apps/web`, stages
-`apps/web/dist` into `frontend/dist`, runs `go vet` and `go test`, then builds
-with the pinned `wails3` CLI.
+Optionally pass `-ApiOrigin https://your-host.example`. The script stages model
+assets, generates bindings, builds and embeds the frontend, runs Go vet/tests,
+and builds the host. The build task stages pinned, hash-verified FFmpeg files:
 
-`Taskfile.yml` covers the same steps for `wails3 dev` and `wails3 build`.
-
-## Layout
-
-```
-main.go                        Wails wiring: window, service, asset handler. No media code.
-internal/desktop/origin.go     API-origin policy.
-internal/desktop/capabilities.go  The capability and boot reports.
-internal/desktop/assets.go     Embedded assets, dev proxy, boot-report injection.
-frontend/dist/                 Staged copy of apps/web/dist. Not a fork; not committed.
+```text
+bin/
+  bettercomms-wails.exe
+  ffmpeg/
+    ffmpeg.exe
+    LICENSE
+    SOURCE.txt
+    setup.json
 ```
 
-Everything except `main.go` is free of Wails imports, so the security boundary
-and the capability report are testable with `go test` alone.
+Keep this directory together. The runtime is resolved relative to the executable,
+not the working directory. Preparation reuses the verified Tauri bundle or runs
+the existing pinned preparation script, which can require a download. Optional
+GPU audio runtimes still require explicit setup. Installer and release CI work
+remain outstanding; this directory is not an installer.
 
-## Frontend reuse
+Test the staged runtime without relying on the user's private installation:
 
-`apps/web` is the single frontend. This host never copies its source: development
-proxies the running Vite server, and a build copies only `apps/web/dist` into
-`frontend/dist` for `//go:embed`.
+```powershell
+cd apps/desktop-wails
+$env:BETTERCOMMS_TEST_BUNDLE_DIR = (Join-Path $PWD 'bin')
+go test -count=1 -v ./internal/native/ffmpegsetup -run TestStagedBundle
+```
 
-The frontend detects its host through `apps/web/src/desktop`. Native features
-gate on `hasTauriNativeCommands()`, so they stay on their browser path here
-rather than calling commands that do not exist.
+## Boundaries and remaining acceptance
 
-## Security boundary and current limitation
+- Sensitive media operations require a per-launch page token. File exports use
+  native Save As and bounded opaque grants, not arbitrary paths from the page.
+- API origins must be HTTPS, or loopback HTTP in development, without credentials,
+  paths, queries or fragments. Proxy and native tokens are separate.
+- Microphone/camera policy is set at window creation; unlike Tauri's per-origin
+  permission IPC, Wails does not currently revoke it dynamically. OS privacy
+  settings still apply.
+- Packaged login, navigation/resource cleanup, interactive native UI and sustained
+  hardware acceptance remain release gates.
+- Existing Tauri recordings/preferences are not automatically imported. macOS
+  packaging and acceptance remain outstanding.
 
-- The registered Wails service exposes only five window operations. It exposes
-  no shell, process, filesystem, auth, or media methods.
-- Camera and microphone use the webview's native prompt policy. Geolocation,
-  notifications, and clipboard-read requests are denied. Windows keeps only
-  the autoplay/background-media Chromium flags already used by the Tauri host.
-- The API origin must be HTTPS, or loopback HTTP in development, and must carry
-  no credentials, path, query, or fragment. The page re-validates it before use.
-- Packaged API routing is not implemented yet. The embedded frontend's relative
-  `/api` calls receive an explicit 501; development through Vite is the usable
-  scaffold path. Packaged authentication is not claimed.
+Shared browser media, chat and calls remain in `apps/web`. Native modules live
+in `internal/native`; host policy/auth/assets live in `internal/desktop`.

@@ -66,4 +66,4 @@ try {
     Pop-Location
 }
 
-Write-Host 'Done. This build has no native capture, native audio processing, or native recording; see apps/desktop-wails/README.md.'
+Write-Host 'Done. Distribute the Wails executable together with its bin/ffmpeg directory. Native acceptance status is tracked in docs/WAILS_COMPLETION.md.'
