@@ -3,7 +3,7 @@
   "identifier": "main",
   "description": "Minimal core permissions for the BetterComms main window. Custom capability reporting is exposed through a typed command; no shell or filesystem plugin is enabled.",
   "windows": ["main"],
-  "remote": { "urls": ["https://bettrcomms-production.up.railway.app"] },
+  "remote": { "urls": ["https://app.bettrcomms.com"] },
   "permissions": [
     "app-native",
     "core:app:default",

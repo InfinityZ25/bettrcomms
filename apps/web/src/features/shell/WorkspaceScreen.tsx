@@ -25,7 +25,7 @@ export default function WorkspaceScreen({
       className="content-canvas flex min-w-0 flex-1 flex-col overflow-hidden rounded-3xl border border-border/60 bg-background shadow-[0_20px_60px_rgb(0_0_0/0.16)]"
       aria-label={title}
     >
-      <div className="min-h-0 flex-1 overflow-auto overscroll-contain">
+      <div className="min-h-0 flex-1 overflow-auto overscroll-contain" data-testid="workspace-scroll">
         <div className="mx-auto max-w-6xl px-4 pt-5 pb-10 sm:px-8 sm:pt-7 sm:pb-14">
           <h1
             className="mb-4 font-heading text-xl font-semibold tracking-tight outline-none"

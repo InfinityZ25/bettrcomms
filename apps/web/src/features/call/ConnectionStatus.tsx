@@ -1,23 +1,44 @@
 import { useEffect, useRef, useState } from 'react';
 import { Activity, Signal, X } from 'lucide-react';
-import type { PeerMediaStats } from '@/media';
+import type { PeerMediaStats, RoomWebSocketSignaling } from '@/media';
 import './ConnectionStatus.css';
 
 export default function ConnectionStatus({
   joined,
   peerCount,
-  serverRtt,
+  signaling,
   stats,
   names,
   onDetails,
 }: {
   joined: boolean;
   peerCount: number;
-  serverRtt: number | null;
+  /**
+   * The active signaling socket, or null between calls. Ping/RTT is read
+   * directly off it here rather than lifted into CallStage state — CallStage
+   * renders every camera tile inline and unmemoized, so a state update
+   * there every 5s (the ping interval) re-evaluates that whole tree for a
+   * number only this panel displays. Keeping the subscription local to
+   * this (much smaller, already-collapsed-when-closed) component confines
+   * that re-render to here.
+   */
+  signaling: RoomWebSocketSignaling | null;
   stats: PeerMediaStats[];
   names: Record<string, string>;
   onDetails(): void;
 }) {
+  const [serverRtt, setServerRtt] = useState<number | null>(null);
+  useEffect(() => {
+    if (!signaling) {
+      setServerRtt(null);
+      return;
+    }
+    const onLatency = (event: CustomEvent<{ rttMs: number | null }>) => {
+      setServerRtt(event.detail.rttMs);
+    };
+    signaling.addEventListener('latency', onLatency as EventListener);
+    return () => signaling.removeEventListener('latency', onLatency as EventListener);
+  }, [signaling]);
   const [open, setOpen] = useState(false);
   const [history, setHistory] = useState<{ source: string; values: number[] }>({
     source: '',

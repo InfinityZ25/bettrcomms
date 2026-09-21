@@ -69,7 +69,7 @@ export default function CallLobby({
       )}
 
       <div>
-        <h2 className="font-heading text-2xl font-semibold tracking-tight break-words">
+        <h2 className="font-heading text-2xl font-semibold tracking-tight break-words" data-testid="room-heading">
           {room ? room.display_name || room.name : 'Your call'}
         </h2>
         <p

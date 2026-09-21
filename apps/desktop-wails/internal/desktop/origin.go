@@ -18,7 +18,7 @@ import (
 // ReleaseOrigin is the pinned hosted deployment. It must stay byte-identical
 // to RELEASE_ORIGIN in apps/desktop/src-tauri/src/media_permissions.rs so both
 // desktop hosts trust exactly the same production origin.
-const ReleaseOrigin = "https://bettrcomms-production.up.railway.app"
+const ReleaseOrigin = "https://app.bettrcomms.com"
 
 // ErrMissingAPIOrigin reports an empty origin in a build that has no default.
 var ErrMissingAPIOrigin = errors.New("BETTERCOMMS_API_ORIGIN is required in production builds")

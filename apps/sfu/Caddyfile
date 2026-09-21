@@ -1,0 +1,13 @@
+{
+	# Ops contact for Let's Encrypt account notices, not user-facing.
+	email ops@bettrcomms.com
+}
+
+sfu.bettrcomms.com {
+	reverse_proxy sfu:8443
+
+	log {
+		output stdout
+		format json
+	}
+}

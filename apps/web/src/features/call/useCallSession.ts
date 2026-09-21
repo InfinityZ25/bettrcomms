@@ -23,6 +23,7 @@ import {
 } from '@/media/remoteAudio';
 import { useSpeakingActivity } from '@/media/useSpeakingActivity';
 import { readQuality } from '@/features/settings/MediaSettings';
+import { readConnectionMode } from '@/media/connectionMode';
 import { hasNativeMediaHost } from '@/desktop/nativeMedia';
 import { errorMessage } from '@/lib/errors';
 import { readStored } from '@/lib/storage';
@@ -78,7 +79,7 @@ export function useCallSession({
   const [saveState, setSaveState] = useState<RecordingSaveState>('saving');
   const [savedId, setSavedId] = useState<string | null>(null);
   const [stats, setStats] = useState<PeerMediaStats[]>([]);
-  const [serverRtt, setServerRtt] = useState<number | null>(null);
+  const serverRtt = useRef<number | null>(null);
   const [audioBlocked, setAudioBlocked] = useState(false);
   const [remotePresence, setRemotePresence] = useState<Record<string, PeerFlags>>({});
   const [remoteRecording, setRemoteRecording] = useState<Record<string, boolean>>({});
@@ -202,7 +203,7 @@ export function useCallSession({
     engine.current = null;
     setJoined(false);
     setSignalingDown(false);
-    setServerRtt(null);
+    serverRtt.current = null;
     setStats([]);
     setLocals(new Map());
     setRemote([]);
@@ -437,6 +438,7 @@ export function useCallSession({
         peerId,
         `/api/v1/rooms/${room.id}/ws?${query}`,
       );
+      const connectionMode = readConnectionMode();
       const media = new MediaEngine({
         signaling: connection,
         voiceRelay: {
@@ -445,7 +447,7 @@ export function useCallSession({
         },
         quality: readQuality(),
         ice: {
-          mode: readStored('bc-direct') === 'true' ? 'direct-only' : 'direct-preferred',
+          mode: connectionMode === 'automatic' ? 'direct-preferred' : connectionMode,
           iceServers: config.ice_servers,
         },
       });
@@ -454,7 +456,7 @@ export function useCallSession({
       socket.current = connection;
 
       connection.addEventListener('latency', (event) => {
-        if (socket.current === connection) setServerRtt(event.detail.rttMs);
+        if (socket.current === connection) serverRtt.current = event.detail.rttMs;
       });
       media.addEventListener('local-track', () => setLocals(new Map(media.getLocalTracks())));
       media.addEventListener('remote-track', () => setRemote(media.getRemoteTracks()));
@@ -566,7 +568,7 @@ export function useCallSession({
         engine.current = null;
         setJoined(false);
         setCallPlaybackDeafened(false);
-        setServerRtt(null);
+        serverRtt.current = null;
         setStats([]);
         setRemote([]);
         setLocals(new Map());
@@ -728,7 +730,8 @@ export function useCallSession({
     peers,
     names,
     stats,
-    serverRtt,
+    getServerRtt: () => serverRtt.current,
+    signaling: socket.current,
     signalingDown,
     remotePresence,
     remoteRecording,

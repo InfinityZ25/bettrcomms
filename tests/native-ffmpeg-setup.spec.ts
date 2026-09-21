@@ -39,7 +39,7 @@ async function mount(page: Page, mode: 'success' | 'retry' | 'old-binary') {
     const { default: React } = await import('/node_modules/.vite/deps/react.js');
     const { default: ReactDOMClient } =
       await import('/node_modules/.vite/deps/react-dom_client.js');
-    const { default: Setup } = await import('/src/NativeFfmpegSetup.tsx');
+    const { default: Setup } = await import('/src/features/sharing/NativeFfmpegSetup.tsx');
     document.body.innerHTML = '<div id="fixture"></div>';
     ReactDOMClient.createRoot(document.getElementById('fixture')!).render(
       React.createElement(Setup, {

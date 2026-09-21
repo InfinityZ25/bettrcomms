@@ -16,7 +16,7 @@ included in the desktop PR. Do not claim the goal complete from unit tests alone
 
 ## Requirements and evidence still needed
 
-- [ ] Integrate current main: production domain, SFU client/server and connection
+- [x] Integrate current main: production domain, SFU client/server and connection
   mode/RTT fixes, preserving Wails API proxy authentication and current UI.
 - [ ] Native frontend adapter for all implemented desktop features, without
   pretending Wails has Tauri IPC.
@@ -130,3 +130,15 @@ tests (34 files), production build and all Wails Go tests. Tauri's existing
 copilot availability test now waits for lazy bridge imports rather than assuming
 a fixed number of microtasks. No assertions were removed. Native security tests
 cover denied start, continuation, read, clear, stop, install and GPU-probe calls.
+
+2026-09-21: saved migration checkpoint 2c53e77 (including pre-existing related
+desktop/frontend UI and notification work; mobile excluded), then integrated
+origin/main 691f3e5. Kept the refactored UI structure, ported the unified
+connection mode and isolated RTT subscription to it, preserved desktop browser
+auth endpoints, and incorporated main's SFU endpoint/transport and regressions.
+SFU join uses the desktop proxy's bearer header and omits browser cookies there;
+browser requests retain same-origin authentication. Main still does not select
+SFU as the default call path; this merge does not claim otherwise. Wails trusts
+app.bettrcomms.com consistently with Tauri. Validation: 232 frontend tests,
+production build, Wails desktop-policy tests, server tests with local Docker
+TEST_DATABASE_URL, and server go vet passed. Integrated E2E remains pending.

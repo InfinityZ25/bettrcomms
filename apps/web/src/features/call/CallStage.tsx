@@ -351,7 +351,7 @@ export default function CallStage({
         <ConnectionStatus
           joined={joined}
           peerCount={Object.keys(peers).length}
-          serverRtt={call.serverRtt}
+          signaling={call.signaling}
           stats={call.stats}
           names={names}
           onDetails={() => setShowStats(!showStats)}
@@ -419,7 +419,7 @@ export default function CallStage({
       </div>
       {showStats && (
         <ConnectionDetails
-          serverRtt={call.serverRtt}
+          serverRtt={call.getServerRtt}
           stats={call.stats}
           names={names}
           locals={locals}

@@ -24,7 +24,7 @@ export default function ConnectionDetails({
   engine,
   workspace,
 }: {
-  serverRtt: number | null;
+  serverRtt: () => number | null;
   stats: PeerMediaStats[];
   names: Record<string, string>;
   locals: Map<MediaSourceKind, MediaStreamTrack>;
@@ -36,7 +36,7 @@ export default function ConnectionDetails({
 
   const download = async () => {
     try {
-      await saveReport(await buildDiagnosticReport({ serverRtt, stats, engine, workspace }));
+      await saveReport(await buildDiagnosticReport({ serverRtt: serverRtt(), stats, engine, workspace }));
       setStatus(
         'Diagnostics exported. No call content, addresses, or credentials included.',
       );
@@ -46,7 +46,7 @@ export default function ConnectionDetails({
   };
 
   const copy = () => {
-    const report = buildConnectionReport({ serverRtt, stats, locals, remote });
+    const report = buildConnectionReport({ serverRtt: serverRtt(), stats, locals, remote });
     void navigator.clipboard.writeText(JSON.stringify(report, null, 2)).then(
       () =>
         setStatus(

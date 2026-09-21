@@ -84,6 +84,7 @@ export default function RoomSidebar({
       aria-hidden={!visible}
     >
       <Sidebar
+        aria-label="Conversations"
         collapsible="none"
         className="sidebar h-full w-(--room-sidebar-width) shrink-0 rounded-2xl bg-sidebar"
         inert={screen === 'share' || !visible}

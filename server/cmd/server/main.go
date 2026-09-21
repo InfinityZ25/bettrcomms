@@ -34,7 +34,7 @@ func main() {
 	if e = runMigrations(context.Background(), pool, findMigrationsDir()); e != nil {
 		log.Fatal(e)
 	}
-	cfg := api.Config{AppURL: get("APP_URL", "http://localhost:5173"), WorkOSClientID: os.Getenv("WORKOS_CLIENT_ID"), WorkOSAPIKey: os.Getenv("WORKOS_API_KEY"), WorkOSRedirectURI: get("WORKOS_REDIRECT_URI", "http://localhost:5173/api/v1/auth/callback"), DevAuth: get("DEV_AUTH", "false") == "true", ICEURLs: split(get("ICE_URLS", "stun:stun.l.google.com:19302")), TURNURLs: split(os.Getenv("TURN_URLS")), TURNSecret: os.Getenv("TURN_SECRET"), WebDist: os.Getenv("WEB_DIST")}
+	cfg := api.Config{AppURL: get("APP_URL", "http://localhost:5173"), WorkOSClientID: os.Getenv("WORKOS_CLIENT_ID"), WorkOSAPIKey: os.Getenv("WORKOS_API_KEY"), WorkOSRedirectURI: get("WORKOS_REDIRECT_URI", "http://localhost:5173/api/v1/auth/callback"), DevAuth: get("DEV_AUTH", "false") == "true", ICEURLs: split(get("ICE_URLS", "stun:stun.l.google.com:19302")), TURNURLs: split(os.Getenv("TURN_URLS")), TURNSecret: os.Getenv("TURN_SECRET"), WebDist: os.Getenv("WEB_DIST"), SFUURL: os.Getenv("SFU_URL"), SFUJoinSecret: os.Getenv("SFU_JOIN_SECRET")}
 	store := &api.PostgresStore{DB: pool}
 	a := api.New(store, api.Sessions{Store: store, Secure: get("COOKIE_SECURE", "false") == "true"}, cfg)
 	srv := &http.Server{Addr: get("HTTP_ADDR", ":8080"), Handler: a.Handler(), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}

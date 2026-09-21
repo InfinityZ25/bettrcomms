@@ -54,7 +54,7 @@ func TestResolveAPIOriginRejectsUnsafeValues(t *testing.T) {
 		"not a url",
 		"example.test",
 		"ftp://example.test",
-		"http://bettrcomms-production.up.railway.app",
+		"http://app.bettrcomms.com",
 		"https://user:secret@example.test",
 		"https://example.test/api",
 		"https://example.test/?token=abc",
@@ -129,8 +129,8 @@ func TestTrustedAppOriginRejectsEverythingElse(t *testing.T) {
 		{"a lookalike host", "https://wails.localhost.example.com/", false},
 		{"a subdomain of the virtual host", "http://evil.wails.localhost/", false},
 		{"the virtual host on a port", "http://wails.localhost:8080/", false},
-		{"the hosted origin over http", "http://bettrcomms-production.up.railway.app/", false},
-		{"the hosted host on another port", "https://bettrcomms-production.up.railway.app:8443/", false},
+		{"the hosted origin over http", "http://app.bettrcomms.com/", false},
+		{"the hosted host on another port", "https://app.bettrcomms.com:8443/", false},
 		{"the dev server in a release build", "http://localhost:5173/", false},
 		{"another localhost port in development", "http://localhost:3000/", true},
 		{"a file URL", "file:///C:/Windows/System32/", true},
@@ -161,7 +161,7 @@ func TestTrustedAppOriginReturnsABareOrigin(t *testing.T) {
 // The hosted origin here and the one the Rust host pins must stay identical, or
 // the two hosts would trust different deployments.
 func TestTheHostedOriginIsTheOneBothHostsPin(t *testing.T) {
-	if ReleaseOrigin != "https://bettrcomms-production.up.railway.app" {
+	if ReleaseOrigin != "https://app.bettrcomms.com" {
 		t.Errorf("ReleaseOrigin = %q; it must stay byte-identical to the Rust host's RELEASE_ORIGIN", ReleaseOrigin)
 	}
 	if _, err := TrustedAppOrigin(ReleaseOrigin, false); err != nil {

@@ -20,3 +20,5 @@ apps/desktop/src-tauri/generated/
 apps/desktop-wails/frontend/dist/*
 !apps/desktop-wails/frontend/dist/.gitkeep
 apps/desktop-wails/bin/
+
+apps/sfu/turnserver.conf

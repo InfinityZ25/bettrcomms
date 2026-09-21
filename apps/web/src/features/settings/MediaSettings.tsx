@@ -1,10 +1,10 @@
 import { errorMessage } from '@/lib/errors';
 import { LinkButton } from '@/components/ui/link-button';
-import { Switch } from '@/components/ui/switch';
 import { useEffect, useState } from 'react';
 import { readStored, writeStored } from '@/lib/storage';
 import { invokeAudioSetup } from '@/desktop/audio';
 import { hasNativeMediaHost } from '@/desktop/nativeMedia';
+import { readConnectionMode, type ConnectionMode } from '@/media/connectionMode';
 import DeviceSettings from './DeviceSettings';
 import VisualCopilotSettings from './VisualCopilotSettings';
 import ProcessingControls from './ProcessingControls';
@@ -68,9 +68,7 @@ export default function MediaSettings({ section }: { section: 'voice' | 'recordi
       ? 'standard'
       : (storedDenoiser ?? 'rnnoise');
   const [quality, setQuality] = useState(readQuality),
-    [direct, setDirect] = useState(
-      readStored('bc-direct') === 'true',
-    ),
+    [connectionMode, setConnectionMode] = useState<ConnectionMode>(readConnectionMode),
     [denoiser, setDenoiser] = useState(initialDenoiser),
     [nvidia, setNvidia] = useState<NvidiaStatus | null>(null),
     [nvidiaInfo, setNvidiaInfo] = useState<NvidiaInstallInfo | null>(null),
@@ -303,15 +301,21 @@ export default function MediaSettings({ section }: { section: 'voice' | 'recordi
       {section === 'connection' && <SettingsSection id="settings-connection" title="Connection">
       <SettingRow
         as="div"
-        title="Direct connections only"
-        description="Skip media relays. Some networks will not connect at all this way."
-        control={<Switch
-          aria-label="Direct connections only"
-          checked={direct}
-          onCheckedChange={(checked) => {
-            setDirect(checked);
-            writeStored('bc-direct', String(checked));
+        title="Connection mode"
+        description="Automatic tries a direct connection first. Force relay is a debug option for verifying the relay path."
+        control={<SettingsSelect
+          ariaLabel="Connection mode"
+          value={connectionMode}
+          onValueChange={(value) => {
+            const next = value as ConnectionMode;
+            setConnectionMode(next);
+            writeStored('bc-connection-mode', next);
           }}
+          options={[
+            { value: 'automatic', label: 'Automatic · direct first, relay fallback' },
+            { value: 'direct-only', label: 'Direct only · skip relays' },
+            { value: 'relay-only', label: 'Force relay (debug)' },
+          ]}
         />}
       />
       <SettingRow
@@ -320,7 +324,7 @@ export default function MediaSettings({ section }: { section: 'voice' | 'recordi
         description="Automatic suits most people. Compatibility mode is for when voice will not connect at all."
         control={<SettingsSelect
           ariaLabel="Voice route"
-          disabled={direct}
+          disabled={connectionMode === 'direct-only'}
           value={voiceRoute}
           onValueChange={(value) => {
             setVoiceRoute(value);

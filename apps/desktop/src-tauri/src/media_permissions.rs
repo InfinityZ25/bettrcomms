@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use tauri::WebviewWindow;
 use url::Url;
 
-pub(crate) const RELEASE_ORIGIN: &str = "https://bettrcomms-production.up.railway.app";
+pub(crate) const RELEASE_ORIGIN: &str = "https://app.bettrcomms.com";
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -348,9 +348,9 @@ mod tests {
     fn release_origin_is_exact_and_matches_packaged_config() {
         assert!(trusted_app_origin(&Url::parse(RELEASE_ORIGIN).unwrap()).is_ok());
         for bad in [
-            "http://bettrcomms-production.up.railway.app",
-            "https://bettrcomms-production.up.railway.app.evil.example",
-            "https://bettrcomms-production.up.railway.app:8443",
+            "http://app.bettrcomms.com",
+            "https://app.bettrcomms.com.evil.example",
+            "https://app.bettrcomms.com:8443",
             "https://api.workos.com",
         ] {
             assert!(trusted_app_origin(&Url::parse(bad).unwrap()).is_err());

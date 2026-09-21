@@ -60,7 +60,7 @@ test('camera dock resizes, snaps, focuses, and preserves the active share', asyn
 
     await page.getByRole('button', { name: otherRoom.name }).click();
     await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
-    await expect(page.locator('.room-heading strong')).toHaveText(otherRoom.name);
+    await expect(page.getByTestId('room-heading')).toHaveText(otherRoom.name);
     await page.getByRole('button', { name: `Return to ${room.name}` }).click();
 
     const stage = page.locator('.call-workspace .stage');
@@ -170,11 +170,11 @@ test('camera dock resizes, snaps, focuses, and preserves the active share', asyn
     await page.getByRole('button', { name: 'Exit fullscreen call' }).click();
 
     await page.getByRole('button', { name: 'Focus call' }).click();
-    await expect(page.locator('.app-shell')).toHaveClass(/is-call-focused/);
-    await expect(page.locator('.space-rail')).toBeHidden();
-    await expect(page.locator('.sidebar')).toBeHidden();
+    await expect(page.locator('[data-app-shell]')).toHaveAttribute('data-call-focused', 'true');
+    await expect(page.getByRole('navigation', { name: 'Spaces' })).toBeHidden();
+    await expect(page.getByRole('complementary', { name: 'Conversations' })).toBeHidden();
     await page.getByRole('button', { name: 'Show navigation' }).click();
-    await expect(page.locator('.app-shell')).not.toHaveClass(/is-call-focused/);
+    await expect(page.locator('[data-app-shell]')).toHaveAttribute('data-call-focused', 'false');
 
     await page.setViewportSize({ width: 390, height: 844 });
     const closeChat = page.getByRole('button', { name: 'Close chat' });
