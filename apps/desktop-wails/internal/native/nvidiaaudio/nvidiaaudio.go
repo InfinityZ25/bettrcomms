@@ -153,7 +153,7 @@ func trustedFile(root, relative, label string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("NVIDIA %s is missing", label)
 	}
-	if !within(root, resolved) {
+	if !within(resolvedDir(root), resolved) {
 		return "", fmt.Errorf("NVIDIA %s is outside the app-private setup directory", label)
 	}
 	if info, err := os.Stat(resolved); err != nil || !info.Mode().IsRegular() {
@@ -164,6 +164,15 @@ func trustedFile(root, relative, label string) (string, error) {
 
 // within reports whether path is root or sits under it, comparing whole path
 // components so a sibling with a shared prefix is not accepted.
+/*
+  Both sides of this comparison have to be resolved the same way.
+
+  Handing it a raw root and a path that has been through EvalSymlinks is the
+  bug this note exists for: on a machine whose temporary directory is reached
+  through a link or an 8.3 short name — a GitHub Windows runner, for one — the
+  resolved file is under the long real path while the root is still the short
+  one, and every file in a perfectly good setup reads as outside it.
+*/
 func within(root, path string) bool {
 	relative, err := filepath.Rel(root, path)
 	if err != nil {
@@ -173,6 +182,20 @@ func within(root, path string) bool {
 		return true
 	}
 	return !strings.HasPrefix(relative, "..")
+}
+
+// resolvedDir is a directory in the same terms EvalSymlinks reports files in.
+// A root that cannot be resolved — it may not exist yet — is compared as it
+// came, which is what this did everywhere before.
+func resolvedDir(root string) string {
+	resolved, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return root
+	}
+	if absolute, err := filepath.Abs(resolved); err == nil {
+		return absolute
+	}
+	return resolved
 }
 
 // validateIntensity bounds the denoise strength the page may ask for.

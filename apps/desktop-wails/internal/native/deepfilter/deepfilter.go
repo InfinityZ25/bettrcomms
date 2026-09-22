@@ -176,13 +176,49 @@ func trustedFile(root, relative, label string) (string, error) {
 	if resolved, err = filepath.Abs(resolved); err != nil {
 		return "", fmt.Errorf("DeepFilterNet %s is missing", label)
 	}
-	if relativeTo, err := filepath.Rel(root, resolved); err != nil || strings.HasPrefix(relativeTo, "..") {
+	if !within(resolvedDir(root), resolved) {
 		return "", fmt.Errorf("DeepFilterNet %s is outside the app-private install directory", label)
 	}
 	if info, err := os.Stat(resolved); err != nil || !info.Mode().IsRegular() {
 		return "", fmt.Errorf("DeepFilterNet %s is missing", label)
 	}
 	return resolved, nil
+}
+
+/*
+within answers whether a file that has already been resolved sits under a
+directory, with both sides resolved the same way.
+
+Comparing a resolved path against a raw one is the bug this replaces, and it
+fails exactly where it is least convenient: on a machine whose temporary
+directory is reached through a link or an 8.3 short name — a GitHub Windows
+runner, for one — EvalSymlinks returns the long real path while the root is
+still the short one, so every file in a perfectly good install reads as
+outside it.
+*/
+func within(root, path string) bool {
+	relative, err := filepath.Rel(root, path)
+	if err != nil {
+		return false
+	}
+	if relative == "." {
+		return true
+	}
+	return !strings.HasPrefix(relative, "..")
+}
+
+// resolvedDir is a directory in the same terms EvalSymlinks reports files in.
+// A root that cannot be resolved — it may not exist yet — is compared as it
+// came, which is what this did everywhere before.
+func resolvedDir(root string) string {
+	resolved, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return root
+	}
+	if absolute, err := filepath.Abs(resolved); err == nil {
+		return absolute
+	}
+	return resolved
 }
 
 // loadInitialStates reads the model's starting recurrent state.
