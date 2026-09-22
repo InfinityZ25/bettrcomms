@@ -78,6 +78,19 @@ included in the desktop PR. Do not claim the goal complete from unit tests alone
 
 ## Validation during implementation
 
+2026-09-21: visual-copilot tests now use the Settings dialog, current switches
+and custom selectors, and explicitly close the dialog before selecting Calls.
+The first two-client run exposed a real regression: the transport received the
+mark and its acknowledgement, but the viewer rendered only the interaction hint,
+discarding the transport status. Restored that status after disabled/disconnected/
+missing-permission checks so delivery, rejection and timeout feedback is visible.
+Both Playwright cases now pass (41.6 seconds): opt-in/preferences/PTT conflicts,
+point acknowledgement/expiry, laser movement, frozen-frame fidelity while live
+video changes, marked-capture delivery, unchanged source track, pause revocation
+and fresh-share permissions. Inspected synthetic mobile-settings and received-
+capture screenshots. All 232 frontend unit tests and production build pass.
+This verifies browser collaboration, not interactive native Wails overlays.
+
 2026-09-21: both received-audio PTT cases now pass against the real local API
 with two Chromium clients and a synthetic tone, for automatic and explicit
 server voice routes. They keep a channel call running while typing in the

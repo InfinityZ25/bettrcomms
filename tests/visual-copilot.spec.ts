@@ -1,4 +1,5 @@
 import { test, expect, type BrowserContext, type Page, type APIResponse } from '@playwright/test';
+import { openSettingsCategory } from './settings-navigation';
 const baseURL = process.env.E2E_BASE_URL ?? 'http://localhost:5173';
 const headers = { Origin: new URL(baseURL).origin };
 async function json(response: APIResponse) { expect(response.ok(), `API status ${response.status()}`).toBeTruthy(); return response.json(); }
@@ -14,8 +15,12 @@ async function login(context: BrowserContext, name: string) {
   return result.user ?? result;
 }
 async function enable(page: Page) {
-  await page.getByRole('button', { name: 'Audio and video settings' }).click();
-  await page.getByRole('checkbox', { name: 'Enable visual copilot on this device' }).check();
+  await openSettingsCategory(page);
+  await page.getByRole('switch', { name: 'Enable visual copilot on this device' }).check();
+}
+async function select(page: Page, name: string, option: string) {
+  await page.getByRole('combobox', { name, exact: true }).click();
+  await page.getByRole('option', { name: option, exact: true }).click();
 }
 function syntheticScreen() {
   if (!navigator.mediaDevices) return;
@@ -31,23 +36,26 @@ function syntheticScreen() {
 test('settings are opt-in, persist and reject push-to-talk shortcut conflicts', async ({ page, context }) => {
   await login(context, 'Settings');
   await page.goto('/');
-  await page.getByRole('button', { name: 'Audio and video settings' }).click();
-  await expect(page.getByRole('checkbox', { name: 'Enable visual copilot on this device' })).not.toBeChecked();
-  await page.getByRole('checkbox', { name: 'Enable visual copilot on this device' }).check();
-  await page.getByLabel('Signal duration').selectOption('4');
-  await page.getByLabel('Capture corner').selectOption('bottom-left');
-  await page.getByLabel('Point shortcut').selectOption('KeyP');
-  await page.getByLabel('Freeze shortcut').selectOption('KeyP');
-  await expect(page.getByRole('alert')).toContainText('different shortcuts');
-  await page.getByRole('checkbox', { name: 'Push-to-talk', exact: true }).check();
+  await openSettingsCategory(page);
+  await expect(page.getByRole('switch', { name: 'Enable visual copilot on this device' })).not.toBeChecked();
+  await page.getByRole('switch', { name: 'Enable visual copilot on this device' }).check();
+  await select(page, 'Signal duration', '4 seconds');
+  await select(page, 'Capture corner', 'Bottom left');
+  await select(page, 'Point shortcut', 'P');
+  await select(page, 'Freeze shortcut', 'P');
+  await expect(page.getByRole('alert')).toContainText('different shortcut');
+  await openSettingsCategory(page);
+  await page.getByRole('switch', { name: 'Push-to-talk', exact: true }).check();
   await page.getByRole('button', { name: 'Set push-to-talk shortcut' }).click(); await page.keyboard.press('g');
-  await page.getByLabel('Point shortcut').selectOption('KeyG');
+  await openSettingsCategory(page);
+  await select(page, 'Point shortcut', 'G');
   await expect(page.getByRole('alert')).toContainText('push-to-talk');
   await page.reload();
-  await expect(page.getByLabel('Signal duration')).toHaveValue('4');
-  await expect(page.getByLabel('Point shortcut')).toHaveValue('KeyP');
+  await openSettingsCategory(page);
+  await expect(page.getByRole('combobox', { name: 'Signal duration', exact: true })).toHaveAttribute('title', '4 seconds');
+  await expect(page.getByRole('combobox', { name: 'Point shortcut', exact: true })).toHaveAttribute('title', 'P');
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole('heading', { name: 'Visual copilot' }).scrollIntoViewIfNeeded();
+  await page.getByRole('heading', { name: 'Shared-screen reactions' }).scrollIntoViewIfNeeded();
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: '.local/copilot-settings-mobile.png', fullPage: true });
 });
@@ -67,6 +75,9 @@ test('two participants point, freeze a frame, receive its marked capture and rev
     await owner.goto('/'); await viewer.goto('/');
     for (const page of [owner, viewer]) {
       await enable(page);
+      await page.keyboard.press('Escape');
+      await expect(page.getByRole('dialog', { name: 'Settings', exact: true })).toBeHidden();
+      await page.getByRole('button', { name: 'Calls', exact: true }).click();
       await page.getByRole('button', { name: room.name }).click();
       await page.getByRole('button', { name: 'Join call', exact: true }).click();
       await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();

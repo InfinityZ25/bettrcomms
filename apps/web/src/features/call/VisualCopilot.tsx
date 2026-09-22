@@ -169,13 +169,13 @@ export function CopilotViewer({ copilot, peerId, viewport }: { copilot: VisualCo
               ? 'Waiting for the other client'
               : !grant
                 ? 'Ask the sharer to allow you'
-                : mode === 'snapshot'
+                : state.status || (mode === 'snapshot'
                   ? 'Click to mark'
                   : mode === 'ping'
                     ? laser
                       ? 'Hold and drag'
                       : 'Click to point'
-                    : '')}
+                    : ''))}
       </span>
     </div>
   </div>;
