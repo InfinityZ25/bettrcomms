@@ -3,6 +3,10 @@
 A second desktop shell beside Tauri, using the same React/Vite frontend in
 `apps/web`. Wails v3.0.0-beta.18 is pinned. No better-gui port is used.
 
+Window controls use Wails' built-in `Window` runtime API. Windows caption and
+button hit testing use native non-client regions with composition hosting;
+there is no application-defined Go window service.
+
 ## Status
 
 Native Windows capture, H.264 WebRTC, process audio, recording, Save As/conversion,

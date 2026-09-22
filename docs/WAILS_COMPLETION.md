@@ -16,6 +16,17 @@ included in the desktop PR. Do not claim the goal complete from unit tests alone
 
 ## Requirements and evidence still needed
 
+Window controls now use the built-in `@wailsio/runtime` Window API rather than
+an application-defined Go `WindowService`; its registration and generated
+bindings were removed. Native non-client regions remain enabled. Frontend tests
+(232), the production frontend build, and Wails Go tests/vet passed. This is
+not native UI acceptance: a rebuilt production host still displayed the window
+action failure. It was closed without a session or call. A subsequent diagnostic
+launch was interrupted by the user through Escape; desktop automation stopped.
+The isolated packaged-runtime Playwright diagnostic also fails before observing
+the first built-in window request. That fixture does not establish the native
+root cause. See WAILS_PR_HANDOFF.md for explicit PR blockers and reproduction.
+
 - [x] Integrate current main: production domain, SFU client/server and connection
   mode/RTT fixes, preserving Wails API proxy authentication and current UI.
 - [ ] Native frontend adapter for all implemented desktop features, without

@@ -46,7 +46,7 @@ export type DesktopCapabilityName = Exclude<
   'schemaVersion' | 'platform' | 'architecture' | 'notes'
 >;
 
-/** The window-control contract, identical to the one better-gui publishes. */
+/** Shared window-control description for the desktop hosts. */
 export interface DesktopWindowControls {
   platform: 'windows' | 'macos' | 'linux' | 'unknown';
   mode:

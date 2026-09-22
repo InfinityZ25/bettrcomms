@@ -186,8 +186,9 @@ Carried over from the Tauri host, and tested:
   permission" below. Follow-on calls are gated by the opaque session, asset, or
   overlay id the entry point issued, so the page never names a window handle, a
   process id, or a filesystem path.
-- The window service is five methods: minimise, maximise/restore, close, and two
-  state reads. The auth service is three: begin, poll, cancel — it never hands
+- Window controls use Wails' built-in `Window` runtime API and native Windows
+  non-client regions, with no application-defined Go window service or better-gui.
+  The auth service is three: begin, poll, cancel — it never hands
   the page a pairing, a verifier, or a session. The API proxy is not a Wails
   service; it is a loopback listener gated by a separate per-launch secret.
 - Camera and microphone use WebView2's normal permission decision, not blanket

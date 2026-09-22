@@ -3,11 +3,9 @@
 
 import * as AuthService from "./authservice.js";
 import * as NativeMediaService from "./nativemediaservice.js";
-import * as WindowService from "./windowservice.js";
 export {
     AuthService,
-    NativeMediaService,
-    WindowService
+    NativeMediaService
 };
 
 export {

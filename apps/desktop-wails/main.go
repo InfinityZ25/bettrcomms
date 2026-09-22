@@ -1,6 +1,6 @@
 // Command bettercomms-wails is the Wails v3 desktop host for BetterComms.
 //
-// It serves the shared apps/web frontend and binds window, authentication and
+// It serves the shared apps/web frontend and binds authentication and
 // native media services. Native implementations live in internal/native;
 // docs/WAILS_COMPLETION.md tracks acceptance separately from implementation.
 // The existing Tauri host remains available alongside this migration.
@@ -128,7 +128,6 @@ func run() error {
 	// window back when one is clicked.
 	toasts := notifications.New()
 
-	holder := &WindowService{}
 	boot := func() desktop.BootReport {
 		report := desktop.BootReport{
 			SchemaVersion:  1,
@@ -169,7 +168,7 @@ func run() error {
 		Assets: application.AssetOptions{
 			Handler: handler,
 		},
-		Services: services(holder, &AuthService{signIn: signIn}, media, toasts),
+		Services: services(&AuthService{signIn: signIn}, media, toasts),
 		Windows: application.WindowsOptions{
 			AdditionalBrowserArgs: []string{
 				"--autoplay-policy=no-user-gesture-required",
@@ -199,7 +198,6 @@ func run() error {
 		// in the system browser is not itself a navigation security boundary.
 		Permissions: nativeWindowPermissions(),
 	})
-	holder.window = window
 	attachNotifications(toasts, window)
 	if media != nil {
 		// The window is how push-to-talk reports focus and publishes snapshots;
@@ -258,18 +256,16 @@ func authReturn(proxy *desktop.APIProxy) desktop.Capability {
 	}
 }
 
-// services registers the window and sign-in surfaces and, when it came up, the
+// services registers notifications and sign-in and, when it came up, the
 // native media surface. Media is omitted rather than registered broken, so a
 // page that probes for it gets a clear absence instead of methods that always
 // fail.
 func services(
-	holder *WindowService,
 	auth *AuthService,
 	media *NativeMediaService,
 	toasts *notifications.NotificationService,
 ) []application.Service {
 	registered := []application.Service{
-		application.NewService(holder),
 		application.NewService(auth),
 	}
 	if media != nil {
@@ -345,42 +341,4 @@ func configuredAPIOrigin(debug bool) string {
 		return "http://127.0.0.1:8080"
 	}
 	return releaseAPIOrigin()
-}
-
-// WindowService is the intentionally small Wails binding surface used by the
-// shared title bar. It contains no media, filesystem, process, or auth APIs.
-// Wails generates the matching TypeScript client into apps/web/src/desktop.
-type WindowService struct {
-	window *application.WebviewWindow
-}
-
-func (h *WindowService) Minimise() {
-	if h.window != nil {
-		h.window.Minimise()
-	}
-}
-
-func (h *WindowService) ToggleMaximise() {
-	if h.window == nil {
-		return
-	}
-	if h.window.IsMaximised() {
-		h.window.UnMaximise()
-		return
-	}
-	h.window.Maximise()
-}
-
-func (h *WindowService) Close() {
-	if h.window != nil {
-		h.window.Close()
-	}
-}
-
-func (h *WindowService) IsMaximised() bool {
-	return h.window != nil && h.window.IsMaximised()
-}
-
-func (h *WindowService) IsFullscreen() bool {
-	return h.window != nil && h.window.IsFullscreen()
 }

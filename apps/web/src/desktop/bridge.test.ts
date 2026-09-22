@@ -25,7 +25,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@tauri-apps/api/core', () => ({ isTauri: mocks.isTauri }));
 vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => mocks.tauri }));
-vi.mock('./wailsbindings/bettercomms/desktop-wails/windowservice.js', () => mocks.wails);
+vi.mock('@wailsio/runtime', () => ({ Window: mocks.wails }));
 vi.mock('./wailsbindings/bettercomms/desktop-wails/authservice.js', () => mocks.auth);
 
 function wailsBoot() {
@@ -68,7 +68,7 @@ describe('window api selection', () => {
     Object.values(mocks.tauri).forEach((fn) => fn.mockClear());
   });
 
-  it('drives the Wails window through generated bindings', async () => {
+  it('drives the Wails window through its built-in runtime API', async () => {
     const api = (await loadBridge(wailsBoot())).getDesktopWindowApi()!;
     await api.minimize();
     await api.toggleMaximize();

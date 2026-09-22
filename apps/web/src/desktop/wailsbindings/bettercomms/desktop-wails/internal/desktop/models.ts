@@ -25,8 +25,7 @@ export class MediaPermissionPolicy {
     "kind": MediaPermissionKind;
 
     /**
-     * Policy is what the window was configured with: "allow" means capture
-     * proceeds without a webview prompt.
+     * Policy is the configured decision strategy, not a stored grant status.
      */
     "policy": string;
 
