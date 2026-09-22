@@ -1,0 +1,32 @@
+.settings-layout {
+  margin-top: 1.5rem;
+}
+
+.settings-nav {
+  border-color: color-mix(in oklch, var(--border) 75%, transparent);
+  background: color-mix(in oklch, var(--card) 88%, transparent);
+  box-shadow: 0 16px 44px rgb(0 0 0 / 0.06);
+  backdrop-filter: blur(18px);
+}
+
+.settings-nav nav {
+  scrollbar-width: none;
+}
+
+.settings-nav nav::-webkit-scrollbar {
+  display: none;
+}
+
+@media (max-width: 1023px) {
+  .settings-layout {
+    margin-top: 1rem;
+  }
+
+  .settings-nav {
+    position: sticky;
+    top: -1px;
+    z-index: 20;
+  }
+}
+
+

@@ -7,7 +7,7 @@
 //!
 //! - **Windows** gets the real thing. WebView2's Window Controls Overlay paints
 //!   the system minimize/maximize/close buttons over the page, with the
-//!   system's own hover, snap-layout flyout and high-contrast behaviour. The
+//!   runtime's glyphs and button interaction. Snap Layouts are not provided. The
 //!   crate also restores the pieces `decorations: false` takes away — rounded
 //!   corners, the frame border, the dark frame — and stops the webview from
 //!   composing while the window is minimized.
@@ -71,7 +71,7 @@ impl Default for WindowControlsConfig {
             webview_label: "main",
             height: 32,
             border_width: 1,
-            background: [14, 16, 18],
+            background: [29, 24, 22],
             macos_traffic_light_inset: 78,
         }
     }
@@ -154,6 +154,12 @@ fn configure_windows<R: Runtime>(
     config: &WindowControlsConfig,
     published: &PublishedStates,
 ) {
+    // Keep the custom HTML title bar. WebView2 alone draws its caption buttons.
+    if let Err(error) = webview.window().set_decorations(false) {
+        eprintln!("better-gui: could not configure the custom title bar: {error}");
+        return;
+    }
+    windows::listen_for_overlay_theme(webview);
     let native = WindowControlsState {
         platform: "windows",
         mode: ControlsMode::NativeOverlay,

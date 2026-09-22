@@ -1,3 +1,4 @@
+import { errorMessage } from '@/lib/errors';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Check, Plus, Search, Users, X } from 'lucide-react';
 import {
@@ -7,7 +8,9 @@ import {
   type FriendRequest,
   type CallParticipant,
 } from '@/api';
+import { Mascot } from '@/components/mascot';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 export default function FriendsPanel({
   user,
@@ -48,7 +51,7 @@ export default function FriendsPanel({
       await fn();
       await refresh();
     } catch (e) {
-      onError(e instanceof Error ? e.message : String(e));
+      onError(errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -73,7 +76,7 @@ export default function FriendsPanel({
         <label className="block text-xs font-medium text-foreground/80">
           Find your people
           <div className="mt-2 flex items-center gap-2">
-            <input
+            <Input
               placeholder="Search name or email"
               aria-label="Find friends"
               value={query}
@@ -82,6 +85,7 @@ export default function FriendsPanel({
               required
             />
             <Button
+              type="submit"
               variant="secondary"
               size="icon"
               aria-label="Search friends"
@@ -142,13 +146,13 @@ export default function FriendsPanel({
             });
           }}
         >
-          <input
+          <Input
             name="userId"
             aria-label="Friend user ID"
             placeholder="Paste their user ID"
             required
           />
-          <Button variant="secondary" size="sm" disabled={busy}>
+          <Button type="submit" variant="secondary" size="sm" disabled={busy}>
             Send request
           </Button>
         </form>
@@ -215,9 +219,12 @@ export default function FriendsPanel({
         <span className="ml-auto text-muted-foreground">{friends.length}</span>
       </h3>
       {!friends.length && (
-        <p className="text-xs leading-6 text-muted-foreground">
-          Every good room starts with a friend.
-        </p>
+        <div className="flex items-center gap-3">
+          <Mascot className="w-10 shrink-0" />
+          <p className="text-xs leading-6 text-muted-foreground">
+            Every good room starts with a friend.
+          </p>
+        </div>
       )}
       {friends.map((f) => (
         <div

@@ -1,5 +1,7 @@
+import { errorMessage } from '@/lib/errors';
+import { LinkButton } from '@/components/ui/link-button';
 import { useEffect, useRef, useState } from 'react';
-import { isTauri } from '@tauri-apps/api/core';
+import { hasNativeMediaHost } from '@/desktop/nativeMedia';
 import { Download, FileDown, LoaderCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { saveRecordingAsset } from '@/media/recordingExport';
@@ -20,7 +22,7 @@ export function RecordingDownload({
   label?: string;
   mediaKind?: 'audio' | 'video';
 }) {
-  const desktop = isTauri();
+  const desktop = hasNativeMediaHost();
   const [url, setUrl] = useState('');
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
@@ -154,7 +156,7 @@ export function RecordingDownload({
         setStatus(
           request.signal.aborted
             ? 'Conversion cancelled.'
-            : `Could not convert: ${reason instanceof Error ? reason.message : String(reason)}`,
+            : `Could not convert: ${errorMessage(reason)}`,
         );
       }
     } finally {
@@ -190,7 +192,7 @@ export function RecordingDownload({
         setStatus(
           request.signal.aborted
             ? 'Save cancelled.'
-            : `Could not save: ${reason instanceof Error ? reason.message : String(reason)}`,
+            : `Could not save: ${errorMessage(reason)}`,
         );
       }
     } finally {
@@ -310,13 +312,11 @@ export function RecordingDownload({
         </div>
       )}
       {busy && (
-        <button
-          className="my-3 p-0 text-xs font-medium text-primary hover:underline disabled:opacity-50"
-          type="button"
+        <LinkButton
           onClick={() => controller.current?.abort()}
         >
           Cancel export
-        </button>
+        </LinkButton>
       )}
       {status && (
         <p

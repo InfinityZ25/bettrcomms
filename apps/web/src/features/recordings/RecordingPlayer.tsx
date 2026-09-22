@@ -303,52 +303,6 @@ export function RecordingPlayer({ result, labels }: RecordingPlayerProps) {
       aria-label="Recording playback"
       ref={playerRef}
     >
-      <div className="recording-player__transport">
-        <button
-          type="button"
-          className="recording-player__play"
-          onClick={togglePlayback}
-          disabled={!tracks.length || durationMs === 0}
-          aria-label={playing ? 'Pause' : 'Play'}
-        >
-          {playing ? (
-            <Pause size={18} fill="currentColor" />
-          ) : (
-            <Play size={18} fill="currentColor" />
-          )}
-        </button>
-        <span>{formatTime(currentMs)}</span>
-        <input
-          aria-label="Recording timeline"
-          type="range"
-          min="0"
-          max={durationMs || 1}
-          step="10"
-          value={currentMs}
-          onChange={(event) => seek(Number(event.target.value))}
-        />
-        <span>{formatTime(durationMs)}</span>
-        <button
-          type="button"
-          className="recording-player__mixer-toggle"
-          aria-label={mixerVisible ? 'Hide audio mixer' : 'Show audio mixer'}
-          aria-pressed={mixerVisible}
-          onClick={() => setMixerVisible((visible) => !visible)}
-        >
-          <SlidersHorizontal size={18} />
-          <span>{mixerVisible ? 'Hide mixer' : 'Show mixer'}</span>
-        </button>
-        <button
-          type="button"
-          className="recording-player__fullscreen"
-          aria-label={fullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
-          aria-pressed={fullscreen}
-          onClick={() => void toggleFullscreen()}
-        >
-          {fullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
-          <span>{fullscreen ? 'Exit fullscreen' : 'Fullscreen'}</span>
-        </button>
-      </div>
       <div
         className="recording-player__stage"
         onDoubleClick={(event) => {
@@ -412,7 +366,52 @@ export function RecordingPlayer({ result, labels }: RecordingPlayerProps) {
           </label>
         )}
       </div>
-
+      <div className="recording-player__transport">
+        <button
+          type="button"
+          className="recording-player__play"
+          onClick={togglePlayback}
+          disabled={!tracks.length || durationMs === 0}
+          aria-label={playing ? 'Pause' : 'Play'}
+        >
+          {playing ? (
+            <Pause size={18} fill="currentColor" />
+          ) : (
+            <Play size={18} fill="currentColor" />
+          )}
+        </button>
+        <span>{formatTime(currentMs)}</span>
+        <input
+          aria-label="Recording timeline"
+          type="range"
+          min="0"
+          max={durationMs || 1}
+          step="10"
+          value={currentMs}
+          onChange={(event) => seek(Number(event.target.value))}
+        />
+        <span>{formatTime(durationMs)}</span>
+        <button
+          type="button"
+          className="recording-player__mixer-toggle"
+          aria-label={mixerVisible ? 'Hide audio mixer' : 'Show audio mixer'}
+          aria-pressed={mixerVisible}
+          onClick={() => setMixerVisible((visible) => !visible)}
+        >
+          <SlidersHorizontal size={18} />
+          <span>{mixerVisible ? 'Hide mixer' : 'Show mixer'}</span>
+        </button>
+        <button
+          type="button"
+          className="recording-player__fullscreen"
+          aria-label={fullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+          aria-pressed={fullscreen}
+          onClick={() => void toggleFullscreen()}
+        >
+          {fullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+          <span>{fullscreen ? 'Exit fullscreen' : 'Fullscreen'}</span>
+        </button>
+      </div>
       <div
         className={`recording-player__mixer${mixerVisible ? '' : ' is-hidden'}`}
       >

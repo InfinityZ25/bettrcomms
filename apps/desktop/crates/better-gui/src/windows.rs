@@ -1,7 +1,7 @@
 use std::cell::Cell;
 use std::ffi::c_void;
 
-use tauri::{Runtime, Webview};
+use tauri::{Listener, Runtime, Webview};
 use webview2_com::Microsoft::Web::WebView2::Win32::{
     COREWEBVIEW2_COLOR, ICoreWebView2,
     ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler, ICoreWebView2Controller,
@@ -30,6 +30,45 @@ use crate::visibility::{SizeChange, VisibilityAction, visibility_action};
 
 const VISIBILITY_SUBCLASS_ID: usize = 0x5258_4755;
 const RESTORE_WEBVIEW_MESSAGE: u32 = WM_APP + 0x525;
+const HOVER_TIMER_ID: usize = 0x5258_484f;
+const HOVER_CHECK_MS: u32 = 50;
+
+#[derive(serde::Deserialize)]
+struct OverlayTheme {
+    background: [u8; 3],
+}
+
+pub(crate) fn listen_for_overlay_theme<R: Runtime>(webview: &Webview<R>) {
+    let themed = webview.clone();
+    let listener = webview.listen("better-gui:caption-theme", move |event| {
+        let Ok(theme) = serde_json::from_str::<OverlayTheme>(event.payload()) else {
+            return;
+        };
+        let _ = themed.with_webview(move |platform| {
+            let result: windows_core::Result<()> = (|| unsafe {
+                let core = platform.controller().CoreWebView2()?;
+                let overlay = core
+                    .cast::<ICoreWebView2Experimental31>()?
+                    .window_controls_overlay()?;
+                overlay.set_background_color(COREWEBVIEW2_COLOR {
+                    A: 255,
+                    R: theme.background[0],
+                    G: theme.background[1],
+                    B: theme.background[2],
+                })
+            })();
+            if let Err(error) = result {
+                eprintln!("better-gui: could not update overlay palette: {error}");
+            }
+        });
+    });
+    let cleanup = webview.clone();
+    webview.window().on_window_event(move |event| {
+        if matches!(event, tauri::WindowEvent::Destroyed) {
+            cleanup.unlisten(listener);
+        }
+    });
+}
 
 /// Largest top inset this crate will take back from the frame.
 ///
@@ -139,12 +178,15 @@ pub(crate) fn configure_window_controls_overlay<R: Runtime>(
             let experimental = core_webview.cast::<ICoreWebView2Experimental31>()?;
             let overlay = experimental.window_controls_overlay()?;
 
-            overlay.set_background_color(COREWEBVIEW2_COLOR {
-                A: 255,
-                R: background[0],
-                G: background[1],
-                B: background[2],
-            })?;
+            // A DPI refresh changes height only; retain the live page palette.
+            if on_ready.is_some() {
+                overlay.set_background_color(COREWEBVIEW2_COLOR {
+                    A: 255,
+                    R: background[0],
+                    G: background[1],
+                    B: background[2],
+                })?;
+            }
             overlay.set_height(button_height)?;
             overlay.set_is_enabled(true)?;
 
@@ -301,6 +343,8 @@ pub(crate) fn install_window_frame_handler<R: Runtime>(webview: &Webview<R>) {
             eprintln!(
                 "better-gui: could not install the window frame handler for webview {callback_label}"
             );
+        } else {
+            unsafe { windows::Win32::UI::WindowsAndMessaging::SetTimer(Some(hwnd), HOVER_TIMER_ID, HOVER_CHECK_MS, None) };
         }
     });
 
@@ -407,6 +451,32 @@ unsafe extern "system" fn parent_window_subclass_proc(
     subclass_id: usize,
     state_ptr: usize,
 ) -> LRESULT {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetForegroundWindow, IsWindowVisible, KillTimer, SetTimer, WM_ACTIVATE, WM_TIMER,
+    };
+    if message == WM_TIMER && wparam.0 == HOVER_TIMER_ID {
+        let state = unsafe { &*(state_ptr as *const WindowFrameState) };
+        if state.is_minimized.get() || !unsafe { IsWindowVisible(hwnd) }.as_bool() {
+            let _ = unsafe { KillTimer(Some(hwnd), HOVER_TIMER_ID) };
+            return LRESULT(0);
+        }
+        let inactive = unsafe { GetForegroundWindow() } != hwnd;
+        // Clicking another window deactivates us before the button is released.
+        // Finish that one pending leave before suspending the timer.
+        if !unsafe { left_button_down() } {
+            unsafe { clear_outside_hover(hwnd, state, inactive) };
+            if inactive {
+                let _ = unsafe { KillTimer(Some(hwnd), HOVER_TIMER_ID) };
+            }
+        }
+        return LRESULT(0);
+    }
+    if message == WM_ACTIVATE {
+        if wparam.0 & 0xffff == 0 {
+            unsafe { clear_outside_hover(hwnd, &*(state_ptr as *const WindowFrameState), true) };
+        }
+        unsafe { SetTimer(Some(hwnd), HOVER_TIMER_ID, HOVER_CHECK_MS, None) };
+    }
     if message == WM_NCCALCSIZE {
         if let Some(result) = unsafe { reclaim_frame_top_inset(hwnd, wparam, lparam) } {
             return result;
@@ -426,9 +496,11 @@ unsafe extern "system" fn parent_window_subclass_proc(
 
         match action {
             VisibilityAction::Hide => {
+                let _ = unsafe { KillTimer(Some(hwnd), HOVER_TIMER_ID) };
                 let _ = unsafe { state.controller.SetIsVisible(false) };
             }
             VisibilityAction::Restore => {
+                unsafe { SetTimer(Some(hwnd), HOVER_TIMER_ID, HOVER_CHECK_MS, None) };
                 // Durante `WM_SIZE` la ventana todavia no tiene su tamano
                 // definitivo, asi que el restore se difiere a la siguiente
                 // vuelta de la cola. Si la cola no lo acepta se hace en linea:
@@ -451,12 +523,101 @@ unsafe extern "system" fn parent_window_subclass_proc(
         }
     } else if message == WM_NCDESTROY {
         unsafe {
+            let _ = KillTimer(Some(hwnd), HOVER_TIMER_ID);
             let _ = RemoveWindowSubclass(hwnd, Some(parent_window_subclass_proc), subclass_id);
             drop(Box::from_raw(state_ptr as *mut WindowFrameState));
         }
     }
 
     unsafe { DefSubclassProc(hwnd, message, wparam, lparam) }
+}
+
+unsafe fn left_button_down() -> bool {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
+    (unsafe { GetAsyncKeyState(VK_LBUTTON.0 as i32) }) < 0
+}
+
+/// Windowed WebView2 owns child HWNDs, including out-of-process input surfaces.
+/// Deliver missing leave notifications to this WebView's subtree when the
+/// cursor exits the visible frame or the host loses activation. Never alter
+/// button input, capture or overlay visibility. The caller suspends the timer
+/// after the pending leave on deactivation, and on minimize/destruction.
+unsafe fn clear_outside_hover(root: HWND, state: &WindowFrameState, inactive: bool) {
+    use windows::Win32::{
+        Foundation::POINT,
+        Graphics::Dwm::{DWMWA_EXTENDED_FRAME_BOUNDS, DwmGetWindowAttribute},
+        UI::WindowsAndMessaging::{EnumChildWindows, GetCursorPos, GetWindowRect},
+    };
+    // Leave a native button press/capture alone until the user releases it.
+    if unsafe { left_button_down() } {
+        return;
+    }
+    let mut point = POINT::default();
+    let mut bounds = RECT::default();
+    if unsafe { GetCursorPos(&mut point) }.is_err() {
+        return;
+    }
+    // GetWindowRect includes invisible resize margins. Use the visible frame
+    // so crossing its top/right edge clears hover without another 8px of travel.
+    if unsafe {
+        DwmGetWindowAttribute(
+            root,
+            DWMWA_EXTENDED_FRAME_BOUNDS,
+            std::ptr::from_mut(&mut bounds).cast(),
+            size_of::<RECT>() as u32,
+        )
+    }
+    .is_err()
+        && unsafe { GetWindowRect(root, &mut bounds) }.is_err()
+    {
+        return;
+    }
+    if !inactive && point_inside(bounds, point.x, point.y) {
+        return;
+    }
+    let mut parent = HWND::default();
+    if unsafe { state.controller.ParentWindow(&mut parent) }.is_err() || parent.0.is_null() {
+        return;
+    }
+    unsafe {
+        let _ = post_mouse_leave(root, LPARAM(0));
+        if parent != root {
+            let _ = post_mouse_leave(parent, LPARAM(0));
+        }
+        let _ = EnumChildWindows(Some(parent), Some(post_mouse_leave), LPARAM(0));
+    }
+}
+
+unsafe extern "system" fn post_mouse_leave(hwnd: HWND, _data: LPARAM) -> BOOL {
+    use windows::Win32::UI::{Controls::WM_MOUSELEAVE, WindowsAndMessaging::WM_NCMOUSELEAVE};
+    unsafe {
+        let _ = PostMessageW(Some(hwnd), WM_MOUSELEAVE, WPARAM(0), LPARAM(0));
+        let _ = PostMessageW(Some(hwnd), WM_NCMOUSELEAVE, WPARAM(0), LPARAM(0));
+    }
+    BOOL(1)
+}
+
+fn point_inside(rect: RECT, x: i32, y: i32) -> bool {
+    x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom
+}
+
+#[cfg(test)]
+mod hover_tests {
+    use super::*;
+    #[test]
+    fn window_perimeter_uses_screen_coordinates_and_exclusive_far_edges() {
+        let rect = RECT {
+            left: -1440,
+            top: -200,
+            right: 0,
+            bottom: 700,
+        };
+        assert!(point_inside(rect, -1440, -200));
+        assert!(point_inside(rect, -1, 699));
+        for (x, y) in [(-1441, 0), (0, 0), (-100, -201), (-100, 700)] {
+            assert!(!point_inside(rect, x, y));
+        }
+    }
 }
 
 /// Gives the page back the pixel the undecorated frame reserves at the top.

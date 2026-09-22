@@ -30,9 +30,9 @@ pub enum ButtonSide {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ControlsMode {
-    /// WebView2 paints the real Windows buttons over the page. Their geometry
-    /// arrives through the `titlebar-area-*` environment variables, so the
-    /// insets in this state stay at zero.
+    /// Windows owns the entire title bar outside the WebView's client area.
+    NativeFrame,
+    /// Legacy WebView2 overlay mode, retained for the existing wire contract.
     NativeOverlay,
     /// macOS keeps its own traffic lights on an overlay title bar. The page
     /// only has to leave room for them.
@@ -60,6 +60,17 @@ pub struct WindowControlsState {
 }
 
 impl WindowControlsState {
+    pub fn native_frame() -> Self {
+        Self {
+            platform: "windows",
+            mode: ControlsMode::NativeFrame,
+            height: 0,
+            inset_start: 0,
+            inset_end: 0,
+            buttons: Vec::new(),
+            button_side: ButtonSide::End,
+        }
+    }
     /// The state for a host that could not reach anything native. The page
     /// draws Windows-style buttons on the trailing edge, which is the layout
     /// the app shipped with before any of this existed.
@@ -98,6 +109,18 @@ impl WindowControlsState {
 #[cfg(test)]
 mod tests {
     use super::{ButtonSide, ControlsMode, WindowControlsState};
+
+    #[test]
+    fn native_frame_reserves_no_client_caption_or_buttons() {
+        let state = WindowControlsState::native_frame();
+        assert_eq!(state.mode, ControlsMode::NativeFrame);
+        assert_eq!(
+            (state.height, state.inset_start, state.inset_end),
+            (0, 0, 0)
+        );
+        assert!(state.buttons.is_empty());
+        assert!(state.publish_script().contains("\"mode\":\"native-frame\""));
+    }
 
     #[test]
     fn the_fallback_state_draws_all_three_buttons_at_the_trailing_edge() {

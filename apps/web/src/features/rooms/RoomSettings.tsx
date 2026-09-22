@@ -1,8 +1,10 @@
+import { errorMessage } from '@/lib/errors';
 import { useEffect, useState } from 'react';
 import { DoorOpen, Trash2, UserMinus } from 'lucide-react';
 import { api, type Room, type User } from '@/api';
 import { Button } from '@/components/ui/button';
-import { Dialog } from '@/components/ui/dialog';
+import { AppDialog } from '@/components/app-dialog';
+import { Input } from '@/components/ui/input';
 export default function RoomSettings({
   room,
   user,
@@ -41,13 +43,13 @@ export default function RoomSettings({
       await fn();
       onChanged();
     } catch (e) {
-      onError(e instanceof Error ? e.message : String(e));
+      onError(errorMessage(e));
     } finally {
       setBusy(false);
     }
   }
   return (
-    <Dialog
+    <AppDialog
       open={open}
       onOpenChange={onOpenChange}
       title="Room settings"
@@ -67,7 +69,7 @@ export default function RoomSettings({
           >
             <label className="block text-xs font-medium text-foreground/80">
               Room name
-              <input
+              <Input
                 className="mt-2"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -76,7 +78,11 @@ export default function RoomSettings({
                 disabled={!owner}
               />
             </label>
-            {owner && <Button disabled={busy}>Save name</Button>}
+            {owner && (
+              <Button type="submit" disabled={busy}>
+                Save name
+              </Button>
+            )}
           </form>
           <div className="flex flex-col gap-4">
             <h3 className="text-sm font-semibold">People in this room</h3>
@@ -123,7 +129,7 @@ export default function RoomSettings({
                   : 'Leave this room? A friend will need to invite you back.'}
               </p>
               <Button
-                variant="danger"
+                variant="destructive"
                 disabled={busy}
                 onClick={() =>
                   action(async () => {
@@ -152,6 +158,6 @@ export default function RoomSettings({
           )}
         </div>
       )}
-    </Dialog>
+    </AppDialog>
   );
 }

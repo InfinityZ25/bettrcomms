@@ -41,6 +41,9 @@ test('chat, call activity, and friend availability update without polling', asyn
     await json(await ownerContext.request.post(`/api/v1/rooms/${created.room.id}/members`, {
       headers: { Origin: origin }, data: { user_id: guest.id },
     }));
+    const direct = await json<{ room: { id: string } }>(await ownerContext.request.post('/api/v1/rooms/direct', {
+      headers: { Origin: origin }, data: { user_id: guest.id },
+    }));
 
     const ownerPage = await ownerContext.newPage();
     const guestPage = await guestContext.newPage();
@@ -48,31 +51,35 @@ test('chat, call activity, and friend availability update without polling', asyn
     let presencePolls = 0;
     guestPage.on('request', (request) => {
       const url = new URL(request.url());
-      if (request.method() === 'GET' && url.pathname === `/api/v1/rooms/${created.room.id}/messages`) guestHistoryReads += 1;
+      if (request.method() === 'GET' && url.pathname === `/api/v1/rooms/${direct.room.id}/messages`) guestHistoryReads += 1;
       if (url.pathname === '/api/v1/call-presence') presencePolls += 1;
     });
     await Promise.all([ownerPage.goto('/'), guestPage.goto('/')]);
     await Promise.all([
-      ownerPage.getByRole('button', { name: created.room.name }).click(),
-      guestPage.getByRole('button', { name: created.room.name }).click(),
+      ownerPage.getByRole('button', { name: guest.name, exact: true }).click(),
+      guestPage.getByRole('button', { name: owner.name, exact: true }).click(),
     ]);
     await expect.poll(() => guestHistoryReads).toBeGreaterThan(0);
     const readsAfterHydration = guestHistoryReads;
 
     const body = `socket message ${Date.now()}`;
-    await ownerPage.getByRole('textbox', { name: /message your room/i }).fill(body);
+    await ownerPage.getByRole('textbox', { name: `Message ${guest.name}`, exact: true }).fill(body);
     await ownerPage.getByRole('button', { name: /send message/i }).click();
     await expect(guestPage.getByText(body)).toBeVisible({ timeout: 2_000 });
     expect(guestHistoryReads).toBe(readsAfterHydration);
     expect(presencePolls).toBe(0);
 
+    for (const page of [ownerPage, guestPage]) {
+      await page.getByRole('button', { name: 'Calls', exact: true }).click();
+      await page.getByRole('button', { name: created.room.name, exact: true }).click();
+    }
     await ownerPage.getByRole('button', { name: 'Join call' }).click();
-    await expect(guestPage.locator('.call-lobby')).toContainText(owner.name, { timeout: 2_000 });
+    await expect(guestPage.getByRole('region', { name: 'Call lobby' })).toContainText(owner.name, { timeout: 2_000 });
     await ownerPage.getByRole('button', { name: 'Mute microphone' }).click();
-    await expect(guestPage.locator('.call-lobby')).toContainText('Muted', { timeout: 2_000 });
+    await expect(guestPage.getByRole('region', { name: 'Call lobby' })).toContainText('Muted', { timeout: 2_000 });
     expect(presencePolls).toBe(0);
 
-    await ownerPage.getByRole('navigation', { name: 'Spaces' }).getByRole('button', { name: 'Friends' }).click();
+    await ownerPage.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Friends' }).click();
     await expect(ownerPage.getByText(`Online · ${guest.email}`)).toBeVisible({ timeout: 2_000 });
     await guestContext.close();
     await expect(ownerPage.getByText(`Offline · ${guest.email}`)).toBeVisible({ timeout: 5_000 });

@@ -48,17 +48,17 @@ test('lobby and navigation show live mute and deafen presence', async ({ browser
     ]);
     await expect(guestPage.getByRole('region', { name: 'Call lobby' })).toBeVisible();
     await expect(guestPage.getByRole('heading', { name: created.room.name })).toBeVisible();
-    await expect(guestPage.getByText('No one has joined yet. You can be the first.')).toBeVisible();
+    await expect(guestPage.getByText('Empty in here. Walk in and the others will see you.')).toBeVisible();
     await guestPage.screenshot({ path: 'tests/screenshots/call-lobby-desktop.png', fullPage: true });
     await guestPage.setViewportSize({ width: 390, height: 844 });
-    await guestPage.getByRole('button', { name: 'Close chat' }).click();
     await guestPage.screenshot({ path: 'tests/screenshots/call-lobby-mobile.png', fullPage: true });
     await guestPage.setViewportSize({ width: 1280, height: 900 });
 
     await ownerPage.getByRole('button', { name: 'Join call' }).click();
     await expect(ownerPage.getByRole('button', { name: 'Leave call' })).toBeVisible();
-    await expect(guestPage.locator('.call-lobby')).toContainText('Lobby Ada');
-    await expect(guestPage.getByRole('complementary', { name: 'Conversations' })).toContainText('Lobby Ada');
+    await expect(guestPage.getByRole('region', { name: 'Call lobby' })).toContainText('Lobby Ada');
+    const participants = guestPage.getByRole('list', { name: `${created.room.name} call participants`, exact: true });
+    await expect(participants).toContainText('Lobby Ada');
     await ownerPage.screenshot({ path: 'tests/screenshots/call-presence-incall-desktop.png', fullPage: true });
     await ownerPage.setViewportSize({ width: 390, height: 844 });
     if (await ownerPage.getByRole('button', { name: 'Close chat' }).isVisible()) await ownerPage.getByRole('button', { name: 'Close chat' }).click();
@@ -66,10 +66,10 @@ test('lobby and navigation show live mute and deafen presence', async ({ browser
     await ownerPage.setViewportSize({ width: 1280, height: 900 });
 
     await ownerPage.getByRole('button', { name: 'Mute microphone' }).click();
-    await expect(guestPage.locator('.call-lobby')).toContainText('Muted');
+    await expect(guestPage.getByRole('region', { name: 'Call lobby' })).toContainText('Muted');
     await ownerPage.getByRole('button', { name: 'Deafen call' }).click();
-    await expect(guestPage.locator('.call-lobby')).toContainText('Deafened');
-    await expect(guestPage.getByRole('complementary', { name: 'Conversations' }).getByLabel('Deafened')).toBeVisible();
+    await expect(guestPage.getByRole('region', { name: 'Call lobby' })).toContainText('Deafened');
+    await expect(participants.getByLabel('Deafened')).toBeVisible();
     await ownerPage.getByRole('button', { name: 'Undeafen call' }).click();
     await expect(ownerPage.getByRole('button', { name: 'Unmute microphone' })).toBeVisible();
 
@@ -82,8 +82,8 @@ test('lobby and navigation show live mute and deafen presence', async ({ browser
     await guestPage.routeWebSocket(/\/api\/v1\/events/, (socket) => socket.close());
     await guestPage.reload();
     await expect(guestPage.getByText('Call activity unavailable')).toBeVisible();
-    await expect(guestPage.getByRole('region', { name: 'Call lobby' })).toContainText('Checking who’s here…');
-    await expect(guestPage.getByText('No one has joined yet. You can be the first.')).toHaveCount(0);
+    await expect(guestPage.getByRole('region', { name: 'Call lobby' })).toContainText('Seeing who is in…');
+    await expect(guestPage.getByText('Empty in here. Walk in and the others will see you.')).toHaveCount(0);
   } finally {
     await Promise.allSettled([ownerContext.close(), guestContext.close()]);
   }

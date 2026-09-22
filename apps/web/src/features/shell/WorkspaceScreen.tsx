@@ -1,16 +1,19 @@
 import { useEffect, useRef, type ReactNode } from 'react';
-import { ArrowLeft } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 
+/**
+ * The frame a full-screen section is drawn in.
+ *
+ * It used to open with a lettered brand pill, a three-line heading and a
+ * sentence explaining the page below it — the shape of a landing page, on a
+ * screen somebody reached by clicking "Recordings". The heading stays, because
+ * moving focus to it is how the section announces itself; the marketing around
+ * it is gone, and the page's own first line can be about the contents.
+ */
 export default function WorkspaceScreen({
   title,
-  description,
-  onBack,
   children,
 }: {
-  title: 'Settings' | 'Recordings';
-  description: string;
-  onBack: () => void;
+  title: 'Recordings';
   children: ReactNode;
 }) {
   const heading = useRef<HTMLHeadingElement>(null);
@@ -19,56 +22,18 @@ export default function WorkspaceScreen({
   }, [title]);
   return (
     <main
-      className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background"
+      className="content-canvas flex min-w-0 flex-1 flex-col overflow-hidden rounded-3xl border border-border/60 bg-background shadow-[0_20px_60px_rgb(0_0_0/0.16)]"
       aria-label={title}
     >
-      <header className="flex min-h-20 shrink-0 flex-wrap items-center justify-between gap-2 border-b px-3 py-3 sm:flex-nowrap sm:gap-4 sm:px-7 sm:py-4">
-        <Button variant="ghost" onClick={onBack}>
-          <ArrowLeft size={17} /> Back to call
-        </Button>
-        <nav className="flex gap-1.5" aria-label="Workspace views">
-          <a
-            className="rounded-lg px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground sm:px-3.5"
-            href="#/"
+      <div className="min-h-0 flex-1 overflow-auto overscroll-contain" data-testid="workspace-scroll">
+        <div className="mx-auto max-w-6xl px-4 pt-5 pb-10 sm:px-8 sm:pt-7 sm:pb-14">
+          <h1
+            className="mb-4 font-heading text-xl font-semibold tracking-tight outline-none"
+            tabIndex={-1}
+            ref={heading}
           >
-            Call
-          </a>
-          <a
-            className="rounded-lg px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground aria-[current=page]:bg-accent aria-[current=page]:text-accent-foreground sm:px-3.5"
-            href="#/recordings"
-            aria-current={title === 'Recordings' ? 'page' : undefined}
-          >
-            Recordings
-          </a>
-          <a
-            className="rounded-lg px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground aria-[current=page]:bg-accent aria-[current=page]:text-accent-foreground sm:px-3.5"
-            href="#/settings"
-            aria-current={title === 'Settings' ? 'page' : undefined}
-          >
-            Settings
-          </a>
-        </nav>
-      </header>
-      <div
-        className="min-h-0 flex-1 overflow-auto overscroll-contain"
-        data-testid="workspace-scroll"
-      >
-        <div className="mx-auto max-w-6xl px-4 pt-6 pb-10 sm:px-8 sm:pt-10 sm:pb-14">
-          <div className="mb-8">
-            <span className="text-[0.65rem] font-semibold tracking-[0.18em] text-muted-foreground">
-              YOUR SPACE
-            </span>
-            <h1
-              className="my-2.5 font-heading text-3xl font-semibold tracking-tight outline-none"
-              tabIndex={-1}
-              ref={heading}
-            >
-              {title}
-            </h1>
-            <p className="text-sm leading-6 text-muted-foreground">
-              {description}
-            </p>
-          </div>
+            {title}
+          </h1>
           {children}
         </div>
       </div>

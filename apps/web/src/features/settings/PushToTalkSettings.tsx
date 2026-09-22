@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { isNativePushToTalk } from '@/media/nativePushToTalk';
 import { canBindKey, readTalkSettings, talkBindingLabel, writeTalkSettings, type TalkBinding, type TalkSettings } from '@/media/pushToTalk';
+import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 
 export default function PushToTalkSettings() {
   const [settings, setSettings] = useState(readTalkSettings);
@@ -19,23 +21,22 @@ export default function PushToTalkSettings() {
   }
   return (
     <div className="device-settings__card push-to-talk-settings" data-talk-binding>
-      <label className="push-to-talk-settings__toggle">
+      <div className="push-to-talk-settings__toggle">
         <span>Push-to-talk</span>
-        <input type="checkbox" checked={settings.enabled} onChange={event => {
+        <Switch aria-label="Push-to-talk" checked={settings.enabled} onCheckedChange={enabled => {
           setBinding(false);
-          save({ ...settings, enabled: event.target.checked });
+          save({ ...settings, enabled });
         }} />
-      </label>
-      <p>Hold your shortcut to speak in calls. Waiting keeps your microphone ready and is separate from mute. Off by default. Mute and deafen always take priority.</p>
-      <label className="push-to-talk-settings__toggle">
-        <span>Allow push-to-talk while typing in BetterComms</span>
-        <input type="checkbox" checked={settings.allowWhileTyping === true} disabled={!settings.enabled}
-          onChange={event => save({ ...settings, allowWhileTyping: event.target.checked })} />
-      </label>
-      <p>Applies to every assigned shortcut inside BetterComms. Text and editing shortcuts keep working. Input in other applications is unchanged. Shortcut assignment always pauses push-to-talk.</p>
-      <button
-        type="button"
-        className="text-button"
+      </div>
+      <p>Hold a shortcut when you want to speak.</p>
+      <div className="push-to-talk-settings__toggle">
+        <span>Allow while typing</span>
+        <Switch aria-label="Allow push-to-talk while typing in BetterComms" checked={settings.allowWhileTyping === true} disabled={!settings.enabled}
+          onCheckedChange={allowWhileTyping => save({ ...settings, allowWhileTyping })} />
+      </div>
+      <p>Your shortcut keeps working while you type in BetterComms.</p>
+      <Button
+        variant="secondary"
         disabled={!settings.enabled}
         aria-label="Set push-to-talk shortcut"
         onClick={() => {
@@ -62,8 +63,8 @@ export default function PushToTalkSettings() {
         onAuxClick={event => event.preventDefault()}
       >
         {binding ? 'Press a key or mouse button here…' : `Shortcut: ${talkBindingLabel(settings.binding)}`}
-      </button>
-      <p role="status">{binding ? 'Escape cancels. Tab and the Windows/Command key are reserved.' : isNativePushToTalk() ? 'On Windows, your shortcut works during calls even with another app focused or BetterComms minimized. Other platforms use the focused-window shortcut.' : 'Keep BetterComms focused. For global keyboard and mouse shortcuts while gaming, use the Windows desktop app.'}</p>
+      </Button>
+      <p role="status">{binding ? 'Press Escape to cancel.' : isNativePushToTalk() ? 'This shortcut also works while BetterComms is in the background.' : 'Keep BetterComms focused to use this shortcut.'}</p>
       {error && <p role="alert">{error}</p>}
     </div>
   );

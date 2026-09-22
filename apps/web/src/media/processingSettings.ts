@@ -1,4 +1,4 @@
-import { isTauri } from '@tauri-apps/api/core';
+import { hasNativeMediaHost } from '../desktop/nativeMedia';
 import type { CaptureOptions, MicrophoneProcessingSettings } from './types';
 export type { MicrophoneProcessingSettings } from './types';
 
@@ -106,7 +106,7 @@ export function readProcessingSettings(): MicrophoneProcessingSettings {
   )
     engine = selected;
   else if (selected === 'nvidia' || selected === 'deepfilter')
-    engine = isTauri() ? selected : 'standard';
+    engine = hasNativeMediaHost() ? selected : 'standard';
   else engine = 'rnnoise';
   return { engine, ...normalizedTuning(tuning) };
 }

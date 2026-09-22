@@ -23,6 +23,16 @@ describe('platform detection', () => {
 });
 
 describe('published window controls', () => {
+  it('accepts a native frame without allocating a second title bar', () => {
+    publish({
+      platform: 'windows', mode: 'native-frame', height: 0,
+      insetStart: 0, insetEnd: 0, buttons: [], buttonSide: 'end',
+    });
+    const controls = getWindowControls();
+    expect(controls.mode).toBe('native-frame');
+    expect(controls.height).toBe(0);
+    expect(controls.buttons).toEqual([]);
+  });
   const state = {
     platform: 'linux',
     mode: 'client-side',

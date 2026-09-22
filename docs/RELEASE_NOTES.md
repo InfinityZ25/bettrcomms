@@ -1,5 +1,67 @@
 # BetterComms preview release notes
 
+## Unreleased — Wails v3 host scaffold
+
+`apps/desktop-wails` is a new Wails v3 shell beside the unchanged Tauri host. It
+opens a native window over the same `apps/web` frontend — proxied from Vite in
+development, embedded from `apps/web/dist` in a build — and exposes boot
+configuration, a capability report, and window controls through generated Wails
+v3 service bindings. The API-origin policy matches the Tauri host. better-gui is not ported; the host
+publishes the existing window-control contract instead.
+
+This host contains no media code. Native capture, process audio, NVIDIA and
+DeepFilterNet processing, native recording and export, permission IPC, global
+input, and both overlays are absent and reported unavailable together with the
+browser path used instead. No parity with the Tauri host is claimed.
+
+`apps/web/src/desktop` is the new dual-runtime bridge: one synchronous answer to
+which shell is hosting, with native features still gated to Tauri. The
+connection diagnostic report now names the runtime and its capability states.
+
+The Go service and Wails APIs compile against pinned v3.0.0-beta.18, and the
+generated bindings are checked in so browser and Tauri builds do not require
+Wails at runtime. Packaged API routing/auth and native media remain explicit
+gaps; see [the migration notes](WAILS_MIGRATION.md).
+
+The Windows development launcher resolves the installed `npm.cmd` shim by its
+absolute path before starting Vite and terminates the complete child process
+tree on exit, avoiding both `Start-Process` resolution failures and orphaned
+port 5173 listeners.
+
+The Wails Windows host now combines WebView2 native `app-region` support with
+Wails composition-hosted non-client regions. Its HTML title area maps to the
+native caption and its buttons map to minimize, maximize, and close hit targets;
+the maximize target therefore participates in Windows 11 Snap Layouts. This
+path is Wails-owned and does not use `better-gui`. Physical-pointer, DPI,
+focus, resize, and media-rendering acceptance remains outstanding because
+composition hosting is experimental in Wails v3.
+
+## Unreleased — custom Windows title bar restored
+
+Windows again uses the custom HTML title bar with WebView2's native Window
+Controls Overlay. The full Windows title bar and the previous DWM cutout/input
+routing have been removed. WebView2 owns the button geometry and clicks; the
+page reserves the overlay's CSS environment area. Snap Layouts are deliberately
+outside this change. macOS and Linux retain their existing title bars.
+
+The overlay follows the page's actual sidebar palette, including theme changes,
+and retains that palette across DPI updates. A 50 ms check while the host is
+active delivers missing mouse-leave notifications to the WebView's window tree
+when the pointer is outside the host. It does not synthesize clicks, change
+capture, toggle the overlay, or run while minimized/inactive. It waits until a
+held left button is released. The timer and theme listener are released when
+the window is destroyed.
+
+The development executable maximized and restored with the custom title bar
+and complete buttons. Direct pointer exit across the outer window edge still
+needs physical-mouse acceptance; window-scoped automation does not establish
+that case. Validation: 23 Rust tests, 131 frontend tests, production frontend
+build, and 3 Playwright caption/accessibility tests passed. Requires a rebuilt
+host; the experimental overlay still depends on WebView2 runtime availability.
+
+Transparency and blur remain research only; see
+[window materials findings](WINDOW_MATERIALS_RESEARCH.md).
+
 ## 0.1.16 — hosted app moved to app.bettrcomms.com
 
 The hosted app's primary domain moved from bettrcomms-production.up.railway.app

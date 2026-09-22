@@ -180,8 +180,6 @@
   scrollbar-gutter: stable;
   overscroll-behavior: contain;
   padding: 3px 12px 4px 3px;
-  scrollbar-width: thin;
-  scrollbar-color: #4b584e transparent;
 }
 .share-source-grid {
   display: grid;
@@ -298,7 +296,6 @@
   max-height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
-  scrollbar-width: thin;
   border: 1px solid #303b31;
   border-radius: 14px;
   background: #171d19;

@@ -161,7 +161,7 @@ test('saved multitrack recording reloads, mixes, seeks, and deletes', async ({
   }, recordingTitle);
 
   await page.reload();
-  await page.getByRole('button', { name: 'Recordings' }).click();
+  await page.getByRole('button', { name: 'Recordings', exact: true }).click();
   const recordingCard = page
     .locator('.library-open')
     .filter({ hasText: recordingTitle });
@@ -402,7 +402,7 @@ test('saved multitrack recording reloads, mixes, seeks, and deletes', async ({
     page.locator('.library-open').filter({ hasText: recordingTitle }),
   ).toHaveCount(0);
   await page.reload();
-  await page.getByRole('button', { name: 'Recordings' }).click();
+  await page.getByRole('button', { name: 'Recordings', exact: true }).click();
   await expect(
     page.locator('.library-open').filter({ hasText: recordingTitle }),
   ).toHaveCount(0);

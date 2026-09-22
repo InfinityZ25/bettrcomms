@@ -7,25 +7,43 @@
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 12px;
 }
+/*
+  These screens predate the app's theme: they were painted in a fixed set of
+  greens with a lime accent, and the shared stylesheet was overriding them back
+  with !important. They read the tokens directly now, so they follow the light
+  and dark themes like everything else.
+*/
 .device-settings__card {
+  min-width: 0;
   padding: 14px;
-  border: 1px solid color-mix(in srgb, var(--brand-accent, #b8ff42) 22%, transparent);
-  border-radius: 12px;
-  background: rgba(184, 255, 66, 0.035);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: color-mix(in oklch, var(--muted) 45%, transparent);
 }
 .device-settings__card label {
   display: grid;
   gap: 7px;
-  color: var(--text-muted, #aeb6a6);
+  min-width: 0;
+  color: var(--muted-foreground);
   font-size: 0.86rem;
 }
 .device-settings__card select {
   width: 100%;
 }
 .push-to-talk-settings .push-to-talk-settings__toggle { display: flex; align-items: center; justify-content: space-between; font-weight: 650; }
-.push-to-talk-settings__toggle input { width: 18px; height: 18px; accent-color: var(--brand-accent, #b8ff42); }
-.push-to-talk-settings p { margin: 10px 0; color: var(--text-muted, #aeb6a6); font-size: 0.82rem; line-height: 1.5; }
-.push-to-talk-settings button { min-height: 36px; text-align: left; }
+.push-to-talk-settings__toggle input { width: 18px; height: 18px; accent-color: var(--primary); }
+.push-to-talk-settings p { margin: 10px 0; color: var(--muted-foreground); font-size: 0.82rem; line-height: 1.5; }
+/* The shortcut button's label is a sentence while it is listening for a key,
+   and the shared button keeps text on one line, so it used to run out of its
+   own column. */
+.push-to-talk-settings button {
+  min-width: 0;
+  height: auto;
+  min-height: 36px;
+  padding-block: 0.45rem;
+  text-align: left;
+  white-space: normal;
+}
 .push-to-talk-settings { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); column-gap: 24px; align-items: start; }
 .push-to-talk-settings .push-to-talk-settings__toggle { gap: 16px; justify-content: flex-start; }
 .push-to-talk-settings__toggle input { flex: 0 0 18px; }
@@ -44,18 +62,18 @@
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  color: var(--text, #f2f5ef);
-  font-weight: 650;
+  color: var(--foreground);
+  font-weight: 600;
 }
 .device-volume output {
-  color: var(--brand-accent, #b8ff42);
+  color: var(--muted-foreground);
   font-variant-numeric: tabular-nums;
 }
 .device-volume input {
   width: 100%;
   height: 24px;
   padding: 0;
-  accent-color: var(--brand-accent, #b8ff42);
+  accent-color: var(--primary);
 }
 .device-settings__actions {
   display: flex;
@@ -71,13 +89,13 @@
   margin-top: 10px;
   overflow: hidden;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.09);
+  background: var(--muted);
 }
 .device-settings__meter span {
   display: block;
   height: 100%;
   width: var(--level);
-  background: linear-gradient(90deg, #8ad92a, #d7ff58);
+  background: var(--primary);
   transition: width 70ms linear;
 }
 .device-settings__preview {
@@ -85,17 +103,17 @@
   width: 100%;
   max-height: 210px;
   margin-top: 10px;
-  border-radius: 9px;
-  background: #070907;
+  border-radius: var(--radius-lg);
+  background: var(--muted);
   object-fit: cover;
 }
 .device-settings__status {
   margin: 8px 0 0;
-  color: var(--text-muted, #b6bdb0);
+  color: var(--muted-foreground);
   font-size: 0.83rem;
 }
 .device-settings__status[data-error='true'] {
-  color: #ff9c8e;
+  color: var(--destructive);
 }
 .device-settings__preview[hidden] {
   display: none;
@@ -108,7 +126,7 @@
 }
 .camera-quality__actual {
   margin: 8px 0 0;
-  color: var(--text-muted, #b6bdb0);
+  color: var(--muted-foreground);
   font-size: 0.78rem;
 }
 @media (max-width: 520px) {
@@ -128,10 +146,10 @@
 .loopback-volume input {
   padding: 0;
   height: 24px;
-  accent-color: var(--brand-accent);
+  accent-color: var(--primary);
 }
 .loopback-volume span {
   font-size: 11px;
   line-height: 1.6;
-  color: #aab9ae;
+  color: var(--muted-foreground);
 }

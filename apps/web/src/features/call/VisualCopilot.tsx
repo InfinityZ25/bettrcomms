@@ -1,3 +1,4 @@
+import { errorMessage } from '@/lib/errors';
 import { useRef, useState, useSyncExternalStore, type RefObject, type KeyboardEvent } from 'react';
 import { Crosshair, Camera, X } from 'lucide-react';
 import { VisualCopilot, videoPoint, MAX_IMAGE, type CopilotMode } from '@/media/visualCopilot';
@@ -13,7 +14,8 @@ export function CopilotPanel({ copilot, names }: { copilot: VisualCopilot; names
   const [overlayStatus, setOverlayStatus] = useState('');
   return <>
     <CopilotNativeOverlay key={JSON.stringify(names)} copilot={copilot} names={names} onStatus={setOverlayStatus} />
-    {state.sharing && <details className="copilot-permissions">
+    {state.sharing && <div className="copilot-sharer">
+      <details className="copilot-permissions">
       <summary><Crosshair size={16} /> Visual copilot · {Object.keys(state.grants).length} allowed</summary>
       <p>Permissions apply only to this share. New participants need your permission.</p>
       {!settings.enabled && <p>Enable Visual copilot in Settings to allow indications.</p>}
@@ -23,8 +25,9 @@ export function CopilotPanel({ copilot, names }: { copilot: VisualCopilot; names
         <label><input type="checkbox" disabled={!settings.enabled || !settings.showCards} checked={state.grants[peerId]?.snapshot ?? false} onChange={e => copilot.grant(peerId, state.grants[peerId]?.ping ?? false, e.target.checked)} /> Allow captures from {names[peerId] ?? 'participant'}</label>
       </fieldset>)}
       <button onClick={() => copilot.pause()}>Pause all indications</button>
-    </details>}
-    {state.sharing && settings.enabled && overlayStatus && <p className="copilot-overlay-status" role="status">{overlayStatus}</p>}
+      </details>
+      {settings.enabled && overlayStatus && <p className="copilot-overlay-status" role="status">{overlayStatus}</p>}
+    </div>}
     {settings.enabled && settings.showCards && <aside className={`copilot-cards copilot-cards--${settings.corner}`} aria-label="Marked captures" style={{ width: settings.cardWidth }}>
       {state.marks.filter(m => m.kind === 'snapshot').map(mark => <article className="copilot-card" key={mark.id}>
         <header><strong>{names[mark.peerId] ?? 'Participant'} pointed here</strong><button aria-label="Dismiss marked capture" onClick={() => copilot.dismiss(mark.id)}><X size={15} /></button></header>
@@ -86,7 +89,7 @@ export function CopilotViewer({ copilot, peerId, viewport }: { copilot: VisualCo
       const rect = surface.getBoundingClientRect();
       setSentPoint({ x: (clientX - rect.left) / rect.width * 100, y: (clientY - rect.top) / rect.height * 100 });
       clearTimeout(pointTimer.current); pointTimer.current = setTimeout(() => setSentPoint(null), settings.duration * 1000);
-    } catch (error) { setError(error instanceof Error ? error.message : String(error)); }
+    } catch (error) { setError(errorMessage(error)); }
   }
   // Remount the keyed viewer on permission changes to immediately release frames.
   function select(next: CopilotMode) {
@@ -115,7 +118,7 @@ export function CopilotViewer({ copilot, peerId, viewport }: { copilot: VisualCo
       ctx.beginPath(); ctx.arc(point.x * canvas.width, point.y * canvas.height, 15, 0, Math.PI * 2); ctx.stroke();
       copilot.mark(peerId, 'snapshot', point.x, point.y, compress(canvas), performance.now() - frozen.at);
       cancel();
-    } catch (e) { setError(String(e instanceof Error ? e.message : e)); }
+    } catch (e) { setError(errorMessage(e)); }
   }
   function shortcut(event: KeyboardEvent) {
     if (event.key === 'Escape') { event.stopPropagation(); cancel(); return; }
@@ -132,7 +135,7 @@ export function CopilotViewer({ copilot, peerId, viewport }: { copilot: VisualCo
       if (e.key !== 'Enter' && e.key !== ' ') return;
       e.preventDefault(); e.stopPropagation();
       try { if (mode === 'snapshot') setPoint({ x: .5, y: .5 }); else copilot.mark(peerId, 'ping', .5, .5); }
-      catch (error) { setError(error instanceof Error ? error.message : String(error)); }
+      catch (error) { setError(errorMessage(error)); }
     }} onPointerDown={e => { e.preventDefault(); e.stopPropagation(); if (laser && mode === 'ping' && e.button === 0) { e.currentTarget.setPointerCapture(e.pointerId); indicate(e.currentTarget, e.clientX, e.clientY, true); } }}
     onPointerMove={e => { if (laser && mode === 'ping' && e.buttons === 1 && e.currentTarget.hasPointerCapture(e.pointerId)) indicate(e.currentTarget, e.clientX, e.clientY, true); }}
     onPointerUp={e => { if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId); }} onClick={e => {
@@ -147,7 +150,7 @@ export function CopilotViewer({ copilot, peerId, viewport }: { copilot: VisualCo
         if (!p) return;
         if (mode === 'snapshot') setPoint(p);
         else { copilot.mark(peerId, 'ping', p.x, p.y); }
-      } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+      } catch (e) { setError(errorMessage(e)); }
     }}>
       {sentPoint && <span className={`copilot-sent-point ${laser ? 'is-laser' : ''}`} style={{ left: `${sentPoint.x}%`, top: `${sentPoint.y}%` }} />}
       {frozen && <><img className="copilot-frozen" src={frozen.preview} alt="Frozen frame to mark" />{point && <svg className="copilot-frozen-marker" viewBox={`0 0 ${frozen.canvas.width} ${frozen.canvas.height}`}><circle cx={point.x * frozen.canvas.width} cy={point.y * frozen.canvas.height} r={15} /></svg>}</>}
@@ -158,7 +161,22 @@ export function CopilotViewer({ copilot, peerId, viewport }: { copilot: VisualCo
       <button disabled={!settings.enabled || !grant?.snapshot} aria-pressed={mode === 'snapshot'} onClick={() => select('snapshot')}><Camera size={15} /> Freeze & mark</button>
       {mode === 'snapshot' && <button disabled={!point} onClick={sendCapture}>Send marked capture</button>}
       {mode && <button onClick={cancel}>Back to live</button>}
-      <span role="status">{error || (!settings.enabled ? 'Enable visual copilot in Settings' : !state.ready.includes(peerId) ? 'Waiting for visual collaboration. Both clients must use the current version.' : !grant ? 'Ask the sharer to allow you in Visual copilot above the call.' : mode === 'snapshot' ? 'Only your view is frozen. Click to mark.' : mode === 'ping' ? `${laser ? 'Hold and drag on the video. Release to let the laser fade.' : 'Click on the video to point.'} ${state.status}` : 'Choose Point, Laser or Freeze & mark.')}</span>
+      <span role="status" className="copilot-status">
+        {error ||
+          (!settings.enabled
+            ? 'Turn on Visual copilot in Settings'
+            : !state.ready.includes(peerId)
+              ? 'Waiting for the other client'
+              : !grant
+                ? 'Ask the sharer to allow you'
+                : state.status || (mode === 'snapshot'
+                  ? 'Click to mark'
+                  : mode === 'ping'
+                    ? laser
+                      ? 'Hold and drag'
+                      : 'Click to point'
+                    : ''))}
+      </span>
     </div>
   </div>;
 }

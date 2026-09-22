@@ -49,8 +49,14 @@ type API struct {
 	AllowedOrigins []string
 	HTTP           *http.Client
 	states         map[string]time.Time
-	stateMu        sync.Mutex
-	limiter        *rateLimiter
+	// statePairings binds an OAuth state to the desktop pairing that started
+	// it, so the callback knows the result belongs to a waiting desktop process
+	// rather than to the browser it arrived in.
+	statePairings map[string]string
+	stateMu       sync.Mutex
+	pairings      map[string]*desktopPairing
+	pairingMu     sync.Mutex
+	limiter       *rateLimiter
 }
 type apiError struct {
 	Code    string `json:"code"`
@@ -65,7 +71,7 @@ func New(store Store, s Sessions, c Config) *API {
 	if c.DevAuth {
 		origins = append(origins, "localhost:*", "127.0.0.1:*")
 	}
-	return &API{Store: store, Sessions: s, Hub: NewHub(), Realtime: NewRealtimeHub(), Config: c, AllowedOrigins: origins, HTTP: http.DefaultClient, states: map[string]time.Time{}, limiter: newRateLimiter()}
+	return &API{Store: store, Sessions: s, Hub: NewHub(), Realtime: NewRealtimeHub(), Config: c, AllowedOrigins: origins, HTTP: http.DefaultClient, states: map[string]time.Time{}, statePairings: map[string]string{}, pairings: map[string]*desktopPairing{}, limiter: newRateLimiter()}
 }
 func (a *API) Handler() http.Handler {
 	m := http.NewServeMux()
@@ -75,6 +81,17 @@ func (a *API) Handler() http.Handler {
 	})
 	m.Handle("GET /api/v1/auth/login", a.rate("auth", 10, time.Minute, http.HandlerFunc(a.login)))
 	m.HandleFunc("GET /api/v1/auth/callback", a.callback)
+	// The desktop sign-in handoff. See desktopauth.go for why the flow leaves
+	// the application window at all.
+	m.Handle("POST /api/v1/auth/desktop/start", a.rate("auth", 10, time.Minute, http.HandlerFunc(a.desktopAuthStart)))
+	m.HandleFunc("GET /api/v1/auth/desktop/confirm", a.desktopAuthConfirm)
+	m.HandleFunc("POST /api/v1/auth/desktop/confirm", a.desktopAuthConfirm)
+	// Claiming is polled while a person signs in, so its budget is the wait,
+	// not the attempt: a ten-minute pairing polled once a second is 600 calls.
+	m.Handle("POST /api/v1/auth/desktop/claim", a.rate("auth-claim", 900, 10*time.Minute, http.HandlerFunc(a.desktopAuthClaim)))
+	m.HandleFunc("GET /api/v1/auth/desktop/done", func(w http.ResponseWriter, r *http.Request) {
+		a.desktopPage(w, 200, "Sign-in complete", "You can close this tab and return to BetterComms.")
+	})
 	// devLogin is loopback-only and disabled unless DEV_AUTH=true (see devLogin), so it never
 	// faces the abuse the production "auth" scope guards against. It gets its own, much larger
 	// budget: the Playwright e2e suite logs in many users per run from the same loopback IP and
@@ -148,12 +165,41 @@ func (a *API) sameOrigin(r *http.Request) bool {
 	if o == "" {
 		return true
 	}
+	got, e := url.Parse(o)
+	if e != nil {
+		return false
+	}
+	// A request whose Origin is the very host it was addressed to is same-origin,
+	// and this server serves pages of its own — the desktop sign-in confirmation
+	// among them — whose forms post back to themselves. Only APP_URL was
+	// accepted before, which is the same host in a deployment and a different
+	// one behind a development front end, so those forms were refused as
+	// cross-site on exactly the setup people develop against.
+	//
+	// A page on another site sends that site's Origin, which still will not
+	// equal the host being addressed, so nothing cross-site is admitted.
+	//
+	// The scheme is deliberately not compared. A server behind TLS termination
+	// sees a plaintext connection while the browser reports an https Origin, so
+	// inferring this server's own scheme from the request would refuse every
+	// write in a deployment. The residual gap is an http page on the same host
+	// and port as an https one, which cannot both exist; it is the same trade
+	// coder/websocket makes in the handshake this API already relies on.
+	if isHTTPScheme(got.Scheme) && strings.EqualFold(got.Host, r.Host) {
+		return true
+	}
 	want, e := url.Parse(a.Config.AppURL)
 	if e != nil {
 		return false
 	}
-	got, e := url.Parse(o)
-	return e == nil && strings.EqualFold(got.Scheme, want.Scheme) && strings.EqualFold(got.Host, want.Host)
+	return strings.EqualFold(got.Scheme, want.Scheme) && strings.EqualFold(got.Host, want.Host)
+}
+
+// isHTTPScheme reports a scheme a browser can carry an Origin on. Anything else
+// — a custom application scheme, or a file URL — is not a page this server
+// served, whatever host it names.
+func isHTTPScheme(scheme string) bool {
+	return strings.EqualFold(scheme, "http") || strings.EqualFold(scheme, "https")
 }
 
 type userKey struct{}
@@ -504,8 +550,23 @@ func (a *API) login(w http.ResponseWriter, r *http.Request) {
 		canonical := *app
 		canonical.Path = "/api/v1/auth/login"
 		canonical.RawQuery = ""
+		// A desktop sign-in is identified by this parameter, so the canonical
+		// redirect has to carry it. Dropping it would turn a desktop hand-off
+		// into an ordinary browser sign-in the desktop then waits for forever.
+		if desktop := r.URL.Query().Get("desktop"); desktop != "" {
+			canonical.RawQuery = url.Values{"desktop": {desktop}}.Encode()
+		}
 		canonical.Fragment = ""
 		http.Redirect(w, r, canonical.String(), http.StatusTemporaryRedirect)
+		return
+	}
+	// A desktop sign-in reaches this handler only after its confirmation page
+	// was approved, so an unapproved or expired pairing is refused here rather
+	// than after the person has already typed a password.
+	pairingID := r.URL.Query().Get("desktop")
+	if pairingID != "" && !a.approvedPairing(pairingID) {
+		a.desktopPage(w, 404, "This sign-in has expired",
+			"Start sign-in again from the BetterComms window.")
 		return
 	}
 	state, e := randomToken()
@@ -517,9 +578,13 @@ func (a *API) login(w http.ResponseWriter, r *http.Request) {
 	for token, expires := range a.states {
 		if time.Now().After(expires) {
 			delete(a.states, token)
+			delete(a.statePairings, token)
 		}
 	}
 	a.states[state] = time.Now().Add(10 * time.Minute)
+	if pairingID != "" {
+		a.statePairings[state] = pairingID
+	}
 	a.stateMu.Unlock()
 	http.SetCookie(w, &http.Cookie{Name: "bettercomms_oauth_state", Value: state, Path: "/api/v1/auth/callback", MaxAge: 600, HttpOnly: true, Secure: a.Sessions.Secure, SameSite: http.SameSiteLaxMode})
 	q := url.Values{"client_id": {a.Config.WorkOSClientID}, "redirect_uri": {a.Config.WorkOSRedirectURI}, "response_type": {"code"}, "provider": {"authkit"}, "state": {state}}
@@ -530,7 +595,9 @@ func (a *API) callback(w http.ResponseWriter, r *http.Request) {
 	stateCookie, cookieErr := r.Cookie("bettercomms_oauth_state")
 	a.stateMu.Lock()
 	exp, ok := a.states[state]
+	pairingID := a.statePairings[state]
 	delete(a.states, state)
+	delete(a.statePairings, state)
 	a.stateMu.Unlock()
 	if !ok || cookieErr != nil || subtle.ConstantTimeCompare([]byte(state), []byte(stateCookie.Value)) != 1 || time.Now().After(exp) {
 		a.fail(w, 400, "invalid_state", "login state is invalid or expired")
@@ -579,6 +646,19 @@ func (a *API) callback(w http.ResponseWriter, r *http.Request) {
 	u, e := a.Store.UpsertUser(out.User.ID, out.User.Email, name, out.User.ProfilePictureURL)
 	if e != nil {
 		a.fail(w, 500, "internal", "could not save user")
+		return
+	}
+	// A desktop sign-in ends here, in the browser, with no session in it. The
+	// result is held for the waiting desktop process, which claims a session of
+	// its own with the verifier only it has. Setting a cookie here as well would
+	// leave a second live session behind in a browser nobody asked to sign into.
+	if pairingID != "" {
+		if !a.completeDesktopPairing(pairingID, u.ID) {
+			a.desktopPage(w, 404, "This sign-in has expired",
+				"Start sign-in again from the BetterComms window.")
+			return
+		}
+		http.Redirect(w, r, "/api/v1/auth/desktop/done", http.StatusFound)
 		return
 	}
 	if e = a.Sessions.Set(r, w, u.ID); e != nil {

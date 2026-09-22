@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { openSettingsCategory } from './settings-navigation';
 
 const baseURL = process.env.E2E_BASE_URL ?? 'http://localhost:5173';
 
@@ -196,8 +197,8 @@ async function installLoopbackHarness(page: Page): Promise<void> {
 }
 
 async function openSettings(page: Page): Promise<void> {
-  await page.goto(`${baseURL}/#/settings`);
-  await expect(page.getByRole('main', { name: 'Settings' })).toBeVisible();
+  await page.goto(baseURL);
+  await openSettingsCategory(page);
 }
 
 test('microphone diagnostics separate captured and processed levels without copying device identifiers', async ({ page }) => {
@@ -562,7 +563,7 @@ test('navigation cancels pending loopback capture and releases its late track', 
   await page.getByRole('button', { name: 'Start live loopback' }).click();
   await expect(page.getByText('Starting live loopback…')).toBeVisible();
   await page.keyboard.press('Escape');
-  await expect(page).not.toHaveURL(/#\/settings$/);
+  await expect(page.getByRole('dialog', { name: 'Settings', exact: true })).toBeHidden();
   await page.evaluate(() =>
     (
       window as unknown as { __loopback: { resolvePending(): void } }

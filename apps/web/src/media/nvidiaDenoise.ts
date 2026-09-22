@@ -1,4 +1,5 @@
-import { invoke, isTauri } from '@tauri-apps/api/core';
+import { invokeNativeAudio } from '../desktop/audio';
+import { hasNativeMediaHost } from '../desktop/nativeMedia';
 import type { DenoisedTrack } from './denoise';
 import NvidiaAudioWorker from './nvidiaDenoise.worker?worker';
 import nvidiaWorkletUrl from './nvidiaDenoise.worklet.js?url&no-inline';
@@ -32,14 +33,14 @@ export interface NvidiaDenoiseOptions {
 }
 export async function createNvidiaDenoiser(
   rawTrack: MediaStreamTrack,
-  nativeInvoke: NvidiaInvoke = invoke,
+  nativeInvoke: NvidiaInvoke = invokeNativeAudio,
   options: NvidiaDenoiseOptions = {},
 ): Promise<NvidiaDenoisedTrack> {
   const commandPrefix = options.commandPrefix ?? 'nvidia';
   const displayName = options.displayName ?? 'NVIDIA';
   if (rawTrack.kind !== 'audio' || rawTrack.readyState === 'ended')
     throw new Error(`${displayName} requires a live microphone track`);
-  if (!isTauri())
+  if (!hasNativeMediaHost())
     throw new Error(
       `${displayName} denoising is available only in the desktop app`,
     );

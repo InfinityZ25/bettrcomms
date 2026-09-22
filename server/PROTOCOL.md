@@ -8,13 +8,22 @@ Browser mutation origins must match `APP_URL`; requests marked cross-site are re
 ## Authentication
 
 - `GET /api/v1/auth/login?return_to=/` redirects to WorkOS AuthKit.
-- `GET /api/v1/auth/callback?code=...&state=...` exchanges the code server-side and sets the session cookie.
+- `GET /api/v1/auth/callback?code=...&state=...` exchanges the code server-side and sets the session cookie. When the state belongs to a desktop pairing it sets no cookie: it records the user against the pairing and redirects to `/api/v1/auth/desktop/done`.
 - `POST /api/v1/auth/dev` with `{ "email": "alice@example.test", "name": "Alice" }` creates/signs in a local test user when localhost-only development auth is enabled.
 - `GET /api/v1/me` returns the signed-in user.
 - `POST /api/v1/auth/logout` clears the session.
 - `GET /api/v1/config` is public and returns `{ "dev_auth": boolean, "ice_servers": [{ "urls": [...] }] }`; it never returns ICE credentials or server secrets.
 - `GET /api/v1/ice` is authenticated and returns STUN plus short-lived coturn REST credentials as `{ "ice_servers": [...], "ttl_seconds": 600 }`.
 - `GET /api/v1/users?q=alice` searches users by email or display name for friend discovery.
+
+### Desktop sign-in hand-off
+
+A packaged desktop client cannot host the provider's UI in its own webview, so it runs the flow in the system browser and claims the result over a pairing. The client keeps a secret verifier and sends only its digest; the pairing id, which is the only part that travels through the browser, cannot claim anything on its own.
+
+- `POST /api/v1/auth/desktop/start` with `{ "verifier_hash": "<base64url SHA-256>" }` returns `201` and `{ "pairing_id", "code", "confirm_path", "expires_in", "poll_interval" }`. `confirm_path` is relative: the client supplies the origin, so a server cannot choose which page a desktop app opens.
+- `GET /api/v1/auth/desktop/confirm?pairing=<id>` renders a script-free page showing `code`. The person compares it with the code their desktop window is displaying and submits the form, which `POST`s to the same path and redirects on to `/api/v1/auth/login?desktop=<id>`. Nothing reaches the provider before this: without the step, a link to someone else's pairing would sign whoever follows it into that other person's application.
+- `GET /api/v1/auth/login?desktop=<id>` refuses an unconfirmed, expired, or already-completed pairing.
+- `POST /api/v1/auth/desktop/claim` with `{ "pairing_id", "verifier" }` returns `202 { "status": "pending" }` until the browser has finished, then `200 { "status": "complete", "user": {...} }` with the session cookie. A wrong verifier is `403` and leaves the pairing intact for its real owner; an unknown, expired, or already-claimed pairing is `404`. A pairing is spent by its first successful claim and lives at most ten minutes.
 
 ## Rooms and chat
 

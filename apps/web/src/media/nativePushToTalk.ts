@@ -1,12 +1,10 @@
-import { invoke, isTauri } from '@tauri-apps/api/core';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { hasNativeMediaHost, nativeInputCapabilities, startNativeInput, heartbeatNativeInput, stopNativeInput, onNativeInput } from '../desktop/nativeMedia';
 import type { TalkBinding } from './pushToTalk';
 
 export type GlobalInputStatus = 'foreground' | 'connecting' | 'active' | 'unavailable';
 interface Snapshot { sessionId: string; sequence: number; pressed: boolean; healthy: boolean; focused: boolean }
-const EVENT = 'bc-global-push-to-talk';
 
-export function isNativePushToTalk(): boolean { return isTauri(); }
+export function isNativePushToTalk(): boolean { return hasNativeMediaHost(); }
 
 /** One native registration per call. Never forwards unselected input or text. */
 export class NativePushToTalk {
@@ -14,7 +12,7 @@ export class NativePushToTalk {
   private sessionId?: string;
   private sequence = -1;
   private pending?: Snapshot;
-  private unlisten?: UnlistenFn;
+  private unlisten?: () => void;
   private timer?: ReturnType<typeof setInterval>;
   private watchdog?: ReturnType<typeof setTimeout>;
   private polling = false;
@@ -27,19 +25,19 @@ export class NativePushToTalk {
   async start(binding: TalkBinding): Promise<void> {
     this.onStatus('connecting', 'Starting global push-to-talk…');
     try {
-      const capability = await invoke<{ available: boolean; detail: string }>('push_to_talk_capabilities');
+      const capability = await nativeInputCapabilities();
       if (this.disposed) return;
       if (!capability.available) {
         this.onStatus('foreground', capability.detail);
         return;
       }
-      this.unlisten = await listen<Snapshot>(EVENT, event => {
+      this.unlisten = await onNativeInput(snapshot => {
         if (this.disposed) return;
-        if (!this.sessionId) this.pending = event.payload;
-        else this.accept(event.payload);
+        if (!this.sessionId) this.pending = snapshot;
+        else this.accept(snapshot);
       });
       if (this.disposed) { this.unlisten(); this.unlisten = undefined; return; }
-      const initial = await invoke<Snapshot>('push_to_talk_start', { binding });
+      const initial = await startNativeInput(binding);
       this.sessionId = initial.sessionId;
       if (this.disposed) { this.stopRegistration(); return; }
       this.onStatus('active', 'Global push-to-talk · Works while another app is focused');
@@ -65,7 +63,7 @@ export class NativePushToTalk {
     this.polling = true;
     this.watchdog = setTimeout(() => this.fail('Global push-to-talk lost its connection. Rejoin the call.'), 2000);
     try {
-      const snapshot = await invoke<Snapshot>('push_to_talk_heartbeat', { sessionId: this.sessionId });
+      const snapshot = await heartbeatNativeInput(this.sessionId);
       this.accept(snapshot);
     } catch { this.fail('Global push-to-talk lost its connection. Rejoin the call.'); }
     finally { clearTimeout(this.watchdog); this.watchdog = undefined; this.polling = false; }
@@ -80,7 +78,7 @@ export class NativePushToTalk {
   private stopRegistration(): void {
     const sessionId = this.sessionId;
     this.sessionId = undefined;
-    if (sessionId) void invoke('push_to_talk_stop', { sessionId }).catch(() => {});
+    if (sessionId) void stopNativeInput(sessionId).catch(() => {});
   }
 
   dispose(): void {

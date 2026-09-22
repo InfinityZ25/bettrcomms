@@ -1,0 +1,6 @@
+This directory is the staging area for the built shared frontend.
+
+`scripts/build-desktop-wails.ps1` builds `apps/web` and copies `apps/web/dist`
+here so `//go:embed all:frontend/dist` in main.go has something to embed.
+`apps/web` remains the single frontend source; nothing here is edited by hand
+and nothing but this file is committed.

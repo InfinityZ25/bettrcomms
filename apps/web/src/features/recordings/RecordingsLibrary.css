@@ -1,92 +1,191 @@
+/*
+  The library.
+
+  This screen still had the palette the app used before its theme existed —
+  a dozen hand-picked greens, a gradient plate behind a clapperboard icon, and
+  a full-width Delete button under every card, which made the loudest thing on
+  a page of saved memories the way to destroy one. It reads as a list of
+  recordings now, on the same tokens as everything else.
+*/
 .library-storage {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  color: #adb5ad;
+  gap: 8px;
+  margin: 0 0 18px;
+  color: var(--muted-foreground);
   font-size: 12px;
-  margin: 18px 0 24px;
 }
 .library-storage svg {
   flex-shrink: 0;
-  color: var(--brand-accent);
+  color: var(--muted-foreground);
 }
 .library-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(min(330px, 100%), 1fr));
+  gap: 10px;
 }
+
 .library-card {
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  overflow: hidden;
-  background: #141918;
+  position: relative;
   padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2xl);
+  background: color-mix(in oklch, var(--card) 55%, transparent);
+  transition: border-color 120ms ease, background-color 120ms ease;
 }
+.library-card:hover,
+.library-card:focus-within {
+  border-color: color-mix(in oklch, var(--primary) 35%, var(--border));
+  background: var(--card);
+}
+
+/* Cover and title are one target: the whole thing opens the recording. */
 .library-open {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-  text-align: left;
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
   width: 100%;
-  background: none;
+  padding: 0;
+  gap: 12px;
   border: 0;
+  background: none;
   color: inherit;
+  text-align: left;
   cursor: pointer;
-  padding: 0 0 14px;
 }
-.library-open strong {
-  font-size: 17px;
-  overflow-wrap: anywhere;
+.library-open:disabled {
+  cursor: progress;
 }
-.library-open time,
-.library-open small {
-  color: #a5afa7;
-  font-size: 12px;
-}
+
 .library-cover {
+  position: relative;
+  display: grid;
+  aspect-ratio: 16 / 9;
+  place-items: center;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: color-mix(in oklch, var(--muted) 70%, transparent);
+  color: var(--muted-foreground);
+}
+/* The play affordance belongs to the pointer being there, not to the card. */
+.library-play {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: color-mix(in oklch, var(--background) 55%, transparent);
+  color: var(--primary);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.library-open:hover .library-play,
+.library-open:focus-visible .library-play {
+  opacity: 1;
+}
+
+.library-meta {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  min-height: 110px;
-  width: 100%;
-  padding: 24px;
-  border-radius: 9px;
-  background: linear-gradient(120deg, #293828, #19221e);
-  color: var(--brand-accent);
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+  /* Room for the delete control in the corner. */
+  padding-right: 30px;
 }
-.library-cover span {
+.library-meta strong {
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  /* Two lines of title, then an ellipsis. A long one used to push the meta
+     line down and make the cards in a row different heights. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.library-meta time {
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+
+/* Duration, tracks, size: three facts, dotted apart rather than punctuated by
+   hand, so a missing one does not leave a stray separator. */
+.library-facts {
   display: flex;
-  gap: 8px;
+  flex-wrap: wrap;
   align-items: center;
-  font-size: 12px;
+  gap: 4px 7px;
+  margin-top: 2px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
-.library-empty {
-  grid-column: 1/-1;
-  text-align: center;
-  padding: 60px 20px;
-  color: #aab6ae;
+.library-facts > span + span::before {
+  content: '·';
+  margin-right: 7px;
 }
-.library-empty svg {
-  color: var(--brand-accent);
+
+.library-remove {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  color: var(--muted-foreground);
+  opacity: 0.5;
+  transition: opacity 120ms ease, color 120ms ease;
 }
-.library-empty h2 {
-  color: #eef3ee;
+.library-remove:hover,
+.library-remove:focus-visible {
+  color: var(--destructive);
+  opacity: 1;
 }
-.library-empty p {
-  max-width: 380px;
-  margin: auto;
-  line-height: 1.8;
-}
+
 .library-delete {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 6px 8px;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid var(--border);
+  color: var(--muted-foreground);
   font-size: 12px;
+}
+/* The question on its own line. Left to wrap on its own, the second button
+   dropped below and made this card taller than the ones beside it. */
+.library-delete > span {
+  flex-basis: 100%;
+}
+
+.library-empty {
+  grid-column: 1/-1;
+  padding: 56px 20px;
+  color: var(--muted-foreground);
+  text-align: center;
+}
+.library-empty h2 {
+  margin: 14px 0 6px;
+  color: var(--foreground);
+  font-size: 20px;
+}
+.library-empty p {
+  color: var(--foreground);
+  max-width: 380px;
+  margin: auto;
+  line-height: 1.7;
+}
+
+/* --------------------------------------------------------- one recording */
+.library-player-heading {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin: 0 0 14px;
+}
+.library-player-heading > button {
+  flex-shrink: 0;
+}
+.library-player-heading .recording-title-form {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
 }
 .recording-title-form {
   display: flex;
@@ -96,50 +195,44 @@
 .recording-title-form input {
   flex: 1;
   min-width: 0;
-  font-size: 18px;
+  font-size: 16px;
 }
+
 .recording-exports {
-  margin-top: 24px;
-  border-top: 1px solid var(--line);
-  padding-top: 18px;
+  margin-top: 20px;
   font-size: 12px;
 }
 .recording-exports summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  color: var(--muted-foreground);
   cursor: pointer;
-  color: var(--brand-accent);
 }
-.recording-exports summary svg {
-  vertical-align: middle;
-  margin-right: 8px;
+.recording-exports summary:hover {
+  color: var(--foreground);
+}
+.recording-exports > p {
+  max-width: 62ch;
+  color: var(--muted-foreground);
+  line-height: 1.7;
 }
 .recording-exports a {
   display: flex;
   justify-content: space-between;
   gap: 16px;
-  border: 1px solid var(--line);
-  padding: 10px;
   margin-top: 8px;
-  border-radius: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   overflow-wrap: anywhere;
 }
 .recording-exports a span {
   flex-shrink: 0;
-  color: #a5afa7;
+  color: var(--muted-foreground);
 }
-.library-player-heading {
-  display: flex;
-  gap: 16px;
-  align-items: center;
-  margin: 12px 0 18px;
-}
-.library-player-heading > button {
-  flex-shrink: 0;
-}
-.library-player-heading .recording-title-form {
-  flex: 1;
-  margin: 0;
-  min-width: 0;
-}
+
 @media (max-width: 600px) {
   .library-player-heading {
     display: block;
@@ -147,8 +240,11 @@
   .library-player-heading > button {
     margin-bottom: 10px;
   }
+  .library-open {
+    grid-template-columns: 84px minmax(0, 1fr);
+  }
   .library-storage {
-    margin: 14px 0;
+    margin-bottom: 14px;
     font-size: 11px;
   }
 }

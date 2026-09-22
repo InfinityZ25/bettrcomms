@@ -1,12 +1,11 @@
 import { expect, test, type Page } from '@playwright/test';
+import { openSettingsCategory } from './settings-navigation';
 
 const baseURL = process.env.E2E_BASE_URL ?? 'http://localhost:5173';
 
 async function openSettings(page: Page): Promise<void> {
   await page.goto('/');
-  await page.getByRole('button', { name: /audio and video settings/i }).click();
-  await expect(page).toHaveURL(/#\/settings$/);
-  await expect(page.getByRole('main', { name: 'Settings' })).toBeVisible();
+  await openSettingsCategory(page);
 }
 
 test('camera quality stays passive, reports actual capture, and reacquires with supported settings', async ({
@@ -65,10 +64,10 @@ test('camera quality stays passive, reports actual capture, and reacquires with 
   });
 
   await openSettings(page);
-  const resolution = page.getByLabel('Resolution');
-  const frameRate = page.locator('.camera-quality').getByLabel('Frame rate');
-  await expect(resolution).toHaveValue('1080p');
-  await expect(frameRate).toHaveValue('30');
+  const resolution = page.getByRole('combobox', { name: 'Resolution', exact: true });
+  const frameRate = page.locator('.camera-quality').getByRole('combobox', { name: 'Frame rate', exact: true });
+  await expect(resolution).toHaveAttribute('title', '1080p');
+  await expect(frameRate).toHaveAttribute('title', '30 FPS');
   expect(
     await page.evaluate(
       () =>
@@ -103,20 +102,15 @@ test('camera quality stays passive, reports actual capture, and reacquires with 
     },
     audio: false,
   });
-  await expect(resolution.locator('option[value="1440p"]')).toHaveAttribute(
-    'disabled',
-    '',
-  );
-  await expect(resolution.locator('option[value="4k"]')).toHaveAttribute(
-    'disabled',
-    '',
-  );
-  await expect(frameRate.locator('option[value="60"]')).toHaveAttribute(
-    'disabled',
-    '',
-  );
-
-  await resolution.selectOption('720p');
+  await resolution.click();
+  await expect(page.getByRole('option', { name: '1440p', exact: true })).toBeDisabled();
+  await expect(page.getByRole('option', { name: '4K', exact: true })).toBeDisabled();
+  await page.keyboard.press('Escape');
+  await frameRate.click();
+  await expect(page.getByRole('option', { name: '60 FPS', exact: true })).toBeDisabled();
+  await page.keyboard.press('Escape');
+  await resolution.click();
+  await page.getByRole('option', { name: '720p', exact: true }).click();
   await expect
     .poll(() =>
       page.evaluate(

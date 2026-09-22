@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { openSettingsCategory } from './settings-navigation';
 
 const baseURL = process.env.E2E_BASE_URL ?? 'http://localhost:5173';
 
@@ -84,12 +85,11 @@ test('native settings gate DeepFilterNet on readiness and install the supported 
   await page.evaluate(() =>
     Object.defineProperty(window, 'isTauri', { value: true }),
   );
-  await page.getByRole('button', { name: /audio and video settings/i }).click();
-  const engine = page.getByLabel('Noise suppression engine');
-  await expect(engine.locator('option[value="deepfilter"]')).toHaveAttribute(
-    'disabled',
-    '',
-  );
+  await openSettingsCategory(page);
+  const engine = page.getByRole('combobox', { name: 'Noise suppression engine', exact: true });
+  await engine.click();
+  await expect(page.getByRole('option', { name: 'DeepFilter · setup needed', exact: true })).toBeDisabled();
+  await page.keyboard.press('Escape');
   await expect(
     page.getByText('DeepFilterNet is unavailable: Setup is required.'),
   ).toBeVisible();
@@ -97,12 +97,12 @@ test('native settings gate DeepFilterNet on readiness and install the supported 
     .getByRole('button', { name: 'Download and set up DeepFilterNet' })
     .click();
   await expect(
-    engine.locator('option[value="deepfilter"]'),
-  ).not.toHaveAttribute('disabled', '');
-  await expect(
     page.getByText(/DeepFilterNet is ready on Test DirectML adapter/),
   ).toBeVisible();
-  await engine.selectOption('deepfilter');
+  await engine.click();
+  const ready = page.getByRole('option', { name: 'DeepFilter · ready', exact: true });
+  await expect(ready).toBeEnabled();
+  await ready.click();
   await page
     .getByRole('slider', { name: 'Maximum noise attenuation' })
     .fill('73');

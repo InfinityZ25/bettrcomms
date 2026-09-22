@@ -1,6 +1,10 @@
+import { errorMessage } from '@/lib/errors';
+import { LinkButton } from '@/components/ui/link-button';
 import { useEffect, useState } from 'react';
-import { Headphones, Monitor, Radio } from 'lucide-react';
-import { invoke, isTauri } from '@tauri-apps/api/core';
+import { readStored, writeStored } from '@/lib/storage';
+import { invokeAudioSetup } from '@/desktop/audio';
+import { hasNativeMediaHost } from '@/desktop/nativeMedia';
+import { readConnectionMode, type ConnectionMode } from '@/media/connectionMode';
 import DeviceSettings from './DeviceSettings';
 import VisualCopilotSettings from './VisualCopilotSettings';
 import ProcessingControls from './ProcessingControls';
@@ -12,6 +16,9 @@ import { readRecordingQuality } from '@/media/recordingQuality';
 import NativeDeepfilterSetup, {
   type DeepfilterStatus,
 } from './NativeDeepfilterSetup';
+import { SettingsSection } from './SettingsSection';
+import { SettingBlock, SettingRow } from './SettingRow';
+import { SettingsSelect, SettingsSlider } from './SettingsControls';
 
 interface NvidiaStatus {
   ready: boolean;
@@ -38,49 +45,30 @@ export function readQuality() {
   try {
     return {
       ...defaultQuality,
-      ...JSON.parse(localStorage.getItem('bc-quality') ?? '{}'),
+      ...JSON.parse(readStored('bc-quality') ?? '{}'),
     };
   } catch {
     return defaultQuality;
   }
 }
-
-export type ConnectionMode = 'automatic' | 'direct-only' | 'relay-only';
-
-/**
- * One setting instead of stacked booleans, so "direct only" and "force
- * relay" can't both end up set at once. Falls back to the older
- * bc-direct flag so an existing "Direct connections only" choice survives
- * this becoming a single control.
- */
-export function readConnectionMode(): ConnectionMode {
-  const mode = localStorage.getItem('bc-connection-mode');
-  if (mode === 'direct-only' || mode === 'relay-only') return mode;
-  if (mode === 'automatic') return 'automatic';
-  return localStorage.getItem('bc-direct') === 'true'
-    ? 'direct-only'
-    : 'automatic';
-}
-export default function MediaSettings() {
+export default function MediaSettings({ section }: { section: 'voice' | 'recording' | 'stream' | 'connection' }) {
   const [speakingThreshold, setSpeakingThreshold] = useState(
     readSpeakingThreshold,
   );
   const [voiceRoute, setVoiceRoute] = useState(() =>
-    localStorage.getItem('bc-voice-route') === 'relay' ? 'relay' : 'automatic',
+    readStored('bc-voice-route') === 'relay' ? 'relay' : 'automatic',
   );
   const [recordingRate, setRecordingRate] = useState(
     () => readRecordingQuality().screenVideoBitsPerSecond / 1_000_000,
   );
-  const desktop = isTauri();
-  const storedDenoiser = localStorage.getItem('bc-denoiser');
+  const desktop = hasNativeMediaHost();
+  const storedDenoiser = readStored('bc-denoiser');
   const initialDenoiser =
     (storedDenoiser === 'nvidia' || storedDenoiser === 'deepfilter') && !desktop
       ? 'standard'
       : (storedDenoiser ?? 'rnnoise');
   const [quality, setQuality] = useState(readQuality),
-    [connectionMode, setConnectionMode] = useState<ConnectionMode>(
-      readConnectionMode,
-    ),
+    [connectionMode, setConnectionMode] = useState<ConnectionMode>(readConnectionMode),
     [denoiser, setDenoiser] = useState(initialDenoiser),
     [nvidia, setNvidia] = useState<NvidiaStatus | null>(null),
     [nvidiaInfo, setNvidiaInfo] = useState<NvidiaInstallInfo | null>(null),
@@ -91,18 +79,18 @@ export default function MediaSettings() {
     if (!desktop) return;
     try {
       const [status, info] = await Promise.all([
-        invoke<NvidiaStatus>('nvidia_status'),
-        invoke<NvidiaInstallInfo>('nvidia_install_info'),
+        invokeAudioSetup<NvidiaStatus>('nvidia_status'),
+        invokeAudioSetup<NvidiaInstallInfo>('nvidia_install_info'),
       ]);
       setNvidia(status);
       setNvidiaInfo(info);
-      if (!status.ready && localStorage.getItem('bc-denoiser') === 'nvidia') {
+      if (!status.ready && readStored('bc-denoiser') === 'nvidia') {
         setDenoiser('rnnoise');
-        localStorage.setItem('bc-denoiser', 'rnnoise');
+        writeStored('bc-denoiser', 'rnnoise');
         window.dispatchEvent(new Event('bc-denoiser'));
       }
     } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
+      const detail = errorMessage(error);
       setNvidia({
         ready: false,
         detail,
@@ -120,10 +108,10 @@ export default function MediaSettings() {
     setNvidiaBusy(true);
     setNvidiaInstallError('');
     try {
-      await invoke('nvidia_install');
+      await invokeAudioSetup('nvidia_install');
     } catch (error) {
       setNvidiaInstallError(
-        error instanceof Error ? error.message : String(error),
+        errorMessage(error),
       );
     } finally {
       setNvidiaBusy(false);
@@ -132,83 +120,47 @@ export default function MediaSettings() {
   }
   function change(next: typeof quality) {
     setQuality(next);
-    localStorage.setItem('bc-quality', JSON.stringify(next));
+    writeStored('bc-quality', JSON.stringify(next));
     window.dispatchEvent(new Event('bc-quality'));
   }
   return (
     <>
-      <h3>
-        <Headphones size={17} /> Voice & devices
-      </h3>
+      {section === 'voice' && <SettingsSection id="settings-voice" title="Voice & devices">
       <DeviceSettings />
       <VisualCopilotSettings />
-      <label>
-        Speaking indicator threshold · {speakingThreshold} dBFS
-        <input
-          type="range"
-          min="-65"
-          max="-20"
-          step="1"
-          aria-label="Speaking indicator threshold"
-          aria-describedby="speaking-threshold-help"
-          value={speakingThreshold}
-          onChange={(event) =>
-            setSpeakingThreshold(
-              saveSpeakingThreshold(Number(event.target.value)),
-            )
-          }
-        />
-      </label>
-      <p
-        id="speaking-threshold-help"
-        className="text-xs leading-6 text-muted-foreground"
+      <SettingBlock
+        title="Voice activity"
+        value={`${speakingThreshold} dB`}
+        description="When your speaking indicator lights up. It does not change how loud you are."
       >
-        Lower values detect quieter voices. This changes the green border only,
-        not microphone volume or what others hear.
-      </p>
-      <label>
-        Noise suppression engine
-        <select
+        <SettingsSlider ariaLabel="Speaking indicator threshold" value={speakingThreshold} min={-65} max={-20} step={1} onValueChange={(value) => setSpeakingThreshold(saveSpeakingThreshold(value))} />
+      </SettingBlock>
+      <SettingRow
+        as="div"
+        title="Noise removal"
+        description={denoiser === 'deepfilter-wasm'
+          ? 'DeepFilter is still being tested. Enhanced is the safer choice for calls.'
+          : 'How strongly your microphone is cleaned up before anyone hears it.'}
+        control={<SettingsSelect
+          ariaLabel="Noise suppression engine"
           value={denoiser}
-          onChange={(e) => {
-            setDenoiser(e.target.value);
-            localStorage.setItem('bc-denoiser', e.target.value);
+          onValueChange={(value) => {
+            setDenoiser(value);
+            writeStored('bc-denoiser', value);
             window.dispatchEvent(new Event('bc-denoiser'));
           }}
-        >
-          <option value="deepfilter-wasm">
-            DeepFilterNet3 · experimental · WebAssembly
-          </option>
-          <option value="standard">Standard · browser processing</option>
-          <option value="rnnoise">Enhanced · RNNoise on this device</option>
-          <option value="speex">SpeexDSP · lightweight on this device</option>
-          {desktop && (
-            <option value="nvidia" disabled={!nvidia?.ready}>
-              NVIDIA Audio Effects ·{' '}
-              {nvidia?.ready ? 'ready' : 'setup required'}
-            </option>
-          )}
-          {desktop && (
-            <option value="deepfilter" disabled={!deepfilter?.ready}>
-              DeepFilterNet3 · AMD/Intel DirectML ·{' '}
-              {deepfilter?.ready ? 'ready' : 'setup required'}
-            </option>
-          )}
-        </select>
-      </label>
-      <p className="text-xs leading-6 text-muted-foreground">
-        Used when noise suppression is switched on. Processing stays on this
-        device.
-      </p>
-      {denoiser === 'deepfilter-wasm' && (
-        <p className="setting-note">
-          Experimental: the upstream WASM build is integrated for browser and
-          desktop testing, but it has not passed BetterComms quality acceptance.
-          RNNoise remains the default.
-        </p>
-      )}
+          options={[
+            { value: 'rnnoise', label: 'Enhanced' },
+            { value: 'standard', label: 'Standard' },
+            { value: 'speex', label: 'Lightweight' },
+            { value: 'deepfilter-wasm', label: 'DeepFilter · experimental' },
+            ...(desktop ? [{ value: 'nvidia', label: nvidia?.ready ? 'NVIDIA · ready' : 'NVIDIA · setup needed', disabled: !nvidia?.ready }] : []),
+            ...(desktop ? [{ value: 'deepfilter', label: deepfilter?.ready ? 'DeepFilter · ready' : 'DeepFilter · setup needed', disabled: !deepfilter?.ready }] : []),
+          ]}
+        />}
+      />
       {desktop && nvidia && !nvidia.ready && (
-        <div className="my-4 rounded-lg border bg-muted/40 p-3 text-xs leading-6 text-muted-foreground">
+        <div className="my-3 rounded-xl border border-border/60 bg-muted/40 p-3 text-xs leading-6 text-muted-foreground">
           <p>NVIDIA Audio Effects is unavailable: {nvidia.detail}</p>
           {nvidiaInfo && (
             <>
@@ -244,8 +196,7 @@ export default function MediaSettings() {
                     </a>
                     .
                   </p>
-                  <button
-                    className="my-3 p-0 text-xs font-medium text-primary hover:underline disabled:opacity-50"
+                  <LinkButton
                     disabled={nvidiaBusy}
                     onClick={installNvidia}
                   >
@@ -254,7 +205,7 @@ export default function MediaSettings() {
                       : nvidiaInstallError
                         ? 'Retry NVIDIA setup'
                         : 'Download and set up NVIDIA Audio Effects'}
-                  </button>
+                  </LinkButton>
                 </>
               )}
               {!nvidiaInfo.supported && (
@@ -278,138 +229,114 @@ export default function MediaSettings() {
             setDeepfilter(status);
             if (
               !status.ready &&
-              localStorage.getItem('bc-denoiser') === 'deepfilter'
+              readStored('bc-denoiser') === 'deepfilter'
             ) {
               setDenoiser('rnnoise');
-              localStorage.setItem('bc-denoiser', 'rnnoise');
+              writeStored('bc-denoiser', 'rnnoise');
               window.dispatchEvent(new Event('bc-denoiser'));
             }
           }}
         />
       )}
       <ProcessingControls engine={denoiser} />
-      <h3>
-        <Monitor size={17} /> Recording quality
-      </h3>
-      <label>
-        Screen recording bitrate
-        <select
+      </SettingsSection>}
+      {section === 'recording' && <SettingsSection id="settings-recording" title="Recording quality">
+      <SettingRow
+        as="div"
+        title="Screen recording bitrate"
+        description="Higher keeps text and motion sharper, and uses more storage."
+        control={<SettingsSelect
+          ariaLabel="Screen recording bitrate"
           value={recordingRate}
-          onChange={(event) => {
-            const value = Number(event.target.value);
+          onValueChange={(next) => {
+            const value = Number(next);
             setRecordingRate(value);
-            localStorage.setItem('bc-recording-mbps', String(value));
+            writeStored('bc-recording-mbps', String(value));
           }}
-        >
-          {[10, 20, 40, 80].map((value) => (
-            <option key={value} value={value}>
-              {value} Mbps
-            </option>
-          ))}
-        </select>
-      </label>
-      <p className="my-4 rounded-lg border bg-muted/40 p-3 text-xs leading-6 text-muted-foreground">
-        Applies to new browser and received-screen recordings. Native local
-        shares preserve the selected stream encoder and bitrate. Higher bitrates
-        use more storage; playback volume never changes the saved tracks.
-      </p>
-      <h3>
-        <Monitor size={17} /> Stream quality
-      </h3>
-      <div className="grid gap-3.5">
-        <label>
-          Video bitrate ceiling
-          <select
-            value={quality.maxVideoBitrate}
-            onChange={(e) =>
-              change({ ...quality, maxVideoBitrate: Number(e.target.value) })
-            }
-          >
-            <option value={4_000_000}>4 Mbps · save bandwidth</option>
-            <option value={10_000_000}>10 Mbps · balanced</option>
-            <option value={20_000_000}>20 Mbps · high quality</option>
-            <option value={40_000_000}>40 Mbps · maximum detail</option>
-          </select>
-        </label>
-        <label>
-          Frame rate ceiling
-          <select
-            value={quality.maxFramerate}
-            onChange={(e) =>
-              change({ ...quality, maxFramerate: Number(e.target.value) })
-            }
-          >
-            <option value={15}>15 FPS · text</option>
-            <option value={30}>30 FPS · balanced</option>
-            <option value={60}>60 FPS · motion</option>
-            <option value={120}>120 FPS · high refresh</option>
-          </select>
-        </label>
-        <label>
-          Audio bitrate ceiling
-          <select
-            value={quality.maxAudioBitrate}
-            onChange={(e) =>
-              change({ ...quality, maxAudioBitrate: Number(e.target.value) })
-            }
-          >
-            <option value={64_000}>64 kbps · voice</option>
-            <option value={128_000}>128 kbps · balanced</option>
-            <option value={256_000}>256 kbps · high fidelity</option>
-            <option value={510_000}>510 kbps · maximum</option>
-          </select>
-        </label>
-      </div>
-      <p className="my-4 rounded-lg border bg-muted/40 p-3 text-xs leading-6 text-muted-foreground">
-        Actual quality adapts to your connection and device. Each viewer uses
-        additional upload bandwidth. Hardware encoding is selected by your
-        browser when supported.
-      </p>
-      <h3>
-        <Radio size={17} /> Connection
-      </h3>
-      <label className="device-select">
-        Connection mode
-        <select
+          options={[10, 20, 40, 80].map((value) => ({ value, label: `${value} Mbps` }))}
+        />}
+      />
+      </SettingsSection>}
+      {section === 'stream' && <SettingsSection id="settings-stream" title="Stream quality">
+      <SettingRow
+        as="div"
+        title="Video bitrate ceiling"
+        description="The most a share may use. It eases down on its own when a connection needs it."
+        control={<SettingsSelect
+          ariaLabel="Video bitrate ceiling"
+          value={quality.maxVideoBitrate}
+          onValueChange={(value) =>
+            change({ ...quality, maxVideoBitrate: Number(value) })
+          }
+          options={[{ value: 4_000_000, label: 'Data saver' }, { value: 10_000_000, label: 'Balanced' }, { value: 20_000_000, label: 'High quality' }, { value: 40_000_000, label: 'Maximum detail' }]}
+        />}
+      />
+      <SettingRow
+        as="div"
+        title="Frame rate ceiling"
+        description="Higher is smoother for motion; lower is sharper for text."
+        control={<SettingsSelect
+          ariaLabel="Frame rate ceiling"
+          value={quality.maxFramerate}
+          onValueChange={(value) =>
+            change({ ...quality, maxFramerate: Number(value) })
+          }
+          options={[{ value: 15, label: '15 FPS · text' }, { value: 30, label: '30 FPS · balanced' }, { value: 60, label: '60 FPS · smooth' }, { value: 120, label: '120 FPS · high refresh' }]}
+        />}
+      />
+      <SettingRow
+        as="div"
+        title="Audio bitrate ceiling"
+        description="Voice is enough for talking; the rest is for music and games."
+        control={<SettingsSelect
+          ariaLabel="Audio bitrate ceiling"
+          value={quality.maxAudioBitrate}
+          onValueChange={(value) =>
+            change({ ...quality, maxAudioBitrate: Number(value) })
+          }
+          options={[{ value: 64_000, label: 'Voice' }, { value: 128_000, label: 'Balanced' }, { value: 256_000, label: 'High fidelity' }, { value: 510_000, label: 'Maximum' }]}
+        />}
+      />
+      </SettingsSection>}
+      {section === 'connection' && <SettingsSection id="settings-connection" title="Connection">
+      <SettingRow
+        as="div"
+        title="Connection mode"
+        description="Automatic tries a direct connection first. Force relay is a debug option for verifying the relay path."
+        control={<SettingsSelect
+          ariaLabel="Connection mode"
           value={connectionMode}
-          onChange={(e) => {
-            const next = e.target.value as ConnectionMode;
+          onValueChange={(value) => {
+            const next = value as ConnectionMode;
             setConnectionMode(next);
-            localStorage.setItem('bc-connection-mode', next);
+            writeStored('bc-connection-mode', next);
           }}
-        >
-          <option value="automatic">Automatic · direct first, relay fallback</option>
-          <option value="direct-only">Direct only · skip relays, some networks won't connect</option>
-          <option value="relay-only">Force relay (debug) · always via the Bettrcomms relay</option>
-        </select>
-      </label>
-      <p className="text-xs leading-6 text-muted-foreground">
-        Connection mode applies when you next join a call. "Force relay" is a
-        debug option for verifying the relay path — it isn't meant for normal
-        calls.
-      </p>
-      <label className="device-select">
-        Voice route
-        <select
+          options={[
+            { value: 'automatic', label: 'Automatic · direct first, relay fallback' },
+            { value: 'direct-only', label: 'Direct only · skip relays' },
+            { value: 'relay-only', label: 'Force relay (debug)' },
+          ]}
+        />}
+      />
+      <SettingRow
+        as="div"
+        title="Voice route"
+        description="Automatic suits most people. Compatibility mode is for when voice will not connect at all."
+        control={<SettingsSelect
+          ariaLabel="Voice route"
           disabled={connectionMode === 'direct-only'}
           value={voiceRoute}
-          onChange={(event) => {
-            setVoiceRoute(event.target.value);
-            localStorage.setItem('bc-voice-route', event.target.value);
+          onValueChange={(value) => {
+            setVoiceRoute(value);
+            writeStored('bc-voice-route', value);
           }}
-        >
-          <option value="automatic">
-            Automatic · direct first, server voice fallback
-          </option>
-          <option value="relay">Server voice · compatibility mode</option>
-        </select>
-      </label>
-      <p className="my-4 rounded-lg border bg-muted/40 p-3 text-xs leading-6 text-muted-foreground">
-        Server voice uses encrypted Opus audio, starting at 64 kbps per friend.
-        Camera, screen sharing, and shared app audio still need WebRTC
-        connectivity. Direct-only overrides this setting. Changes apply on your
-        next call.
+          options={[{ value: 'automatic', label: 'Automatic' }, { value: 'relay', label: 'Compatibility mode' }]}
+        />}
+      />
+      <p className="pt-3 text-xs leading-6 text-muted-foreground">
+        Both apply the next time you join a call.
       </p>
+      </SettingsSection>}
     </>
   );
 }

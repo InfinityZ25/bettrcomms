@@ -1,0 +1,70 @@
+version: '3'
+
+# Task definitions for `wails3 dev`, `wails3 build`, and `wails3 package`.
+#
+# The equivalent PowerShell entry points in ../../scripts do the same work
+# without requiring Task, and are the documented path in README.md. Keep the
+# two in step if either changes.
+
+vars:
+  APP_NAME: bettercomms-wails
+  BIN_DIR: bin
+  WEB_DIR: ../web
+  STAGED_DIST: frontend/dist
+
+tasks:
+  # Builds the shared frontend and stages it for `go:embed`. apps/web is the
+  # single frontend source; this only copies its build output.
+  build:frontend:
+    dir: '{{.TASK_DIR}}'
+    cmds:
+      - wails3 generate bindings -ts -clean -d ../web/src/desktop/wailsbindings .
+      - npm --prefix {{.WEB_DIR}} run build
+      - powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/stage-wails-frontend.ps1
+
+  build:
+    deps: [build:frontend]
+    cmds:
+      - powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/build-wails-binary.ps1
+      - powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/stage-wails-ffmpeg.ps1
+
+  package:
+    cmds:
+      - powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/package-desktop-wails.ps1
+
+  # Development runs against the live Vite server rather than a staged copy, so
+  # frontend edits reload without a Go rebuild.
+  dev:
+    env:
+      BETTERCOMMS_DEV_SERVER: http://localhost:5173
+    cmds:
+      - go run .
+
+  # The executable's icon and version metadata. Windows takes the window and
+  # taskbar icons from the .exe resource, so this is what puts the application
+  # mark on the window; the artwork is the same one the Tauri host ships.
+  #
+  # The .syso is committed because a plain `go build` needs it present. Rerun
+  # this after changing build/appicon.png.
+  icons:
+    dir: '{{.TASK_DIR}}'
+    cmds:
+      - wails3 generate icons -input build/appicon.png -windowsfilename build/windows/icon.ico
+      - wails3 generate syso -icon build/windows/icon.ico -manifest build/windows/wails.exe.manifest -info build/windows/info.json -arch amd64 -out rsrc_windows_amd64.syso
+
+  test:
+    cmds:
+      - go test ./...
+
+  # The NVIDIA Audio Effects acceptance test. It skips unless this machine has
+  # an NVIDIA Ada GPU and the pinned package unpacked into
+  # the app-private NVIDIA runtime directory under LOCALAPPDATA, and says which
+  # half is missing. Verbose because what it prints is the evidence: no NVIDIA
+  # GPU has ever run this adapter, and the report says so until one has.
+  test:nvidia:
+    cmds:
+      - go test ./internal/native/nvidiaaudio/ -v -run "Denoiser|Intensity|VoiceActivity|StoppingAndStarting"
+
+  vet:
+    cmds:
+      - go vet ./...

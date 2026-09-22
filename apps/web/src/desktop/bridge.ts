@@ -1,0 +1,175 @@
+import type { CSSProperties } from 'react';
+import { getDesktopRuntime, readDesktopBootReport } from './runtime';
+import type {
+  DesktopSignInState,
+  DesktopSignInStatus,
+  DesktopWindowControls,
+} from './types';
+
+/**
+ * The transport for host commands.
+ *
+ * Tauri commands go through its IPC. Wails window commands use its built-in
+ * Window API; app services use generated bindings. Modules are loaded only in
+ * their runtime, so browser and Tauri builds do not execute Wails commands.
+ */
+
+/** Raised when a command has no implementation on the current runtime. */
+export class DesktopUnavailableError extends Error {
+  constructor(
+    readonly command: string,
+    readonly runtime: string,
+  ) {
+    super(`"${command}" is not available in the ${runtime} runtime`);
+    this.name = 'DesktopUnavailableError';
+  }
+}
+
+/**
+ * The window operations the custom title bar needs, resolved for the current
+ * runtime. Returns null in a browser, where the page draws no title bar.
+ */
+export interface DesktopWindowApi {
+  minimize(): Promise<void>;
+  toggleMaximize(): Promise<void>;
+  close(): Promise<void>;
+  isMaximized(): Promise<boolean>;
+  /**
+   * Begins a window drag. Tauri needs an IPC call for it. The Wails webview
+   * starts the drag itself from the CSS drag region, so there it resolves
+   * without doing anything and `dragRegionStyle` supplies the region.
+   */
+  startDragging(): Promise<void>;
+}
+
+/**
+ * The style that marks an element as a window drag region, or an empty object.
+ * Only the Wails webview reads it; Tauri drags through `startDragging`.
+ */
+export function dragRegionStyle(): CSSProperties {
+  if (usesWailsNativeNonClientRegions()) return {};
+  return wailsDraggable('drag');
+}
+
+/** The style that excludes a control inside a drag region, such as a button. */
+export function noDragStyle(): CSSProperties {
+  if (usesWailsNativeNonClientRegions()) return {};
+  return wailsDraggable('no-drag');
+}
+
+/** Returns the DOM marker consumed by the Windows-only non-client CSS. */
+export function nativeNonClientRegion(
+  region: 'caption' | DesktopWindowControls['buttons'][number],
+): typeof region | undefined {
+  return usesWailsNativeNonClientRegions() ? region : undefined;
+}
+
+function usesWailsNativeNonClientRegions(): boolean {
+  const boot = readDesktopBootReport();
+  return getDesktopRuntime() === 'wails' && boot?.platform === 'windows';
+}
+
+function wailsDraggable(value: 'drag' | 'no-drag'): CSSProperties {
+  if (getDesktopRuntime() !== 'wails') return {};
+  // A custom property is not part of CSSProperties, which is why every custom
+  // property in this codebase is asserted at the boundary.
+  return { '--wails-draggable': value } as CSSProperties;
+}
+
+export function getDesktopWindowApi(): DesktopWindowApi | null {
+  switch (getDesktopRuntime()) {
+    case 'tauri':
+      return tauriWindowApi();
+    case 'wails':
+      return wailsWindowApi();
+    default:
+      return null;
+  }
+}
+
+function wailsWindowApi(): DesktopWindowApi {
+  const current = async () => (await import('@wailsio/runtime')).Window;
+  return {
+    minimize: async () => (await current()).Minimise(),
+    toggleMaximize: async () => (await current()).ToggleMaximise(),
+    close: async () => (await current()).Close(),
+    isMaximized: async () => (await current()).IsMaximised(),
+    startDragging: async () => {},
+  };
+}
+
+function tauriWindowApi(): DesktopWindowApi {
+  // Imported lazily so a browser or Wails bundle never evaluates the Tauri
+  // window module, which touches IPC globals on load.
+  const current = async () =>
+    (await import('@tauri-apps/api/window')).getCurrentWindow();
+  return {
+    minimize: async () => (await current()).minimize(),
+    toggleMaximize: async () => (await current()).toggleMaximize(),
+    close: async () => (await current()).close(),
+    isMaximized: async () => (await current()).isMaximized(),
+    startDragging: async () => (await current()).startDragging(),
+  };
+}
+
+/**
+ * The browser sign-in hand-off, where the host has one.
+ *
+ * Only the Wails host does: it serves the page from its own origin, so the page
+ * cannot navigate to the identity provider and come back with a usable session.
+ * Returns null everywhere else, where the page signs in by navigating itself.
+ */
+export interface DesktopSignInApi {
+  begin(): Promise<DesktopSignInStatus>;
+  status(): Promise<DesktopSignInStatus>;
+  cancel(): Promise<void>;
+}
+
+export function getDesktopSignInApi(): DesktopSignInApi | null {
+  if (getDesktopRuntime() !== 'wails') return null;
+  // A host that reports no auth return has no proxy to put a session in, and
+  // says so rather than opening a browser that leads nowhere.
+  if (readDesktopBootReport()?.authReturn.state === 'unavailable') return null;
+
+  const service = () =>
+    import('./wailsbindings/bettercomms/desktop-wails/authservice.js');
+  return {
+    begin: async () => toSignInStatus(await (await service()).BrowserSignInBegin()),
+    status: async () =>
+      toSignInStatus(await (await service()).BrowserSignInStatus()),
+    cancel: async () => {
+      await (await service()).BrowserSignInCancel();
+    },
+  };
+}
+
+const SIGN_IN_STATES: readonly DesktopSignInState[] = [
+  'idle',
+  'waiting',
+  'complete',
+  'failed',
+];
+
+/**
+ * Narrows the host's status to the four states the page knows.
+ *
+ * The generated binding also carries Go's zero value for the enum, which is the
+ * empty string. A window that treated that as "waiting" would poll forever, so
+ * anything unrecognised is reported as a failure with the host's own words.
+ */
+function toSignInStatus(raw: {
+  state: string;
+  code?: string;
+  confirmUrl?: string;
+  detail: string;
+  expiresAt?: number;
+}): DesktopSignInStatus {
+  const state = SIGN_IN_STATES.find((known) => known === raw.state);
+  return {
+    state: state ?? 'failed',
+    code: raw.code || undefined,
+    confirmUrl: raw.confirmUrl || undefined,
+    detail: raw.detail || 'The desktop host did not explain the sign-in state.',
+    expiresAt: raw.expiresAt || undefined,
+  };
+}

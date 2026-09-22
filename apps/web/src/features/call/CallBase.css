@@ -22,8 +22,8 @@ h1 {
   width: 206px;
   height: 100%;
   border-radius: 12px;
-  border: 1px solid #39413a;
-  background: #242b27;
+  border: 1px solid var(--muted);
+  background: var(--card);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -31,25 +31,33 @@ h1 {
   overflow: hidden;
 }
 .camera-tile.self {
-  background: radial-gradient(ellipse at 35% 10%, #364435, #242c27 70%);
+  background: radial-gradient(ellipse at 35% 10%, var(--accent), var(--card) 70%);
 }
+/* Pinned to the tile's own corners rather than floated above its floor: the
+   name sits in one and the microphone in the other, which is where the eye
+   looks for them. */
 .tile-caption {
   position: absolute;
-  bottom: 10px;
-  left: 11px;
-  right: 11px;
+  inset: auto 10px 8px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   font-size: 11px;
-  color: #c1cdc0;
+  color: var(--muted-foreground);
+}
+.tile-caption > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .camera-tile.invite {
-  background: #191d1e;
-  border: 1px dashed #353d3a;
+  background: var(--card);
+  border: 1px dashed var(--muted);
   flex-direction: column;
   gap: 11px;
-  color: #828f87;
+  color: var(--muted-foreground);
   font-size: 11px;
 }
 .invite-circle {
@@ -57,21 +65,15 @@ h1 {
   place-items: center;
   width: 35px;
   height: 35px;
-  border: 1px solid #374139;
+  border: 1px solid var(--muted);
   border-radius: 50%;
-  color: #9eafa0;
+  color: var(--muted-foreground);
 }
+/* Nothing of its own to show. The panes inside it are what you see, and this
+   is only the grid they sit in — it drew a second border around the first. */
 .content-stage {
   flex: 1;
   min-height: 280px;
-  border: 1px solid #343c36;
-  border-radius: 13px;
-  background: radial-gradient(
-    ellipse at 50% 80%,
-    #222d24 0%,
-    #1b231f 43%,
-    #1a201d 85%
-  );
   position: relative;
   display: flex;
   flex-direction: column;
@@ -79,28 +81,76 @@ h1 {
 }
 .stage-topline,
 .stage-bottomline {
+  position: absolute;
+  z-index: 3;
+  left: 10px;
+  right: 10px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 17px 18px;
-  z-index: 1;
-  flex-shrink: 0;
+  gap: 8px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 140ms ease;
 }
+.stage-topline { top: 10px; }
+.stage-bottomline { bottom: 10px; }
+
+/* Who is sharing stays put. Hiding that until somebody moves a mouse would
+   make the one permanent fact about the pane the hardest to find, and a grid of
+   two shares would be two anonymous rectangles. The controls are what fades. */
 .stage-topline > span:first-child {
+  opacity: 1;
+}
+.stage-topline,
+.stage-bottomline {
+  opacity: 1;
+}
+.stage-pane-actions,
+.stage-bottomline > div {
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+.stage-content-pane:hover .stage-pane-actions,
+.stage-content-pane:hover .stage-bottomline > div,
+.stage-content-pane:focus-within .stage-pane-actions,
+.stage-content-pane:focus-within .stage-bottomline > div {
+  opacity: 1;
+}
+
+.stage-topline > *,
+.stage-bottomline > * {
+  pointer-events: auto;
+}
+
+/* Each group is its own pill, legible over whatever is underneath it. */
+.stage-topline > span:first-child,
+.stage-pane-actions,
+.stage-bottomline > div {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 9px;
-  letter-spacing: 1.1px;
-  color: #81947f;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: var(--radius-lg);
+  background: color-mix(in oklch, var(--background) 78%, transparent);
+  backdrop-filter: blur(10px);
+  font-size: 11px;
+  color: var(--foreground);
 }
+
+/* The hint about the scroll wheel. It is on the zoom control's tooltip now,
+   and it keeps its slot so the zoom group stays in the right-hand corner and
+   the left one is free for the copilot's controls. */
+.stage-bottomline > span:first-child {
+  visibility: hidden;
+}
+
 .stage-badge {
   font-size: 10px;
-  color: #8fa48c;
-  border: 1px solid #354631;
-  border-radius: 5px;
-  padding: 4px 7px;
-  background: #283224;
+  color: var(--muted-foreground);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+  background: color-mix(in oklch, var(--muted) 70%, transparent);
 }
 
 /* Established peer media can continue while signaling reconnects. */
@@ -146,21 +196,21 @@ h1 {
     600 23px 'Manrope Variable',
     sans-serif;
   letter-spacing: -0.6px;
-  color: #d9e4d6;
+  color: var(--primary);
   margin-top: 23px;
 }
 .stage-empty p {
   font-size: 12px;
   line-height: 1.9;
-  color: #8c9b8c;
+  color: var(--muted-foreground);
   margin: 12px 0 20px;
 }
 .stage-empty .button {
   font-size: 11px;
   height: 36px;
-  background: #303e2e;
-  border-color: #475942;
-  color: #d6e9ca;
+  background: var(--accent);
+  border-color: var(--ring);
+  color: var(--primary);
 }
 .share-illustration {
   height: 76px;
@@ -173,9 +223,9 @@ h1 {
   top: 0;
   width: 108px;
   height: 75px;
-  border: 1px solid #708565;
+  border: 1px solid var(--ring);
   border-radius: 7px;
-  background: #34442f;
+  background: var(--accent);
   transform: rotate(-7deg);
   text-align: left;
   padding: 7px;
@@ -184,7 +234,7 @@ h1 {
 .illustration-window > span {
   height: 3px;
   width: 3px;
-  background: #91a37f;
+  background: var(--ring);
   border-radius: 50%;
   display: inline-block;
   margin: 0 2px 7px 0;
@@ -195,12 +245,12 @@ h1 {
   align-items: center;
   gap: 7px;
   height: 45px;
-  color: #8eaa7b;
-  border-top: 1px solid #5b7052;
+  color: var(--ring);
+  border-top: 1px solid var(--ring);
   padding-top: 7px;
 }
 .illustration-content > div {
-  background: #5b704f;
+  background: var(--ring);
   width: 6px;
   height: 20px;
   border-radius: 3px;
@@ -217,15 +267,15 @@ h1 {
   display: grid;
   place-items: center;
   border-radius: 12px;
-  background: #bde392;
-  color: #38502e;
+  background: var(--primary);
+  color: var(--accent);
   transform: rotate(8deg);
   box-shadow: 0 3px 15px #0003;
 }
 .stage-bottomline {
   padding: 11px 16px;
   font-size: 10px;
-  color: #81927d;
+  color: var(--muted-foreground);
 }
 .stage-bottomline > span {
   display: flex;
@@ -242,38 +292,65 @@ h1 {
   display: flex;
   align-items: center;
   font-size: 10px;
-  color: #a4b69b;
+  color: var(--primary);
 }
 .stage-bottomline > div > span {
   height: 14px;
   width: 1px;
-  background: #3c4937;
+  background: var(--accent);
 }
 .focus-layout .camera-strip {
   display: none;
 }
+/*
+  Three columns, and the controls own the middle one.
+
+  Flex with space-between put the box wherever the connection chip's width left
+  it, so it drifted as the wording changed — "Waiting for your people" and
+  "Voice connected" are not the same length. Equal side columns from a zero
+  basis put the box on the centre of the stage and keep it there.
+*/
 .call-footer {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
   gap: 14px;
   min-height: 94px;
   flex-shrink: 0;
+}
+.call-footer > .connection-status {
+  grid-column: 1;
+  justify-self: start;
+  min-width: 0;
+}
+.call-footer > .call-controls {
+  grid-column: 2;
+}
+/* Status text shares the left column rather than taking a column of its own,
+   which would push the middle one off centre. */
+.call-footer > .push-to-talk-status,
+.call-footer > .signaling-reconnecting {
+  grid-row: 1;
+  grid-column: 1;
+  justify-self: start;
+  align-self: end;
+  padding-bottom: 2px;
 }
 .footer-note {
   display: flex;
   align-items: center;
   gap: 7px;
-  color: #748479;
+  color: var(--muted-foreground);
   font-size: 10px;
 }
 .footer-note svg {
-  color: #9fc78b;
+  color: var(--primary);
 }
 .call-controls {
   display: flex;
   align-items: center;
   gap: 9px;
+  padding: 0.4rem;
 }
 @media (min-width: 1650px) {
   .camera-strip {
@@ -394,9 +471,7 @@ h1 {
   transform: scaleX(-1);
 }
 .tile-caption {
-  background: linear-gradient(transparent, #0006);
   text-shadow: 0 1px 3px #000;
-  padding-top: 8px;
 }
 .video-viewport {
   flex: 1;
@@ -424,7 +499,7 @@ h1 {
   pointer-events: none;
 }
 .has-share {
-  background: #090c0a;
+  background: var(--background);
 }
 .has-share .video-viewport {
   min-height: 250px;
@@ -439,7 +514,7 @@ h1 {
   display: flex;
   gap: 5px;
   align-items: center;
-  color: #ee9390;
+  color: var(--destructive);
   margin-left: 12px;
 }
 .stage-topline select {
@@ -451,8 +526,8 @@ h1 {
   position: absolute;
   right: 8px;
   top: 8px;
-  color: #dce7da;
-  background: #152015b0;
+  color: var(--primary);
+  background: color-mix(in oklch, var(--card) 69%, transparent);
   border-radius: 6px;
   padding: 4px;
 }
@@ -476,35 +551,7 @@ h1 {
 }
 .peer-volume small {
   font-size: 9px;
-  color: #9dad96;
-}
-.recording-downloads {
-  padding: 16px 0 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.recording-downloads strong {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-}
-.recording-downloads > span {
-  font-size: 11px;
-  color: #a0ada0;
-}
-.recording-downloads a {
-  font-size: 11px;
-  padding: 8px 12px;
-  border: 1px solid #384533;
-  border-radius: 7px;
-  color: #bedaa6;
-  overflow-wrap: anywhere;
-}
-.recording-downloads a span {
-  float: right;
-  color: #819479;
+  color: var(--primary);
 }
 .connecting-dot {
   display: inline-block;
@@ -531,7 +578,7 @@ h1 {
 .friend-status,
 .friend-pending {
   font-size: 12px;
-  color: #9caf98;
+  color: var(--primary);
   line-height: 1.7;
 }
 .content-stage {
@@ -590,8 +637,8 @@ h1 {
   }
 }
 .stats-panel {
-  background: #18231b;
-  border: 1px solid #354831;
+  background: var(--card);
+  border: 1px solid var(--accent);
   border-radius: 9px;
   padding: 16px;
   font-size: 12px;
@@ -606,7 +653,7 @@ h1 {
   gap: 7px;
 }
 .stats-panel small {
-  color: #95ad8d;
+  color: var(--ring);
 }
 .side-layout .camera-strip {
   flex-direction: column;
@@ -632,12 +679,12 @@ h1 {
   border: 0;
   background: transparent;
   cursor: ns-resize;
-  accent-color: #9bbf7b;
+  accent-color: var(--ring);
   z-index: 2;
 }
 .camera-resize::-webkit-slider-runnable-track {
   height: 2px;
-  background: #374333;
+  background: var(--accent);
   border-radius: 2px;
 }
 .camera-resize::-webkit-slider-thumb {
@@ -645,20 +692,20 @@ h1 {
   width: 34px;
   height: 6px;
   margin-top: -2px;
-  background: #728669;
+  background: var(--ring);
   border-radius: 4px;
 }
 .camera-resize:hover::-webkit-slider-thumb {
-  background: #bddf9b;
+  background: var(--primary);
 }
 .camera-resize::-moz-range-track {
   height: 2px;
-  background: #374333;
+  background: var(--accent);
 }
 .camera-resize::-moz-range-thumb {
   width: 34px;
   height: 6px;
-  background: #728669;
+  background: var(--ring);
   border: 0;
   border-radius: 4px;
 }
@@ -703,3 +750,22 @@ h1 {
     min-height: 68px;
   }
 }
+
+/* A camera-less tile shows the person's blobatar. See CameraTile.tsx.
+
+   The face is already alive on its own — every presence avatar blinks and
+   breathes — so speaking is said by the tile around it rather than by a second
+   animation competing with the first. The library's pose surface is the eyes;
+   it has no mouth channel to move, so a talking mouth is not something this
+   can honestly draw. */
+/* Bounded on both axes. Height alone let focus mode — where one tile becomes
+   the whole window — grow the face until it filled the screen. */
+.tile-face {
+  width: auto;
+  height: min(42%, 40cqw, 200px);
+  aspect-ratio: 1;
+}
+.camera-tile {
+  container-type: size;
+}
+

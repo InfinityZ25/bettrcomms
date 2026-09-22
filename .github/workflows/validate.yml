@@ -3,6 +3,67 @@ on: [push, pull_request]
 permissions:
   contents: read
 jobs:
+  wails-windows:
+    name: Wails Windows build and native contracts
+    runs-on: windows-latest
+    timeout-minutes: 35
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache-dependency-path: apps/desktop-wails/go.sum
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: Install pinned Wails CLI
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.18
+      - name: Build and validate Wails with bundled FFmpeg
+        run: ./scripts/build-desktop-wails.ps1
+      - name: Verify bundled runtime without a private installation
+        working-directory: apps/desktop-wails
+        run: |
+          $env:BETTERCOMMS_TEST_BUNDLE_DIR = Join-Path $PWD 'bin'
+          go test -count=1 -v ./internal/native/ffmpegsetup -run 'TestBundledRuntime|TestStagedBundle'
+      - name: Verify custom API origin survives packaging
+        run: ./scripts/test-wails-build-origin.ps1
+      # Hardware-dependent tests explicitly report missing devices/runtimes.
+      # A hosted-runner pass does not establish NVIDIA/AMD or interactive UI acceptance.
+      - name: Verify staged native assets match their checked-in sources
+        working-directory: apps/desktop-wails
+        run: go test -count=1 ./internal/native/dspsetup
+      - name: Install NSIS packaging compiler
+        run: |
+          choco install nsis --version=3.11 --yes --no-progress --allow-downgrade
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS installation failed.' }
+      - name: Build per-user Wails installer
+        run: ./scripts/package-desktop-wails.ps1 -SkipBuild -MakeNSIS "${env:ProgramFiles(x86)}/NSIS/makensis.exe"
+      - name: Verify install, locked payloads, upgrade and uninstall preservation
+        run: |
+          $version = (Get-Content apps/desktop-wails/package.json -Raw | ConvertFrom-Json).version
+          ./scripts/test-wails-installer.ps1 -Installer "apps/desktop-wails/bin/bettercomms-wails-$version-windows-x64-setup.exe"
+      - name: Keep the installer for PR testing (not a release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: bettercomms-wails-windows-x64-installer
+          path: apps/desktop-wails/bin/*-setup.exe
+          if-no-files-found: error
+          retention-days: 7
+      - name: Keep the portable build for PR testing (not a release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: bettercomms-wails-windows-x64-portable
+          path: |
+            apps/desktop-wails/bin/bettercomms-wails.exe
+            apps/desktop-wails/bin/ffmpeg/
+          if-no-files-found: error
+          retention-days: 7
   browser-and-api:
     runs-on: ubuntu-latest
     services:

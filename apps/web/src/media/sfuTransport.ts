@@ -22,6 +22,8 @@
  * follow-up rather than guessed at.
  */
 
+import { apiAuthHeaders, apiCredentials, apiHttpUrl } from '../desktop/apiTransport';
+
 export type SfuConnectionState = RTCPeerConnectionState;
 
 export type SfuTransportEventMap = {
@@ -50,8 +52,9 @@ type ServerMessage =
  * to the mesh/P2P transport in that case).
  */
 export async function requestSfuJoin(roomId: string): Promise<SfuJoinResponse> {
-  const response = await fetch(`/api/v1/rooms/${roomId}/sfu-join`, {
-    credentials: 'include',
+  const response = await fetch(apiHttpUrl(`/api/v1/rooms/${encodeURIComponent(roomId)}/sfu-join`), {
+    credentials: apiCredentials(),
+    headers: apiAuthHeaders(),
   });
   if (!response.ok) {
     throw new Error(`sfu-join failed: ${response.status} ${await response.text()}`);

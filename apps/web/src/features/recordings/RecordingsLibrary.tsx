@@ -7,7 +7,9 @@ import {
   Play,
   HardDrive,
 } from 'lucide-react';
+import { Mascot } from '@/components/mascot';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { RecordingPlayer } from './RecordingPlayer';
 import { RecordingDownload } from './RecordingDownload';
 import {
@@ -19,6 +21,21 @@ import {
 } from '@/media/recordingLibrary';
 import type { RecordingResult } from '@/media/types';
 import './RecordingsLibrary.css';
+
+/** 1:05, or 1:02:30 once there is an hour of it. */
+function duration(ms: number) {
+  const total = Math.round(ms / 1000);
+  const seconds = String(total % 60).padStart(2, '0');
+  const minutes = Math.floor(total / 60) % 60;
+  const hours = Math.floor(total / 3600);
+  return hours
+    ? `${hours}:${String(minutes).padStart(2, '0')}:${seconds}`
+    : `${minutes}:${seconds}`;
+}
+
+/** The reader's own locale, to the minute. A recording's seconds are noise. */
+const when = (at: string) =>
+  new Date(at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
 export default function RecordingsLibrary() {
   const requestId = useRef(0);
@@ -67,13 +84,14 @@ export default function RecordingsLibrary() {
   }
   return (
     <div className="recordings-page">
-      <div className="library-storage">
-        <HardDrive size={16} />
-        <span>
-          Saved on this device, across restarts. Export a backup before clearing
-          app or browser data.
-        </span>
-      </div>
+      {items.length > 0 && (
+        <p className="library-storage">
+          <HardDrive size={14} />
+          {items.length} {items.length === 1 ? 'recording' : 'recordings'} ·{' '}
+          {(items.reduce((total, item) => total + item.bytes, 0) / 1048576).toFixed(1)}{' '}
+          MB · on this device only, so export a copy before clearing app data.
+        </p>
+      )}
       {error && <p role="alert">{error}</p>}
       {loading && <p role="status">Opening recording…</p>}
       {selected ? (
@@ -97,7 +115,7 @@ export default function RecordingsLibrary() {
                 }
               }}
             >
-              <input
+              <Input
                 aria-label="Recording title"
                 value={title}
                 maxLength={120}
@@ -146,39 +164,50 @@ export default function RecordingsLibrary() {
         <div className="library-grid">
           {items.length === 0 && !loading ? (
             <div className="library-empty">
-              <Clapperboard size={40} />
-              <h2>Keep the good parts.</h2>
+              <Mascot className="mx-auto w-20" />
+              <h2>Nothing recorded yet.</h2>
               <p>
-                Record a call or screen share. Once stopped, it appears here
-                with a separate mixer for every voice.
+                Record a call or a screen share. What comes back lands here, with
+                a separate mixer for every voice.
               </p>
             </div>
           ) : (
             items.map((item) => (
               <article className="library-card" key={item.id}>
+                {/* Cover and title are one target. Two adjacent controls that
+                    do the same thing is a choice nobody has to make. */}
                 <button
+                  type="button"
                   className="library-open"
                   onClick={() => void show(item.id)}
                   disabled={loading}
                 >
                   <span className="library-cover">
-                    <Clapperboard size={32} />
-                    <span>
-                      <Play size={20} /> Open recording
+                    <Clapperboard size={24} aria-hidden="true" />
+                    <span className="library-play">
+                      <Play size={18} fill="currentColor" aria-hidden="true" />
                     </span>
                   </span>
-                  <strong>{item.title}</strong>
-                  <time>{new Date(item.startedAt).toLocaleString()}</time>
-                  <small>
-                    {Math.round(item.durationMs / 1000)} sec · {item.trackCount}{' '}
-                    tracks · {(item.bytes / 1048576).toFixed(1)} MB
-                  </small>
+                  <span className="library-meta">
+                    <strong>{item.title}</strong>
+                    <time dateTime={item.startedAt}>
+                      {when(item.startedAt)}
+                    </time>
+                    <span className="library-facts">
+                      <span>{duration(item.durationMs)}</span>
+                      <span>
+                        {item.trackCount} {item.trackCount === 1 ? 'track' : 'tracks'}
+                      </span>
+                      <span>{(item.bytes / 1048576).toFixed(1)} MB</span>
+                    </span>
+                  </span>
                 </button>
                 {pendingDelete === item.id ? (
                   <div className="library-delete">
-                    <span>Delete permanently?</span>
+                    <span>Delete this recording for good?</span>
                     <Button
-                      variant="danger"
+                      size="sm"
+                      variant="destructive"
                       onClick={async () => {
                         try {
                           await deleteRecording(item.id);
@@ -191,19 +220,22 @@ export default function RecordingsLibrary() {
                       Delete
                     </Button>
                     <Button
+                      size="sm"
                       variant="ghost"
                       onClick={() => setPendingDelete('')}
                     >
-                      Cancel
+                      Keep it
                     </Button>
                   </div>
                 ) : (
                   <Button
+                    size="sm"
                     variant="ghost"
+                    className="library-remove"
                     onClick={() => setPendingDelete(item.id)}
                     aria-label={'Delete ' + item.title}
                   >
-                    <Trash2 size={14} /> Delete
+                    <Trash2 size={15} />
                   </Button>
                 )}
               </article>

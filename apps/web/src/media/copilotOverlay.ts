@@ -1,11 +1,12 @@
-import { invoke, isTauri } from '@tauri-apps/api/core';
+import { invokeNativeCopilot as invoke } from '../desktop/copilot';
+import { hasNativeMediaHost } from '../desktop/nativeMedia';
 import { nativeScreenSessionForTrack } from './nativeCaptureRegistry';
 import { readCopilotSettings, type CopilotMark, type VisualCopilot } from './visualCopilot';
 
 let activeRenderer: symbol | undefined;
 
 export function attachCopilotOverlay(copilot: VisualCopilot, names: () => Record<string, string>, onStatus: (message: string) => void = () => {}) {
-  if (!isTauri()) { onStatus('Browser sharing: indications appear inside BetterComms only. Share from the current Windows desktop build to show them over the shared application.'); return () => {}; }
+  if (!hasNativeMediaHost()) { onStatus('Browser sharing: indications appear inside BetterComms only. Share from the current Windows desktop build to show them over the shared application.'); return () => {}; }
   const renderer = Symbol('copilot overlay');
   activeRenderer = renderer;
   let stopped = false;
