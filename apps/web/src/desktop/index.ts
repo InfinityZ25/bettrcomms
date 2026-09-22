@@ -39,6 +39,11 @@ export {
 } from './bridge';
 
 export {
+  resetWailsFrontendRuntime,
+  startWailsFrontendRuntime,
+} from './wailsFrontendRuntime';
+
+export {
   browserCapabilities,
   describeCapabilityFallback,
   describeDesktopRuntime,

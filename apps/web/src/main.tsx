@@ -9,6 +9,13 @@ import { MotionConfig } from 'motion/react';
 import '@fontsource-variable/dm-sans';
 import '@fontsource-variable/manrope';
 import './styles.css';
+import { startWailsFrontendRuntime } from '@/desktop/wailsFrontendRuntime';
+
+// Before the first render: the Wails runtime is what reports this page's
+// non-client regions to the host, and a title bar whose regions arrive after
+// the first click is a title bar Windows does not hit-test.
+startWailsFrontendRuntime();
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ThemeProvider defaultTheme="dark" storageKey="bettercomms-ui-theme">
