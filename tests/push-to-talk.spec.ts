@@ -131,11 +131,14 @@ for (const route of ['automatic', 'relay']) {
       const name = `PTT ${suffix}`;
       const { room } = await json(await a.request.post('/api/v1/rooms', { headers: { Origin: origin }, data: { name } }));
       await json(await a.request.post(`/api/v1/rooms/${room.id}/members`, { headers: { Origin: origin }, data: { user_id: guest.id } }));
+      // Chat now lives in conversations; keep the channel call alive while typing there.
+      await json(await a.request.post('/api/v1/rooms/direct', { headers: { Origin: origin }, data: { user_id: guest.id } }));
       const sender = await a.newPage(); const receiver = await b.newPage();
       for (const page of [sender, receiver]) {
         await page.goto('/');
         // Observe the real call engine without adding production-only test hooks.
         await page.evaluate(async route => {
+          localStorage.setItem('bc-connection-mode', 'automatic');
           localStorage.setItem('bc-voice-route', route);
           const loaded = performance.getEntriesByType('resource').find(entry => /\/src\/media\/engine\.ts(?:\?|$)/.test(entry.name));
           if (!loaded) throw new Error('Call engine module was not loaded');
@@ -146,6 +149,7 @@ for (const route of ['automatic', 'relay']) {
             original.call(this, enabled);
           };
         }, route);
+        await page.getByRole('button', { name: 'Calls', exact: true }).click();
         await page.getByRole('button', { name, exact: true }).click();
       }
       await sender.evaluate(async () => {
@@ -185,7 +189,7 @@ for (const route of ['automatic', 'relay']) {
       const initialCapture = await captureState();
       expect(initialCapture).toMatchObject({ state: 'live', enabled: true });
       const muteButton = sender.getByRole('button', { name: 'Mute microphone', exact: true });
-      await expect(muteButton).not.toHaveClass(/danger/);
+      await expect(muteButton).not.toHaveClass(/\btext-destructive\b/);
       const ownerPresence = async () => {
         const response = await b.request.get('/api/v1/call-presence');
         const value = await json(response);
@@ -222,16 +226,17 @@ for (const route of ['automatic', 'relay']) {
       await sender.keyboard.up('v');
       await expect.poll(micEnabled).toBe(false);
       expect(await captureState()).toEqual(initialCapture);
-      await expect(muteButton).not.toHaveClass(/danger/);
+      await expect(muteButton).not.toHaveClass(/\btext-destructive\b/);
       await expect.poll(ownerPresence).toBe(false);
 
-      await sender.getByRole('button', { name: 'Toggle chat' }).click();
-      const composer = sender.getByRole('textbox', { name: 'Message your room' });
+      await sender.getByRole('button', { name: 'Messages', exact: true }).click();
+      await sender.getByRole('button', { name: 'PTTReceiver', exact: true }).click();
+      const composer = sender.getByRole('textbox', { name: 'Message PTTReceiver', exact: true });
       await composer.fill('v');
       await composer.press('v');
       await expect.poll(micEnabled).toBe(false);
       await composer.fill('');
-      await sender.getByRole('button', { name: 'Close chat' }).click();
+      await sender.getByRole('button', { name: `Back to the call in ${name}`, exact: true }).click();
       await expect.poll(micEnabled).toBe(false);
       await expect.poll(rms).toBeLessThan(0.001);
       await sender.keyboard.down('v');
@@ -275,7 +280,7 @@ for (const route of ['automatic', 'relay']) {
       await sender.keyboard.down('Space'); await sender.keyboard.down('Space');
       await expect.poll(micEnabled).toBe(true);
       await sender.keyboard.up('Space'); await expect.poll(micEnabled).toBe(false);
-      await expect(muteButton).not.toHaveClass(/danger/);
+      await expect(muteButton).not.toHaveClass(/\btext-destructive\b/);
 
       await settings(sender);
       const bind = sender.getByRole('button', { name: 'Set push-to-talk shortcut' });

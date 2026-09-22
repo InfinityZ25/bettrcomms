@@ -78,6 +78,21 @@ included in the desktop PR. Do not claim the goal complete from unit tests alone
 
 ## Validation during implementation
 
+2026-09-21: both received-audio PTT cases now pass against the real local API
+with two Chromium clients and a synthetic tone, for automatic and explicit
+server voice routes. They keep a channel call running while typing in the
+current direct-conversation UI, then return through the call dock. Explicitly
+select Calls before the channel: creating a conversation otherwise opens the
+Messages section. The initial run timed out waiting for that absent channel
+button, before starting media; the second case was interrupted to fix the same
+navigation issue. Preserve bc-voice-route for server voice; bc-connection-mode
+is a separate ICE/TURN policy and remains automatic in these cases. Received
+RMS, mute presence, focus release, shortcut changes, source continuity, pending
+replacement and rejoin assertions remain. These are browser transport checks,
+not physical background PTT or packaged Wails acceptance. Final complete PTT
+file: all six cases passed in 1.1 minutes, including updated checks against the
+actual destructive mute-button style instead of the removed danger class.
+
 2026-09-21: updated push-to-talk settings navigation, switch roles and modal
 dismissal; the side-mouse target now selects the visible level-two heading
 rather than an ambiguous accessible label. Four targeted PTT browser cases
