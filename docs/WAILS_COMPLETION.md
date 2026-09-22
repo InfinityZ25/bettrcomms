@@ -78,6 +78,19 @@ included in the desktop PR. Do not claim the goal complete from unit tests alone
 
 ## Validation during implementation
 
+2026-09-21: the integral bettercomms browser case passes in 40.5 seconds.
+Updated it to send persistent chat through a direct conversation, explicitly
+select the channel under Calls, use current diagnostics/settings controls,
+return through the live-call dock and export from the persisted recording
+library. Real pointer movement reveals auto-hidden call controls; no forced
+clicks. Fullscreen equal-size cameras remain checked with a four-pixel centre
+tolerance, measured within media space after the deliberate recording-indicator
+inset. Preserved diagnostic secret exclusion, two-camera decode, two simultaneous
+synthetic shares, independent complete/nonempty microphone/camera/screen/system
+manifest entries, and remote track removal on stop/leave. Dev-auth retry respects
+the existing limiter. The complete 92-case browser suite has now been launched
+sequentially; its result is still pending. This is not native Wails acceptance.
+
 2026-09-21: visual-copilot tests now use the Settings dialog, current switches
 and custom selectors, and explicitly close the dialog before selecting Calls.
 The first two-client run exposed a real regression: the transport received the

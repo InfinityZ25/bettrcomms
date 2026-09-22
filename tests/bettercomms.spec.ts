@@ -1,4 +1,5 @@
 import { expect, test, type APIResponse, type BrowserContext, type Page } from '@playwright/test';
+import { openSettingsCategory } from './settings-navigation';
 
 type User = { id: string; name: string; email: string };
 type Room = { id: string; name: string };
@@ -48,10 +49,16 @@ async function json<T>(response: APIResponse): Promise<T> {
 }
 
 async function devLogin(context: BrowserContext, name: string, email: string): Promise<User> {
-  const response = await context.request.post('/api/v1/auth/dev', {
-    headers: { Origin: origin },
-    data: { name, email },
-  });
+  let response: APIResponse;
+  const deadline = Date.now() + 65_000;
+  for (;;) {
+    response = await context.request.post('/api/v1/auth/dev', {
+      headers: { Origin: origin }, data: { name, email },
+    });
+    if (response.status() !== 429 || Date.now() >= deadline) break;
+    await response.dispose();
+    await new Promise(resolve => setTimeout(resolve, 5000));
+  }
   const body = await json<User | { user: User }>(response);
   return 'user' in body ? body.user : body;
 }
@@ -83,33 +90,48 @@ async function expectDecodedVideo(page: Page, selector: string): Promise<void> {
   )).toBe(true);
 }
 
+async function callControl(page: Page, name: string) {
+  // Idle call controls fade out; wake them with actual pointer movement.
+  await page.locator('.call-workspace').hover({ position: { x: 10, y: 10 } });
+  await page.getByRole('button', { name, exact: true }).click();
+}
+
 test('two members chat, call, record separate tracks, and transport a screen share', async ({ browser }) => {
+  test.setTimeout(180_000);
   const ownerContext = await browser.newContext({ acceptDownloads: true, baseURL });
   const guestContext = await browser.newContext({ acceptDownloads: true, baseURL });
 
   try {
     const publicPage = await ownerContext.newPage();
     await publicPage.goto('/');
-    await expect(publicPage.getByRole('button', { name: /sign in to join/i })).toBeVisible();
+    await expect(publicPage.getByRole('button', { name: /workos/i })).toBeVisible();
     await publicPage.screenshot({ path: 'tests/screenshots/public-login.png', fullPage: true });
 
-    const { room } = await prepareRoom(ownerContext, guestContext);
+    const { room, guest } = await prepareRoom(ownerContext, guestContext);
+    await json(await ownerContext.request.post('/api/v1/rooms/direct', {
+      headers: { Origin: origin }, data: { user_id: guest.id },
+    }));
     const ownerPage = publicPage;
     const guestPage = await guestContext.newPage();
     await Promise.all([ownerPage.reload(), guestPage.goto('/')]);
-    await Promise.all([
-      expect(ownerPage.getByRole('button', { name: room.name })).toBeVisible(),
-      expect(guestPage.getByRole('button', { name: room.name })).toBeVisible(),
-    ]);
+    ownerPage.setDefaultTimeout(15_000); guestPage.setDefaultTimeout(15_000);
+    await ownerPage.getByRole('button', { name: 'Messages', exact: true }).click();
+    await ownerPage.getByRole('button', { name: 'Grace E2E', exact: true }).click();
+    await guestPage.getByRole('button', { name: 'Messages', exact: true }).click();
+    await guestPage.getByRole('button', { name: 'Ada E2E', exact: true }).click();
     await ownerPage.screenshot({ path: 'tests/screenshots/signed-room.png', fullPage: true });
 
     const message = `persistent message ${Date.now()}`;
-    await ownerPage.getByRole('textbox', { name: /message your room/i }).fill(message);
+    await ownerPage.getByRole('textbox', { name: 'Message Grace E2E', exact: true }).fill(message);
     await ownerPage.getByRole('button', { name: /send message/i }).click();
     await expect(guestPage.getByText(message)).toBeVisible({ timeout: 3_000 });
     await guestPage.reload();
     await expect(guestPage.getByText(message)).toBeVisible();
 
+    for (const page of [ownerPage, guestPage]) {
+      await page.getByRole('button', { name: 'Calls', exact: true }).click();
+      await page.getByRole('button', { name: room.name, exact: true }).click();
+    }
     await Promise.all([
       ownerPage.getByRole('button', { name: /join call/i }).click(),
       guestPage.getByRole('button', { name: /join call/i }).click(),
@@ -119,12 +141,12 @@ test('two members chat, call, record separate tracks, and transport a screen sha
       expect(guestPage.locator('.camera-tile:not(.self)')).toHaveCount(1),
     ]);
     const network = ownerPage.getByRole('button', { name: 'Connection diagnostics' });
-    await expect(network).toContainText(/Call · \d+ ms/);
+    await expect(network).toHaveAttribute('title', /Call ping: \d+ ms/);
     await network.click();
     const connection = ownerPage.getByRole('region', { name: 'Connection details' });
-    await expect(connection.locator('dl > div').filter({ hasText: 'Signaling server' })).toContainText(/\d+ ms/);
+    await expect(connection.locator('dl > div').filter({ hasText: 'Server' })).toContainText(/\d+ ms/);
     await expect(connection).toContainText('Grace E2E');
-    await connection.getByRole('button', { name: 'Advanced diagnostics' }).click();
+    await connection.getByRole('button', { name: 'Everything else' }).click();
     const advanced = ownerPage.locator('.stats-panel');
     await expect(advanced).toBeVisible();
     await ownerPage.evaluate(() => {
@@ -152,23 +174,22 @@ test('two members chat, call, record separate tracks, and transport a screen sha
     expect(diagnosticText).not.toContain('ice-pwd');
     await ownerPage.screenshot({ path: 'tests/screenshots/call-connection.png', fullPage: true });
 
-    await ownerPage.getByRole('button', { name: /audio and video settings/i }).click();
-    await expect(ownerPage.getByRole('main', { name: 'Settings' })).toBeVisible();
-    await ownerPage.getByRole('button', { name: /back to call/i }).click();
-    await expect(ownerPage.getByRole('main', { name: 'Settings' })).toBeHidden();
+    await openSettingsCategory(ownerPage);
+    await ownerPage.keyboard.press('Escape');
+    await expect(ownerPage.getByRole('dialog', { name: 'Settings', exact: true })).toBeHidden();
     await expect(ownerPage.locator('.camera-tile:not(.self)')).toHaveCount(1);
     await ownerPage.getByRole('button', { name: 'Recordings' }).click();
     await expect(ownerPage.getByRole('main', { name: 'Recordings' })).toBeVisible();
-    await ownerPage.getByRole('button', { name: /back to call/i }).click();
+    await ownerPage.getByRole('button', { name: `Back to the call in ${room.name}`, exact: true }).click();
     await expect(ownerPage.getByRole('main', { name: 'Recordings' })).toBeHidden();
     await expect(ownerPage.locator('.camera-tile:not(.self)')).toHaveCount(1);
 
     // Start with audio only, then require tracks added later to join the same session.
-    await ownerPage.getByRole('button', { name: /record separate tracks/i }).click();
+    await callControl(ownerPage, 'Record separate tracks');
     await expect(ownerPage.getByText(/recording/i).first()).toBeVisible();
     await Promise.all([
-      ownerPage.getByRole('button', { name: /turn on camera/i }).click(),
-      guestPage.getByRole('button', { name: /turn on camera/i }).click(),
+      callControl(ownerPage, 'Turn on camera'),
+      callControl(guestPage, 'Turn on camera'),
     ]);
     await Promise.all([
       expectDecodedVideo(ownerPage, '.camera-tile.self video'),
@@ -176,7 +197,7 @@ test('two members chat, call, record separate tracks, and transport a screen sha
       expectDecodedVideo(guestPage, '.camera-tile:not(.self) video'),
     ]);
 
-    await ownerPage.getByRole('button', { name: 'Fullscreen call' }).click();
+    await callControl(ownerPage, 'Fullscreen call');
     const fullscreenWorkspace = ownerPage.locator('.call-workspace');
     const fullscreenStage = fullscreenWorkspace.locator('.stage');
     await expect.poll(() => ownerPage.evaluate(() => document.fullscreenElement?.classList.contains('call-workspace'))).toBe(true);
@@ -186,8 +207,14 @@ test('two members chat, call, record separate tracks, and transport a screen sha
     const fullscreenGeometry = await fullscreenWorkspace.evaluate((workspace) => {
       const tiles = [...workspace.querySelectorAll<HTMLElement>('.camera-tile:not(.invite)')].map((tile) => tile.getBoundingClientRect());
       const controls = workspace.querySelector<HTMLElement>('.call-controls')?.getBoundingClientRect();
+      const stage = workspace.querySelector<HTMLElement>('.stage')!;
+      const stageBox = stage.getBoundingClientRect();
+      const style = getComputedStyle(stage);
+      const top = parseFloat(style.paddingTop), bottom = parseFloat(style.paddingBottom);
       return {
         viewport: { width: innerWidth, height: innerHeight },
+        // The recording indicator reserves a top inset; centre within usable media space.
+        mediaCenterY: stageBox.y + top + (stageBox.height - top - bottom) / 2,
         tiles: tiles.map(({ x, y, width, height }) => ({ x, y, width, height })),
         controls: controls && { x: controls.x, width: controls.width },
       };
@@ -199,16 +226,16 @@ test('two members chat, call, record separate tracks, and transport a screen sha
     expect(Math.abs(leftCamera.width - rightCamera.width)).toBeLessThan(3);
     expect(Math.abs(leftCamera.height - rightCamera.height)).toBeLessThan(3);
     expect(rightCamera.x).toBeGreaterThan(leftCamera.x + leftCamera.width);
-    expect(Math.abs((leftCamera.y + leftCamera.height / 2) - fullscreenGeometry.viewport.height / 2)).toBeLessThan(4);
+    expect(Math.abs((leftCamera.y + leftCamera.height / 2) - fullscreenGeometry.mediaCenterY)).toBeLessThan(4);
     expect(fullscreenGeometry.controls).toBeTruthy();
     expect(Math.abs((fullscreenGeometry.controls!.x + fullscreenGeometry.controls!.width / 2) - fullscreenGeometry.viewport.width / 2)).toBeLessThan(4);
     await ownerPage.screenshot({ path: '.local/two-camera-fullscreen.png', fullPage: true });
     await ownerPage.mouse.move(20, 450);
-    await ownerPage.getByRole('button', { name: 'Exit fullscreen call' }).click();
+    await callControl(ownerPage, 'Exit fullscreen call');
 
     await ownerPage.evaluate(syntheticDisplayCapture);
-    await ownerPage.getByRole('button', { name: /share screen/i }).click();
-    const ownerShareName = 'Ada E2E’s screen';
+    await callControl(ownerPage, 'Share screen');
+    const ownerShareName = 'Ada E2E';
     await expect(guestPage.getByRole('button', { name: `Watch ${ownerShareName}` })).toBeVisible();
     await expect(guestPage.locator('.video-viewport video')).toHaveCount(0);
     await guestPage.getByRole('button', { name: `Watch ${ownerShareName}` }).click();
@@ -217,8 +244,8 @@ test('two members chat, call, record separate tracks, and transport a screen sha
     await expect(guestPage.getByText('Waiting for video frames…')).toHaveCount(0);
 
     await guestPage.evaluate(syntheticDisplayCapture);
-    await guestPage.getByRole('button', { name: /share screen/i }).click();
-    const guestShareName = 'Grace E2E’s screen';
+    await callControl(guestPage, 'Share screen');
+    const guestShareName = 'Grace E2E';
     await expect(ownerPage.getByRole('button', { name: `Watch ${guestShareName}` })).toBeVisible();
     await ownerPage.getByRole('button', { name: `Watch ${guestShareName}` }).click();
     await expect(ownerPage.locator('.stage-content-pane')).toHaveCount(2);
@@ -226,25 +253,27 @@ test('two members chat, call, record separate tracks, and transport a screen sha
       expectDecodedVideo(ownerPage, '.stage-content-pane video'),
       expectDecodedVideo(guestPage, '.stage-content-pane video'),
     ]);
-    await expect(ownerPage.locator('.stage-content-pane').getByRole('button', { name: `Focus ${guestShareName}` })).toBeVisible();
+    await expect(ownerPage.locator('.stage-content-pane').getByRole('button', { name: `Focus ${guestShareName}’s screen` })).toBeVisible();
     await ownerPage.screenshot({ path: '.local/two-screen-shares.png', fullPage: true });
-    await guestPage.getByRole('button', { name: /stop sharing/i }).click();
+    await callControl(guestPage, 'Stop sharing');
     await expect(ownerPage.locator('.stage-content-pane')).toHaveCount(1);
 
     await guestPage.locator('[aria-label="Adjust participant volume"]').click();
     await expect(guestPage.getByText(/4 media tracks/i)).toBeVisible();
     await ownerPage.waitForTimeout(1_500);
-    await ownerPage.getByRole('button', { name: /stop recording/i }).click();
-    await expect(ownerPage.getByText('Saved to your recordings on this device.')).toBeVisible();
-    await ownerPage.locator('.recording-downloads summary').click();
-    const downloads = ownerPage.locator('.recording-downloads a');
+    await callControl(ownerPage, 'Stop recording');
+    await expect(ownerPage.getByText('Recording saved', { exact: true })).toBeVisible();
+    await ownerPage.getByRole('button', { name: 'Open it', exact: true }).click();
+    await ownerPage.locator('.library-open').click();
+    await ownerPage.locator('.recording-exports summary').click();
+    const downloads = ownerPage.locator('.recording-exports a');
     await expect.poll(() => downloads.count()).toBeGreaterThanOrEqual(3);
-    await expect(ownerPage.locator('.recording-downloads a[download="manifest.json"]')).toBeVisible();
+    await expect(ownerPage.locator('.recording-exports a[download="manifest.json"]')).toBeVisible();
     const mediaNames = await downloads.evaluateAll((links) => links.map((link) => link.getAttribute('download') ?? '').filter((name) => name !== 'manifest.json'));
     expect(mediaNames.length).toBeGreaterThanOrEqual(2);
     expect(mediaNames.every((name) => /\.(webm|ogg|mp4)$/.test(name))).toBeTruthy();
 
-    const manifestLink = ownerPage.locator('.recording-downloads a[download="manifest.json"]');
+    const manifestLink = ownerPage.locator('.recording-exports a[download="manifest.json"]');
     await expect(manifestLink).toHaveAttribute('href', /^blob:/);
     const manifest = await manifestLink.evaluate(async (link: HTMLAnchorElement) => {
       const response = await fetch(link.href);
@@ -256,12 +285,13 @@ test('two members chat, call, record separate tracks, and transport a screen sha
     expect(manifest.tracks.some((track) => track.source === 'screen' && track.status === 'complete' && track.bytes > 0)).toBeTruthy();
     expect(manifest.tracks.some((track) => track.source === 'system' && track.status === 'complete' && track.bytes > 0)).toBeTruthy();
 
-    await ownerPage.getByRole('button', { name: /stop sharing/i }).click();
+    await ownerPage.getByRole('button', { name: `Back to the call in ${room.name}`, exact: true }).click();
+    await callControl(ownerPage, 'Stop sharing');
     await expect(guestPage.locator('.video-viewport video')).toHaveCount(0);
     await expect(guestPage.getByText(/2 media tracks/i)).toBeVisible();
-    await ownerPage.getByRole('button', { name: /turn off camera/i }).click();
+    await callControl(ownerPage, 'Turn off camera');
     await expect(guestPage.locator('.camera-tile:not(.self) video')).toHaveCount(0);
-    await ownerPage.getByRole('button', { name: /leave call/i }).click();
+    await callControl(ownerPage, 'Leave call');
     await expect(guestPage.locator('.camera-tile:not(.self):not(.invite)')).toHaveCount(0);
   } finally {
     await Promise.all([ownerContext.close(), guestContext.close()]);
