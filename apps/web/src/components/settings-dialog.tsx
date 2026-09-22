@@ -71,7 +71,7 @@ export function SettingsDialog({ open, onOpenChange, user, noise, onNoiseChange,
             <header className="shrink-0 border-b border-border/60 px-5 py-4 pr-16 sm:px-7 sm:pr-16">
               <div className="mb-3 md:hidden">
                 <Select value={page} onValueChange={(value) => { if (value) setPage(value as SettingsPage); }}>
-                  <SelectTrigger className="w-full"><SelectValue>{current.label}</SelectValue></SelectTrigger>
+                  <SelectTrigger className="w-full" aria-label="Settings category"><SelectValue>{current.label}</SelectValue></SelectTrigger>
                   <SelectContent align="start">
                     {pages.map(({ id, label }) => <SelectItem key={id} value={id}>{label}</SelectItem>)}
                   </SelectContent>

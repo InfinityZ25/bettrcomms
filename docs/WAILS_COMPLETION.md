@@ -78,6 +78,18 @@ included in the desktop PR. Do not claim the goal complete from unit tests alone
 
 ## Validation during implementation
 
+2026-09-21: all five remaining failures from the initial targeted browser run
+are resolved. Direct navigation now exercises the actual Messages section and
+one-click conversation Call action; two real API clients verify friend labels,
+remote call presence, mute propagation and removal after leave (one test passed).
+Device tests now exercise the Settings dialog/Voice & devices page rather than
+the retired hash screen/native selects. They preserve no-capture-on-open,
+five-second microphone playback, camera frames, denied permissions, late-track
+cleanup, live output routing, devicechange refresh and mobile overflow checks.
+All four passed. Added an accessible name to the mobile settings-category picker.
+232 unit tests passed. This resolves that targeted set, not the full E2E suite
+or native Wails acceptance; a broader browser run is the next gate.
+
 2026-09-21: resolved the three connection-status browser failures. Tests now
 observe the actual icon-only control's tooltip/accessibility description and
 wait for the signaling event subscription, not removed button text. Fixed real

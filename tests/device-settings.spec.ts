@@ -5,12 +5,21 @@ const baseURL = process.env.E2E_BASE_URL ?? 'http://localhost:5173';
 
 async function openSettings(page: Page): Promise<void> {
   await page.goto('/');
-  await page.getByRole('button', { name: /audio and video settings/i }).click();
-  await expect(page).toHaveURL(/#\/settings$/);
-  await expect(page.getByRole('main', { name: 'Settings' })).toBeVisible();
-  await expect(
-    page.getByRole('heading', { name: 'Settings', level: 1 }),
-  ).toBeVisible();
+  await showSettings(page);
+}
+
+async function showSettings(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Account options', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Settings', exact: true });
+  await expect(dialog).toBeVisible();
+  const category = dialog.getByRole('combobox', { name: 'Settings category' });
+  if (await category.isVisible()) {
+    await category.click();
+    await page.getByRole('option', { name: 'Voice & devices', exact: true }).click();
+  } else {
+    await dialog.getByRole('button', { name: 'Voice & devices', exact: true }).click();
+  }
   await expect(
     page.getByRole('region', { name: /media devices/i }),
   ).toBeVisible();
@@ -47,16 +56,15 @@ test('settings are passive until asked, then record a five-second fake microphon
           .__deviceCaptureCalls.length,
     ),
   ).toBe(0);
-  await page.goBack();
-  await expect(page.getByRole('main', { name: 'Settings' })).toBeHidden();
-  await expect(
-    page.getByRole('button', { name: /audio and video settings/i }),
-  ).toBeVisible();
-  await page.goForward();
-  await expect(page.getByRole('main', { name: 'Settings' })).toBeVisible();
+  const locationBefore = page.url();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog', { name: 'Settings', exact: true })).toBeHidden();
+  await expect(page).toHaveURL(locationBefore);
+  await showSettings(page);
+  await expect(page).toHaveURL(locationBefore);
   await page.reload();
-  await expect(page).toHaveURL(/#\/settings$/);
-  await expect(page.getByRole('main', { name: 'Settings' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Settings', exact: true })).toBeHidden();
+  await showSettings(page);
   expect(
     await page.evaluate(
       () =>
@@ -204,7 +212,8 @@ test('output selection applies live and the routing helper follows stored output
     });
   });
   await openSettings(page);
-  await page.getByLabel('Output device').selectOption('speaker-realistic');
+  await page.getByRole('combobox', { name: 'Output device', exact: true }).click();
+  await page.getByRole('option', { name: 'Desk speakers', exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => localStorage.getItem('bc-output')))
     .toBe('speaker-realistic');
@@ -305,19 +314,16 @@ test('devicechange refreshes the lists and the settings screen remains usable on
     });
   });
   await openSettings(page);
-  await expect(
-    page
-      .getByLabel('Microphone')
-      .getByRole('option', { name: 'Default microphone' }),
-  ).toHaveCount(1);
+  await page.getByRole('combobox', { name: 'Microphone', exact: true }).click();
+  await expect(page.getByRole('option', { name: 'Default microphone', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
   await page.evaluate(() =>
     (window as unknown as { __changeDevices(): void }).__changeDevices(),
   );
-  await expect(
-    page
-      .getByLabel('Microphone')
-      .getByRole('option', { name: 'USB microphone' }),
-  ).toHaveCount(1);
+  await page.getByRole('combobox', { name: 'Microphone', exact: true }).click();
+  await expect(page.getByRole('option', { name: 'USB microphone', exact: true })).toBeVisible();
+  await expect(page.getByRole('option', { name: 'Default microphone', exact: true })).toHaveCount(0);
+  await page.keyboard.press('Escape');
   await page.screenshot({
     path: '.local/device-settings-mobile.png',
     fullPage: true,

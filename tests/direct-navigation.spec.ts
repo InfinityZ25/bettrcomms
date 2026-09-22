@@ -45,23 +45,28 @@ test('direct rooms use the other friend name and share call presence', async ({ 
     const gracePage = await graceContext.newPage();
     await Promise.all([adaPage.goto('/'), gracePage.goto('/')]);
     for (const page of [adaPage, gracePage]) {
-      await expect(page.getByRole('region', { name: 'Rooms' })).toBeVisible();
+      await page.getByRole('button', { name: 'Messages', exact: true }).click();
       await expect(page.getByRole('region', { name: 'Direct messages' })).toBeVisible();
     }
     await expect(adaPage.getByRole('button', { name: 'Direct Grace' })).toBeVisible();
     await expect(gracePage.getByRole('button', { name: 'Direct Ada' })).toBeVisible();
     await adaPage.getByRole('button', { name: 'Direct Grace' }).click();
     await gracePage.getByRole('button', { name: 'Direct Ada' }).click();
-    await expect(adaPage.getByRole('heading', { name: 'Direct Grace' })).toBeVisible();
-    await expect(gracePage.getByRole('heading', { name: 'Direct Ada' })).toBeVisible();
+    const adaConversation = adaPage.getByRole('region', { name: 'Conversation with Direct Grace', exact: true });
+    const graceConversation = gracePage.getByRole('region', { name: 'Conversation with Direct Ada', exact: true });
+    await expect(adaConversation.locator('header')).toContainText('Direct Grace');
+    await expect(graceConversation.locator('header')).toContainText('Direct Ada');
 
-    await adaPage.getByRole('button', { name: 'Join call' }).click();
+    await adaConversation.getByRole('button', { name: 'Call', exact: true }).click();
     await expect(adaPage.getByRole('button', { name: 'Leave call' })).toBeVisible();
-    const graceLobby = gracePage.getByRole('region', { name: 'Call lobby' });
-    await expect(graceLobby).toContainText('Direct Ada');
-    await expect(gracePage.getByRole('list', { name: 'Direct Ada call participants' })).toContainText('Direct Ada');
+    // The conversation stays open rather than being replaced by a call lobby.
+    await expect(graceConversation).toBeVisible();
+    const graceParticipants = gracePage.getByRole('list', { name: 'Direct Ada call participants' });
+    await expect(graceParticipants).toContainText('Direct Ada');
     await adaPage.getByRole('button', { name: 'Mute microphone' }).click();
-    await expect(graceLobby).toContainText('Muted');
+    await expect(graceParticipants.getByRole('img', { name: 'Muted', exact: true })).toBeVisible();
+    await adaPage.getByRole('button', { name: 'Leave call' }).click();
+    await expect(graceParticipants).toHaveCount(0);
   } finally {
     await Promise.allSettled([adaContext.close(), graceContext.close()]);
   }
