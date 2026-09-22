@@ -29,12 +29,13 @@ export default function ConnectionStatus({
 }) {
   const [serverRtt, setServerRtt] = useState<number | null>(null);
   useEffect(() => {
+    setServerRtt(null);
     if (!signaling) {
-      setServerRtt(null);
       return;
     }
     const onLatency = (event: CustomEvent<{ rttMs: number | null }>) => {
-      setServerRtt(event.detail.rttMs);
+      const rtt = event.detail.rttMs;
+      setServerRtt(typeof rtt === 'number' && Number.isFinite(rtt) && rtt >= 0 ? rtt : null);
     };
     signaling.addEventListener('latency', onLatency as EventListener);
     return () => signaling.removeEventListener('latency', onLatency as EventListener);
@@ -48,6 +49,8 @@ export default function ConnectionStatus({
   const button = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const relayed = stats.some(s => s.voiceRelay?.state === 'relayed');
+  const turnRelayed = stats.some(s => s.connectionState === 'connected' &&
+    (s.route?.localCandidateType === 'relay' || s.route?.remoteCandidateType === 'relay'));
   const callValues = stats
     .filter((s) => s.connectionState === 'connected')
     .map((s) => s.route?.currentRoundTripTimeMs)
@@ -154,6 +157,7 @@ export default function ConnectionStatus({
         ref={button}
         className={`connection-trigger connection-${quality}`}
         aria-label="Connection diagnostics"
+        aria-description={relayed ? 'Voice via server' : !peerCount ? 'Waiting for company' : turnRelayed ? 'Call uses a relay' : 'Call connection'}
         aria-expanded={open}
         aria-controls={open ? 'call-connection-details' : undefined}
         title={
@@ -185,8 +189,10 @@ export default function ConnectionStatus({
                 ? 'Not in a call'
                 : relayed
                   ? 'Through the server'
+                  : turnRelayed
+                    ? 'Through a relay'
                   : peerCount
-                    ? 'Straight to your friends'
+                    ? 'Call connection'
                     : 'Waiting for company'}
             </strong>
             <button
@@ -201,7 +207,7 @@ export default function ConnectionStatus({
           </header>
           <div className={`connection-reading connection-${quality}`}>
             <strong>{value === null ? '—' : Math.round(value)}</strong>
-            <span>ms round trip</span>
+            <span>{source === 'Server' ? 'ms server ping' : 'ms call round trip'}</span>
           </div>
           <svg
             viewBox="0 0 280 70"
@@ -258,10 +264,12 @@ export default function ConnectionStatus({
           ))}
           {relayed && (
             <p>
-              Voice is going through the server, so it can pause while a lost
-              packet is fetched again. Video still goes direct.
+              This measures signaling server ping, not the full relayed audio path.
+              Voice is going through the server and can pause while a lost packet
+              is fetched again. Video uses its separate WebRTC route.
             </p>
           )}
+          {joined && !peerCount && <p>Call ping appears when a friend connects.</p>}
           <button
             className="connection-more"
             onClick={() => {

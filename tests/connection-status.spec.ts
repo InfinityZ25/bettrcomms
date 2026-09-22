@@ -2,6 +2,29 @@ import { expect, test, type Page } from '@playwright/test';
 
 const baseURL = process.env.E2E_BASE_URL ?? 'http://localhost:5173';
 
+test('latency follows the current socket and rejects invalid measurements', async ({ page }) => {
+  await mount(page, { joined: true, peerCount: 0, rttMs: 27, stats: [], names: {} });
+  const trigger = page.getByRole('button', { name: 'Connection diagnostics' });
+  await expect(trigger).toHaveAttribute('title', 'Server ping: 27 ms');
+  await page.evaluate(() => {
+    const replacement = new EventTarget();
+    (window as any).__replacementSignaling = replacement;
+    (window as any).__renderConnection({ joined: true, peerCount: 0, stats: [], names: {}, signaling: replacement });
+  });
+  await expect(trigger).toHaveAttribute('title', 'Server ping: —');
+  await page.evaluate(() => {
+    (window as any).__signaling.dispatchEvent(new CustomEvent('latency', { detail: { rttMs: 99 } }));
+  });
+  await expect(trigger).toHaveAttribute('title', 'Server ping: —');
+  for (const value of [0, -1, 18, Infinity, 12, NaN, 7, null]) {
+    await page.evaluate(rttMs => {
+      (window as any).__replacementSignaling.dispatchEvent(new CustomEvent('latency', { detail: { rttMs } }));
+    }, value);
+    const expected = typeof value === 'number' && Number.isFinite(value) && value >= 0 ? `${value} ms` : '—';
+    await expect(trigger).toHaveAttribute('title', `Server ping: ${expected}`);
+  }
+});
+
 // ConnectionStatus reads server RTT off a real signaling EventTarget's
 // 'latency' events rather than taking it as a plain prop (a state update on
 // every 5s ping otherwise re-rendered all of CallStage's inline, unmemoized
@@ -25,6 +48,13 @@ async function mount(
       document.getElementById('connection-fixture')!,
     );
     const signaling = new EventTarget();
+    let subscribed!: () => void;
+    const ready = new Promise<void>(resolve => { subscribed = resolve; });
+    const addListener = signaling.addEventListener.bind(signaling);
+    signaling.addEventListener = (type, listener, options) => {
+      addListener(type, listener, options);
+      if (type === 'latency') subscribed();
+    };
     (window as any).__signaling = signaling;
     (window as any).__renderConnection = (next: Record<string, unknown>) =>
       root.render(
@@ -37,18 +67,11 @@ async function mount(
         }),
       );
     (window as any).__renderConnection(initialProps);
+    await ready;
     if (rttMs !== undefined) {
-      // ConnectionStatus subscribes to 'latency' from a useEffect, which
-      // React flushes asynchronously after this render commits — a fixed
-      // delay here would be a guess. Retry dispatching against the actual
-      // rendered DOM instead, so this is correct regardless of how long
-      // that effect takes to attach.
-      for (let attempt = 0; attempt < 50; attempt += 1) {
-        signaling.dispatchEvent(new CustomEvent('latency', { detail: { rttMs } }));
-        await new Promise((resolve) => setTimeout(resolve, 20));
-        const trigger = document.querySelector('.connection-trigger');
-        if (trigger && !trigger.textContent?.includes('Measuring')) break;
-      }
+      // Await the actual subscription, not text that the icon-only button
+      // no longer renders. A single event must be sufficient.
+      signaling.dispatchEvent(new CustomEvent('latency', { detail: { rttMs } }));
     }
   }, props);
 }
@@ -61,8 +84,8 @@ test('server voice is visible and does not present signaling ping as peer latenc
       voiceRelay: { state: 'relayed', verificationCode: '1111-2222-3333-4444-5555-6666-7777-8888' } }],
   });
   const trigger = page.getByRole('button', { name: 'Connection diagnostics' });
-  await expect(trigger).toContainText('Voice via server');
-  await expect(trigger).toContainText('Server · 31 ms');
+  await expect(trigger).toHaveAccessibleDescription('Voice via server');
+  await expect(trigger).toHaveAttribute('title', 'Server ping: 31 ms');
   await trigger.click();
   const panel = page.getByRole('region', { name: 'Connection details' });
   await expect(panel).toContainText('Encrypted server voice · TCP');
@@ -84,8 +107,8 @@ test('server-only status reports signaling latency and closes with Escape', asyn
     names: {},
   });
   const trigger = page.getByRole('button', { name: 'Connection diagnostics' });
-  await expect(trigger).toContainText('Waiting for your people');
-  await expect(trigger).toContainText('Server · 42 ms');
+  await expect(trigger).toHaveAccessibleDescription('Waiting for company');
+  await expect(trigger).toHaveAttribute('title', 'Server ping: 42 ms');
   await trigger.click();
   const panel = page.getByRole('region', { name: 'Connection details' });
   await expect(panel).toBeVisible();
@@ -128,9 +151,10 @@ test('call status preserves zero and unknown RTT, routes, and responsive bounds'
     ],
   });
   const trigger = page.getByRole('button', { name: 'Connection diagnostics' });
-  await expect(trigger).toContainText('Call · 0 ms');
+  await expect(trigger).toHaveAttribute('title', 'Call ping: 0 ms');
   await trigger.click();
   const panel = page.getByRole('region', { name: 'Connection details' });
+  await expect(panel.locator('header')).toContainText('Through a relay');
   await expect(panel).toContainText('Alex');
   await expect(panel).toContainText('Direct');
   await expect(panel).toContainText('A very long participant name for layout');

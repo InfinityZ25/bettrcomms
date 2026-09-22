@@ -78,6 +78,18 @@ included in the desktop PR. Do not claim the goal complete from unit tests alone
 
 ## Validation during implementation
 
+2026-09-21: resolved the three connection-status browser failures. Tests now
+observe the actual icon-only control's tooltip/accessibility description and
+wait for the signaling event subscription, not removed button text. Fixed real
+regressions as well: TURN calls no longer claim a direct route, relayed voice
+explicitly labels signaling ping as distinct from end-to-end audio latency,
+and video no longer claims it is always direct. Socket replacement clears old
+RTT and unsubscribes; negative/non-finite measurements become unknown while
+zero remains valid. Four Playwright checks (including the new socket/invalid-RTT
+regression), all 232 frontend unit tests and the production frontend build pass.
+Five of the original ten E2E failures remain: four device-settings cases and
+one direct-navigation case. Full integrated/native acceptance is still open.
+
 2026-09-21: fixed the custom packaged API origin discovered in the previous
 audit. Both the Wails build task and PowerShell entry point now use a validated
 HTTPS authority and a linker-injected default. Build configuration uses its own
