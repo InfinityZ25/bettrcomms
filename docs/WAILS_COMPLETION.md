@@ -78,6 +78,21 @@ included in the desktop PR. Do not claim the goal complete from unit tests alone
 
 ## Validation during implementation
 
+2026-09-21: rebuilt the production executable with the current staged frontend
+and inspected its real Windows window using Computer Use. The React home/sign-in
+screen rendered at `http://wails.localhost/` under CSP, but clicking the HTML
+Maximize control displayed "Window action failed. Please try again." No window
+maximisation was observed. This is a confirmed native acceptance failure, not a
+passing runtime smoke. Generated method ID 3549911582 matches the pinned host's
+FNV hash of `main.WindowService.ToggleMaximise`; a simple binding-ID mismatch is
+not the cause. Production F12 did not expose devtools, as expected. Built a
+separate ignored `bin/bettercomms-wails-diagnostic.exe` without production tags
+for subsequent diagnosis, but did not launch it. Computer Use refused two close
+attempts due to detected user input (with a fresh observation between attempts),
+so no more input was sent. The production test window may remain open. No sign-in,
+device permission, camera or microphone action was performed. CSP versus runtime
+transport/root cause remains unproven and must be resolved before acceptance.
+
 2026-09-21: added document CSP to the Wails asset handler. Packaged documents
 allow self/blob scripts, WASM compilation and only the exact boot script's
 SHA-256 inline hash; block objects, frames, embedding, base-URL changes and form
