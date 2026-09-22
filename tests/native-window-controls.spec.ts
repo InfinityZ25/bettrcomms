@@ -6,6 +6,9 @@ for (const mode of ['native-frame', 'native-overlay'] as const) {
     await page.goto('/');
     await page.evaluate(async (mode) => {
       const host = window as any;
+      // Controlled CSS input tests the host bridge independently of theme redesigns.
+      document.documentElement.classList.add('dark');
+      document.documentElement.style.setProperty('--sidebar', 'rgb(29, 24, 22)');
       host.isTauri = true;
       host.__captionEvents = [];
       host.__TAURI_INTERNALS__ = {
@@ -36,7 +39,7 @@ for (const mode of ['native-frame', 'native-overlay'] as const) {
     await expect(page.locator('[data-desktop-frame]')).toHaveCount(mode === 'native-overlay' ? 1 : 0);
     if (mode === 'native-overlay') {
       await expect(page.locator('.better-window-titlebar')).toBeVisible();
-      await expect(page.getByText('BetterComms', { exact: true })).toHaveCount(1);
+      await expect(page.locator('.better-window-titlebar')).toHaveCount(1);
       await expect(page.getByRole('button', { name: 'Go back' })).toBeVisible();
       await expect(page.getByRole('button', { name: 'Go forward' })).toBeVisible();
     }

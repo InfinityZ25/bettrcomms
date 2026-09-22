@@ -51,13 +51,13 @@ test('same account can add a device or move the call to a new device', async ({ 
 
     await firstPage.getByRole('button', { name: 'Join call' }).click();
     await expect(firstPage.getByRole('button', { name: 'Leave call' })).toBeVisible();
-    await expect(secondPage.getByText('You’re already in this call on another device.')).toBeVisible();
-    await secondPage.getByRole('button', { name: 'Connect second device' }).click();
+    await expect(secondPage.getByText('You are already in this call on another device.', { exact: true })).toBeVisible();
+    await secondPage.getByRole('button', { name: 'Add this device', exact: true }).click();
     await expect(secondPage.getByRole('button', { name: 'Leave call' })).toBeVisible();
     await expect(firstPage.locator('.camera-tile:not(.self)')).toHaveCount(1);
     await expect(secondPage.locator('.camera-tile:not(.self)')).toHaveCount(1);
-    await expect(firstPage.getByText('Voice connected')).toBeVisible();
-    await expect(secondPage.getByText('Voice connected')).toBeVisible();
+    await expect(firstPage.getByRole('button', { name: 'Connection diagnostics' })).toHaveAttribute('title', /Call ping: \d+ ms/);
+    await expect(secondPage.getByRole('button', { name: 'Connection diagnostics' })).toHaveAttribute('title', /Call ping: \d+ ms/);
 
     const deviceCount = async () => {
       const data = await json<{ rooms: { room_id: string; participants: { user_id: string; device_count: number }[] }[] }>(
@@ -66,9 +66,9 @@ test('same account can add a device or move the call to a new device', async ({ 
       return data.rooms.find(entry => entry.room_id === room.id)?.participants.find(entry => entry.user_id === firstUser.id)?.device_count;
     };
     await expect.poll(deviceCount).toBe(2);
-    await expect(replacementPage.getByText('You’re already in this call on 2 devices.')).toBeVisible();
+    await expect(replacementPage.getByText('You are already in this call on 2 devices.', { exact: true })).toBeVisible();
 
-    await replacementPage.getByRole('button', { name: 'Reconnect from here' }).click();
+    await replacementPage.getByRole('button', { name: 'Move it here', exact: true }).click();
     await expect(replacementPage.getByRole('button', { name: 'Leave call' })).toBeVisible();
     await expect(firstPage.getByRole('button', { name: 'Leave call' })).toHaveCount(0);
     await expect(secondPage.getByRole('button', { name: 'Leave call' })).toHaveCount(0);

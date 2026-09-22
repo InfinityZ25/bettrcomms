@@ -1,9 +1,17 @@
-import { expect, test, type APIResponse, type BrowserContext } from '@playwright/test';
+import { expect, test, type APIResponse, type BrowserContext, type Page } from '@playwright/test';
 
 type User = { id: string; name: string };
 type Room = { id: string; name: string };
 const baseURL = process.env.E2E_BASE_URL ?? 'http://localhost:5173';
 const origin = new URL(baseURL).origin;
+
+async function layoutOption(page: Page, label: string, checkbox = false) {
+  await page.locator('.call-workspace').hover({ position: { x: 10, y: 10 } });
+  await page.getByRole('button', { name: 'Call layout options', exact: true }).click();
+  await page.getByRole(checkbox ? 'menuitemcheckbox' : 'menuitemradio', { name: label, exact: true }).click();
+  // Checkbox menu items can keep the menu open.
+  if (await page.getByRole('menu').isVisible()) await page.keyboard.press('Escape');
+}
 
 async function json<T>(response: APIResponse): Promise<T> {
   if (!response.ok()) throw new Error(`API ${response.status()} ${response.url()}: ${await response.text()}`);
@@ -53,6 +61,7 @@ test('camera dock resizes, snaps, focuses, and preserves the active share', asyn
       headers: { Origin: origin }, data: { name: 'Browse without leaving' },
     }))).room;
     const page = await context.newPage();
+    page.setDefaultTimeout(15_000);
     await page.goto('/');
     await page.getByRole('button', { name: room.name }).click();
     await page.getByRole('button', { name: 'Join call' }).click();
@@ -60,25 +69,30 @@ test('camera dock resizes, snaps, focuses, and preserves the active share', asyn
 
     await page.getByRole('button', { name: otherRoom.name }).click();
     await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
-    await expect(page.getByTestId('room-heading')).toHaveText(otherRoom.name);
-    await page.getByRole('button', { name: `Return to ${room.name}` }).click();
+    await expect(page.getByRole('button', { name: otherRoom.name, exact: true })).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByRole('list', { name: `${room.name} call participants`, exact: true })).toContainText('Layout Ada');
+    await expect(page.getByRole('list', { name: `${otherRoom.name} call participants`, exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: `${room.name} 1 in call`, exact: true }).click();
 
     const stage = page.locator('.call-workspace .stage');
     await expect(stage).toHaveAttribute('data-has-share', 'false');
     await expect(stage).toHaveAttribute('data-gallery', 'adaptive');
-    const galleryLayout = page.getByLabel('Call layout', { exact: true });
-    await galleryLayout.selectOption('grid');
+    await layoutOption(page, 'Equal cameras');
     await expect(stage).toHaveAttribute('data-gallery', 'grid');
     expect(await page.evaluate(() => localStorage.getItem('bc-gallery-layout'))).toBe('grid');
-    const fit = page.getByRole('button', { name: 'Fill tiles' });
-    await fit.click();
+    await layoutOption(page, 'Fill tiles', true);
     await expect(stage).toHaveAttribute('data-camera-fit', 'contain');
     expect(await page.evaluate(() => localStorage.getItem('bc-gallery-fit'))).toBe('contain');
     const stageBoxBeforeShare = await stage.boundingBox();
     const soloTileBox = await page.locator('.camera-tile.self').boundingBox();
     if (!stageBoxBeforeShare || !soloTileBox) throw new Error('Gallery has no layout box');
     expect(soloTileBox.width / soloTileBox.height).toBeCloseTo(16 / 9, 1);
-    expect(soloTileBox.height).toBeGreaterThan(stageBoxBeforeShare.height * .65);
+    // The sidebar narrows this canvas. Fit the aspect ratio in both dimensions
+    // instead of demanding a height that would force the camera outside it.
+    const fittedHeight = Math.min(stageBoxBeforeShare.height, stageBoxBeforeShare.width * 9 / 16);
+    expect(soloTileBox.height).toBeGreaterThan(fittedHeight * .9);
+    expect(soloTileBox.width).toBeLessThanOrEqual(stageBoxBeforeShare.width);
+    expect(soloTileBox.height).toBeLessThanOrEqual(stageBoxBeforeShare.height);
     await page.getByRole('button', { name: 'Turn on camera' }).click();
     const cameraVideo = page.locator('.camera-tile.self video');
     await expect.poll(() => cameraVideo.evaluate((video: HTMLVideoElement) => video.videoWidth)).toBeGreaterThan(0);
@@ -117,9 +131,8 @@ test('camera dock resizes, snaps, focuses, and preserves the active share', asyn
     expect(transformAfterPan).not.toBe(transformBeforePan);
     await resetZoom.click();
 
-    const position = page.getByLabel('Camera position');
     for (const [label, dock] of [['Top row', 'top'], ['Left side', 'left'], ['Right side', 'right']] as const) {
-      await position.selectOption({ label });
+      await layoutOption(page, label);
       await expect(stage).toHaveAttribute('data-dock', dock);
       await expect(sharedVideo).toBeVisible();
       expect(await sharedVideo.evaluate((video: HTMLVideoElement) =>
@@ -127,7 +140,7 @@ test('camera dock resizes, snaps, focuses, and preserves the active share', asyn
       )).toBe(originalTrackId);
     }
 
-    await position.selectOption('top');
+    await layoutOption(page, 'Top row');
     const divider = page.getByRole('separator', { name: 'Resize cameras' });
     const before = Number(await divider.getAttribute('aria-valuenow'));
     const dividerBox = await divider.boundingBox();
@@ -149,7 +162,10 @@ test('camera dock resizes, snaps, focuses, and preserves the active share', asyn
     await page.mouse.move(stageBox.x + stageBox.width - 12, stageBox.y + stageBox.height / 2, { steps: 5 });
     await page.mouse.up();
     await expect(stage).toHaveAttribute('data-dock', 'right');
-    await expect(position).toHaveValue('right');
+    await page.locator('.call-workspace').hover({ position: { x: 10, y: 10 } });
+    await page.getByRole('button', { name: 'Call layout options', exact: true }).click();
+    await expect(page.getByRole('menuitemradio', { name: 'Right side', exact: true })).toHaveAttribute('aria-checked', 'true');
+    await page.keyboard.press('Escape');
 
     await page.screenshot({ path: '.local/call-layout-desktop.png', fullPage: true });
     await page.getByRole('button', { name: 'Fullscreen call' }).click();
@@ -171,8 +187,13 @@ test('camera dock resizes, snaps, focuses, and preserves the active share', asyn
 
     await page.getByRole('button', { name: 'Focus call' }).click();
     await expect(page.locator('[data-app-shell]')).toHaveAttribute('data-call-focused', 'true');
-    await expect(page.getByRole('navigation', { name: 'Spaces' })).toBeHidden();
-    await expect(page.getByRole('complementary', { name: 'Conversations' })).toBeHidden();
+    await expect(page.getByRole('navigation', { name: 'Sections' })).toBeHidden();
+    const sidebar = page.locator('[aria-label="Conversations"]');
+    await expect(sidebar).toHaveAttribute('inert', '');
+    await expect(sidebar.locator('..')).toHaveAttribute('aria-hidden', 'true');
+    // The animated wrapper clips the sidebar to zero width; the inner element
+    // retains its own width, so Playwright's visibility predicate is insufficient.
+    await expect.poll(() => sidebar.locator('..').evaluate(element => element.getBoundingClientRect().width)).toBeLessThan(1);
     await page.getByRole('button', { name: 'Show navigation' }).click();
     await expect(page.locator('[data-app-shell]')).toHaveAttribute('data-call-focused', 'false');
 
@@ -188,7 +209,7 @@ test('camera dock resizes, snaps, focuses, and preserves the active share', asyn
     await page.screenshot({ path: '.local/call-layout-mobile.png', fullPage: true });
 
     await page.setViewportSize({ width: 1280, height: 900 });
-    await galleryLayout.selectOption('all');
+    await layoutOption(page, 'Everyone + screens');
     await expect(stage).toHaveAttribute('data-gallery', 'all');
     await expect(stage).toHaveAttribute('data-has-share', 'false');
     const shareTile = page.locator('.screen-share-tile');

@@ -78,6 +78,33 @@ included in the desktop PR. Do not claim the goal complete from unit tests alone
 
 ## Validation during implementation
 
+2026-09-21: five of the eight full-suite failures now pass in targeted runs:
+call layout, presence UI, multi-device call and both native-caption fixtures.
+Updated layout menus, active-room accessible name (includes live count), lobby
+regions/text and second-device actions without removing session/count checks.
+Camera geometry checks preserve 16:9 and require over 90% of the maximum size
+that fits the current canvas; the prior height-only requirement exceeded the
+width-constrained aspect fit. Focused navigation checks inert/aria-hidden and
+the animated wrapper's zero width, rather than the unclipped child's bounds.
+Layout still checks drag/resize limits, unchanged share track, zoom/pan,
+fullscreen overflow, mobile bounds and decoder continuity while frozen.
+Caption fixtures use controlled CSS colours and verify one titlebar, updates
+and observer cleanup independently of renamed branding/current theme shades.
+Final layout case passed in 18.1 seconds. Realtime-events, recordings and
+signaling-resume remain unresolved; full suite must be rerun after those fixes.
+
+2026-09-21: complete 92-case browser run finished in 11.4 minutes: 83 passed,
+eight failed, one optional TURN case skipped. Failures are call-layout,
+call-presence-ui, multi-device-call, both native-window-controls fixtures,
+realtime-events, recordings and signaling-resume. Initial failures reference
+retired room selectors/menu controls, lobby wording, second-device actions,
+fixed prior-theme colours/title text, channel-chat navigation and an ambiguous
+Recordings button. These initial observations do not prove that deeper checks
+pass. Adjustments for the first five cases are under targeted validation;
+realtime events, recording playback and signaling resume still need adaptation.
+No tests were disabled to obtain this result. The earlier complete-suite result
+was pending; this entry records its actual terminal outcome.
+
 2026-09-21: the integral bettercomms browser case passes in 40.5 seconds.
 Updated it to send persistent chat through a direct conversation, explicitly
 select the channel under Calls, use current diagnostics/settings controls,
