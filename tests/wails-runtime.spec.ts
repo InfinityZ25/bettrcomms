@@ -6,8 +6,6 @@ import path from 'node:path';
 // This exercises the shipped JS runtime, not mocked Window methods. HTTP replies
 // stand in for the native host; it does NOT establish Windows hit-test acceptance.
 test('packaged Wails runtime loads under CSP and sends built-in window commands', async ({ page }) => {
-  test.skip(process.env.WAILS_RUNTIME_ACCEPTANCE !== '1',
-    'Known failing packaged-runtime diagnostic; build frontend and set WAILS_RUNTIME_ACCEPTANCE=1. See docs/WAILS_PR_HANDOFF.md.');
   const unavailable = { state: 'unavailable', detail: 'fixture', fallback: 'browser' };
   const boot = {
     schemaVersion: 1, runtime: 'wails', hostVersion: 'test',
@@ -51,7 +49,7 @@ test('packaged Wails runtime loads under CSP and sends built-in window commands'
       if (request.object !== 6) return route.fulfill({ status: 400, body: 'Unexpected runtime object' });
       commands.push(request.method);
       if (request.method === 39) maximised = !maximised;
-      return route.fulfill({ json: request.method === 14 ? maximised : null });
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify(request.method === 14 ? maximised : null) });
     }
     if (url.pathname.startsWith('/api/')) return route.fulfill({ status: 401, json: { error: 'Unauthenticated fixture' } });
     if (url.pathname === '/wails/custom.js') return route.fulfill({ status: 404 });

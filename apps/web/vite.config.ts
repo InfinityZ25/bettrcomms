@@ -15,6 +15,21 @@ export default defineConfig({
   optimizeDeps: {
     include: ["@base-ui/react/menu", "react-dom/client"],
   },
+  build: {
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [{
+            name: "wails-runtime",
+            // Keep runtime initialisation and its consumers together. Splitting
+            // calls.js from runtime.js creates a chunk cycle that reads
+            // objectNames.Call before objectNames has been initialised.
+            test: /@wailsio[\\/]runtime|wailsio_runtime_events_typed|wailsbindings.*internal[\\/]eventcreate/,
+          }],
+        },
+      },
+    },
+  },
   server: {
     port,
     strictPort: true,

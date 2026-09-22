@@ -23,9 +23,9 @@ bindings were removed. Native non-client regions remain enabled. Frontend tests
 not native UI acceptance: a rebuilt production host still displayed the window
 action failure. It was closed without a session or call. A subsequent diagnostic
 launch was interrupted by the user through Escape; desktop automation stopped.
-The isolated packaged-runtime Playwright diagnostic also fails before observing
-the first built-in window request. That fixture does not establish the native
-root cause. See WAILS_PR_HANDOFF.md for explicit PR blockers and reproduction.
+The isolated packaged-runtime Playwright diagnostic initially failed before
+the first built-in window request; the chunk-cycle fix below now makes it pass.
+Native revalidation remains open. See WAILS_PR_HANDOFF.md for PR blockers.
 
 - [x] Integrate current main: production domain, SFU client/server and connection
   mode/RTT fixes, preserving Wails API proxy authentication and current UI.
@@ -88,6 +88,17 @@ root cause. See WAILS_PR_HANDOFF.md for explicit PR blockers and reproduction.
 - [ ] Commit relevant work, push branch, create PR and attach it to the task.
 
 ## Validation during implementation
+
+2026-09-21 follow-up: reproduced the compiled JS runtime import failure as
+`TypeError: Cannot read properties of undefined (reading 'Call')`. Automatic
+chunking put runtime.js and calls.js into mutually importing chunks, evaluating
+the caller before objectNames initialisation. A targeted Wails runtime chunk
+group fixes this without changing the native APIs or relaxing CSP. The real
+production JS runtime now passes an isolated browser test of state, maximise,
+minimise and close with host HTTP replies simulated. The fixture explicitly
+returns JSON boolean/null content types. The regression is no longer opt-in.
+This is not acceptance of real Windows caption input or Snap Layouts; native
+revalidation remains open after the user's desktop automation interruption.
 
 2026-09-21: rebuilt the production executable with the current staged frontend
 and inspected its real Windows window using Computer Use. The React home/sign-in

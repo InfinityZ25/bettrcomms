@@ -20,8 +20,11 @@ remains in scope rather than being declared complete. Preserve `apps/desktop`.
 
 ## Merge/replacement blockers and missing work
 
-1. **Window/runtime failure:** the rebuilt native host renders the home page but
-   window actions still report failure. Root cause is unproven. Do not restore
+1. **Native window revalidation:** the previous native build reported window
+   action failure. A reproduced JS bundle initialisation failure is now fixed:
+   keep Wails runtime modules together to avoid reading `objectNames.Call` before
+   initialisation across cyclic chunks. The compiled-runtime browser regression
+   passes, but a rebuilt native host still needs validation. Do not restore
    a custom Go window service to work around this. Validate native dragging,
    resize, minimize/maximize/restore/close, Snap Layouts, focus and mixed DPI.
 2. **Native end-to-end acceptance:** actual packaged calls, capture, process
@@ -39,7 +42,10 @@ remains in scope rather than being declared complete. Preserve `apps/desktop`.
    optional DSP fresh-install/cancel/rollback acceptance remain outstanding.
 6. **Regression/CI:** the last full browser run was 90 passed, 1 failed, 1 opt-in
    TURN skip. The integral call/recording test remains intermittently failing.
-   New GitHub CI must be evaluated on this PR; no remote green result is claimed.
+   Initial Windows CI failed in `TestResolveInstallVerifiesEveryPath` and
+   `TestTrustedFileRefusesAnythingOutsideTheSetupDirectory`: valid fixture paths
+   were rejected as outside their private directories. This remains unresolved;
+   no remote green result is claimed.
 7. **Documentation/capabilities:** older scaffold-era sections still need a full
    reconciliation. Use the chronological completion ledger for actual evidence,
    not a claim of full parity from feature names or implementation presence.
@@ -53,16 +59,14 @@ remains in scope rather than being declared complete. Preserve `apps/desktop`.
   do not validate a rebuilt installer containing the latest permission/CSP changes.
 - Browser tests use synthetic media and do not prove native Windows acceptance.
 - An isolated diagnostic uses the **real compiled JS runtime** with mocked host
-  HTTP responses. It currently fails waiting for the first Window state request;
-  it is explicitly opt-in, not counted as passing or silently removed.
+  HTTP responses. It now passes state/minimise/maximise/close under CSP and is
+  part of the normal Playwright suite. Native hit testing is not simulated proof.
 
-Reproduce the known failing diagnostic from repository root in PowerShell:
+Run the packaged-runtime regression from repository root:
 
 ```powershell
 npm run build
-$env:WAILS_RUNTIME_ACCEPTANCE = '1'
 npx playwright test tests/wails-runtime.spec.ts
-Remove-Item Env:WAILS_RUNTIME_ACCEPTANCE
 ```
 
 The diagnostic needs no account, backend or database and sends no external
