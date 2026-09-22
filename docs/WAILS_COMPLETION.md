@@ -78,6 +78,18 @@ included in the desktop PR. Do not claim the goal complete from unit tests alone
 
 ## Validation during implementation
 
+2026-09-21: updated push-to-talk settings navigation, switch roles and modal
+dismissal; the side-mouse target now selects the visible level-two heading
+rather than an ambiguous accessible label. Four targeted PTT browser cases
+pass (typing preference, side buttons/history, shortcut persistence and pending
+sender replacement). Updated speaking-sensitivity navigation and added explicit
+getUserMedia request counters before/after reload: both speaking-activity cases
+pass, including meter hysteresis/cleanup and persistence without opening a
+device. All 232 frontend unit tests and production build pass. The two received
+audio PTT cases are still pending: their retired channel-chat controls need
+adaptation to the current conversation UI. Neither case was deleted or marked
+skipped. These browser checks do not establish native background-hook acceptance.
+
 2026-09-21: updated camera-quality, loopback, processing and DirectML browser
 specs for the Settings dialog and accessible custom selectors. Added a shared
 navigation helper that works on desktop/mobile without reloading active media.

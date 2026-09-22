@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { openSettingsCategory } from './settings-navigation';
 
 const baseURL = process.env.E2E_BASE_URL ?? 'http://localhost:5173';
 
@@ -135,12 +136,23 @@ test('processed microphone activity uses hysteresis and releases meters without 
 });
 
 test('speaking threshold is adjustable and persists without opening a device', async ({ page }) => {
-  await page.goto(`${baseURL}/#/settings`);
+  await page.addInitScript(() => {
+    (window as any).__activityCaptureRequests = 0;
+    navigator.mediaDevices.getUserMedia = async () => {
+      (window as any).__activityCaptureRequests++;
+      throw new Error('Changing speaking sensitivity must not request a device');
+    };
+  });
+  await page.goto(baseURL);
+  await openSettingsCategory(page);
   const threshold = page.getByRole('slider', { name: 'Speaking indicator threshold', exact: true });
   await expect(threshold).toHaveValue('-48');
   await threshold.fill('-55');
-  await expect(page.getByText('Speaking indicator threshold · -55 dBFS')).toBeVisible();
+  await expect(page.getByText('-55 dB', { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => (window as any).__activityCaptureRequests)).toBe(0);
   await page.reload();
+  await openSettingsCategory(page);
   await expect(threshold).toHaveValue('-55');
+  expect(await page.evaluate(() => (window as any).__activityCaptureRequests)).toBe(0);
   expect(await page.evaluate(() => localStorage.getItem('bc-processing'))).toBeNull();
 });
