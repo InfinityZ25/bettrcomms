@@ -114,6 +114,12 @@ overrides, then restores the normal binary. The Windows CI job runs this check.
 
 - Sensitive media operations require a per-launch page token. File exports use
   native Save As and bounded opaque grants, not arbitrary paths from the page.
+- Packaged HTML has a content policy permitting local modules and the exact
+  hashed boot script, with no arbitrary inline JavaScript or general eval.
+  Frames, objects, base-URL changes and form submissions are denied. Local
+  API/DSP connections and blob media remain allowed. Boot documents are not
+  cached and send no referrer. This is not a top-level navigation allowlist;
+  native runtime/media acceptance with the policy remains outstanding.
 - API origins must be HTTPS, or loopback HTTP in development, without credentials,
   paths, queries or fragments. Proxy and native tokens are separate.
 - Microphone/camera use WebView2's normal permission decision/prompt on Windows,

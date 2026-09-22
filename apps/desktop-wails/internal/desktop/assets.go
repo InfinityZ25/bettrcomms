@@ -2,6 +2,8 @@ package desktop
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -28,6 +30,22 @@ const bootGlobal = "__BETTERCOMMS_DESKTOP__"
 // the report — a window title, an error message from a bad origin — cannot
 // become script.
 func InjectBootReport(html []byte, report BootReport) ([]byte, error) {
+	source, err := bootReportScript(report)
+	if err != nil {
+		return nil, err
+	}
+	script := []byte("<script>" + string(source) + "</script>")
+	if idx := headInsertionPoint(html); idx >= 0 {
+		out := make([]byte, 0, len(html)+len(script))
+		out = append(out, html[:idx]...)
+		out = append(out, script...)
+		out = append(out, html[idx:]...)
+		return out, nil
+	}
+	return append(script, html...), nil
+}
+
+func bootReportScript(report BootReport) ([]byte, error) {
 	encoded, err := json.Marshal(report)
 	if err != nil {
 		return nil, fmt.Errorf("encode boot report: %w", err)
@@ -44,16 +62,26 @@ func InjectBootReport(html []byte, report BootReport) ([]byte, error) {
 	// restores the original characters.
 	literal = escapeForScript(literal)
 
-	script := []byte("<script>window." + bootGlobal + "=JSON.parse(" + string(literal) + ");</script>")
+	return []byte("window." + bootGlobal + "=JSON.parse(" + string(literal) + ");"), nil
+}
 
-	if idx := headInsertionPoint(html); idx >= 0 {
-		out := make([]byte, 0, len(html)+len(script))
-		out = append(out, html[:idx]...)
-		out = append(out, script...)
-		out = append(out, html[idx:]...)
-		return out, nil
+// CSP constrains document content, not top-level navigation. Development keeps
+// Vite's inline refresh preamble; packaged scripts are local modules plus the
+// exact boot script hash, never unrestricted inline JavaScript or eval.
+func documentContentPolicy(report BootReport, development bool) (string, error) {
+	base := "base-uri 'none'; object-src 'none'; frame-src 'none'; frame-ancestors 'none'; form-action 'none'"
+	if development {
+		return base, nil
 	}
-	return append(script, html...), nil
+	script, err := bootReportScript(report)
+	if err != nil {
+		return "", err
+	}
+	digest := sha256.Sum256(script)
+	return base + "; default-src 'self'; script-src 'self' blob: 'wasm-unsafe-eval' 'sha256-" +
+		base64.StdEncoding.EncodeToString(digest[:]) + "'; worker-src 'self' blob:; " +
+		"style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https:; " +
+		"media-src 'self' blob: mediastream:; connect-src 'self' blob: http://127.0.0.1:* ws://127.0.0.1:*", nil
 }
 
 // escapeForScript replaces <, > and & with their JSON unicode escapes. The
@@ -110,7 +138,7 @@ func NewAssetHandler(opts AssetOptions) (http.Handler, error) {
 		frontend = newStaticHandler(opts.Dist)
 	}
 
-	injecting := &htmlInjector{next: frontend, boot: opts.Boot}
+	injecting := &htmlInjector{next: frontend, boot: opts.Boot, development: opts.DevServer != ""}
 
 	mux := http.NewServeMux()
 	if opts.DevServer == "" {
@@ -169,8 +197,9 @@ func newStaticHandler(dist fs.FS) http.Handler {
 // htmlInjector buffers HTML responses so the boot report can be inserted, and
 // streams everything else through untouched.
 type htmlInjector struct {
-	next http.Handler
-	boot func() BootReport
+	next        http.Handler
+	boot        func() BootReport
+	development bool
 }
 
 func (h *htmlInjector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -192,9 +221,22 @@ func (h *htmlInjector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	body := capture.body.Bytes()
 	contentType := capture.header.Get("Content-Type")
 	if h.boot != nil && capture.status == http.StatusOK && strings.Contains(contentType, "text/html") {
-		if injected, err := InjectBootReport(body, h.boot()); err == nil {
-			body = injected
+		report := h.boot()
+		injected, err := InjectBootReport(body, report)
+		if err != nil {
+			http.Error(w, "desktop boot configuration unavailable", http.StatusInternalServerError)
+			return
 		}
+		policy, err := documentContentPolicy(report, h.development)
+		if err != nil {
+			http.Error(w, "desktop content policy unavailable", http.StatusInternalServerError)
+			return
+		}
+		body = injected
+		capture.header.Set("Content-Security-Policy", policy)
+		capture.header.Set("Referrer-Policy", "no-referrer")
+		capture.header.Set("X-Content-Type-Options", "nosniff")
+		capture.header.Set("Cache-Control", "no-store")
 	}
 
 	for key, values := range capture.header {

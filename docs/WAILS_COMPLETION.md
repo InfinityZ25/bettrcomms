@@ -78,6 +78,20 @@ included in the desktop PR. Do not claim the goal complete from unit tests alone
 
 ## Validation during implementation
 
+2026-09-21: added document CSP to the Wails asset handler. Packaged documents
+allow self/blob scripts, WASM compilation and only the exact boot script's
+SHA-256 inline hash; block objects, frames, embedding, base-URL changes and form
+submissions; keep local API/DSP transports, local workers, blob recordings and
+HTTPS images. Development retains Vite's refresh preamble while enforcing the
+document restrictions. Boot is read once for both document and policy; tests
+hash the actual served inline script, check policy changes with its contents,
+and verify no-store/no-referrer/nosniff. Injection/policy errors now fail closed
+with a generic 500 rather than serving an unconfigured document. Full Wails Go
+tests and vet pass. Actual Wails runtime and
+media acceptance under CSP remains pending, as does top-level navigation control:
+the pinned Windows host sends external requests directly through WebView2, not
+the app asset handler, so this CSP must not be described as a navigation firewall.
+
 2026-09-21: audited the pinned Wails Windows permission/navigation code. Its
 public navigation callback does not expose a cancellable URL policy, so external
 browser sign-in cannot justify blanket media grants. Removed PermissionAllow
