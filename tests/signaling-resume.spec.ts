@@ -84,16 +84,22 @@ test('a signaling restart does not end an established peer-to-peer call', async 
 
     await firstPage.getByRole('button', { name: 'Join call' }).click();
     await expect(firstPage.getByRole('button', { name: 'Leave call' })).toBeVisible();
-    await secondPage.getByRole('button', { name: 'Connect second device' }).click();
+    await secondPage.getByRole('button', { name: 'Add this device', exact: true }).click();
     await expect(secondPage.getByRole('button', { name: 'Leave call' })).toBeVisible();
-    await expect(firstPage.getByText('Voice connected')).toBeVisible();
-    await expect(secondPage.getByText('Voice connected')).toBeVisible();
+    await expect(firstPage.getByRole('button', { name: 'Connection diagnostics' })).toHaveAttribute('title', /Call ping: \d+ ms/);
+    await expect(secondPage.getByRole('button', { name: 'Connection diagnostics' })).toHaveAttribute('title', /Call ping: \d+ ms/);
     await expect(firstPage.locator('.camera-tile:not(.self):not(.screen-share-tile)')).toHaveCount(1);
     await expect(firstPage.locator('.camera-tile:not(.self):not(.screen-share-tile) .online-dot')).toBeVisible();
     await firstPage.getByRole('button', { name: 'Turn on camera', exact: true }).click();
     await firstPage.getByRole('button', { name: 'Share screen', exact: true }).click();
     await firstPage.getByRole('button', { name: 'Record separate tracks', exact: true }).click();
     await expect(firstPage.getByRole('button', { name: 'Stop recording', exact: true })).toBeVisible();
+    const remoteCamera = secondPage.locator('.camera-tile:not(.self):not(.screen-share-tile) video');
+    await expect.poll(() => remoteCamera.evaluate((video: HTMLVideoElement) => video.readyState)).toBeGreaterThanOrEqual(2);
+    const cameraBeforeDrop = await remoteCamera.evaluate((video: HTMLVideoElement) => ({
+      id: (video.srcObject as MediaStream).getVideoTracks()[0].id,
+      frames: video.getVideoPlaybackQuality().totalVideoFrames,
+    }));
 
     // What a redeploy does: the socket dies abnormally and the server never
     // gets to announce a departure, while the peer connection carrying the
@@ -124,13 +130,20 @@ test('a signaling restart does not end an established peer-to-peer call', async 
     })).toBe(true);
     await expect(firstPage.getByRole('button', { name: 'Stop sharing', exact: true })).toBeVisible();
     await expect(firstPage.getByRole('button', { name: 'Stop recording', exact: true })).toBeVisible();
-    await expect(secondPage.getByText('Voice connected')).toBeVisible();
+    await expect(secondPage.getByRole('button', { name: 'Connection diagnostics' })).toHaveAttribute('title', /Call ping: \d+ ms/);
 
     await expect(firstPage.getByText('Reconnecting to server')).toHaveCount(0, { timeout: 30_000 });
     await expect(firstPage.locator('.camera-tile:not(.self):not(.screen-share-tile) .online-dot')).toBeVisible();
-    await expect(firstPage.getByText('Voice connected')).toBeVisible();
+    await expect(firstPage.getByRole('button', { name: 'Connection diagnostics' })).toHaveAttribute('title', /Call ping: \d+ ms/);
     await expect(firstPage.locator('.camera-tile:not(.self):not(.screen-share-tile)')).toHaveCount(1);
     await expect(secondPage.locator('.camera-tile:not(.self):not(.screen-share-tile)')).toHaveCount(1);
+
+    await expect.poll(() => remoteCamera.evaluate((video: HTMLVideoElement) => ({
+      id: (video.srcObject as MediaStream).getVideoTracks()[0].id,
+      state: (video.srcObject as MediaStream).getVideoTracks()[0].readyState,
+    }))).toEqual({ id: cameraBeforeDrop.id, state: 'live' });
+    await expect.poll(() => remoteCamera.evaluate((video: HTMLVideoElement) => video.getVideoPlaybackQuality().totalVideoFrames))
+      .toBeGreaterThan(cameraBeforeDrop.frames);
 
     // Signaling is usable again, so membership changes still work afterwards.
     await firstPage.getByRole('button', { name: 'Leave call' }).click();

@@ -78,6 +78,19 @@ included in the desktop PR. Do not claim the goal complete from unit tests alone
 
 ## Validation during implementation
 
+2026-09-21: the remaining three full-suite failures pass in targeted runs.
+Realtime events now hydrate/send chat in a direct conversation, then select
+the channel to check call/mute presence; history-read and zero-presence-poll
+assertions plus online/offline propagation remain. Recording playback needed
+only exact navigation-button matching; hash equality, WAV conversion, per-source
+mixing, timeline, fullscreen node/state preservation and persisted deletion all
+pass (10.1 seconds). Signaling-resume uses the current second-device action and
+connection diagnostic, and now also proves the remote camera retains its live
+track ID and decodes additional frames after recovery (15.8 seconds). The drop
+is simulated at the signaling callback, not an actual deployed-server restart.
+All eight failures from the prior full run have targeted passing evidence;
+a fresh complete suite is still required before claiming global regression pass.
+
 2026-09-21: five of the eight full-suite failures now pass in targeted runs:
 call layout, presence UI, multi-device call and both native-caption fixtures.
 Updated layout menus, active-room accessible name (includes live count), lobby
