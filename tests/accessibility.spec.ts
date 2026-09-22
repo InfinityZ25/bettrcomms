@@ -60,8 +60,9 @@ test("public login has no A/AA violations or viewport overflow", async ({ browse
     });
     await assertNoHorizontalOverflow(page);
     violations[viewport.name] = await audit(page);
-    const join=page.getByRole('button',{name:'Sign in to join',exact:true});
-    await expect(join).toBeVisible();
+    const signIn=page.getByRole('button',{name:/continue with workos/i});
+    await signIn.scrollIntoViewIfNeeded();
+    await expect(signIn).toBeInViewport({ratio:0.9});
     const localLogin=page.getByRole('button',{name:'Enter local workspace',exact:true});
     await localLogin.scrollIntoViewIfNeeded();
     await expect(localLogin).toBeInViewport({ratio:0.9});
@@ -106,16 +107,29 @@ test("utility screens have no A/AA violations or viewport overflow", async ({ br
     await devLogin(context);
     const page = await context.newPage();
     for (const screen of screens) {
-      await page.goto(`/#/${screen.route}`);
-      const main = page.getByRole("main", { name: screen.label });
+      await page.goto(screen.route === 'settings' ? '/' : `/#/${screen.route}`);
+      if (screen.route === 'settings') {
+        await page.getByRole('button', { name: 'Accessibility QA and account options' }).click();
+        await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
+      }
+      const main = page.getByRole(screen.route === 'settings' ? 'dialog' : 'main', { name: screen.label, exact: true });
       await expect(main).toBeVisible();
-      await expect(main.getByRole("heading", { name: screen.label, level: 1 })).toBeVisible();
+      if (screen.route === 'settings') {
+        await expect(main.getByRole('slider', { name: 'Sound volume', exact: true })).toBeVisible();
+      }
+      if (screen.route === 'recordings') {
+        await expect(main.getByRole("heading", { name: screen.label, level: 1 })).toBeVisible();
+      }
       await assertNoHorizontalOverflow(page);
       violations[`${screen.route}-${viewport.name}`] = await audit(page);
       await page.screenshot({
         path: `.local/screens-${screen.route}${viewport.name === "mobile" ? "-mobile" : ""}.png`,
         fullPage: true,
       });
+      if (screen.route === 'settings') {
+        await page.keyboard.press('Escape');
+        await expect(main).toBeHidden();
+      }
     }
     await context.close();
   }
@@ -135,13 +149,17 @@ test("settings screen closes with Escape and restores focus", async ({ browser }
   const page = await context.newPage();
   await page.goto("/");
 
-  const trigger = page.getByRole("button", { name: /audio and video settings/i });
+  const trigger = page.getByRole("button", { name: 'Accessibility QA and account options' });
   await trigger.focus();
   await trigger.click();
-  await expect(page.getByRole("main", { name: "Settings" })).toBeVisible();
+  await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
+  const locationBefore = page.url();
+  await expect(page.getByRole("dialog", { name: "Settings", exact: true })).toBeVisible();
+  await expect.poll(() => page.getByRole('dialog', { name: 'Settings', exact: true })
+    .evaluate(dialog => dialog.contains(document.activeElement))).toBe(true);
   await page.keyboard.press("Escape");
-  await expect(page).toHaveURL(/\/#\/$/);
-  await expect(page.getByRole("main", { name: "Settings" })).toBeHidden();
+  await expect(page).toHaveURL(locationBefore);
+  await expect(page.getByRole("dialog", { name: "Settings", exact: true })).toBeHidden();
   await expect(trigger).toBeFocused();
 
   await context.close();

@@ -166,6 +166,7 @@
   font-size: 20px;
 }
 .library-empty p {
+  color: var(--foreground);
   max-width: 380px;
   margin: auto;
   line-height: 1.7;

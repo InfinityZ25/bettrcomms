@@ -78,6 +78,20 @@ included in the desktop PR. Do not claim the goal complete from unit tests alone
 
 ## Validation during implementation
 
+2026-09-21: the expanded 92-test browser run exposed stale accessibility-screen
+navigation; it was intentionally stopped before completion to investigate.
+Updated the public sign-in and utility-screen checks for the current controls
+without disabling Axe rules. Found and fixed real accessibility regressions:
+an invisible, redundant category tooltip swallowed the first Escape in Settings;
+slider labels were on the container rather than the nested range input; the
+mobile empty-recording instruction lacked sufficient contrast. One Escape now
+closes Settings and restores account-button focus. Ten accessibility/device/call
+navigation tests passed; Axe reports no tested A/AA violations at desktop,
+compact and mobile sizes. All 232 unit tests passed. Inspected the generated
+mobile Recordings screenshot. The complete 92-test suite is not yet green;
+eight other spec files still reference retired settings navigation and need
+case-by-case review, not blind replacement or deleted assertions.
+
 2026-09-21: all five remaining failures from the initial targeted browser run
 are resolved. Direct navigation now exercises the actual Messages section and
 one-click conversation Call action; two real API clients verify friend labels,

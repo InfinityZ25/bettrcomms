@@ -48,7 +48,7 @@ export function SettingsDialog({ open, onOpenChange, user, noise, onNoiseChange,
                   <SidebarMenu>
                     {pages.map(({ id, label, icon: Icon }) => (
                       <SidebarMenuItem key={id}>
-                        <SidebarMenuButton isActive={page === id} onClick={() => setPage(id)} tooltip={label}>
+                        <SidebarMenuButton isActive={page === id} onClick={() => setPage(id)}>
                           <Icon />
                           <span>{label}</span>
                         </SidebarMenuButton>
