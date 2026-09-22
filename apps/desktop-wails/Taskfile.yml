@@ -28,6 +28,10 @@ tasks:
       - powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/build-wails-binary.ps1
       - powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/stage-wails-ffmpeg.ps1
 
+  package:
+    cmds:
+      - powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/package-desktop-wails.ps1
+
   # Development runs against the live Vite server rather than a staged copy, so
   # frontend edits reload without a Go rebuild.
   dev:

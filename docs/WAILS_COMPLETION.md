@@ -78,6 +78,56 @@ included in the desktop PR. Do not claim the goal complete from unit tests alone
 
 ## Validation during implementation
 
+2026-09-21: the actual compiled NSIS installer passed isolated Windows acceptance
+through `scripts/test-wails-installer.ps1` (exit 0). Fresh per-user installation,
+same-version reinstall, every payload's SHA-256 equality, installed build-info
+execution, shortcut/registration creation and removal, and deletion of all known
+installed files (including the uninstaller) passed. An unknown sentinel file was
+preserved unchanged. The unique `.local/wails-installer-test-*` fixture directory
+is retained for inspection; no Tauri install/profile was touched. This does not
+prove version-changing upgrades, running-app safety, partial-failure rollback,
+prerequisite installation or fresh frontend/native acceptance. Those gates and
+installer CI remain open. The three browser repetitions after compilation ended
+with two passes and one Watch-button timeout; full E2E is still not green.
+
+2026-09-21: NSIS 3.11 from the existing Tauri compiler cache successfully
+produced the Wails installer (91,454,753 bytes, exit 0). This validates package
+compilation, not installed operation, and used the existing portable binary;
+the final distributable still requires a fresh complete build. Added an opt-in
+real installer acceptance script: refuses existing Wails registration/shortcut,
+uses a unique workspace-local destination, compares all payload hashes, probes
+the installed executable, reinstalls the same version, then uninstalls and
+checks registration/shortcut/package removal while preserving an unknown file.
+Script parsing passes; execution is pending until the sequential browser run
+finishes. No real user installation has been changed.
+
+The failing repetition's trace showed a hover taking over six seconds against
+a 3.6-second idle timer. After NSIS exited, another three-repetition browser run
+was started; its first case timed out at Watch (not the idle footer), so compiler
+contention alone does not explain the instability. This run remains in progress.
+
+2026-09-21: revalidated GitHub main with `git ls-remote`: still 691f3e5,
+already an ancestor of this branch. The next full Playwright run finished with
+90 passed, one optional TURN skip, and one integral-call failure: idle controls
+intercepted Stop recording after the pointer returned to its previous coordinate.
+The helper now moves between distinct coordinates and checks controls-visible,
+without force clicks. Three sequential repetitions gave two passes and one
+Fullscreen-call timeout when controls hid again. This remains unresolved; do not
+claim a green full suite. NSIS compression overlapped the repetitions, so rerun
+without that load before attributing the remaining timeout to the product.
+
+2026-09-21: added a Wails-only per-user NSIS installer and packaging entry points.
+The package includes the executable and verified FFmpeg/notices, uses separate
+Tauri-independent registration/shortcut/path, and removes only exact owned files
+on uninstall. Missing WebView2 stops installation before copying files; automatic
+prerequisite installation is not yet implemented. Package script checks binary
+and package versions and supports an explicit NSIS path. Compilation is in
+progress using the existing Tauri NSIS 3.11 cache; native install, upgrade,
+uninstall, running-process/partial-failure handling and installer CI remain gates.
+The SourceForge download returned HTML and failed the pinned checksum, so none
+of that downloaded content was executed. PowerShell parsing and git diff checks
+passed. No user installation or profile was modified by these checks.
+
 2026-09-21: the remaining three full-suite failures pass in targeted runs.
 Realtime events now hydrate/send chat in a direct conversation, then select
 the channel to check call/mute presence; history-read and zero-presence-poll

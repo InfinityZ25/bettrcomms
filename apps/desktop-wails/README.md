@@ -59,8 +59,41 @@ bin/
 Keep this directory together. The runtime is resolved relative to the executable,
 not the working directory. Preparation reuses the verified Tauri bundle or runs
 the existing pinned preparation script, which can require a download. Optional
-GPU audio runtimes still require explicit setup. Installer and release CI work
-remain outstanding; this directory is not an installer.
+GPU audio runtimes still require explicit setup. This directory is the portable
+distribution, not an installer.
+
+## Windows installer (preview)
+
+With NSIS 3 installed, `npm run package` in this directory builds the host and
+creates `bin/bettercomms-wails-0.0.1-windows-x64-setup.exe`. For an explicit
+compiler path or an already validated portable build, use from the repo root:
+
+```powershell
+./scripts/package-desktop-wails.ps1 -SkipBuild -MakeNSIS 'C:/path/to/makensis.exe'
+```
+
+Omit `-SkipBuild` to rebuild the embedded frontend and native host first. The
+installer is per-user, unsigned, and separate from Tauri in its installation
+directory, shortcut and uninstall registration. It requires Windows x64 and an
+existing WebView2 Evergreen Runtime; if missing, it stops before copying files
+and gives the official download address. It does not yet install that prerequisite
+itself. Uninstall removes only known package files, not profiles, credentials,
+recordings or optional GPU runtimes. Basic isolated install, same-version upgrade
+and uninstall acceptance passed on Windows, including payload hashes and unknown
+file preservation. Running-process/partial-failure cases, WebView2 prerequisite
+installation and installer CI remain outstanding.
+
+The opt-in acceptance script installs into a unique `.local/` directory,
+compares payload hashes, reinstalls, uninstalls and verifies that unknown files
+survive. It refuses to run if a Wails installation/shortcut already exists:
+
+```powershell
+./scripts/test-wails-installer.ps1 -Installer ./apps/desktop-wails/bin/bettercomms-wails-0.0.1-windows-x64-setup.exe
+```
+
+It temporarily creates a per-user Wails uninstall registration and Start menu
+shortcut. If it fails, inspect the retained directory and registration rather
+than removing user profiles or bypassing the existing-installation safeguard.
 
 Test the staged runtime without relying on the user's private installation:
 

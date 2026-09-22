@@ -91,8 +91,13 @@ async function expectDecodedVideo(page: Page, selector: string): Promise<void> {
 }
 
 async function callControl(page: Page, name: string) {
-  // Idle call controls fade out; wake them with actual pointer movement.
-  await page.locator('.call-workspace').hover({ position: { x: 10, y: 10 } });
+  // A second device can leave this pointer parked at the previous wake point.
+  // Move between two distinct positions: same-coordinate hover is deliberately
+  // ignored by the immersive controls, and force-click would hide that contract.
+  const workspace = page.locator('.call-workspace');
+  await workspace.hover({ position: { x: 20, y: 20 } });
+  await workspace.hover({ position: { x: 10, y: 10 } });
+  await expect(workspace).toHaveAttribute('data-controls-visible', 'true');
   await page.getByRole('button', { name, exact: true }).click();
 }
 
