@@ -78,6 +78,20 @@ included in the desktop PR. Do not claim the goal complete from unit tests alone
 
 ## Validation during implementation
 
+2026-09-21: audited the pinned Wails Windows permission/navigation code. Its
+public navigation callback does not expose a cancellable URL policy, so external
+browser sign-in cannot justify blanket media grants. Removed PermissionAllow
+for microphone/camera in favour of explicit PermissionDefault, retaining the
+nonempty deny policy for geolocation/web notifications/clipboard read (an empty
+policy triggers upstream's blanket allow fallback). Added a host-policy regression
+test and corrected capability reports and documentation. PageGate documentation
+now explicitly distinguishes a process-lifetime bearer token from a navigation
+allowlist/current-origin check. Full Wails Go tests and vet pass; all 232 frontend
+tests and production build pass. Native prompt acceptance, stored-grant revocation,
+navigation restriction and document-token lifecycle remain open; this change
+does not claim complete security parity. Existing installer artifacts predate it
+and must be rebuilt before final packaged acceptance.
+
 2026-09-21: rebuilt installer (91,462,225 bytes) passed the expanded native
 acceptance script with exit 0. Real Windows sharing locks on both the installed
 host and FFmpeg caused upgrade and uninstall to return 67 before changes;

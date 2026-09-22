@@ -4,7 +4,25 @@ import (
 	"testing"
 
 	"bettercomms/desktop-wails/internal/desktop"
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
+
+func TestDevicePermissionsNeverBlanketAllowDocuments(t *testing.T) {
+	policy := nativeWindowPermissions()
+	if len(policy) == 0 {
+		t.Fatal("empty policy enables blanket allow in the pinned Windows host")
+	}
+	for _, kind := range []application.PermissionType{application.PermissionMicrophone, application.PermissionCamera} {
+		if value, exists := policy[kind]; !exists || value != application.PermissionDefault {
+			t.Fatalf("device %v must defer to WebView2's permission decision", kind)
+		}
+	}
+	for _, kind := range []application.PermissionType{application.PermissionGeolocation, application.PermissionNotifications, application.PermissionClipboardRead} {
+		if policy[kind] != application.PermissionDeny {
+			t.Fatalf("unneeded web permission %v must remain denied", kind)
+		}
+	}
+}
 
 func TestPackagedAPIOriginAndRuntimeOverrides(t *testing.T) {
 	previous := bakedAPIOrigin

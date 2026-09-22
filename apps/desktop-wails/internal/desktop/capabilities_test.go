@@ -44,8 +44,8 @@ func TestEveryCapabilityExplainsItself(t *testing.T) {
 //
 // The window's policy and the token gate that replaces the Tauri host's
 // per-call origin check both have tests, but nobody has watched a packaged
-// window open a device without a prompt. It must also not claim the two things
-// this host cannot do: revoke a grant, or scope it to an origin.
+// window complete the normal permission prompt. It must not claim that this
+// host can revoke a grant or that all navigation has been constrained.
 func TestMediaPermissionsClaimsOnlyWhatThisHostDoes(t *testing.T) {
 	permissions := NewMediaCapabilities().MediaPermissions
 
@@ -58,7 +58,7 @@ func TestMediaPermissionsClaimsOnlyWhatThisHostDoes(t *testing.T) {
 	if permissions.State != Experimental {
 		t.Errorf("mediaPermissions = %q on Windows, want experimental", permissions.State)
 	}
-	for _, promise := range []string{"per capability rather than per origin", "cannot be revoked"} {
+	for _, promise := range []string{"prompt when needed", "cannot be revoked", "Navigation restriction"} {
 		if !strings.Contains(permissions.Detail, promise) {
 			t.Errorf("the detail does not say it is %q: %q", promise, permissions.Detail)
 		}

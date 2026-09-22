@@ -21,8 +21,8 @@ export async function isWindowsDesktop(): Promise<boolean> {
 export async function allowDesktopCapture(
   kind: 'microphone' | 'camera',
 ): Promise<void> {
-  // Wails applies its capture policy when creating the window; there is no
-  // Profile4 grant to write. getUserMedia still checks the OS privacy setting.
+  // Wails has no Profile4 grant to write. On Windows, getUserMedia uses the
+  // normal WebView2 permission decision/prompt as well as OS privacy settings.
   if (getDesktopRuntime() === 'wails') return;
   if (await isWindowsDesktop())
     await invoke('desktop_media_permission_set', { kind, allowed: true });

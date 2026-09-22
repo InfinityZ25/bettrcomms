@@ -117,7 +117,7 @@ func TestThePolicyReportsThatItCannotBeChangedHere(t *testing.T) {
 		if policy.Kind != kind {
 			t.Errorf("the policy is for %q, asked about %q", policy.Kind, kind)
 		}
-		if policy.Policy != "allow" {
+		if policy.Policy != "default" {
 			t.Errorf("%s policy is %q", kind, policy.Policy)
 		}
 		if policy.Managed {

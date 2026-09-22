@@ -194,21 +194,10 @@ func run() error {
 		// rectangles to HTMINBUTTON/HTMAXBUTTON/HTCLOSE. This preserves native
 		// hit testing and Windows 11 Snap Layouts without better-gui.
 		Windows: nativeWindowsWindowOptions(),
-		// The window is allowed the microphone and camera outright rather than
-		// prompting for them. This is the end state the Tauri host reaches by
-		// writing WebView2's per-origin permission through Profile4, which is
-		// not reachable from Go here. It is sound only because this window has
-		// one origin and keeps it: sign-in runs in the system browser, so the
-		// webview never navigates to a page this application did not build.
-		// Windows' own privacy settings still govern, and are where a refusal
-		// actually comes from — see internal/desktop/mediapermissions.go.
-		Permissions: map[application.PermissionType]application.Permission{
-			application.PermissionMicrophone:    application.PermissionAllow,
-			application.PermissionCamera:        application.PermissionAllow,
-			application.PermissionGeolocation:   application.PermissionDeny,
-			application.PermissionNotifications: application.PermissionDeny,
-			application.PermissionClipboardRead: application.PermissionDeny,
-		},
+		// Do not grant devices to every document this window might load.
+		// WebView2 applies its normal origin permission decision/prompt; sign-in
+		// in the system browser is not itself a navigation security boundary.
+		Permissions: nativeWindowPermissions(),
 	})
 	holder.window = window
 	attachNotifications(toasts, window)
@@ -330,6 +319,18 @@ func nativeWindowsWindowOptions() application.WindowsWindow {
 	return application.WindowsWindow{
 		NonClientRegionSupport:     true,
 		WebView2CompositionHosting: true,
+	}
+}
+
+func nativeWindowPermissions() map[application.PermissionType]application.Permission {
+	// Keep a nonempty explicit map: the pinned Windows host otherwise installs
+	// a blanket allow policy. Default media permissions preserve native prompts.
+	return map[application.PermissionType]application.Permission{
+		application.PermissionMicrophone:    application.PermissionDefault,
+		application.PermissionCamera:        application.PermissionDefault,
+		application.PermissionGeolocation:   application.PermissionDeny,
+		application.PermissionNotifications: application.PermissionDeny,
+		application.PermissionClipboardRead: application.PermissionDeny,
 	}
 }
 

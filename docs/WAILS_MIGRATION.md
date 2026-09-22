@@ -38,10 +38,10 @@ is reported unavailable and the frontend takes its browser path.
 - **WebView2 Profile4 permission IPC** (`media_permissions.rs`). Wails keeps its
   WebView2 controller private and the package wrapping it is internal to Wails,
   so there is no way to reach `SetPermissionState` from Go here. This host
-  instead configures the window to allow the microphone and camera without
-  prompting, which is the end state that IPC reaches, and reports the
-  difference: the grant is per capability rather than per origin, and cannot be
-  revoked at runtime. See "Microphone and camera permission" below.
+  instead defers to WebView2's normal microphone/camera permission decision,
+  including a prompt when needed. It no longer sets blanket allow. Stored
+  grants cannot be inspected or revoked by this host at runtime. See
+  "Microphone and camera permission" below.
 - **The NVIDIA package installer.** `nvidia_setup.rs` shells out to
   `scripts/install-nvidia-audio.ps1` for a ~700 MB NVIDIA redistributable. The
   Go side ports the parts that decide anything — Ada-only hardware detection
@@ -190,9 +190,10 @@ Carried over from the Tauri host, and tested:
   state reads. The auth service is three: begin, poll, cancel — it never hands
   the page a pairing, a verifier, or a session. The API proxy is not a Wails
   service; it is a loopback listener gated by a separate per-launch secret.
-- Camera and microphone are allowed without prompting, which is sound only
-  because the window never leaves its own origin; geolocation, notifications,
-  and clipboard read are denied. `OpenExternal` accepts three schemes.
+- Camera and microphone use WebView2's normal permission decision, not blanket
+  allow. The current host does not enforce a complete navigation allowlist;
+  external sign-in is not such a boundary. Geolocation, web notifications and
+  clipboard read are denied. `OpenExternal` accepts three schemes.
 - The webview never navigates to the identity provider: sign-in runs in the
   system browser and returns as a session in this process. See below.
 - The boot report is injected as a JSON string parsed by `JSON.parse`, with
@@ -266,26 +267,27 @@ it later to "fix" a credentialed request cannot pass unnoticed.
 
 The Tauri host writes a per-origin allow through WebView2's Profile4 IPC and
 re-checks the page's origin on every native call. Neither is reachable from Go.
-This host reaches the same end state by two different routes.
+This host does not yet provide equivalent grant management or navigation policy.
 
-**No prompt.** The window is created with `PermissionAllow` for the microphone
-and the camera, which is the state the Profile4 write leaves behind. It is per
-capability rather than per origin, and that is only sound because this window
-has exactly one origin and keeps it — which is what moving sign-in to the system
-browser buys. This host cannot revoke the grant at runtime, and says so.
+**Native permission decision.** The window explicitly uses `PermissionDefault`
+for microphone and camera. WebView2 applies its normal decision and prompts when
+needed instead of granting all documents access. The map remains nonempty to
+avoid the pinned Windows host's blanket-allow fallback. Persisted grants can
+already exist; the capability report describes policy, not observed permission
+status. This host cannot inspect or revoke a stored grant at runtime.
 
 **The origin check, as a capability.** `desktop.PageGate` mints a per-launch
 token, the asset handler injects it into every document it serves, and native
-entry points require it. A page that navigated elsewhere cannot present it:
-script on another origin cannot read this one's storage, and in-memory state
-does not survive a navigation. It is narrower than an origin comparison, which
-would also pass for any other page on the trusted origin.
+entry points require it. Ordinary navigation loses that document's in-memory
+state, but the token itself remains valid for the process lifetime. This is not
+a navigation allowlist or per-document revocation, and possession of a copied
+token is not proof of the current URL. Those security gates remain open.
 
 The token is deliberately separate from the API proxy's launch token. That one
 travels on every API request; a leak of one must not grant the other.
 
-The switch that can actually refuse a device on Windows is the operating
-system's privacy setting, and `MediaPermissionOpenSettings` opens it. The scheme
+Windows privacy settings can also refuse a device, and
+`MediaPermissionOpenSettings` opens them. The scheme
 allowlist there is three entries wide — `https`, `http`, `ms-settings` — because
 the shell will otherwise run whatever a scheme is registered to.
 
@@ -369,5 +371,5 @@ leaves nothing in the credential manager of whoever ran it.
 
 What remains untested is the rest of the interactive surface: a packaged build
 signing in, the API proxy carrying a real WebSocket to the hosted API, a WebView2
-window opening a microphone without prompting, and a person watching a capture in
+window completing its native microphone permission decision, and a person watching a capture in
 the window.

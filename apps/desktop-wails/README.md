@@ -116,9 +116,9 @@ overrides, then restores the normal binary. The Windows CI job runs this check.
   native Save As and bounded opaque grants, not arbitrary paths from the page.
 - API origins must be HTTPS, or loopback HTTP in development, without credentials,
   paths, queries or fragments. Proxy and native tokens are separate.
-- Microphone/camera policy is set at window creation; unlike Tauri's per-origin
-  permission IPC, Wails does not currently revoke it dynamically. OS privacy
-  settings still apply.
+- Microphone/camera use WebView2's normal permission decision/prompt on Windows,
+  not blanket allow. Unlike Tauri's permission IPC, this host cannot inspect or
+  revoke stored grants dynamically. OS privacy settings still apply.
 - Packaged login, navigation/resource cleanup, interactive native UI and sustained
   hardware acceptance remain release gates.
 - Existing Tauri recordings/preferences are not automatically imported. macOS

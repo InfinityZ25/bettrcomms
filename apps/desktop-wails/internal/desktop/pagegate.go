@@ -16,12 +16,10 @@ import (
 // secret into every document it serves, and native calls that matter must
 // present it.
 //
-// The two are equivalent in effect, and this one is narrower. An origin check
-// passes for any page on the trusted origin, including one this application did
-// not build. The token only ever reaches a document this host's own asset
-// handler produced, and a page that navigates elsewhere loses it with the rest
-// of its JavaScript state: script on a different origin cannot read another
-// origin's storage, and in-memory state does not survive a navigation.
+// This is possession-based authorisation, not a navigation allowlist or proof
+// of the current URL. Ordinary navigation loses the document's in-memory token,
+// but a copied token remains valid for this process lifetime. Per-document
+// rotation/revocation and navigation restrictions remain separate requirements.
 //
 // It is deliberately separate from the API proxy's launch token. That one is
 // sent on every API request and is a different blast radius; a leak of one must

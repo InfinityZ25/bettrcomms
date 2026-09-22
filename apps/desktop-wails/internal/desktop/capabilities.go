@@ -246,9 +246,9 @@ func mediaPermissions() Capability {
 	}
 	return Capability{
 		State: Experimental,
-		Detail: "This window is configured to use the microphone and camera without prompting, so capture does not stop on a webview dialog. " +
-			"Unlike the Tauri host, the grant is per capability rather than per origin and cannot be revoked at runtime; it is sound because this window never leaves its own origin, since sign-in runs in the system browser. " +
-			"A device that still will not open is held by Windows' own privacy settings, which this host can open.",
+		Detail: "WebView2 applies its normal microphone and camera permission decision, including a prompt when needed; this host does not automatically allow every document. " +
+			"Stored grants cannot be revoked or inspected by this host at runtime. Navigation restriction and packaged prompt acceptance remain pending. " +
+			"Windows privacy settings also apply and can be opened from this host.",
 	}
 }
 

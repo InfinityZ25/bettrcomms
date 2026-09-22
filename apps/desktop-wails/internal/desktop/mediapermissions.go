@@ -10,21 +10,17 @@ import (
 // The Tauri host drives WebView2's Profile4 permission IPC: it writes an
 // allow or a deny for the application's origin and reads it back. That
 // interface is not reachable from here — Wails keeps its WebView2 controller
-// private, and the package that wraps it is internal to Wails — so this host
-// reaches the same end state by a different route.
+// private, and the package that wraps it is internal to Wails. This host does
+// not yet have equivalent grant inspection/revocation.
 //
-// It configures the window's permission policy up front. The window then never
-// prompts for microphone or camera, which is what the Tauri host's Profile4
-// write achieves after the person has agreed once. The policy is per capability
-// rather than per origin, and that is only sound because this window has
-// exactly one origin: sign-in runs in the system browser (see
-// browsersignin.go), so the webview never navigates to a page this application
-// did not build.
+// It defers microphone/camera requests to WebView2's normal permission decision
+// rather than automatically allowing every document in the window. Opening
+// sign-in externally does not prevent other navigation. A persisted permission
+// may already exist; this report is policy, not a claim that a prompt appeared.
 //
 // What is deliberately not claimed: this host cannot revoke the grant at
-// runtime, and cannot read back what WebView2 has stored. The switch that can
-// actually refuse a device on Windows is the operating system's own privacy
-// setting, and MediaPermissionSettingsURI is how a person reaches it.
+// runtime, and cannot read back what WebView2 has stored. Windows' own privacy
+// settings can also refuse a device; MediaPermissionSettingsURI opens them.
 
 // MediaPermissionKind is a capability the page can ask for.
 type MediaPermissionKind string
@@ -37,8 +33,7 @@ const (
 // MediaPermissionPolicy is what this host configured, and what it cannot do.
 type MediaPermissionPolicy struct {
 	Kind MediaPermissionKind `json:"kind"`
-	// Policy is what the window was configured with: "allow" means capture
-	// proceeds without a webview prompt.
+	// Policy is the configured decision strategy, not a stored grant status.
 	Policy string `json:"policy"`
 	// Managed reports whether this host can change the policy at runtime. It is
 	// false here, and the page should not offer a control that would do
@@ -67,10 +62,10 @@ func MediaPermission(kind MediaPermissionKind) MediaPermissionPolicy {
 	}
 	return MediaPermissionPolicy{
 		Kind:    kind,
-		Policy:  "allow",
+		Policy:  "default",
 		Managed: false,
-		Detail: "This window is configured to use the " + device +
-			" without asking again. If capture still fails, the block is Windows' own privacy setting, not this app.",
+		Detail: "WebView2 applies its normal permission decision for the " + device +
+			", including a prompt when needed. Windows privacy settings also apply. This host cannot read or revoke a stored grant.",
 	}
 }
 
