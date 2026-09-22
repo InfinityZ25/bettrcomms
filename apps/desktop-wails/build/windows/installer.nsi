@@ -33,6 +33,30 @@ UninstallIcon "icon.ico"
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "English"
 
+; Check every existing payload before making any change, not only the host:
+; FFmpeg can outlive the window while an export is finishing. FileOpen in
+; append mode tests write access without changing existing bytes.
+!macro CheckWritable FILE
+  ${If} ${FileExists} "$INSTDIR\${FILE}"
+    ClearErrors
+    FileOpen $0 "$INSTDIR\${FILE}" a
+    ${If} ${Errors}
+      MessageBox MB_OK|MB_ICONSTOP "Close BetterComms (Wails) and its media/export tasks, and check write access before trying again. No package files have been changed." /SD IDOK
+      SetErrorLevel 67
+      Abort
+    ${EndIf}
+    FileClose $0
+  ${EndIf}
+!macroend
+
+!macro CheckPayloadWritable
+  !insertmacro CheckWritable "bettercomms-wails.exe"
+  !insertmacro CheckWritable "ffmpeg\ffmpeg.exe"
+  !insertmacro CheckWritable "ffmpeg\LICENSE"
+  !insertmacro CheckWritable "ffmpeg\SOURCE.txt"
+  !insertmacro CheckWritable "ffmpeg\setup.json"
+!macroend
+
 Function .onInit
   SetShellVarContext current
   SetRegView 64
@@ -64,19 +88,8 @@ Function .onInit
 FunctionEnd
 
 Section "BetterComms (Wails)" Main
-  ; Fail before copying other files if the old executable cannot be replaced.
-  ; No process is killed: callers must close their running calls themselves.
-  IfFileExists "$INSTDIR\bettercomms-wails.exe" 0 copy_files
-  ClearErrors
-  FileOpen $0 "$INSTDIR\bettercomms-wails.exe" a
-  IfErrors app_running
-  FileClose $0
-  Goto copy_files
-app_running:
-  MessageBox MB_OK|MB_ICONSTOP "Close BetterComms (Wails) before installing or updating it." /SD IDOK
-  SetErrorLevel 67
-  Abort
-copy_files:
+  ; Never kill a user's call or media process to perform an update.
+  !insertmacro CheckPayloadWritable
   SetOutPath "$INSTDIR"
   File "${BUNDLE_DIR}\bettercomms-wails.exe"
   SetOutPath "$INSTDIR\ffmpeg"
@@ -104,6 +117,7 @@ Function un.onInit
 FunctionEnd
 
 Section "Uninstall"
+  !insertmacro CheckPayloadWritable
   ClearErrors
   Delete "$INSTDIR\bettercomms-wails.exe"
   IfErrors running

@@ -80,8 +80,11 @@ and gives the official download address. It does not yet install that prerequisi
 itself. Uninstall removes only known package files, not profiles, credentials,
 recordings or optional GPU runtimes. Basic isolated install, same-version upgrade
 and uninstall acceptance passed on Windows, including payload hashes and unknown
-file preservation. Running-process/partial-failure cases, WebView2 prerequisite
-installation and installer CI remain outstanding.
+file preservation. Locked host/FFmpeg files also reject upgrade and uninstall
+before changing the payload, and upgrades reuse the registered custom directory.
+Windows CI builds and tests the installer (its first remote run is pending).
+Running-call/race/partial-failure cases and WebView2 prerequisite installation
+remain outstanding.
 
 The opt-in acceptance script installs into a unique `.local/` directory,
 compares payload hashes, reinstalls, uninstalls and verifies that unknown files

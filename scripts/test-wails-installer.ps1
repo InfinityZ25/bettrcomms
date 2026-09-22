@@ -31,15 +31,34 @@ function Assert-Installed {
     }
 }
 function Invoke-Install {
+    param([switch]$UseRegisteredDirectory)
     # NSIS requires /D last and without quote characters, including for spaces.
-    $process = Start-Process -FilePath $installerPath -ArgumentList "/S /D=$destination" -PassThru -Wait -WindowStyle Hidden
+    $arguments = if ($UseRegisteredDirectory) { '/S' } else { "/S /D=$destination" }
+    $process = Start-Process -FilePath $installerPath -ArgumentList $arguments -PassThru -Wait -WindowStyle Hidden
     if ($process.ExitCode -ne 0) { throw "Installer exit code: $($process.ExitCode)" }
     Assert-Installed
 }
 Invoke-Install
+$uninstaller = Join-Path $destination 'uninstall.exe'
+# A Windows sharing lock exercises the OS-level refusal without starting a
+# camera, call, GPU or user-facing window. Test both the host and media worker.
+foreach ($lockedFile in @('bettercomms-wails.exe', 'ffmpeg/ffmpeg.exe')) {
+    $lockPath = Join-Path $destination $lockedFile
+    $fileLock = [IO.File]::Open($lockPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+    try {
+        $attempt = Start-Process -FilePath $installerPath -ArgumentList "/S /D=$destination" -PassThru -Wait -WindowStyle Hidden
+        if ($attempt.ExitCode -ne 67) { throw "Upgrade did not refuse locked payload: $lockedFile (exit $($attempt.ExitCode))" }
+        # Run in place only for refusal, so the exit code belongs to the actual
+        # uninstaller rather than its TEMP launcher. Nothing should be deleted.
+        $attempt = Start-Process -FilePath $uninstaller -ArgumentList "/S _?=$destination" -PassThru -Wait -WindowStyle Hidden
+        if ($attempt.ExitCode -ne 67) { throw "Uninstall did not refuse locked payload: $lockedFile (exit $($attempt.ExitCode))" }
+    } finally { $fileLock.Dispose() }
+    Assert-Installed
+    if (-not (Test-Path -LiteralPath $uninstaller)) { throw 'Refused uninstall removed its recovery entry point.' }
+}
 $sentinel = Join-Path $destination 'user-data-must-survive.txt'
 [IO.File]::WriteAllText($sentinel, 'Installer acceptance: preserve unknown files.')
-Invoke-Install
+Invoke-Install -UseRegisteredDirectory
 if (-not (Test-Path -LiteralPath $sentinel)) { throw 'Upgrade removed a user file.' }
 $uninstaller = Join-Path $destination 'uninstall.exe'
 # NSIS may relaunch from TEMP; also wait for its authoritative file/registry
@@ -53,5 +72,5 @@ foreach ($file in @('bettercomms-wails.exe', 'uninstall.exe', 'ffmpeg/ffmpeg.exe
 }
 if ((Test-Path -LiteralPath $registry) -or (Test-Path -LiteralPath $shortcut)) { throw 'Uninstall retained registration or shortcut.' }
 if ((Get-Content -LiteralPath $sentinel -Raw) -ne 'Installer acceptance: preserve unknown files.') { throw 'Uninstall changed user data.' }
-Write-Host 'Install, same-version upgrade, executable metadata, payload hashes and uninstall preservation passed.'
+Write-Host 'Install, locked-payload refusal, same-version upgrade, executable metadata, payload hashes and uninstall preservation passed.'
 Write-Host "Acceptance directory retained for inspection: $root"

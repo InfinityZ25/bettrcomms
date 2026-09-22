@@ -78,6 +78,30 @@ included in the desktop PR. Do not claim the goal complete from unit tests alone
 
 ## Validation during implementation
 
+2026-09-21: rebuilt installer (91,462,225 bytes) passed the expanded native
+acceptance script with exit 0. Real Windows sharing locks on both the installed
+host and FFmpeg caused upgrade and uninstall to return 67 before changes;
+subsequent SHA-256 checks and build-info execution proved all payloads remained
+intact, with shortcut, registration and uninstaller preserved. Same-version
+reinstall without /D reused the registered custom directory. Normal uninstall
+then removed all owned files and registration while retaining the sentinel.
+This verifies locked-file refusal, not a running interactive call or transactional
+rollback after disk failure or a process starting after preflight. Those cases,
+WebView2 prerequisite provisioning, version-changing upgrades and actual CI run
+remain open. No Tauri or real user profiles were modified.
+
+2026-09-21: installer preflight now checks all existing payload files before
+copying or deleting anything, including FFmpeg which can still be in use after
+the host window closes. Added OS file-sharing-lock acceptance for the host and
+FFmpeg: both upgrade and uninstall must refuse with exit 67, preserve hashes,
+registration, shortcut and recovery uninstaller. Reinstallation now omits /D
+to check that the registered custom install directory is reused. Compilation
+and these new native acceptance cases are in progress; no pass is claimed yet.
+Windows CI now provisions NSIS 3.11, packages after the validated portable build,
+runs installer lifecycle acceptance, and keeps a separate installer artifact
+without publishing a release. Actionlint 1.7.7, PowerShell parsing and diff checks
+pass; the updated workflow itself has not yet run on GitHub.
+
 2026-09-21: the actual compiled NSIS installer passed isolated Windows acceptance
 through `scripts/test-wails-installer.ps1` (exit 0). Fresh per-user installation,
 same-version reinstall, every payload's SHA-256 equality, installed build-info
