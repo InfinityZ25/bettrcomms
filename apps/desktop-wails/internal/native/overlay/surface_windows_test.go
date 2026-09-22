@@ -193,8 +193,17 @@ func TestFramesArePaced(t *testing.T) {
 	}
 	elapsed := time.Since(started)
 
-	// Six frames at 24 fps is at least five intervals of waiting.
-	if minimum := (count - 1) * minFrameInterval; elapsed < minimum {
+	/*
+	  Six frames at 24 fps is five intervals of waiting, less a hair.
+
+	  Sleep is allowed to return marginally early — a Windows CI runner
+	  measured 208.2594ms against a nominal 208.3333ms and failed the build on
+	  74 microseconds. The difference this test exists to catch is pacing
+	  against no pacing at all, which is three orders of magnitude larger than
+	  the slack given here.
+	*/
+	const wakeSlack = time.Millisecond
+	if minimum := (count-1)*minFrameInterval - wakeSlack; elapsed < minimum {
 		t.Errorf("%d frames took %v, want at least %v of pacing", count, elapsed, minimum)
 	}
 }
