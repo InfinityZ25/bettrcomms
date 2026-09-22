@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { openSettingsCategory } from './settings-navigation';
 
 const baseURL = process.env.E2E_BASE_URL ?? 'http://localhost:5173';
 
@@ -9,11 +10,12 @@ test('processing controls apply tuning to calls and identify an RNNoise micropho
     localStorage.setItem('bc-denoiser', 'rnnoise'),
   );
   await page.goto(baseURL);
-  await page.getByRole('button', { name: /audio and video settings/i }).click();
+  await openSettingsCategory(page);
   await page.getByText('Advanced audio controls', { exact: true }).click();
   await page.getByLabel('Echo cancellation').uncheck();
   await page.getByLabel('Automatic microphone gain').check();
-  await page.getByLabel('Low-cut filter').selectOption('100');
+  await page.getByRole('combobox', { name: 'Low-cut filter', exact: true }).click();
+  await page.getByRole('option', { name: '100 Hz', exact: true }).click();
   await page.getByRole('slider', { name: 'Input volume' }).fill('1.5');
   await page.getByLabel('Quiet-sound gate').check();
   await page.getByRole('slider', { name: 'Gate threshold' }).fill('-38');
@@ -44,9 +46,9 @@ test('processing controls apply tuning to calls and identify an RNNoise micropho
   await expect(
     page.getByText('Recording a 5-second RNNoise sample…'),
   ).toBeVisible();
-  await page
-    .getByRole('checkbox', { name: /noise suppression reduce/i })
-    .uncheck();
+  await openSettingsCategory(page, 'Audio');
+  await page.getByRole('switch', { name: 'Noise suppression', exact: true }).uncheck();
+  await openSettingsCategory(page);
   await page.getByRole('button', { name: 'Test microphone' }).click();
   await expect(
     page.getByText('Recording a 5-second Suppression off sample…'),
@@ -65,7 +67,7 @@ test('processing controls apply tuning to calls and identify an RNNoise micropho
 
 test('central input and output volume controls are bounded and persist', async ({ page }) => {
   await page.goto(baseURL);
-  await page.getByRole('button', { name: /audio and video settings/i }).click();
+  await openSettingsCategory(page);
   const input = page.getByRole('slider', { name: 'Input volume' });
   const output = page.getByRole('slider', { name: 'Output volume' });
   await expect(input).toHaveAttribute('min', '0');
@@ -78,7 +80,7 @@ test('central input and output volume controls are bounded and persist', async (
   await output.fill('0.65');
   await page.screenshot({ path: '.local/central-audio-settings-1280.png', fullPage: true });
   await page.reload();
-  await page.getByRole('button', { name: /audio and video settings/i }).click();
+  await openSettingsCategory(page);
   await expect(page.getByRole('slider', { name: 'Input volume' })).toHaveValue('1.5');
   await expect(page.getByRole('slider', { name: 'Output volume' })).toHaveValue('0.65');
   await page.setViewportSize({ width: 390, height: 844 });

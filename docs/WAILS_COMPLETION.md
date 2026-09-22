@@ -78,6 +78,19 @@ included in the desktop PR. Do not claim the goal complete from unit tests alone
 
 ## Validation during implementation
 
+2026-09-21: updated camera-quality, loopback, processing and DirectML browser
+specs for the Settings dialog and accessible custom selectors. Added a shared
+navigation helper that works on desktop/mobile without reloading active media.
+Thirteen tests passed across the targeted runs: camera constraint fidelity,
+unsupported-mode gating and stopped old tracks; five monitor/loopback cases
+(including measured one-second delay, no recorder, sustained signal and late
+track cleanup); five processing cases (RNNoise output, gate, persistence and
+browser fallback); two DirectML preference/readiness cases. The native-readiness
+UI case uses a simulated Tauri backend, not real Wails GPU/install acceptance.
+Assertions on capture parameters, sound samples, output routing and cleanup
+remain intact. These changes affect tests only. Full E2E and native acceptance
+remain open; other retired-settings references still need review.
+
 2026-09-21: the expanded 92-test browser run exposed stale accessibility-screen
 navigation; it was intentionally stopped before completion to investigate.
 Updated the public sign-in and utility-screen checks for the current controls
