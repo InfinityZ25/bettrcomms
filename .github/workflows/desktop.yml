@@ -7,7 +7,7 @@ on:
       - "v*"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   bundle:
@@ -70,3 +70,28 @@ jobs:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.paths }}
           if-no-files-found: error
+
+  # Artifacts on a workflow run expire (90 days) and aren't discoverable
+  # from the repo's Releases page — easy to think a build never happened.
+  # Only a tag push (an actual version, not an ad-hoc workflow_dispatch
+  # build) gets turned into a permanent, linkable GitHub Release with the
+  # installers attached directly.
+  release:
+    name: Publish GitHub release
+    needs: bundle
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bettercomms-*
+          merge-multiple: true
+          path: dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/**/*
+          generate_release_notes: true
+          body: |
+            See [docs/RELEASE_NOTES.md](https://github.com/${{ github.repository }}/blob/main/docs/RELEASE_NOTES.md) for what changed in this release.
+
+            Unsigned, non-notarized builds — Windows SmartScreen and macOS Gatekeeper will warn on first launch.
