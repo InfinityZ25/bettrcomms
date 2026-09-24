@@ -22,7 +22,7 @@ mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
 
 (
   cd "$app"
-  CGO_ENABLED=1 go build -trimpath -tags production \
+  CGO_ENABLED=1 MACOSX_DEPLOYMENT_TARGET=15.0 go build -trimpath -tags production \
     -ldflags '-X main.bakedAPIOrigin=https://app.bettrcomms.com' \
     -o "$binary" .
 )
@@ -43,7 +43,7 @@ cat > "$bundle/Contents/Info.plist" <<PLIST
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$version</string>
   <key>CFBundleVersion</key><string>$version</string>
-  <key>LSMinimumSystemVersion</key><string>11.0</string>
+  <key>LSMinimumSystemVersion</key><string>15.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSMicrophoneUsageDescription</key><string>BetterComms uses your microphone when you join a call.</string>
   <key>NSCameraUsageDescription</key><string>BetterComms uses your camera when you enable video.</string>

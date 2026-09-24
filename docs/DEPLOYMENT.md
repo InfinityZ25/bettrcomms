@@ -12,7 +12,7 @@ The initial preview retains the existing WorkOS **Staging** environment and user
 
 ## Native downloads
 
-The **Wails desktop preview release** GitHub Actions workflow builds a Windows x64 NSIS installer and separate macOS Apple Silicon/Intel `.app` ZIP archives. Run it manually for test artifacts. Pushing a `wails-v<version>` tag matching `apps/desktop-wails/package.json` publishes those artifacts as a GitHub prerelease after all three builds pass. These preview builds are unsigned and macOS is not notarized; packaged sign-in and native media acceptance remain open in `WAILS_COMPLETION.md`.
+The **Wails desktop preview release** GitHub Actions workflow builds a Windows x64 NSIS installer and separate macOS Apple Silicon/Intel `.app` ZIP archives for macOS 15 or later. Run it manually for test artifacts. Pushing a `wails-v<version>` tag matching `apps/desktop-wails/package.json` publishes those artifacts as a GitHub prerelease after all three builds pass. These preview builds are unsigned and macOS is not notarized; packaged sign-in and native media acceptance remain open in `WAILS_COMPLETION.md`.
 
 Wails release builds embed the shared frontend and pin `https://app.bettrcomms.com` as their API origin. The host proxies API and WebSocket traffic through an authenticated loopback service and opens WorkOS sign-in in the system browser. The hosted UI is trusted application code, so GitHub/Railway access is part of the application's trust boundary. The older Tauri release configuration remains in the repository for its existing clients.
 
