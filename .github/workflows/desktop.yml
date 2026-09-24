@@ -1,72 +1,118 @@
-name: Desktop release bundles
+name: Wails desktop preview release
 
 on:
   workflow_dispatch:
   push:
     tags:
-      - "v*"
+      - "wails-v*"
 
 permissions:
   contents: read
 
 jobs:
-  bundle:
-    name: ${{ matrix.name }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: Windows x64
-            os: windows-latest
-            target: x86_64-pc-windows-msvc
-            artifact: bettercomms-windows-x64
-            paths: |
-              apps/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
-              apps/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
-          - name: macOS Apple Silicon
-            os: macos-15
-            target: aarch64-apple-darwin
-            artifact: bettercomms-macos-arm64
-            paths: |
-              apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
-          - name: macOS Intel
-            os: macos-15-intel
-            target: x86_64-apple-darwin
-            artifact: bettercomms-macos-x64
-            paths: |
-              apps/desktop/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
-    runs-on: ${{ matrix.os }}
+  windows:
+    name: Windows x64 installer
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            apps/desktop/package-lock.json
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-go@v5
         with:
-          targets: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: apps/desktop/src-tauri
-          key: ${{ matrix.target }}
-      - name: Install web dependencies
-        run: npm ci
-      - name: Install desktop tooling
-        run: npm ci --prefix apps/desktop
-      - name: Require deployment-specific desktop configuration
-        shell: bash
-        run: test -f apps/desktop/src-tauri/tauri.release.conf.json
-      - name: Prepare bundled native sharing runtime
-        if: runner.os == 'Windows'
-        shell: powershell
-        run: ./scripts/prepare-ffmpeg-bundle.ps1
-      - name: Build desktop bundle
-        run: npm --prefix apps/desktop run build -- --target ${{ matrix.target }} --config src-tauri/tauri.release.conf.json
+          go-version: "1.26"
+          cache-dependency-path: apps/desktop-wails/go.sum
+      - run: npm ci
+      - name: Install pinned Wails CLI
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.18
+      - name: Build and test Wails host
+        run: ./scripts/build-desktop-wails.ps1 -ApiOrigin https://app.bettrcomms.com
+      - name: Install NSIS
+        run: |
+          choco install nsis --version=3.11 --yes --no-progress --allow-downgrade
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS installation failed.' }
+      - name: Package installer
+        run: ./scripts/package-desktop-wails.ps1 -SkipBuild -MakeNSIS "${env:ProgramFiles(x86)}/NSIS/makensis.exe"
+      - name: Verify installer
+        run: |
+          $version = (Get-Content apps/desktop-wails/package.json -Raw | ConvertFrom-Json).version
+          ./scripts/test-wails-installer.ps1 -Installer "apps/desktop-wails/bin/bettercomms-wails-$version-windows-x64-setup.exe"
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: ${{ matrix.paths }}
+          name: bettercomms-wails-windows-x64
+          path: apps/desktop-wails/bin/*-setup.exe
           if-no-files-found: error
+
+  macos:
+    name: macOS ${{ matrix.arch }} app
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            arch: arm64
+          - os: macos-15-intel
+            arch: x64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache-dependency-path: apps/desktop-wails/go.sum
+      - run: npm ci
+      - run: npm run build
+      - name: Stage shared frontend
+        run: cp -R apps/web/dist/. apps/desktop-wails/frontend/dist/
+      - name: Refresh embedded native installer assets
+        run: |
+          cp scripts/install-deepfilter.ps1 scripts/install-nvidia-audio.ps1 apps/desktop-wails/internal/native/dspsetup/assets/
+      - name: Test Wails host
+        working-directory: apps/desktop-wails
+        run: |
+          go vet ./...
+          go test ./...
+      - name: Package macOS app
+        run: bash scripts/package-desktop-wails-macos.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bettercomms-wails-macos-${{ matrix.arch }}
+          path: apps/desktop-wails/bin/*-macos-${{ matrix.arch }}.zip
+          if-no-files-found: error
+
+  release:
+    name: Publish preview release
+    if: startsWith(github.ref, 'refs/tags/wails-v')
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check tag matches Wails package version
+        shell: bash
+        run: |
+          version=$(node -p "require('./apps/desktop-wails/package.json').version")
+          test "${GITHUB_REF_NAME}" = "wails-v${version}"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bettercomms-wails-*
+          path: release-assets
+          merge-multiple: true
+      - name: Publish unsigned preview
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release-assets/* \
+            --verify-tag --prerelease --title "BetterComms Wails ${GITHUB_REF_NAME#wails-v} (preview)" \
+            --notes "Unsigned Wails v3 preview for Windows x64 and macOS Apple Silicon/Intel. Windows requires WebView2 Evergreen. macOS users may need to explicitly allow this unnotarized app. Packaged authentication, native media and cross-device acceptance remain open; see docs/WAILS_COMPLETION.md."
