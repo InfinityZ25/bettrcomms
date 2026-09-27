@@ -1,5 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from 'react';
 import { api, type Room, type User } from './api';
+import { Button } from '@/components/ui/button';
 import { Mascot } from '@/components/mascot';
 import { useSession } from '@/features/auth/useSession';
 import SignInPanel from '@/features/auth/SignInPanel';
@@ -14,6 +21,9 @@ import IncomingCall from '@/features/call/IncomingCall';
 import RecordingNotice from '@/features/call/RecordingNotice';
 import { useCallPresence } from '@/features/call/useCallPresence';
 import { onDesktopNotificationClick } from '@/desktop/notifications';
+import MessageThread from '@/features/chat/MessageThread';
+import MessageSearch from '@/features/chat/MessageSearch';
+import MessagingSession from '@/features/chat/MessagingSession';
 import DirectConversation from '@/features/chat/DirectConversation';
 import FriendsDialog from '@/features/friends/FriendsDialog';
 import RecordingsLibrary from '@/features/recordings/RecordingsLibrary';
@@ -63,7 +73,9 @@ export default function App() {
   const callJoined = call.joined;
   const callRoom = call.room;
   const [callFocused, setCallFocused] = useState(false);
-  const [shareActions, setShareActions] = useState<NativeShareActions | null>(null);
+  const [shareActions, setShareActions] = useState<NativeShareActions | null>(
+    null,
+  );
   const shareActionsRef = useRef<NativeShareActions | null>(null);
 
   // Home is the call screen with nothing selected and no call running.
@@ -91,6 +103,11 @@ export default function App() {
     to it except the sidebar.
   */
   const [chatColumn, setChatColumn] = useState(true);
+  const [channelChat, setChannelChat] = useState(false);
+  const [messageTarget, setMessageTarget] = useState<{
+    room: string;
+    id: string;
+  } | null>(null);
   /** Opens a room somebody named rather than picked from the list. */
   const openRoomById = (roomId: string) => {
     const found = rooms.find((candidate) => candidate.id === roomId);
@@ -109,6 +126,7 @@ export default function App() {
     [rooms],
   );
   const selectRoom = (next: Room) => {
+    setMessageTarget(null);
     setRoom(next);
     setSection(sectionForRoom(next.kind));
     setCallOpen(false);
@@ -144,7 +162,11 @@ export default function App() {
     canvas here — a call with someone is still a conversation with them.
   */
   const conversation = screen === 'call' && inDirectRoom && !callOpen;
-  const chatBeside = screen === 'call' && inDirectRoom && callOpen && chatColumn;
+  const chatBeside =
+    screen === 'call' &&
+    Boolean(room) &&
+    (callOpen || !inDirectRoom) &&
+    (inDirectRoom ? chatColumn : channelChat);
   const callOnScreen = screen === 'call' && !atHome && !conversation;
 
   const releaseShare = useCallback(() => {
@@ -174,7 +196,8 @@ export default function App() {
   }, [room?.id, user?.id]);
 
   useEffect(() => {
-    const failed = (event: Event) => setError((event as CustomEvent<string>).detail);
+    const failed = (event: Event) =>
+      setError((event as CustomEvent<string>).detail);
     window.addEventListener('bc-output-error', failed);
     return () => window.removeEventListener('bc-output-error', failed);
   }, []);
@@ -194,7 +217,9 @@ export default function App() {
   const devSignIn = (event: FormEvent) => {
     event.preventDefault();
     void run(async () => {
-      setUser(unwrap(await api<User | { user: User }>('/auth/dev', { email, name })));
+      setUser(
+        unwrap(await api<User | { user: User }>('/auth/dev', { email, name })),
+      );
     });
   };
   const signOut = () =>
@@ -211,7 +236,9 @@ export default function App() {
     return (
       <div className="flex h-dvh flex-col items-center justify-center gap-3">
         <Mascot className="w-24" />
-        <span className="text-sm text-muted-foreground">Opening your space…</span>
+        <span className="text-sm text-muted-foreground">
+          Opening your space…
+        </span>
       </div>
     );
 
@@ -231,22 +258,35 @@ export default function App() {
         navigate('share');
       }}
     >
+      {user && <MessagingSession key={user.id} userId={user.id} />}
+      {user && (
+        <MessageSearch
+          user={user}
+          rooms={rooms}
+          onOpen={(next, id) => {
+            selectRoom(next);
+            setMessageTarget({ room: next.id, id });
+            setChatColumn(true);
+            setChannelChat(true);
+          }}
+        />
+      )}
       <div
         data-app-shell
         data-in-call={callJoined}
         data-call-focused={immersive}
         className="app-shell flex h-dvh min-h-[600px] gap-1.5 overflow-hidden bg-sidebar px-2 py-2 min-[821px]:min-h-[680px] select-none [[data-desktop-frame]_&]:pt-0"
       >
-      <div className="relative min-w-0 flex-1 overflow-hidden">
-      <main
-        className={cn(
-          'content-canvas absolute inset-0 min-w-0 flex-col overflow-hidden rounded-3xl border border-border/60 bg-background',
-          screen === 'call' ? 'flex' : 'hidden',
-        )}
-        aria-label="Call"
-        hidden={screen !== 'call'}
-      >
-        {/*
+        <div className="relative min-w-0 flex-1 overflow-hidden">
+          <main
+            className={cn(
+              'content-canvas absolute inset-0 min-w-0 flex-col overflow-hidden rounded-3xl border border-border/60 bg-background',
+              screen === 'call' ? 'flex' : 'hidden',
+            )}
+            aria-label="Call"
+            hidden={screen !== 'call'}
+          >
+            {/*
           Recording, on the edge of the canvas itself.
 
           Two sparks leave the record button at the bottom, run up both sides
@@ -256,258 +296,316 @@ export default function App() {
           inset from it, and a ring floating inside the black read as a box
           around nothing.
         */}
-        {call.recording && (
-          <div className="recording-frame" aria-hidden="true">
-            <span className="recording-frame-meet" />
-          </div>
-        )}
-        <section
-          className={cn(
-            'relative flex min-w-0 flex-1 flex-col overflow-auto px-3 pt-5 pb-3 [scroll-padding-bottom:1.5rem] min-[481px]:px-5 min-[821px]:pb-0 min-[1251px]:px-8',
-            chatBeside && 'min-[1100px]:flex-row min-[1100px]:gap-3',
-            callJoined ? 'pt-5' : 'min-[821px]:pt-8',
-            callFocused &&
-              screen === 'call' &&
-              'px-3 pt-4 pb-0 min-[481px]:px-3 min-[821px]:px-3 min-[821px]:pt-4 min-[1251px]:px-3',
-          )}
-        >
-          {/*
+            {call.recording && (
+              <div className="recording-frame" aria-hidden="true">
+                <span className="recording-frame-meet" />
+              </div>
+            )}
+            <section
+              className={cn(
+                'relative flex min-w-0 flex-1 flex-col overflow-auto px-3 pt-5 pb-3 [scroll-padding-bottom:1.5rem] min-[481px]:px-5 min-[821px]:pb-0 min-[1251px]:px-8',
+                chatBeside && 'min-[1100px]:flex-row min-[1100px]:gap-3',
+                callJoined ? 'pt-5' : 'min-[821px]:pt-8',
+                callFocused &&
+                  screen === 'call' &&
+                  'px-3 pt-4 pb-0 min-[481px]:px-3 min-[821px]:px-3 min-[821px]:pt-4 min-[1251px]:px-3',
+              )}
+            >
+              {/*
             With nothing open there is no call to stage, so home takes the
             space instead of a lobby explaining that nothing is selected. The
             session itself lives above this tree, so nothing is torn down by
             swapping what is on screen.
           */}
-          {atHome ? (
-            <HomeScreen
-              user={user}
-              rooms={rooms}
-              presence={presence.rooms}
-              presenceKnown={presence.known}
-              onSelectRoom={selectRoom}
-              onCreateRoom={() => setCreateOpen(true)}
-              onFriends={() => setFriendsOpen(true)}
-              onRecordings={openRecordings}
-            />
-          ) : null}
-          <CallStage
-            hidden={atHome || conversation}
-            chatOpen={chatBeside}
-            onChat={
-              inDirectRoom ? () => setChatColumn((value) => !value) : undefined
-            }
-            user={user}
-            layout={preferences.layout}
-            onLayout={preferences.setLayout}
-            focused={callFocused}
-            onFocus={() => setCallFocused((value) => !value)}
-            balanced={preferences.balanced}
-            onError={setError}
-            onInvite={inDirectRoom ? undefined : () => setFriendsOpen(true)}
-          />
-          {/*
+              {atHome ? (
+                <HomeScreen
+                  user={user}
+                  rooms={rooms}
+                  presence={presence.rooms}
+                  presenceKnown={presence.known}
+                  onSelectRoom={selectRoom}
+                  onCreateRoom={() => setCreateOpen(true)}
+                  onFriends={() => setFriendsOpen(true)}
+                  onRecordings={openRecordings}
+                />
+              ) : null}
+              {user && room && !inDirectRoom && !callJoined && (
+                <Button
+                  className="absolute top-2 left-5 z-10"
+                  variant="secondary"
+                  size="sm"
+                  aria-label="Toggle room messages"
+                  aria-pressed={channelChat}
+                  onClick={() => setChannelChat((value) => !value)}
+                >
+                  Room messages
+                </Button>
+              )}
+              <CallStage
+                hidden={atHome || conversation}
+                chatOpen={chatBeside}
+                onChat={
+                  room
+                    ? () => {
+                        if (inDirectRoom) setChatColumn((value) => !value);
+                        else setChannelChat((value) => !value);
+                      }
+                    : undefined
+                }
+                user={user}
+                layout={preferences.layout}
+                onLayout={preferences.setLayout}
+                focused={callFocused}
+                onFocus={() => setCallFocused((value) => !value)}
+                balanced={preferences.balanced}
+                onError={setError}
+                onInvite={inDirectRoom ? undefined : () => setFriendsOpen(true)}
+              />
+              {/*
             Beside the call on a wide window, over it on a narrow one: two
             columns need about eleven hundred pixels before the call is left
             with less than it can lay a camera row out in.
           */}
-          {chatBeside && room && (
-            <div className="absolute inset-y-0 right-0 z-20 flex w-[min(21rem,calc(100%-2.5rem))] py-1 pr-1 min-[1100px]:static min-[1100px]:w-80 min-[1100px]:shrink-0 min-[1100px]:p-0">
-              <DirectConversation
-                room={room}
-                user={user}
-                live={presence.messages}
-                variant="panel"
-                onCall={() => setCallOpen(true)}
-                onError={setError}
-              />
-            </div>
-          )}
-          {!user && (
-            <SignInPanel
-              devAuth={devAuth}
-              busy={busy}
-              name={name}
-              email={email}
-              onNameChange={setName}
-              onEmailChange={setEmail}
-              onDevSignIn={devSignIn}
-              onSignIn={signIn.start}
-              onCancelSignIn={signIn.cancel}
-              signInStatus={signIn.status}
+              {chatBeside && room && (
+                <div className="absolute inset-y-0 right-0 z-20 flex w-[min(21rem,calc(100%-2.5rem))] py-1 pr-1 min-[1100px]:static min-[1100px]:w-80 min-[1100px]:shrink-0 min-[1100px]:p-0">
+                  {inDirectRoom ? (
+                    <DirectConversation
+                      room={room}
+                      user={user}
+                      live={presence.messages}
+                      variant="panel"
+                      targetId={
+                        messageTarget?.room === room.id
+                          ? messageTarget.id
+                          : undefined
+                      }
+                      onCall={() => setCallOpen(true)}
+                      onError={setError}
+                    />
+                  ) : (
+                    user && (
+                      <section
+                        className="flex min-h-0 min-w-0 flex-1 flex-col rounded-2xl border bg-background"
+                        aria-label="Room chat"
+                      >
+                        <MessageThread
+                          key={`${user.id}:${room.id}:${messageTarget?.id ?? ''}`}
+                          roomId={room.id}
+                          user={user}
+                          label={room.name}
+                          targetId={
+                            messageTarget?.room === room.id
+                              ? messageTarget.id
+                              : undefined
+                          }
+                          onError={setError}
+                        />
+                      </section>
+                    )
+                  )}
+                </div>
+              )}
+              {!user && (
+                <SignInPanel
+                  devAuth={devAuth}
+                  busy={busy}
+                  name={name}
+                  email={email}
+                  onNameChange={setName}
+                  onEmailChange={setEmail}
+                  onDevSignIn={devSignIn}
+                  onSignIn={signIn.start}
+                  onCancelSignIn={signIn.cancel}
+                  signInStatus={signIn.status}
+                />
+              )}
+            </section>
+          </main>
+          <AnimatePresence initial={false}>
+            {conversation && room && (
+              <motion.div
+                key={'conversation-' + room.id}
+                className="absolute inset-0 flex min-w-0"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                transition={softSpring}
+              >
+                <DirectConversation
+                  room={room}
+                  user={user}
+                  live={presence.messages}
+                  docked={callJoined}
+                  targetId={
+                    messageTarget?.room === room.id
+                      ? messageTarget.id
+                      : undefined
+                  }
+                  onCall={() => setCallOpen(true)}
+                  onError={setError}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+          <AnimatePresence mode="wait" initial={false}>
+            {screen === 'recordings' && (
+              <motion.div
+                key="recordings"
+                className="absolute inset-0 flex min-w-0"
+                initial={{ opacity: 0, x: 14 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -10 }}
+                transition={softSpring}
+              >
+                <WorkspaceScreen title="Recordings">
+                  <RecordingsLibrary />
+                </WorkspaceScreen>
+              </motion.div>
+            )}
+          </AnimatePresence>
+          <SettingsDialog
+            open={settingsOpen}
+            onOpenChange={setSettingsOpen}
+            user={user}
+            noise={preferences.noise}
+            onNoiseChange={preferences.setNoise}
+            balanced={preferences.balanced}
+            onBalancedChange={preferences.setBalanced}
+            layout={preferences.layout}
+            onLayoutChange={preferences.setLayout}
+            signedIn={Boolean(user)}
+            onSignOut={signOut}
+          />
+          {screen === 'share' && shareActions && (
+            <NativeScreenPicker
+              onShare={async (options) => {
+                await shareActions.onShare(options);
+                if (shareActionsRef.current !== shareActions) return;
+                releaseShare();
+                backToCall();
+              }}
+              onBrowser={async () => {
+                await shareActions.onBrowser();
+                if (shareActionsRef.current !== shareActions) return;
+                releaseShare();
+                backToCall();
+              }}
+              onClose={backToCall}
             />
           )}
-        </section>
-      </main>
-      <AnimatePresence initial={false}>
-        {conversation && room && (
-          <motion.div
-            key={'conversation-' + room.id}
-            className="absolute inset-0 flex min-w-0"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            transition={softSpring}
-          >
-            <DirectConversation
-              room={room}
-              user={user}
-              live={presence.messages}
-              docked={callJoined}
-              onCall={() => setCallOpen(true)}
-              onError={setError}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
-      <AnimatePresence mode="wait" initial={false}>
-        {screen === 'recordings' && (
-          <motion.div key="recordings" className="absolute inset-0 flex min-w-0" initial={{ opacity: 0, x: 14 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} transition={softSpring}>
-            <WorkspaceScreen title="Recordings">
-              <RecordingsLibrary />
-            </WorkspaceScreen>
-          </motion.div>
-        )}
-      </AnimatePresence>
-      <SettingsDialog
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        user={user}
-        noise={preferences.noise}
-        onNoiseChange={preferences.setNoise}
-        balanced={preferences.balanced}
-        onBalancedChange={preferences.setBalanced}
-        layout={preferences.layout}
-        onLayoutChange={preferences.setLayout}
-        signedIn={Boolean(user)}
-        onSignOut={signOut}
-      />
-      {screen === 'share' && shareActions && (
-        <NativeScreenPicker
-          onShare={async (options) => {
-            await shareActions.onShare(options);
-            if (shareActionsRef.current !== shareActions) return;
-            releaseShare();
-            backToCall();
-          }}
-          onBrowser={async () => {
-            await shareActions.onBrowser();
-            if (shareActionsRef.current !== shareActions) return;
-            releaseShare();
-            backToCall();
-          }}
-          onClose={backToCall}
-        />
-      )}
-      </div>
-      {/*
+        </div>
+        {/*
         The navigation lives on the right. It comes after the content in the DOM
         as well as on screen, so tabbing through the window follows what is
         visible and anything reading the page in order reaches the call first.
       */}
-      <RoomSidebar
-        rooms={rooms}
-        room={room}
-        user={user}
-        section={section}
-        presence={presence.rooms}
-        presenceKnown={presence.known}
-        screen={screen}
-        hidden={immersive}
-        onSelectRoom={selectRoom}
-        onCreateRoom={() => setCreateOpen(true)}
-        onRoomSettings={setSettingsRoom}
-        onInviteToRoom={(next) => {
-          setInviteRoom(next);
-          setFriendsOpen(true);
-        }}
-        onRoomsChanged={refresh}
-        onError={setError}
-      />
-      <SpacesRail
-        user={user}
-        screen={screen}
-        section={section}
-        collapsed={callJoined}
-        hidden={immersive}
-        onSection={showSection}
-        onFriends={() => setFriendsOpen(true)}
-        onRecordings={openRecordings}
-        onSettings={openSettings}
-        onSignOut={signOut}
-        onHome={backToCall}
-      />
-      <AnimatePresence>
-        {error && <ErrorToast message={error} onDismiss={() => setError('')} />}
-      </AnimatePresence>
-      <RoomSettings
-        room={settingsRoom}
-        user={user}
-        open={settingsRoom !== null}
-        onOpenChange={(next) => {
-          if (!next) setSettingsRoom(null);
-        }}
-        onChanged={refresh}
-        onError={setError}
-        refreshRevision={presence.roomsRevision + presence.syncRevision}
-      />
-      <CreateRoomDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        signedIn={Boolean(user)}
-        busy={busy}
-        run={run}
-        onCreated={async (created) => {
-          await reload();
-          setRoom(created);
-        }}
-      />
-      <CallAlerts
-        user={user}
-        viewing={conversation || chatBeside ? room : null}
-        messages={presence.messages}
-      />
-      <IncomingCall
-        user={user}
-        rooms={rooms}
-        presence={presence.rooms}
-        onAnswer={(roomId) => {
-          openRoomById(roomId);
-          // Answering is asking for the call, so the call is what opens; the
-          // conversation keeps its column beside it.
-          setCallOpen(true);
-        }}
-      />
-      {!callOnScreen && (
-        <CallDock
-          onOpen={() => {
-            setCallOpen(true);
-            if (callRoom) setRoom(callRoom);
-            navigate('call');
+        <RoomSidebar
+          rooms={rooms}
+          room={room}
+          user={user}
+          section={section}
+          presence={presence.rooms}
+          presenceKnown={presence.known}
+          screen={screen}
+          hidden={immersive}
+          onSelectRoom={selectRoom}
+          onCreateRoom={() => setCreateOpen(true)}
+          onRoomSettings={setSettingsRoom}
+          onInviteToRoom={(next) => {
+            setInviteRoom(next);
+            setFriendsOpen(true);
+          }}
+          onRoomsChanged={refresh}
+          onError={setError}
+        />
+        <SpacesRail
+          user={user}
+          screen={screen}
+          section={section}
+          collapsed={callJoined}
+          hidden={immersive}
+          onSection={showSection}
+          onFriends={() => setFriendsOpen(true)}
+          onRecordings={openRecordings}
+          onSettings={openSettings}
+          onSignOut={signOut}
+          onHome={backToCall}
+        />
+        <AnimatePresence>
+          {error && (
+            <ErrorToast message={error} onDismiss={() => setError('')} />
+          )}
+        </AnimatePresence>
+        <RoomSettings
+          room={settingsRoom}
+          user={user}
+          open={settingsRoom !== null}
+          onOpenChange={(next) => {
+            if (!next) setSettingsRoom(null);
+          }}
+          onChanged={refresh}
+          onError={setError}
+          refreshRevision={presence.roomsRevision + presence.syncRevision}
+        />
+        <CreateRoomDialog
+          open={createOpen}
+          onOpenChange={setCreateOpen}
+          signedIn={Boolean(user)}
+          busy={busy}
+          run={run}
+          onCreated={async (created) => {
+            await reload();
+            setRoom(created);
           }}
         />
-      )}
-      {/* Outlives the call screen on purpose: stopping a recording and
+        <CallAlerts
+          user={user}
+          viewing={conversation || chatBeside ? room : null}
+          messages={presence.messages}
+        />
+        <IncomingCall
+          user={user}
+          rooms={rooms}
+          presence={presence.rooms}
+          onAnswer={(roomId) => {
+            openRoomById(roomId);
+            // Answering is asking for the call, so the call is what opens; the
+            // conversation keeps its column beside it.
+            setCallOpen(true);
+          }}
+        />
+        {!callOnScreen && (
+          <CallDock
+            onOpen={() => {
+              setCallOpen(true);
+              if (callRoom) setRoom(callRoom);
+              navigate('call');
+            }}
+          />
+        )}
+        {/* Outlives the call screen on purpose: stopping a recording and
           leaving the room tend to be the same moment. */}
-      <RecordingNotice onRecordings={openRecordings} />
-      <FriendsDialog
-        open={friendsOpen}
-        onOpenChange={(next) => {
-          setFriendsOpen(next);
-          if (!next) setInviteRoom(null);
-        }}
-        user={user}
-        room={inviteRoom ?? room}
-        callPresence={presence.rooms}
-        onlineUsers={presence.onlineUsers}
-        refreshRevision={presence.friendsRevision + presence.syncRevision}
-        onError={setError}
-        onOpenRoom={(next) => {
-          openRoom(next);
-          setCallOpen(false);
-          setFriendsOpen(false);
-          navigate('call');
-        }}
-        onSignIn={signIn.start}
-      />
+        <RecordingNotice onRecordings={openRecordings} />
+        <FriendsDialog
+          open={friendsOpen}
+          onOpenChange={(next) => {
+            setFriendsOpen(next);
+            if (!next) setInviteRoom(null);
+          }}
+          user={user}
+          room={inviteRoom ?? room}
+          callPresence={presence.rooms}
+          onlineUsers={presence.onlineUsers}
+          refreshRevision={presence.friendsRevision + presence.syncRevision}
+          onError={setError}
+          onOpenRoom={(next) => {
+            openRoom(next);
+            setCallOpen(false);
+            setFriendsOpen(false);
+            navigate('call');
+          }}
+          onSignIn={signIn.start}
+        />
       </div>
     </CallSessionProvider>
   );

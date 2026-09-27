@@ -1,3 +1,4 @@
+import { openMessageSearch } from '@/features/chat/searchEvents';
 import {
   useEffect,
   useMemo,
@@ -15,7 +16,16 @@ import {
   noDragStyle,
   type DesktopWindowApi,
 } from '@/desktop';
-import { ArrowLeft, ArrowRight, Bell, Minus, Search, Square, Copy, X } from 'lucide-react';
+import {
+  ArrowLeft,
+  ArrowRight,
+  Bell,
+  Minus,
+  Search,
+  Square,
+  Copy,
+  X,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -128,7 +138,10 @@ export default function DesktopFrame({ children }: { children: ReactNode }) {
     />
   );
   return (
-    <div data-desktop-frame className="flex h-dvh w-full flex-col overflow-hidden">
+    <div
+      data-desktop-frame
+      className="flex h-dvh w-full flex-col overflow-hidden"
+    >
       <div
         className={titlebarClassName(controls)}
         style={
@@ -156,7 +169,11 @@ export default function DesktopFrame({ children }: { children: ReactNode }) {
           itself, plus the two things that belong to no single screen.
         */}
         <div className="flex h-full min-w-0 flex-1 basis-0 items-center">
-          <div className="flex items-center gap-0.5 ps-1.5" style={noDragStyle()} aria-label="Navigation controls">
+          <div
+            className="flex items-center gap-0.5 ps-1.5"
+            style={noDragStyle()}
+            aria-label="Navigation controls"
+          >
             <Button
               variant="ghost"
               size="icon"
@@ -201,14 +218,6 @@ export default function DesktopFrame({ children }: { children: ReactNode }) {
   );
 }
 
-/**
- * The search field, present and deliberately inert.
- *
- * There is nothing to search yet, so this wires to nothing: it holds the place
- * and settles where the field lives before anything depends on the answer.
- * Typing into it does nothing, which is the honest behaviour until there is
- * something to look through.
- */
 function TitlebarSearch() {
   return (
     <div
@@ -221,13 +230,14 @@ function TitlebarSearch() {
           aria-hidden="true"
           className="pointer-events-none absolute start-2.5 text-muted-foreground"
         />
-        <input
-          type="text"
-          aria-label="Search"
-          placeholder="Search"
-          spellCheck={false}
-          className="h-7 w-full rounded-lg border border-border/70 bg-background/50 ps-8 pe-2.5 text-xs text-foreground transition-colors placeholder:text-muted-foreground hover:bg-background/80 focus:bg-background focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
-        />
+        <button
+          type="button"
+          aria-label="Search all messages"
+          onClick={() => openMessageSearch()}
+          className="h-7 w-full rounded-lg border border-border/70 bg-background/50 ps-8 pe-2.5 text-left text-xs text-muted-foreground hover:bg-background focus-visible:ring-2 focus-visible:ring-ring/40"
+        >
+          Search messages <span className="float-right">Ctrl K</span>
+        </button>
       </div>
     </div>
   );

@@ -1,5 +1,14 @@
 # BetterComms preview release notes
 
+## Unreleased — messaging basics
+
+Direct and room conversations now support persistent unread/mention badges,
+mark-as-read, complete paginated history, authorized full-text search with
+conversation/author filters, own-message edit/delete, replies and emoji
+reactions. Changes synchronize through the existing event stream, and reconnect
+reconciles history. Migration 003 preserves existing content. See
+[messaging controls and limits](MESSAGING.md).
+
 ## Unreleased — Wails v3 host scaffold
 
 `apps/desktop-wails` is a new Wails v3 shell beside the unchanged Tauri host. It

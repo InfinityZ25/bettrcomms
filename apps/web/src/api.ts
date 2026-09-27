@@ -2,7 +2,7 @@ import {
   apiAuthHeaders,
   apiCredentials,
   apiHttpUrl,
-} from "@/desktop/apiTransport";
+} from '@/desktop/apiTransport';
 
 export interface User {
   id: string;
@@ -19,7 +19,7 @@ export interface Room {
   name: string;
   owner_id: string;
   created_at: string;
-  kind?: "channel" | "direct";
+  kind?: 'channel' | 'direct';
   role?: string;
   display_name?: string;
 }
@@ -36,6 +36,23 @@ export interface Message {
   author: User;
   body: string;
   created_at: string;
+  sequence?: number;
+  version?: number;
+  edited_at?: string;
+  deleted_at?: string;
+  mentions?: { id: string; name: string }[];
+  reply?: { id: string; name: string; body: string; deleted: boolean };
+  reactions?: { emoji: string; users: string[] }[];
+}
+export interface MessagePage {
+  messages: Message[];
+  before_id?: string;
+}
+export interface RoomUnread {
+  room_id: string;
+  unread: number;
+  mentions: number;
+  read_sequence: number;
 }
 export interface FriendRequest {
   id: string;
@@ -44,24 +61,35 @@ export interface FriendRequest {
   status: string;
   created_at: string;
 }
+export class ApiRequestError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+  ) {
+    super(message);
+  }
+}
 export async function api<T>(
   path: string,
   body?: unknown,
   method?: string,
+  signal?: AbortSignal,
 ): Promise<T> {
-  const response = await fetch(apiHttpUrl("/api/v1" + path), {
+  const response = await fetch(apiHttpUrl('/api/v1' + path), {
+    signal,
     credentials: apiCredentials(),
-    method: method ?? (body ? "POST" : "GET"),
+    method: method ?? (body ? 'POST' : 'GET'),
     headers: {
       ...apiAuthHeaders(),
-      ...(body ? { "Content-Type": "application/json" } : {}),
+      ...(body ? { 'Content-Type': 'application/json' } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!response.ok) {
     const error = await response.json().catch(() => null);
-    throw new Error(
+    throw new ApiRequestError(
       error?.error?.message ?? `Request failed (${response.status})`,
+      response.status,
     );
   }
   return response.status === 204 ? (undefined as T) : response.json();
