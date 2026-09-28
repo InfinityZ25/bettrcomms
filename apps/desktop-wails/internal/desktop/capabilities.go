@@ -225,6 +225,12 @@ func globalInput() Capability {
 // Experimental, not Implemented: the token gate and the privacy-settings
 // mapping have tests, but packaged permission prompts remain unverified.
 func mediaPermissions() Capability {
+	if runtime.GOOS == "darwin" {
+		return Capability{
+			State:  Experimental,
+			Detail: "The bundled BetterComms page is granted camera and microphone access by WKWebView without a second site prompt. macOS still asks for app-level permission per device. Packaged hardware acceptance remains pending.",
+		}
+	}
 	if runtime.GOOS != "windows" {
 		return Capability{
 			State:    Unavailable,

@@ -14,7 +14,8 @@ export async function isWindowsDesktop(): Promise<boolean> {
 export async function allowDesktopCapture(
   kind: 'microphone' | 'camera',
 ): Promise<void> {
-  // WebView2 uses its normal permission decision and OS privacy settings.
+  // Windows uses WebView2's normal decision. The packaged macOS app grants
+  // only its bundled page in WKWebView; macOS still asks for device access.
   void kind;
 }
 

@@ -24,7 +24,7 @@ import {
 import { useSpeakingActivity } from '@/media/useSpeakingActivity';
 import { readQuality } from '@/features/settings/MediaSettings';
 import { readConnectionMode } from '@/media/connectionMode';
-import { hasNativeMediaHost } from '@/desktop/nativeMedia';
+import { hasDesktopCapability } from '@/desktop/capabilities';
 import { errorMessage } from '@/lib/errors';
 import { readStored, writeStored } from '@/lib/storage';
 import { createCallPeerId } from './callPeerId';
@@ -618,7 +618,7 @@ export function useCallSession({
       });
       return;
     }
-    if (!hasNativeMediaHost()) {
+    if (!hasDesktopCapability('nativeGameVideo')) {
       // Capture constraints follow the configured stream quality.
       await perform(async () => {
         await engine.current?.captureScreen({ systemAudio: true });

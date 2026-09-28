@@ -131,6 +131,13 @@ drag the app to Applications. Gatekeeper may block this unnotarized preview;
 use System Settings → Privacy & Security → Open Anyway for this app. Developer
 ID signing and notarization remain release gates.
 
+macOS screen sharing uses the webview's screen picker. The Windows native
+source chooser and FFmpeg runtime are not offered on macOS, where no native
+window-capture adapter exists. For camera and microphone capture, the bundled
+`wails://wails` main page is granted by WKWebView without a second site prompt;
+macOS still presents its app-level permission request per device. Other pages
+keep WebKit's normal permission prompt. Physical-device acceptance is pending.
+
 ## Boundaries and remaining acceptance
 
 - Sensitive media operations require a per-launch page token. File exports use

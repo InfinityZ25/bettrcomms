@@ -6,6 +6,8 @@ The desktop app now builds solely from `apps/desktop-wails`. The removed desktop
 
 The Wails native media implementations still require physical-device and packaged authentication acceptance. macOS uses webview capture where supported and does not claim Windows native capture, process audio, or GPU processing. See [desktop validation status](WAILS_COMPLETION.md).
 
+The macOS Share button now opens the webview's working screen picker directly. macOS has no native window-capture adapter, so the native source list and its FFmpeg setup no longer appear there. For packaged macOS builds, the bundled app page receives its WebKit camera/microphone grant without a second site prompt; macOS still asks for app-level access when each device is first used. Physical-device acceptance remains pending.
+
 Mobile browser calls now offer an in-call camera picker for sources the browser exposes. Choosing a source while video is off saves it for the next camera-on action; switching while video is on replaces only the camera without recapturing the microphone. If the selected camera cannot be opened, the current video stays live and the app reports that the device may be busy or unavailable. For browsers that cannot open two cameras at once, it suggests turning video off before switching. Direct Meta Ray-Ban camera streaming is not implemented in the browser client; it needs a native mobile integration and device acceptance testing.
 
 On narrow screens, the conversations toggle opens a right-side drawer over the current view. The drawer takes two-thirds of the viewport, and selecting a room closes it. The Friends dialog stays within the visible phone viewport and scrolls its contents when the list is long.
