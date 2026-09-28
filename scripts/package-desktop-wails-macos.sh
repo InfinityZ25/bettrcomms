@@ -51,5 +51,7 @@ cat > "$bundle/Contents/Info.plist" <<PLIST
 PLIST
 cp "$app/build/appicon.png" "$bundle/Contents/Resources/appicon.png"
 plutil -lint "$bundle/Contents/Info.plist"
+codesign --force --sign - --identifier com.bettrcomms.wails "$bundle"
+codesign --verify --deep --strict --verbose=2 "$bundle"
 ditto -c -k --sequesterRsrc --keepParent "$bundle" "$archive"
 echo "macOS archive: $archive"
