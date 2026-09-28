@@ -26,3 +26,9 @@ packaged iPhone acceptance. An iOS app shell alone does not add screen sharing:
 the reported iPhone Safari and Chrome browsers do not expose
 `getDisplayMedia`. Capturing the iPhone display would need a separate native
 ReplayKit broadcast implementation and device testing.
+
+The iOS build uses Wails' UIKit browser opener for WorkOS sign-in and reports
+native window chrome to the shared frontend, so desktop minimize/maximize/close
+controls are not drawn on iPhone. These paths compile in CI but have not been
+exercised on a signed physical device. The sign-in panel also exposes the
+confirmation link while a pairing is pending.
