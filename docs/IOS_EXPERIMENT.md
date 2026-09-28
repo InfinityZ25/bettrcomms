@@ -34,11 +34,12 @@ and reached a call; packaged authentication and the current media changes
 still need complete device acceptance. The sign-in panel also exposes the
 confirmation link while a pairing is pending.
 
-The iOS host enables inline video so call tiles stay inside the app, disables
-the root webview's bounce, and lets the viewport extend to the screen edges
-while padding interactive UI by the device safe area. Packaging applies a
-small patch to a temporary copy of the pinned Wails beta.18 module: WebKit's
-media delegate grants the *packaged top-level* `wails://localhost` page after
-iOS handles the app-level microphone/camera permission. Other origins keep
-WebKit's normal prompt. This needs signed-device verification; changing Wails
-versions intentionally fails the patch until its anchors are reviewed.
+The iOS host enables inline video so call tiles stay inside the app and
+disables the root webview's bounce. Packaging patches a temporary copy of the
+pinned Wails beta.18 module so the WKWebView itself fills the iPhone screen;
+the page uses `viewport-fit=cover` and safe-area padding to keep controls clear
+of system UI. The same patch grants WebKit media access only to the packaged
+top-level `wails://localhost` page after iOS handles app-level camera/mic
+permission. Other origins keep WebKit's normal prompt. This needs signed-device
+verification; changing Wails versions intentionally fails the patch until its
+anchors are reviewed.
