@@ -30,4 +30,8 @@ Camera, screen video, and shared system/application audio still require WebRTC c
 
 The public repository has no project-wide reuse license selected yet. Third-party notices retain their individual licenses; publication alone does not license BetterComms source under MIT or another open-source license.
 
-Automatic deployment note: the Railway source is linked to GitHub, but the current connection did not create repository push triggers. The CLI account cannot issue project deployment tokens (`Not Authorized`), so no token-backed GitHub deploy job is installed. Deployment remains `railway up --service bettrcomms --detach` from an authenticated machine until Railway GitHub App access or an environment-scoped deployment token is configured. This does not affect the running app/database.
+## Automatic deployment
+
+The `bettrcomms` Railway service uses `InfinityZ25/bettrcomms` as its GitHub source. Its production deployment trigger should watch `main` and wait for GitHub check suites, so a merge deploys only after the `Validate` workflow passes. Railway builds the repository Dockerfile and gates routing on `/healthz`; WorkOS and database secrets stay in Railway variables. Native GitHub deployment is the only automatic path, so do not add a token-backed Actions deploy job alongside it.
+
+The source connection alone does not create a deployment trigger. The current Railway GitHub App connection cannot access the repository, and Railway rejects trigger creation with “no one in the project has access to it.” A project member with repository access must connect or grant the Railway GitHub App access to `InfinityZ25/bettrcomms`, after which the production `main` trigger can be created with “Wait for CI” enabled. Until the trigger exists, deploys remain manual with `railway up --service bettrcomms --detach` from an authenticated machine.

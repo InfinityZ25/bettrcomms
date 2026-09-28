@@ -26,7 +26,7 @@ import { readQuality } from '@/features/settings/MediaSettings';
 import { readConnectionMode } from '@/media/connectionMode';
 import { hasNativeMediaHost } from '@/desktop/nativeMedia';
 import { errorMessage } from '@/lib/errors';
-import { readStored } from '@/lib/storage';
+import { readStored, writeStored } from '@/lib/storage';
 import { createCallPeerId } from './callPeerId';
 import type {
   CallPresence,
@@ -660,6 +660,52 @@ export function useCallSession({
     });
   }
 
+  async function selectCamera(deviceId: string) {
+    await perform(async () => {
+      const current = engine.current;
+      if (!current) {
+        onError('Join the call to choose a camera.');
+        return;
+      }
+      await allowDesktopCapture('camera');
+      if (deviceId && current.getLocalTracks().get('camera')?.getSettings().deviceId === deviceId) {
+        writeStored('bc-camera', deviceId);
+        window.dispatchEvent(new Event('bc-camera-selected'));
+        return;
+      }
+      const settings = readCameraSettings();
+      const capture = () => current.captureUserMedia({
+        camera: cameraCaptureConstraints(deviceId, settings),
+        microphone: false,
+      });
+      try {
+        await capture();
+      } catch (error) {
+        // Some mobile browsers cannot open a second camera until the first
+        // track is released. Keep the old track for all other failures.
+        if (!current.getLocalTracks().has('camera') ||
+            !(error instanceof DOMException) ||
+            !['NotReadableError', 'AbortError'].includes(error.name)) throw error;
+        await current.setLocalTrack('camera', null);
+        try {
+          await capture();
+        } catch (retryError) {
+          try {
+            await current.captureUserMedia({
+              camera: cameraCaptureConstraints(readStored('bc-camera') ?? '', settings),
+              microphone: false,
+            });
+          } catch {
+            // The previous camera disappeared too; keep the original error.
+          }
+          throw retryError;
+        }
+      }
+      writeStored('bc-camera', deviceId);
+      window.dispatchEvent(new Event('bc-camera-selected'));
+    });
+  }
+
   function toggleMute() {
     if (engine.current) callMicrophone.toggleMute();
     else onError('Join a call to use your microphone.');
@@ -748,6 +794,7 @@ export function useCallSession({
     leave,
     toggleScreen,
     toggleCamera,
+    selectCamera,
     toggleMute,
     toggleDeafen,
     toggleRecord,

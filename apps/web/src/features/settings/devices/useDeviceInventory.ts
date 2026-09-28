@@ -41,6 +41,12 @@ export function useDeviceInventory({
     return () => navigator.mediaDevices?.removeEventListener('devicechange', changed);
   }, [refresh]);
 
+  useEffect(() => {
+    const selected = () => setCamera(readStored('bc-camera') ?? '');
+    window.addEventListener('bc-camera-selected', selected);
+    return () => window.removeEventListener('bc-camera-selected', selected);
+  }, []);
+
   /** Devices of one kind, with a positional label when the real one is withheld. */
   const listing = (kind: MediaDeviceKind, fallback: string) =>
     devices

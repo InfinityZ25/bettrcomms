@@ -6,6 +6,8 @@ The desktop app now builds solely from `apps/desktop-wails`. The removed desktop
 
 The Wails native media implementations still require physical-device and packaged authentication acceptance. macOS uses webview capture where supported and does not claim Windows native capture, process audio, or GPU processing. See [desktop validation status](WAILS_COMPLETION.md).
 
+Mobile browser calls now offer an in-call camera picker for sources the browser exposes. Choosing a source replaces the camera without recapturing the microphone. Direct Meta Ray-Ban camera streaming is not implemented in the browser client; it needs a native mobile integration and device acceptance testing.
+
 ## Unreleased — messaging basics
 
 Direct and room conversations support persistent unread and mention badges, mark-as-read, paginated history, authorized full-text search with conversation and author filters, own-message edit and delete, replies, and emoji reactions. Changes synchronize through the event stream, and reconnect reconciles history. Migration 003 preserves existing content. See [messaging controls and limits](MESSAGING.md).
