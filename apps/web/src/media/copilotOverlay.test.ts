@@ -3,7 +3,8 @@ import { attachCopilotOverlay } from './copilotOverlay';
 import type { VisualCopilot } from './visualCopilot';
 
 const host = vi.hoisted(() => ({ native: true, session: undefined as string | undefined, invoke: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ isTauri: () => host.native, invoke: host.invoke }));
+vi.mock('../desktop/nativeMedia', () => ({ hasNativeMediaHost: () => host.native }));
+vi.mock('../desktop/copilot', () => ({ invokeNativeCopilot: host.invoke }));
 vi.mock('./nativeCaptureRegistry', () => ({ nativeScreenSessionForTrack: () => host.session }));
 const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); host.invoke.mockReset(); host.native = true; host.session = undefined; });

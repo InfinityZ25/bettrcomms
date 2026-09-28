@@ -6,9 +6,7 @@
 #
 # The Go API is started separately:  ./scripts/start-api.ps1 -DevAuth
 #
-# This does not touch apps/desktop. Both desktop hosts can be built from the
-# same checkout, but do not run them at the same time against one dev server if
-# you want a readable log.
+# Run one desktop host against the development server at a time for readable logs.
 
 [CmdletBinding()]
 param(
@@ -35,7 +33,7 @@ if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
 
 # On Windows npm is a command shim (`npm.cmd`), not a native executable.
 # Start-Process does not reliably resolve the extension-less `npm` command,
-# so pass the shim's absolute path just like the existing Tauri launcher does.
+# so pass the shim's absolute path for the Wails launcher.
 $npm = Get-Command npm.cmd -ErrorAction SilentlyContinue
 if (-not $npm) {
     throw 'npm.cmd is unavailable. Install Node.js/npm or add it to PATH.'

@@ -9,7 +9,7 @@ import (
 // TestEveryCapabilityExplainsItself is the honesty guard for this host.
 //
 // A capability may only be Implemented where an acceptance test exercises it
-// here; a passing Tauri test is not evidence, because the two hosts share no
+// here; tests for another host are not evidence, because hosts share no
 // media code. Anything unavailable must also name what the frontend does
 // instead, so a missing feature reads as a choice rather than a hole.
 func TestEveryCapabilityExplainsItself(t *testing.T) {
@@ -42,8 +42,7 @@ func TestEveryCapabilityExplainsItself(t *testing.T) {
 
 // Microphone and camera permission is Experimental, not Implemented.
 //
-// The window's policy and the token gate that replaces the Tauri host's
-// per-call origin check both have tests, but nobody has watched a packaged
+// The window's policy and the token gate have tests, but nobody has watched a packaged
 // window complete the normal permission prompt. It must not claim that this
 // host can revoke a grant or that all navigation has been constrained.
 func TestMediaPermissionsClaimsOnlyWhatThisHostDoes(t *testing.T) {

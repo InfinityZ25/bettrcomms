@@ -18,7 +18,7 @@ import (
 // offering an install, offering nothing, and saying why.
 //
 // Adapters come from DXGI rather than from WMI through PowerShell, which is how
-// the Tauri host asks. DXGI is already how this host enumerates graphics
+// a shell probe would. DXGI is already how this host enumerates graphics
 // devices for DirectML, it needs no subprocess, and it reports the same
 // adapter names.
 

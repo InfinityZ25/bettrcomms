@@ -15,9 +15,16 @@ case "$(uname -m)" in
   *) echo 'Unsupported macOS architecture.' >&2; exit 1 ;;
 esac
 
-bundle="$app/bin/BetterComms Wails.app"
+(cd "$repo" && npm run build)
+staged="$app/frontend/dist"
+find "$staged" -mindepth 1 -maxdepth 1 ! -name .gitkeep -exec rm -rf {} +
+cp -R "$repo/apps/web/dist/." "$staged/"
+
+bundle="$app/bin/BetterComms.app"
 binary="$bundle/Contents/MacOS/bettercomms-wails"
 archive="$app/bin/bettercomms-wails-$version-macos-$arch.zip"
+dmg="$app/bin/bettercomms-wails-$version-macos-$arch.dmg"
+rm -rf "$bundle"
 mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
 
 (
@@ -37,7 +44,7 @@ cat > "$bundle/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>CFBundleIdentifier</key><string>com.bettrcomms.wails</string>
-  <key>CFBundleName</key><string>BetterComms Wails</string>
+  <key>CFBundleName</key><string>BetterComms</string>
   <key>CFBundleDisplayName</key><string>BetterComms</string>
   <key>CFBundleExecutable</key><string>bettercomms-wails</string>
   <key>CFBundlePackageType</key><string>APPL</string>
@@ -51,5 +58,13 @@ cat > "$bundle/Contents/Info.plist" <<PLIST
 PLIST
 cp "$app/build/appicon.png" "$bundle/Contents/Resources/appicon.png"
 plutil -lint "$bundle/Contents/Info.plist"
+codesign --force --deep --sign - --identifier com.bettrcomms.wails "$bundle"
+codesign --verify --deep --strict --verbose=2 "$bundle"
 ditto -c -k --sequesterRsrc --keepParent "$bundle" "$archive"
+staging="$(mktemp -d)"
+trap 'rm -rf "$staging"' EXIT
+ditto "$bundle" "$staging/BetterComms.app"
+ln -s /Applications "$staging/Applications"
+hdiutil create -ov -fs HFS+ -srcfolder "$staging" -volname BetterComms -format UDZO "$dmg"
 echo "macOS archive: $archive"
+echo "macOS disk image: $dmg"

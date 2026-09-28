@@ -20,11 +20,43 @@ type Room struct {
 	CreatedAt   time.Time `json:"created_at"`
 }
 type Message struct {
-	ID        string    `json:"id"`
-	RoomID    string    `json:"room_id"`
-	Author    User      `json:"author"`
-	Body      string    `json:"body"`
-	CreatedAt time.Time `json:"created_at"`
+	ID        string            `json:"id"`
+	RoomID    string            `json:"room_id"`
+	Author    User              `json:"author"`
+	Body      string            `json:"body"`
+	CreatedAt time.Time         `json:"created_at"`
+	Sequence  int64             `json:"sequence"`
+	Version   int64             `json:"version"`
+	EditedAt  *time.Time        `json:"edited_at,omitempty"`
+	DeletedAt *time.Time        `json:"deleted_at,omitempty"`
+	Reply     *MessageReply     `json:"reply,omitempty"`
+	Mentions  []MessageMention  `json:"mentions"`
+	Reactions []MessageReaction `json:"reactions"`
+}
+
+type MessageReply struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Body    string `json:"body"`
+	Deleted bool   `json:"deleted"`
+}
+type MessageMention struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+type MessageReaction struct {
+	Emoji string   `json:"emoji"`
+	Users []string `json:"users"`
+}
+type MessagePage struct {
+	Messages []Message `json:"messages"`
+	BeforeID string    `json:"before_id,omitempty"`
+}
+type RoomUnread struct {
+	RoomID       string `json:"room_id"`
+	Unread       int64  `json:"unread"`
+	Mentions     int64  `json:"mentions"`
+	ReadSequence int64  `json:"read_sequence"`
 }
 type FriendRequest struct {
 	ID        string    `json:"id"`

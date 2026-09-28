@@ -1,4 +1,5 @@
-import { Headphones, Plus } from 'lucide-react';
+import { openMessageSearch } from '@/features/chat/searchEvents';
+import { Headphones, Plus, Search } from 'lucide-react';
 import { Avatar } from '@/components/avatar';
 import { Mascot } from '@/components/mascot';
 import { Button } from '@/components/ui/button';
@@ -65,7 +66,8 @@ export default function RoomSidebar({
 
   const messages = section === 'messages';
   const listed = rooms.filter(
-    (candidate) => (candidate.kind ?? 'channel') === (messages ? 'direct' : 'channel'),
+    (candidate) =>
+      (candidate.kind ?? 'channel') === (messages ? 'direct' : 'channel'),
   );
   // The profile belongs to the conversation you are in, not to whatever is
   // selected elsewhere: a room selected in Calls is not a person.
@@ -90,6 +92,17 @@ export default function RoomSidebar({
         inert={screen === 'share' || !visible}
       >
         <SidebarHeader className="px-3 pt-3 pb-1">
+          {user && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => openMessageSearch()}
+              aria-label="Search all messages"
+            >
+              <Search size={14} />
+              Search messages
+            </Button>
+          )}
           <h2 className="font-heading text-sm font-semibold tracking-tight">
             {messages ? 'Messages' : 'Calls'}
           </h2>
@@ -158,7 +171,9 @@ function ConversationProfile({
       <div className="flex justify-center">
         <Avatar name={name} />
       </div>
-      <strong className="mt-2 block truncate text-sm font-semibold">{name}</strong>
+      <strong className="mt-2 block truncate text-sm font-semibold">
+        {name}
+      </strong>
       {known && callers.length > 0 ? (
         <Badge className="mt-2 h-5 gap-1 px-1.5">
           <Headphones size={12} />

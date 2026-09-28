@@ -3,7 +3,6 @@
 // It serves the shared apps/web frontend and binds authentication and
 // native media services. Native implementations live in internal/native;
 // docs/WAILS_COMPLETION.md tracks acceptance separately from implementation.
-// The existing Tauri host remains available alongside this migration.
 package main
 
 import (
@@ -23,8 +22,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/services/notifications"
 )
 
-// hostVersion tracks the Wails host separately from the Tauri host's version,
-// so a report cannot imply Tauri's feature set.
+// hostVersion identifies the Wails native host in the boot report.
 const hostVersion = "0.0.1-wails"
 
 // Set only by the release build's linker flag. Empty means the repository's
@@ -45,7 +43,7 @@ func releaseAPIOrigin() string {
 //go:embed all:frontend/dist
 var frontendAssets embed.FS
 
-// appIcon is the application mark, the same artwork the Tauri host ships.
+// appIcon is the application mark embedded by the Wails host.
 //
 // On Windows the window and taskbar icons come from the executable's own
 // resource — rsrc_windows_amd64.syso, generated from build/windows/icon.ico —
@@ -108,8 +106,7 @@ func run() error {
 	}
 
 	// Native calls prove they came from a document this host served by
-	// presenting this launch's page token. It replaces the Tauri host's
-	// per-call origin check, which cannot be made here: Wails exposes no way to
+	// presenting this launch's page token. Wails exposes no way to
 	// read the window's current URL. See internal/desktop/pagegate.go.
 	gate, gateErr := desktop.NewPageGate()
 	if gateErr != nil {
@@ -332,7 +329,7 @@ func nativeWindowPermissions() map[application.PermissionType]application.Permis
 
 // configuredAPIOrigin returns the origin to validate. Development defaults to
 // the loopback Go API; a release build defaults to the pinned hosted origin,
-// the same one the Tauri host pins.
+// configured for this deployment.
 func configuredAPIOrigin(debug bool) string {
 	if raw := os.Getenv("BETTERCOMMS_API_ORIGIN"); raw != "" {
 		return raw

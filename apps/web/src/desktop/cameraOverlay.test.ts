@@ -2,12 +2,11 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { closeCameraOverlay, openCameraOverlay, sendCameraOverlayFrame, updateCameraOverlay } from './cameraOverlay';
 
 const mock = vi.hoisted(() => ({
-  runtime: 'wails', token: 'fixture-token', invoke: vi.fn(),
+  runtime: 'wails', token: 'fixture-token',
   api: { CameraOverlayOpen: vi.fn(), CameraOverlayUpdate: vi.fn(), CameraOverlayFrame: vi.fn(), CameraOverlayClose: vi.fn() },
 }));
 vi.mock('./runtime', () => ({ getDesktopRuntime: () => mock.runtime, readDesktopBootReport: () => ({ pageToken: mock.token }) }));
 vi.mock('./wailsbindings/bettercomms/desktop-wails/nativemediaservice', () => mock.api);
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mock.invoke }));
 const options = { position: 'top-right', size: 'small', clickThrough: true, rows: 1 };
 const session = { overlayId: 'overlay-fixture', width: 2, height: 1, maxFps: 24 };
 beforeEach(() => { vi.resetAllMocks(); mock.runtime = 'wails'; mock.token = 'fixture-token'; });
@@ -20,7 +19,6 @@ it('opens an authorised Wails overlay, updates it and closes its exact grant', a
   expect(mock.api.CameraOverlayUpdate).toHaveBeenCalledWith(mock.token, session.overlayId, { ...options, rows: 4 });
   await closeCameraOverlay(session.overlayId);
   expect(mock.api.CameraOverlayClose).toHaveBeenCalledWith(mock.token, session.overlayId);
-  expect(mock.invoke).not.toHaveBeenCalled();
 });
 
 it('preserves RGBA bytes including typed-array offsets through Go base64 bindings', async () => {
@@ -57,17 +55,4 @@ it('refuses browser access and missing page authorisation', async () => {
   mock.runtime = 'browser';
   await expect(openCameraOverlay(options)).rejects.toThrow('desktop');
   expect(mock.api.CameraOverlayOpen).not.toHaveBeenCalled();
-});
-
-it('preserves the Tauri binary IPC contract', async () => {
-  mock.runtime = 'tauri';
-  const pixels = new Uint8Array(8);
-  await openCameraOverlay(options);
-  await sendCameraOverlayFrame(session, pixels);
-  expect(mock.invoke).toHaveBeenCalledWith('camera_overlay_open', options);
-  expect(mock.invoke).toHaveBeenCalledWith('camera_overlay_frame', pixels, { headers: {
-    'x-bettercomms-overlay-id': session.overlayId,
-    'x-bettercomms-frame-width': '2', 'x-bettercomms-frame-height': '1',
-  } });
-  expect(mock.api.CameraOverlayFrame).not.toHaveBeenCalled();
 });

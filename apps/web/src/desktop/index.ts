@@ -1,14 +1,6 @@
 /**
- * The dual-runtime desktop bridge.
- *
- * One frontend serves three hosts: a browser tab, the Tauri 2 shell in
- * `apps/desktop`, and the Wails v3 shell in `apps/desktop-wails`. Import from
- * here rather than from `@tauri-apps/api` when the question is "which shell am
- * I in" or "does this host have that capability".
- *
- * Native media features remain Tauri-only. Gate them with
- * `hasTauriNativeCommands()`, and use the capability helpers to tell the user
- * what runs instead everywhere else.
+ * One frontend serves a browser tab and the Wails v3 desktop host. Import
+ * here for the current runtime and its reported native capabilities.
  */
 export {
   apiAuthHeaders,
@@ -21,7 +13,6 @@ export {
   getDesktopApiOrigin,
   getDesktopApiTransport,
   getDesktopRuntime,
-  hasTauriNativeCommands,
   isDesktopShell,
   readDesktopBootReport,
   resetDesktopRuntimeCache,

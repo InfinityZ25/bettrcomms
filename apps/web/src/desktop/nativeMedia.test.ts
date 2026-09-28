@@ -6,7 +6,7 @@ import { nativeExportCapabilities, startNativeInput } from './nativeMedia';
 
 const mock = vi.hoisted(() => ({
   runtime: 'wails', token: 'test-page-token-not-a-real-secret',
-  invoke: vi.fn(), on: vi.fn(), off: vi.fn(),
+  on: vi.fn(), off: vi.fn(),
   api: {
     PushToTalkCapabilities: vi.fn(), PushToTalkStart: vi.fn(), PushToTalkHeartbeat: vi.fn(), PushToTalkStop: vi.fn(),
     RecordingExportBegin: vi.fn(), RecordingConversionBegin: vi.fn(), RecordingExportAppend: vi.fn(),
@@ -16,7 +16,6 @@ const mock = vi.hoisted(() => ({
 vi.mock('./runtime', () => ({ getDesktopRuntime: () => mock.runtime, readDesktopBootReport: () => ({ pageToken: mock.token }) }));
 vi.mock('./wailsbindings/bettercomms/desktop-wails/nativemediaservice', () => mock.api);
 vi.mock('@wailsio/runtime', () => ({ Events: { On: mock.on } }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mock.invoke }));
 
 beforeEach(() => {
   vi.resetAllMocks(); mock.runtime = 'wails'; mock.token = 'test-page-token-not-a-real-secret';
@@ -45,7 +44,6 @@ describe('Wails native exports', () => {
     expect(new Uint8Array([...decoded[0], ...decoded[1]])).toEqual(bytes);
     expect(mock.api.RecordingExportFinish).toHaveBeenCalledWith(mock.token, 'export');
     expect(mock.api.RecordingExportAbort).not.toHaveBeenCalled();
-    expect(mock.invoke).not.toHaveBeenCalled();
   });
 
   it('aborts a partially uploaded original when cancellation arrives', async () => {
@@ -96,7 +94,6 @@ describe('Wails global input lifecycle', () => {
     await vi.waitFor(() => expect(mock.api.PushToTalkStop).toHaveBeenCalledWith(mock.token, 'input'));
     expect(mock.off).toHaveBeenCalledOnce();
     expect(pressed).toHaveBeenLastCalledWith(false);
-    expect(mock.invoke).not.toHaveBeenCalled();
   });
 
   it('refuses native input from a browser or a page without its token', async () => {

@@ -232,6 +232,8 @@ func (a *API) authed(w http.ResponseWriter, r *http.Request) {
 		a.callPresence(w, u)
 	case r.Method == "GET" && p == "events":
 		a.realtimeWebsocket(w, r, u)
+	case p == "messages/search" || p == "messages/unread":
+		a.messagingGlobal(w, r, u, p)
 	case r.Method == "GET" && p == "users":
 		if !a.limiter.allow("search:"+u.ID, 30, time.Minute) {
 			a.fail(w, 429, "rate_limited", "too many searches")
@@ -410,6 +412,12 @@ func (a *API) room(w http.ResponseWriter, r *http.Request, u User, p []string) {
 	if _, e := a.Store.RoomForMember(rid, u.ID); e != nil {
 		a.fail(w, 403, "not_a_member", "room membership required")
 		return
+	}
+	if len(p) >= 3 && (p[2] == "messages" || p[2] == "read") && (r.Method != "GET" || r.URL.Query().Get("before") == "") {
+		if store, ok := a.Store.(MessagingStore); ok {
+			a.messagingRoom(w, r, u, p, store)
+			return
+		}
 	}
 	if len(p) == 2 && r.Method == "GET" {
 		v, e := a.Store.RoomForMember(rid, u.ID)

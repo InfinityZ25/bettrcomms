@@ -2,14 +2,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NativePushToTalk } from './nativePushToTalk';
 
 const mocks = vi.hoisted(() => ({ invoke: vi.fn(), listen: vi.fn(), unlisten: vi.fn() }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke, isTauri: () => true }));
-vi.mock('@tauri-apps/api/event', () => ({ listen: mocks.listen }));
+vi.mock('../desktop/nativeMedia', () => ({
+  hasNativeMediaHost: () => true,
+  nativeInputCapabilities: () => mocks.invoke('push_to_talk_capabilities'),
+  startNativeInput: (binding: unknown) => mocks.invoke('push_to_talk_start', { binding }),
+  heartbeatNativeInput: (sessionId: string) => mocks.invoke('push_to_talk_heartbeat', { sessionId }),
+  stopNativeInput: (sessionId: string) => mocks.invoke('push_to_talk_stop', { sessionId }),
+  onNativeInput: (handler: unknown) => mocks.listen(handler),
+}));
 
 describe('native push-to-talk registration', () => {
   let input: NativePushToTalk;
   const pressed = vi.fn(), status = vi.fn();
   const snapshot = (sequence = 0, down = false, healthy = true) => ({ sessionId: 'test-session', sequence, pressed: down, healthy, focused: false });
-  const event = (value: ReturnType<typeof snapshot>) => mocks.listen.mock.calls[0][1]({ payload: value });
+  const event = (value: ReturnType<typeof snapshot>) => mocks.listen.mock.calls[0][0](value);
   beforeEach(() => {
     vi.useFakeTimers(); vi.clearAllMocks();
     mocks.listen.mockResolvedValue(mocks.unlisten);

@@ -2,11 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
-  isTauri: vi.fn(() => false),
+  native: false,
   listen: vi.fn(async () => vi.fn()),
 }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke, isTauri: mocks.isTauri }));
-vi.mock('@tauri-apps/api/event', () => ({ listen: mocks.listen }));
+vi.mock('../desktop/capture', () => ({ invokeNativeCapture: mocks.invoke, onNativeCaptureEnded: mocks.listen }));
+vi.mock('../desktop/nativeMedia', () => ({ hasNativeMediaHost: () => mocks.native }));
 
 import { NativeScreenTransport } from './nativeScreen';
 import type { MediaSignal, SignalingAdapter } from './types';
@@ -75,8 +75,7 @@ beforeEach(() => {
   FakePeerConnection.stats = new Map();
   vi.stubGlobal('RTCPeerConnection', FakePeerConnection);
   mocks.invoke.mockReset();
-  mocks.isTauri.mockReset();
-  mocks.isTauri.mockReturnValue(false);
+  mocks.native = false;
   mocks.listen.mockClear();
   mocks.invoke.mockImplementation(
     async (command: string, args: Record<string, unknown>) => {
@@ -171,7 +170,7 @@ describe('native screen signaling lifecycle', () => {
   });
 
   it('advertises whether the receiver is a desktop WebView', async () => {
-    mocks.isTauri.mockReturnValue(true);
+    mocks.native = true;
     const { transport, sent } = setup();
     await transport.handle({
       type: 'signal', from: 'peer-a', to: 'self', transport: 'native-screen',

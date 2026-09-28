@@ -2,8 +2,7 @@ package desktop
 
 import "runtime"
 
-// CapabilityState mirrors the Tauri host's vocabulary so the shared frontend
-// can read one shape from either desktop runtime.
+// CapabilityState describes a Wails host feature for the shared frontend.
 type CapabilityState string
 
 const (
@@ -29,8 +28,7 @@ type Capability struct {
 // MediaCapabilities is the media half of the desktop report.
 //
 // A field here is Implemented only when this host has an acceptance test that
-// exercises it on this host. A passing Tauri test is not evidence: the two
-// hosts share no media code. Promoting a field without such a test is what
+// exercises it on this host. Promoting a field without such a test is what
 // capabilities_test.go exists to prevent.
 type MediaCapabilities struct {
 	SchemaVersion int    `json:"schemaVersion"`
@@ -73,8 +71,7 @@ type BootReport struct {
 	// launch — is what identifies the frontend.
 	APIToken string `json:"apiToken,omitempty"`
 	// PageToken is what a native call must present to prove it came from a
-	// document this host served. It stands in for the per-call origin check the
-	// Tauri host makes, which is not possible here: see PageGate.
+	// document this host served: see PageGate.
 	PageToken  string     `json:"pageToken,omitempty"`
 	AuthReturn Capability `json:"authReturn"`
 	// WindowControls tells the page who draws minimise/maximise/close.
@@ -84,8 +81,7 @@ type BootReport struct {
 }
 
 // WindowControls matches the shape apps/web/src/features/shell/windowControls.ts
-// validates, so the Wails host can drive the same title bar the Tauri host
-// drives without porting the better-gui plugin.
+// validates, so the Wails host can drive the title bar.
 type WindowControls struct {
 	Platform   string   `json:"platform"`
 	Mode       string   `json:"mode"`
@@ -114,10 +110,9 @@ func NewMediaCapabilities() MediaCapabilities {
 		GlobalInput:         globalInput(),
 		NativeOverlays:      nativeOverlays(),
 		Notes: []string{
-			"native capture, native H.264 senders, native MP4 recording and global input are ported to this host and have acceptance tests here",
-			"process-loopback audio, GPU denoisers, permission IPC and the overlays are not ported and take their browser path",
+			"native capture, H.264 sending, MP4 recording, process-loopback audio and global input have Windows implementations and automated tests",
+			"microphone permissions and native overlays remain experimental; platform-specific hardware and packaged acceptance gates still apply",
 			"the web client must use its browser path whenever a capability is not implemented",
-			"parity with apps/desktop is not claimed and has not been measured",
 		},
 	}
 }
@@ -222,20 +217,13 @@ func globalInput() Capability {
 
 // mediaPermissions describes how microphone and camera access is granted here.
 //
-// The Tauri host writes a per-origin allow through WebView2's Profile4 IPC and
-// re-checks the page's origin on every native call. Neither is reachable from
-// Go: Wails keeps its WebView2 controller private, and exposes no way to read
-// the window's current URL.
-//
-// This host reaches the same end state differently. The window is configured to
-// allow capture without prompting, which is what the Profile4 write achieves;
-// native calls are gated on a per-launch token only a document this host served
-// can hold, which is what the origin check achieves. Both are narrower in one
-// respect and wider in another, and the detail says which.
+// Wails keeps its WebView2 controller private and exposes no way to read
+// the window's current URL or inspect stored permission grants. WebView2
+// applies its normal permission decision; native calls require a per-launch
+// token held by documents this host served.
 //
 // Experimental, not Implemented: the token gate and the privacy-settings
-// mapping have tests, but nobody has watched a packaged window open a
-// microphone without a prompt.
+// mapping have tests, but packaged permission prompts remain unverified.
 func mediaPermissions() Capability {
 	if runtime.GOOS != "windows" {
 		return Capability{

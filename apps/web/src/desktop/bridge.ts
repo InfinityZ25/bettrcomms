@@ -7,11 +7,8 @@ import type {
 } from './types';
 
 /**
- * The transport for host commands.
- *
- * Tauri commands go through its IPC. Wails window commands use its built-in
- * Window API; app services use generated bindings. Modules are loaded only in
- * their runtime, so browser and Tauri builds do not execute Wails commands.
+ * Wails window commands use its built-in Window API; app services use
+ * generated bindings. Browser pages do not load the desktop runtime.
  */
 
 /** Raised when a command has no implementation on the current runtime. */
@@ -35,16 +32,15 @@ export interface DesktopWindowApi {
   close(): Promise<void>;
   isMaximized(): Promise<boolean>;
   /**
-   * Begins a window drag. Tauri needs an IPC call for it. The Wails webview
-   * starts the drag itself from the CSS drag region, so there it resolves
-   * without doing anything and `dragRegionStyle` supplies the region.
+   * The Wails webview starts a drag from the CSS region. This operation is a
+   * no-op for callers that share the window API contract.
    */
   startDragging(): Promise<void>;
 }
 
 /**
  * The style that marks an element as a window drag region, or an empty object.
- * Only the Wails webview reads it; Tauri drags through `startDragging`.
+ * Only the Wails webview reads it.
  */
 export function dragRegionStyle(): CSSProperties {
   if (usesWailsNativeNonClientRegions()) return {};
@@ -77,14 +73,7 @@ function wailsDraggable(value: 'drag' | 'no-drag'): CSSProperties {
 }
 
 export function getDesktopWindowApi(): DesktopWindowApi | null {
-  switch (getDesktopRuntime()) {
-    case 'tauri':
-      return tauriWindowApi();
-    case 'wails':
-      return wailsWindowApi();
-    default:
-      return null;
-  }
+  return getDesktopRuntime() === 'wails' ? wailsWindowApi() : null;
 }
 
 function wailsWindowApi(): DesktopWindowApi {
@@ -95,20 +84,6 @@ function wailsWindowApi(): DesktopWindowApi {
     close: async () => (await current()).Close(),
     isMaximized: async () => (await current()).IsMaximised(),
     startDragging: async () => {},
-  };
-}
-
-function tauriWindowApi(): DesktopWindowApi {
-  // Imported lazily so a browser or Wails bundle never evaluates the Tauri
-  // window module, which touches IPC globals on load.
-  const current = async () =>
-    (await import('@tauri-apps/api/window')).getCurrentWindow();
-  return {
-    minimize: async () => (await current()).minimize(),
-    toggleMaximize: async () => (await current()).toggleMaximize(),
-    close: async () => (await current()).close(),
-    isMaximized: async () => (await current()).isMaximized(),
-    startDragging: async () => (await current()).startDragging(),
   };
 }
 

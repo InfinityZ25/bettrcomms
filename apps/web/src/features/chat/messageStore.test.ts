@@ -1,0 +1,171 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { api, type Message } from '@/api';
+import {
+  conversationSnapshot,
+  jumpToMessage,
+  loadConversation,
+  mergeMessages,
+  receiveMessage,
+  reconcileMessaging,
+  startMessagingSession,
+} from './messageStore';
+
+vi.mock('@/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/api')>()),
+  api: vi.fn(),
+}));
+let stop: (() => void) | undefined;
+afterEach(() => {
+  stop?.();
+  stop = undefined;
+  vi.mocked(api).mockReset();
+});
+
+const message = (id: string, sequence: number, version = 1): Message => ({
+  id,
+  sequence,
+  version,
+  room_id: 'room',
+  body: id,
+  created_at: '2026-09-01T00:00:00Z',
+  author: { id: 'user', name: 'Person', email: 'person@example.test' },
+});
+describe('message reconciliation', () => {
+  it('discards inactive history after reconnect before reopening a fresh page', async () => {
+    vi.mocked(api).mockResolvedValueOnce({ rooms: [] });
+    stop = startMessagingSession('user');
+    vi.mocked(api)
+      .mockResolvedValueOnce({
+        messages: [message('old', 1)],
+        before_id: 'old-cursor',
+      })
+      .mockResolvedValueOnce({ members: [] });
+    await loadConversation('room');
+    expect(conversationSnapshot('room').before).toBe('old-cursor');
+    vi.mocked(api).mockResolvedValueOnce({ rooms: [] });
+    reconcileMessaging('user');
+    expect(conversationSnapshot('room').messages).toEqual([]);
+    vi.mocked(api)
+      .mockResolvedValueOnce({
+        messages: [message('new', 101)],
+        before_id: 'new-cursor',
+      })
+      .mockResolvedValueOnce({ members: [] });
+    await loadConversation('room');
+    expect(conversationSnapshot('room').before).toBe('new-cursor');
+    expect(
+      conversationSnapshot('room').messages.map((item) => item.id),
+    ).toEqual(['new']);
+  });
+  it('keeps a distant search hit out of pagination and updates its deletion live', async () => {
+    vi.mocked(api).mockResolvedValueOnce({ rooms: [] });
+    stop = startMessagingSession('user');
+    vi.mocked(api)
+      .mockResolvedValueOnce({
+        messages: [message('recent', 101)],
+        before_id: 'recent',
+      })
+      .mockResolvedValueOnce({ members: [] });
+    await loadConversation('room');
+    vi.mocked(api).mockResolvedValueOnce({ message: message('old', 1) });
+    await jumpToMessage('room', 'old');
+    expect(
+      conversationSnapshot('room').messages.map((item) => item.id),
+    ).toEqual(['recent']);
+    receiveMessage('user', {
+      ...message('old', 1, 2),
+      body: '',
+      deleted_at: '2026-09-02T00:00:00Z',
+    });
+    expect(conversationSnapshot('room').anchor?.body).toBe('');
+    expect(conversationSnapshot('room').before).toBe('recent');
+    expect(conversationSnapshot('room').messages.at(-1)?.id).toBe('recent');
+  });
+  it('updates a distant reply quote when its unloaded parent changes', async () => {
+    vi.mocked(api).mockResolvedValueOnce({ rooms: [] });
+    stop = startMessagingSession('user');
+    vi.mocked(api)
+      .mockResolvedValueOnce({ messages: [message('recent', 101)] })
+      .mockResolvedValueOnce({ members: [] });
+    await loadConversation('room');
+    vi.mocked(api).mockResolvedValueOnce({
+      message: {
+        ...message('reply', 2),
+        reply: { id: 'parent', name: 'Person', body: 'old quote', deleted: false },
+      },
+    });
+    await jumpToMessage('room', 'reply');
+
+    receiveMessage('user', { ...message('parent', 1, 2), body: 'new quote' });
+    expect(conversationSnapshot('room').anchor?.reply?.body).toBe('new quote');
+    receiveMessage('user', {
+      ...message('parent', 1, 3),
+      body: '',
+      deleted_at: '2026-09-02T00:00:00Z',
+    });
+    expect(conversationSnapshot('room').anchor?.reply).toMatchObject({
+      body: '',
+      deleted: true,
+    });
+    expect(conversationSnapshot('room').messages.map((item) => item.id)).toEqual([
+      'recent',
+    ]);
+  });
+  it('does not restore an old version when a fetch overlaps a live edit or deletion', () => {
+    const deleted = {
+      ...message('one', 1, 3),
+      body: '',
+      deleted_at: '2026-09-02T00:00:00Z',
+    };
+    expect(
+      mergeMessages([deleted], [message('one', 1, 1), message('two', 2)]).map(
+        (m) => [m.id, m.body],
+      ),
+    ).toEqual([
+      ['one', ''],
+      ['two', 'two'],
+    ]);
+  });
+  it('orders equal-timestamp pages by sequence and deduplicates socket deliveries', () => {
+    expect(
+      mergeMessages(
+        [message('three', 3), message('two', 2)],
+        [message('one', 1), message('two', 2)],
+      ).map((m) => m.id),
+    ).toEqual(['one', 'two', 'three']);
+  });
+  it('removes quoted content immediately when a loaded reply parent is deleted', () => {
+    const reply = {
+      ...message('reply', 2),
+      reply: {
+        id: 'parent',
+        name: 'Person',
+        body: 'private text',
+        deleted: false,
+      },
+    };
+    const parent = {
+      ...message('parent', 1, 2),
+      body: '',
+      deleted_at: '2026-09-02T00:00:00Z',
+    };
+    expect(mergeMessages([reply], [parent])[1].reply).toEqual({
+      id: 'parent',
+      name: 'Person',
+      body: '',
+      deleted: true,
+    });
+  });
+  it('does not restore a deleted reply preview from an overlapping old page with the same message version', () => {
+    const current = {
+      ...message('reply', 2),
+      reply: { id: 'parent', name: 'Person', body: '', deleted: true },
+    };
+    const stale = {
+      ...current,
+      reply: { ...current.reply, body: 'deleted content', deleted: false },
+    };
+    expect(mergeMessages([current], [stale])[0].reply?.deleted).toBe(true);
+    expect(mergeMessages([current], [stale])[0].reply?.body).toBe('');
+  });
+});

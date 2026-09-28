@@ -1,5 +1,5 @@
 // Package audiostream connects a dedicated audio Worker to one native DSP
-// instance. It implements the existing Tauri worker protocol, not JSON audio IPC.
+// instance. It implements the native worker protocol with binary audio IPC.
 package audiostream
 
 import (

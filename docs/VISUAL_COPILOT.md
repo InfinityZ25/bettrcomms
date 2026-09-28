@@ -48,6 +48,5 @@ npx playwright test tests/visual-copilot.spec.ts tests/push-to-talk.spec.ts test
 
 Browser acceptance uses the real local API/database, two isolated users and synthetic media. It checks opt-in settings, persistence, shortcut conflicts, real data-channel delivery, retained original-frame color after the live source changes, acknowledgements, expiry, revocation, capture restart and unchanged screen-track identity.
 
-`scripts/test-native-visual-copilot.mjs` is an opt-in Windows test for an isolated current debug host on loopback CDP, with `BETTERCOMMS_NATIVE_PROCESS_ID` set to that host's PID. It captures only its own Chrome fixture. `scripts/inspect-copilot-fixture.ps1` verifies geometry, styles, capture affinity, foreground ownership and cleanup. Focus setup may raise and click only the verified synthetic fixture titlebar; do not run the test while using another application. The debug endpoint is for the test only and must not be enabled for ordinary use.
 
 Native acceptance does not prove support for exclusive fullscreen, protected applications, every DPI/display arrangement or macOS. Object tracking, exact capture timestamps, area/freehand annotations and cross-network load acceptance remain outside this preview.

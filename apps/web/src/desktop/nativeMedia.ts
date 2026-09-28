@@ -25,7 +25,6 @@ export interface InputSnapshot {
 
 export async function nativeInputCapabilities(): Promise<{ available: boolean; detail: string }> {
   if (getDesktopRuntime() === 'wails') return (await service()).PushToTalkCapabilities();
-  if (getDesktopRuntime() === 'tauri') return (await import('@tauri-apps/api/core')).invoke('push_to_talk_capabilities');
   return { available: false, detail: 'Global push-to-talk requires a desktop host.' };
 }
 
@@ -34,19 +33,16 @@ export async function startNativeInput(binding: TalkBinding): Promise<InputSnaps
     const token = nativePageToken();
     return (await service()).PushToTalkStart(token, binding as Binding);
   }
-  if (getDesktopRuntime() === 'tauri') return (await import('@tauri-apps/api/core')).invoke('push_to_talk_start', { binding });
   throw new Error('Global push-to-talk requires a desktop host.');
 }
 
 export async function heartbeatNativeInput(sessionId: string): Promise<InputSnapshot> {
   if (getDesktopRuntime() === 'wails') return (await service()).PushToTalkHeartbeat(nativePageToken(), sessionId);
-  if (getDesktopRuntime() === 'tauri') return (await import('@tauri-apps/api/core')).invoke('push_to_talk_heartbeat', { sessionId });
   throw new Error('Global push-to-talk requires a desktop host.');
 }
 
 export async function stopNativeInput(sessionId: string): Promise<void> {
   if (getDesktopRuntime() === 'wails') return (await service()).PushToTalkStop(nativePageToken(), sessionId);
-  if (getDesktopRuntime() === 'tauri') return (await import('@tauri-apps/api/core')).invoke('push_to_talk_stop', { sessionId });
 }
 
 export async function onNativeInput(handler: (snapshot: InputSnapshot) => void): Promise<() => void> {
@@ -54,9 +50,6 @@ export async function onNativeInput(handler: (snapshot: InputSnapshot) => void):
   if (getDesktopRuntime() === 'wails') {
     const { Events } = await import('@wailsio/runtime');
     return Events.On(name, event => handler(event.data as InputSnapshot));
-  }
-  if (getDesktopRuntime() === 'tauri') {
-    return (await import('@tauri-apps/api/event')).listen<InputSnapshot>(name, event => handler(event.payload));
   }
   throw new Error('Global push-to-talk requires a desktop host.');
 }
@@ -78,7 +71,6 @@ export async function nativeExportCapabilities(): Promise<NativeExportCapabiliti
     const available = formats.some(format => format.available);
     return { formats, available, detail: available ? 'Native conversion is available.' : 'Install the FFmpeg runtime to convert recordings.' };
   }
-  if (getDesktopRuntime() === 'tauri') return (await import('@tauri-apps/api/core')).invoke('recording_conversion_capabilities');
   return null;
 }
 
@@ -87,10 +79,6 @@ export async function beginNativeExport(fileName: string, sizeBytes: number, for
     const token = nativePageToken();
     const api = await service();
     return format ? api.RecordingConversionBegin(token, fileName, sizeBytes, format) : api.RecordingExportBegin(token, fileName, sizeBytes);
-  }
-  if (getDesktopRuntime() === 'tauri') {
-    const { invoke } = await import('@tauri-apps/api/core');
-    return format ? invoke('recording_conversion_begin', { fileName, sizeBytes, format }) : invoke('recording_export_begin', { fileName, sizeBytes });
   }
   throw new Error('Native export requires a desktop host.');
 }
@@ -109,17 +97,15 @@ export async function appendNativeExport(exportId: string, offset: number, bytes
     const token = nativePageToken();
     return (await service()).RecordingExportAppend(token, exportId, offset, encodeNativeBytes(bytes));
   }
-  if (getDesktopRuntime() === 'tauri') return (await import('@tauri-apps/api/core')).invoke('recording_export_append', { exportId, offset, bytes: Array.from(bytes) });
   throw new Error('Native export requires a desktop host.');
 }
 
-export async function finishNativeExport(exportId: string, converted = false): Promise<NativeExportResult> {
+export async function finishNativeExport(exportId: string, _converted = false): Promise<NativeExportResult> {
   if (getDesktopRuntime() === 'wails') {
     const token = nativePageToken();
     // The Go grant remembers the format; both paths share the same commit operation.
     return (await service()).RecordingExportFinish(token, exportId);
   }
-  if (getDesktopRuntime() === 'tauri') return (await import('@tauri-apps/api/core')).invoke(converted ? 'recording_conversion_finish' : 'recording_export_finish', { exportId });
   throw new Error('Native export requires a desktop host.');
 }
 
@@ -128,5 +114,4 @@ export async function abortNativeExport(exportId: string): Promise<void> {
     const token = nativePageToken();
     return (await service()).RecordingExportAbort(token, exportId);
   }
-  if (getDesktopRuntime() === 'tauri') return (await import('@tauri-apps/api/core')).invoke('recording_export_abort', { exportId });
 }

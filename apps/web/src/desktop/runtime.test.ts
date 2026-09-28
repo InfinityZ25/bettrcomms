@@ -1,13 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DesktopBootReport } from './types';
 
-const mocks = vi.hoisted(() => ({
-  invoke: vi.fn(),
-  isTauri: vi.fn(() => false),
-}));
-
-vi.mock('@tauri-apps/api/core', () => mocks);
-
 function capability(state = 'unavailable') {
   return { state, detail: 'detail', fallback: 'browser path' };
 }
@@ -55,7 +48,6 @@ async function loadRuntime(boot?: unknown) {
 
 describe('desktop runtime detection', () => {
   beforeEach(() => {
-    mocks.isTauri.mockReturnValue(false);
     vi.unstubAllGlobals();
   });
 
@@ -64,39 +56,20 @@ describe('desktop runtime detection', () => {
 
     expect(runtime.getDesktopRuntime()).toBe('wails');
     expect(runtime.isDesktopShell()).toBe(true);
-    // Native media features stay Tauri-only, whatever shell is hosting.
-    expect(runtime.hasTauriNativeCommands()).toBe(false);
     expect(runtime.getDesktopApiOrigin()).toBe('http://127.0.0.1:8080');
   });
 
-  it('detects the Tauri host and reports no boot global', async () => {
-    mocks.isTauri.mockReturnValue(true);
-    const runtime = await loadRuntime();
-
-    expect(runtime.getDesktopRuntime()).toBe('tauri');
-    expect(runtime.hasTauriNativeCommands()).toBe(true);
-    expect(runtime.readDesktopBootReport()).toBeNull();
-    expect(runtime.getDesktopApiOrigin()).toBeNull();
-  });
-
-  it('reports a browser when neither host is present', async () => {
+  it('reports a browser when no host is present', async () => {
     const runtime = await loadRuntime();
 
     expect(runtime.getDesktopRuntime()).toBe('browser');
     expect(runtime.isDesktopShell()).toBe(false);
   });
 
-  it('prefers the Wails report even if a Tauri marker is also present', async () => {
-    mocks.isTauri.mockReturnValue(true);
-    const runtime = await loadRuntime(validBoot());
-
-    expect(runtime.getDesktopRuntime()).toBe('wails');
-  });
 });
 
 describe('desktop boot report validation', () => {
   beforeEach(() => {
-    mocks.isTauri.mockReturnValue(false);
     vi.unstubAllGlobals();
   });
 
@@ -111,7 +84,7 @@ describe('desktop boot report validation', () => {
 
   it.each([
     ['a non-object', 'nope'],
-    ['a wrong runtime name', { ...validBoot(), runtime: 'tauri' }],
+    ['a wrong runtime name', { ...validBoot(), runtime: 'unknown' }],
     ['an unknown schema version', { ...validBoot(), schemaVersion: 2 }],
     ['missing capabilities', { ...validBoot(), capabilities: undefined }],
     [

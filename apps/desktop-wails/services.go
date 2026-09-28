@@ -50,7 +50,7 @@ type NativeMediaService struct {
 	// window is what a session reports focus and events to.
 	window *application.WebviewWindow
 	// gate is how a native call proves it came from a document this host
-	// served. It replaces the Tauri host's per-call origin check.
+	// served. It gates native calls to the served page.
 	gate *desktop.PageGate
 }
 
@@ -613,7 +613,7 @@ func (s *NativeMediaService) DeepfilterStatus(hostToken string) (deepfilter.Stat
 //
 // The page asks so it can render the truth rather than a control that would do
 // nothing: this host allows capture outright and cannot revoke it, which is a
-// different shape from the Tauri host's per-origin grant.
+// bound to an opaque per-page grant.
 func (s *NativeMediaService) MediaPermission(kind string) (desktop.MediaPermissionPolicy, error) {
 	parsed, err := desktop.ParseMediaPermissionKind(kind)
 	if err != nil {

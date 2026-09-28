@@ -34,14 +34,7 @@ PeerConnections; every participant uploads and downloads full-quality audio
 + camera + screen media to/from every other participant. This is the
 primary scaling ceiling the SFU work replaces.
 
-`apps/desktop/src-tauri/src/native_screen_rtc.rs` (~1.6k lines) runs a
-**second**, independent WebRTC stack for native (non-WebView) screen
-capture: it depends directly on `webrtc-rs` (`webrtc = "=0.17.2"` in
-`apps/desktop/src-tauri/Cargo.toml`), constructing its own
-`RTCPeerConnection` in Rust and interoperating over the same signaling
-channel as the browser engine. This is useful precedent — the new SFU
-should use the same `webrtc-rs` family, and idioms from this file
-transfer directly.
+The Wails v3 host has an independent native screen capture and WebRTC sender under `apps/desktop-wails/internal/native`. It uses the same signaling channel as browser peers. This path requires native acceptance separate from browser tests.
 
 ### ICE / STUN / TURN
 
@@ -77,22 +70,9 @@ as a media relay") and Phase 14 explicitly calls out removing it. It only
 ever carried microphone audio — camera, screen, and system audio have
 never gone through Railway.
 
-### Native capture → WebRTC track mapping (already conforms)
+### Native capture → WebRTC track mapping
 
-Every platform funnels into ordinary WebRTC tracks already, matching
-Phase 13's target shape: browser `getUserMedia`/`getDisplayMedia` →
-`MediaStreamTrack`; desktop native capture
-(`native_screen.rs`, `native_screen_rtc.rs`, `native_system_audio.rs`)
-produces frames fed into the Rust `webrtc-rs` `RTCPeerConnection` or
-piped back into the WebView's `RTCPeerConnection` via IPC, depending on
-platform capability. No separate media protocol exists per platform today.
-
-### Platforms
-
-Only **web** (`apps/web`, Vite/React) and **desktop** (`apps/desktop`,
-Tauri + Rust, Windows/macOS) exist in this repository. There is no mobile
-app. Phase 13's mobile capture mapping is aspirational/future, not a
-current gap.
+Browser capture uses `getUserMedia` and `getDisplayMedia`. Windows Wails capture runs through its native source picker, sender, and recording services; frontend adapters route results into the call UI. The two paths have separate acceptance requirements. There is no mobile app in this repository.
 
 ### Infrastructure inventory (as of this migration's start)
 

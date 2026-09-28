@@ -1,4 +1,3 @@
-import { isTauri } from '@tauri-apps/api/core';
 import type {
   Capability,
   CapabilityState,
@@ -13,8 +12,8 @@ import type {
  *
  * Detection is synchronous on purpose: the title bar and several media modules
  * have to decide before their first render, and an async probe would flash the
- * wrong layout. Tauri publishes its own marker, and the Wails host injects the
- * global below into the document it serves. Neither is inferred from the user
+ * wrong layout. The Wails host injects the global below into the document it
+ * serves. It is never inferred from the user
  * agent, which a WebView shares with an ordinary browser.
  */
 
@@ -48,36 +47,17 @@ export function readDesktopBootReport(): DesktopBootReport | null {
 }
 
 export function getDesktopRuntime(): DesktopRuntime {
-  if (readDesktopBootReport()) return 'wails';
-  // isTauri() reads a marker Tauri sets on the window before the page loads.
-  try {
-    if (isTauri()) return 'tauri';
-  } catch {
-    // A stubbed or absent Tauri global is simply not a Tauri host.
-  }
-  return 'browser';
+  return readDesktopBootReport() ? 'wails' : 'browser';
 }
 
-/** True inside either desktop shell. Use this for shell chrome, not features. */
+/** True inside the desktop shell. */
 export function isDesktopShell(): boolean {
-  return getDesktopRuntime() !== 'browser';
-}
-
-/**
- * True only where the Tauri native command table exists.
- *
- * Every native media adapter — capture, process audio, GPU denoisers, native
- * recording, global input, overlays — lives in the Tauri host alone. Feature
- * code must gate on this, not on `isDesktopShell()`.
- */
-export function hasTauriNativeCommands(): boolean {
-  return getDesktopRuntime() === 'tauri';
+  return getDesktopRuntime() === 'wails';
 }
 
 /**
  * The API origin the host wants the web client to use, or null to keep the
- * page's own origin. Only the Wails host reports one synchronously; the Tauri
- * host answers the equivalent `desktop_boot_config` command asynchronously.
+ * page's own origin.
  */
 export function getDesktopApiOrigin(): string | null {
   const boot = readDesktopBootReport();

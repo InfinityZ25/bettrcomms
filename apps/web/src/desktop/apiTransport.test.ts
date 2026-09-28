@@ -1,12 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({
-  invoke: vi.fn(),
-  isTauri: vi.fn(() => false),
-}));
-
-vi.mock('@tauri-apps/api/core', () => mocks);
-
 const TOKEN = 'x'.repeat(43);
 
 function capability(state = 'unavailable') {
@@ -63,7 +56,6 @@ async function loadTransport(boot?: unknown) {
 
 describe('API transport', () => {
   beforeEach(() => {
-    mocks.isTauri.mockReturnValue(false);
     vi.unstubAllGlobals();
   });
 

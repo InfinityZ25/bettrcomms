@@ -1,13 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DesktopCapabilityName } from './types';
 
-const mocks = vi.hoisted(() => ({
-  invoke: vi.fn(),
-  isTauri: vi.fn(() => false),
-}));
-
-vi.mock('@tauri-apps/api/core', () => mocks);
-
 const NATIVE: DesktopCapabilityName[] = [
   'nativeGameVideo',
   'nativeProcessAudio',
@@ -72,14 +65,9 @@ async function load(boot?: unknown) {
 describe('capability reporting', () => {
   beforeEach(() => {
     vi.unstubAllGlobals();
-    mocks.isTauri.mockReturnValue(false);
-    mocks.invoke.mockReset();
   });
 
-  // The point of the whole module: the Wails host must never be presented as
-  // having native capture, native audio processing, GPU denoisers, or native
-  // recording, because none of that code has been ported to it.
-  it('reports every native capability unavailable in the Wails host', async () => {
+  it('uses the Wails host capability report', async () => {
     const capabilities = await load(wailsBoot());
     const report = capabilities.getDesktopCapabilities();
 
@@ -101,48 +89,6 @@ describe('capability reporting', () => {
       expect(report[name].state).toBe('unavailable');
       expect(report[name].fallback).toBeTruthy();
     }
-  });
-
-  it('stays conservative for Tauri until the host has answered', async () => {
-    mocks.isTauri.mockReturnValue(true);
-    const capabilities = await load();
-
-    for (const name of NATIVE) {
-      expect(capabilities.hasDesktopCapability(name)).toBe(false);
-    }
-  });
-
-  it('takes the Tauri host at its word once it answers', async () => {
-    mocks.isTauri.mockReturnValue(true);
-    mocks.invoke.mockResolvedValue({
-      platform: 'windows',
-      architecture: 'x86_64',
-      nativeGameVideo: { state: 'implemented', detail: 'Windows Graphics Capture' },
-      nativeProcessAudio: { state: 'experimental', detail: 'process loopback' },
-      localTrackRecording: { state: 'implemented', detail: 'native MP4 remux' },
-      notes: ['native sharing requires the bundled FFmpeg runtime'],
-    });
-    const capabilities = await load();
-
-    const report = await capabilities.loadDesktopCapabilities();
-
-    expect(mocks.invoke).toHaveBeenCalledWith('desktop_media_capabilities');
-    expect(report.platform).toBe('windows');
-    expect(report.nativeGameVideo.state).toBe('implemented');
-    expect(report.nativeProcessAudio.state).toBe('experimental');
-    // Capabilities outside the Tauri report schema are not invented here.
-    expect(report.globalInput.state).toBe('unavailable');
-    expect(report.globalInput.detail).toContain('probes it directly');
-  });
-
-  it('keeps the conservative report when the Tauri command is missing', async () => {
-    mocks.isTauri.mockReturnValue(true);
-    mocks.invoke.mockRejectedValue(new Error('Command not found'));
-    const capabilities = await load();
-
-    const report = await capabilities.loadDesktopCapabilities();
-
-    expect(report.nativeGameVideo.state).toBe('unavailable');
   });
 
   it('summarises the runtime for diagnostics without identifiers', async () => {

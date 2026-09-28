@@ -4,7 +4,7 @@
 
 Unit tests cover permission resolution, event sequencing, audio gain bounds, layout math, manifest/index transitions, quota eviction, and capability-state serialization. Contract tests run the React client against the Go API and signaling service with clock and disconnect control. PostgreSQL integration tests use real migrations and constraints. Browser automation covers primary keyboard and screen-reader semantics but does not substitute for real media tests.
 
-Rust tests must assert that unfinished native features cannot serialize as implemented. Build CI runs format, lint, test, Tauri configuration validation, and dependency audit on Windows. The web production artifact is built before the Tauri build and the packaged app is launched without the Vite server.
+Wails Go tests must assert that unfinished native features cannot serialize as implemented. Desktop CI runs Go vet/tests, frontend build/tests, and platform packaging checks. The web production artifact is built before the Wails host and the packaged app is launched without the Vite server.
 
 ## Required real two-peer network matrix
 
@@ -49,7 +49,7 @@ Set tiny duration and byte quotas to force deterministic eviction. Verify only c
 
 ## Security and authorization
 
-Run a role/resource matrix at HTTP and WebSocket layers; mutate community/channel membership mid-session and verify event delivery stops. Fuzz signaling size/rate/order. Verify short-lived TURN credentials expire and belong to the expected user. Inspect the packaged Tauri capability manifest and compiled plugins: no arbitrary shell, unrestricted filesystem, or process execution surface. CSP and dependency advisories are release gates.
+Run a role/resource matrix at HTTP and WebSocket layers; mutate community/channel membership mid-session and verify event delivery stops. Fuzz signaling size/rate/order. Verify short-lived TURN credentials expire and belong to the expected user. Inspect the packaged Wails service bindings and page-token checks: no arbitrary shell, unrestricted filesystem, or process execution surface. CSP and dependency advisories are release gates.
 
 ## Release evidence
 
@@ -61,4 +61,4 @@ Verify stopped calls automatically save, including leaving a room and automatic 
 
 ## Native permission recovery
 
-`scripts/test-native-devices.mjs` checks explicit deny/re-enable and synthetic microphone/camera cleanup against temporary loopback WebView2 CDP port 9223. Start the development preview with `--use-fake-device-for-media-stream` and autoplay enabled, but never `--use-fake-ui-for-media-stream` (that would mask permission failures). Restart normally after testing. Ordinary browsing still requires browser permissions. Check actual Windows privacy restrictions separately on a physical device.
+The native permission flow requires packaged Wails acceptance on Windows, including explicit deny/re-enable and synthetic microphone/camera cleanup. Ordinary browsing still requires browser permissions. Check Windows privacy restrictions separately on a physical device.

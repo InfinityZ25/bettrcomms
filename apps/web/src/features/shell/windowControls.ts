@@ -4,18 +4,8 @@
  * Who draws the minimize/maximize/close buttons depends on the desktop, and
  * only the host can tell: Windows owns the non-client frame outside the page,
  * macOS keeps its own traffic lights, and Linux expects the app to draw
- * them in the order `gtk-decoration-layout` asks for. The plugin resolves that
- * once and publishes it on `window.__BETTER_WINDOW_CONTROLS__`.
- *
- * The publish can land after the first render (on macOS and Linux it is an
- * `eval` into an already-running page), so this module starts from a guess made
- * from the user agent and swaps to the real state when it arrives. The guess
- * matches what each platform ends up with in the common case, which keeps the
- * title bar from flashing a different set of buttons.
- *
- * The Wails v3 host publishes the same shape inside its boot report instead,
- * which is already in the document before the first render. better-gui is not
- * ported to that host; only this contract is shared.
+ * them in the order `gtk-decoration-layout` asks for. Wails publishes this
+ * state in its boot report before the page runs.
  */
 
 import { readDesktopBootReport } from '@/desktop';
@@ -49,19 +39,13 @@ export interface WindowControlsState {
 // Has to agree with titlebarHeight in the Wails host's capabilities.go.
 const TITLEBAR_HEIGHT = 40;
 // Ancho de los semaforos de macOS mas su margen, en pixeles logicos. Tiene que
-// concordar con `trafficLightPosition` de tauri.macos.conf.json.
+// match the native macOS traffic-light placement in the Wails host.
 const MACOS_TRAFFIC_LIGHT_INSET = 78;
 const WINDOW_BUTTONS: WindowButton[] = ['minimize', 'maximize', 'close'];
-
-const CHANGE_EVENT = 'better-window-controls-change';
 
 interface WindowControlsOverlay extends EventTarget {
   readonly visible: boolean;
 }
-
-type WindowWithControls = Window & {
-  __BETTER_WINDOW_CONTROLS__?: unknown;
-};
 
 type NavigatorWithOverlay = Navigator & {
   windowControlsOverlay?: WindowControlsOverlay;
@@ -72,10 +56,8 @@ export function subscribeToWindowControls(onChange: () => void) {
   // El overlay de WebView2 cambia de ancho al maximizar y al cambiar el idioma
   // del sistema, y eso mueve el area util de la barra.
   overlay?.addEventListener('geometrychange', onChange);
-  window.addEventListener(CHANGE_EVENT, onChange);
   return () => {
     overlay?.removeEventListener('geometrychange', onChange);
-    window.removeEventListener(CHANGE_EVENT, onChange);
   };
 }
 
@@ -87,9 +69,7 @@ let cachedKey = JSON.stringify(cached);
  * to come back as the same object or React re-renders forever.
  */
 export function getWindowControls(): WindowControlsState {
-  const published =
-    (window as WindowWithControls).__BETTER_WINDOW_CONTROLS__ ??
-    readDesktopBootReport()?.windowControls;
+  const published = readDesktopBootReport()?.windowControls;
   const next = isWindowControlsState(published)
     ? published
     : defaultWindowControls();

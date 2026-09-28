@@ -7,7 +7,7 @@ import { getDesktopRuntime } from './runtime';
  * puts a real Windows toast in the Action Center. The browser build sends
  * nothing — the page is the notification there, and a web notification would
  * need a permission prompt to tell somebody about a window they are looking
- * at. The Tauri host has its own plugin and is not wired to this.
+ * at. The desktop host uses its Wails notification service.
  */
 export interface DesktopNotification {
   /** Stable per subject, so a second message replaces the first one's toast. */

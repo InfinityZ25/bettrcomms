@@ -30,7 +30,7 @@ func TestPackagedAPIOriginAndRuntimeOverrides(t *testing.T) {
 	t.Setenv("BETTERCOMMS_API_ORIGIN", "")
 	bakedAPIOrigin = ""
 	if configuredAPIOrigin(false) != desktop.ReleaseOrigin {
-		t.Fatal("default release origin differs from the Tauri contract")
+		t.Fatal("default release origin differs from the hosted application")
 	}
 	bakedAPIOrigin = "https://packaging.example:8443"
 	if configuredAPIOrigin(false) != bakedAPIOrigin {

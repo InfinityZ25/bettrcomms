@@ -1,12 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { detectDesktopPlatform, getWindowControls } from './windowControls';
 
-function publish(state: unknown) {
-  vi.stubGlobal('window', { __BETTER_WINDOW_CONTROLS__: state });
-}
+const host = vi.hoisted(() => ({ controls: undefined as unknown }));
+vi.mock('@/desktop', () => ({ readDesktopBootReport: () => host.controls === undefined ? null : { windowControls: host.controls } }));
+function publish(state: unknown) { host.controls = state; }
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  host.controls = undefined;
 });
 
 describe('platform detection', () => {

@@ -1,5 +1,5 @@
-// Package dspsetup embeds the same pinned installers, models and licences used
-// by Tauri. Only the explicit, authorised install action runs these scripts.
+// Package dspsetup embeds pinned installers, models and licences.
+// Only the explicit, authorised install action runs these scripts.
 package dspsetup
 
 import (

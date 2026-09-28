@@ -1,13 +1,8 @@
 /**
- * The contract shared by both desktop hosts.
- *
- * `apps/desktop` (Tauri 2) exposes it through IPC commands; `apps/desktop-wails`
- * (Wails v3) exposes commands through generated bindings and injects a boot
- * report into the document. The frontend reads one shape either way, so no
- * feature has to know which shell it is running inside.
+ * The contract shared by the browser and Wails desktop host.
  */
 
-export type DesktopRuntime = 'tauri' | 'wails' | 'browser';
+export type DesktopRuntime = 'wails' | 'browser';
 
 /**
  * `implemented` means the host has the code path and it is covered by tests.
@@ -46,7 +41,7 @@ export type DesktopCapabilityName = Exclude<
   'schemaVersion' | 'platform' | 'architecture' | 'notes'
 >;
 
-/** Shared window-control description for the desktop hosts. */
+/** Window-control description from the desktop host. */
 export interface DesktopWindowControls {
   platform: 'windows' | 'macos' | 'linux' | 'unknown';
   mode:
@@ -85,8 +80,7 @@ export interface DesktopBootReport {
   apiToken?: string;
   /**
    * The per-launch secret a native call must present to prove it came from a
-   * document this host served. It stands in for the per-call origin check the
-   * Tauri host makes, which the Wails host cannot make.
+   * document this host served.
    */
   pageToken?: string;
   authReturn: Capability;
