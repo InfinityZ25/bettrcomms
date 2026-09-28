@@ -682,11 +682,12 @@ export function useCallSession({
           microphone: false,
         });
       } catch (error) {
-        // Preserve the working feed when the browser cannot open two cameras
-        // at once. The user can switch with an explicit off/select/on sequence.
+        // The selected device may belong to another app, or the browser may
+        // reject opening a second camera. We cannot distinguish those cases;
+        // keep the working feed and make the workaround conditional.
         if (error instanceof DOMException &&
             ['NotReadableError', 'AbortError'].includes(error.name)) {
-          throw new Error('Turn off your camera, choose the new source, then turn it on.');
+          throw new Error('Could not open that camera; it may be busy or unavailable. Your current video is still live. If your browser limits cameras, turn video off, select it, then turn video on.');
         }
         throw error;
       }

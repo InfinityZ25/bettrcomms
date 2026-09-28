@@ -34,6 +34,9 @@ test('mobile sidebar overlays the call and closes after choosing a room', async 
     }))).room;
     const page = await context.newPage();
     await page.goto('/');
+    await expect(page.getByRole('heading', { name: room.name })).toBeVisible();
+    await page.getByRole('button', { name: 'Join call' }).click();
+    await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
     const main = page.locator('main');
     const before = await main.boundingBox();
     await page.getByRole('button', { name: 'Toggle sidebar' }).click();
@@ -48,7 +51,7 @@ test('mobile sidebar overlays the call and closes after choosing a room', async 
     await page.screenshot({ path: '.local/mobile-sidebar-drawer.png' });
     await drawer.getByRole('button', { name: room.name }).click();
     await expect(drawer).toBeHidden();
-    await expect(main.getByText(room.name).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
 
     await page.getByRole('button', { name: 'Toggle sidebar' }).click();
     await expect(drawer).toBeVisible();

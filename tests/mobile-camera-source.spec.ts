@@ -146,7 +146,8 @@ test('mobile call switches to a browser-exposed camera without recapturing the m
       microphoneCaptures: 1,
       selected: 'phone-back',
     });
-    await expect(page.getByRole('alert')).toContainText('Turn off your camera, choose the new source, then turn it on.');
+    await expect(page.getByRole('alert')).toContainText('it may be busy or unavailable');
+    await expect(page.getByRole('alert')).toContainText('Your current video is still live');
     await page.getByRole('button', { name: 'Dismiss notification' }).click();
     await page.getByRole('button', { name: 'Turn off camera' }).click();
     await expect(page.getByRole('button', { name: 'Turn on camera' })).toBeVisible();
