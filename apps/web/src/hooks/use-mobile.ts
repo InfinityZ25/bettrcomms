@@ -1,6 +1,8 @@
 import * as React from "react"
 
-const MOBILE_BREAKPOINT = 768
+// The room sidebar leaves the layout below 821px. Keep its trigger on the
+// same breakpoint so it opens the mobile drawer throughout that range.
+const MOBILE_BREAKPOINT = 821
 
 export function useIsMobile() {
   const [isMobile, setIsMobile] = React.useState<boolean | undefined>(undefined)

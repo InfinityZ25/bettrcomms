@@ -35,8 +35,9 @@ export default function FriendsDialog({
       onOpenChange={onOpenChange}
       title="Better with friends"
       description="Share your user ID with a friend so they can send you a request."
+      className="max-h-[calc(100dvh-2rem)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden"
     >
-      <div className="mt-6 flex flex-col gap-5">
+      <div className="flex min-h-0 flex-col gap-5 overflow-y-auto overscroll-contain pr-1">
         {user ? (
           <>
             <label className="block text-xs font-medium text-foreground/80">
