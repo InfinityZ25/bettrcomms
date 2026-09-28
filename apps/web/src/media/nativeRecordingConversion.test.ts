@@ -1,7 +1,14 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import { saveConvertedRecordingAsset } from './nativeRecordingConversion';
 const mocks = vi.hoisted(() => ({ invoke: vi.fn(), desktop: true }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke, isTauri: () => mocks.desktop }));
+vi.mock('../desktop/nativeMedia', () => ({
+  hasNativeMediaHost: () => mocks.desktop,
+  nativeExportCapabilities: () => mocks.invoke('recording_conversion_capabilities'),
+  beginNativeExport: (fileName: string, sizeBytes: number, format: string) => mocks.invoke('recording_conversion_begin', { fileName, sizeBytes, format }),
+  appendNativeExport: (exportId: string, offset: number, bytes: Uint8Array) => mocks.invoke('recording_export_append', { exportId, offset, bytes }),
+  finishNativeExport: (exportId: string) => mocks.invoke('recording_conversion_finish', { exportId }),
+  abortNativeExport: (exportId: string) => mocks.invoke('recording_export_abort', { exportId }),
+}));
 beforeEach(() => { mocks.invoke.mockReset(); mocks.desktop = true; });
 
 it('uploads the untouched source in bounded chunks and uses a conversion grant', async () => {

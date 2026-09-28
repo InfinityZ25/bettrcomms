@@ -7,9 +7,7 @@ import (
 
 // Microphone and camera permission on this host.
 //
-// The Tauri host drives WebView2's Profile4 permission IPC: it writes an
-// allow or a deny for the application's origin and reads it back. That
-// interface is not reachable from here — Wails keeps its WebView2 controller
+// WebView2's Profile4 permission IPC is not reachable here: Wails keeps its WebView2 controller
 // private, and the package that wraps it is internal to Wails. This host does
 // not yet have equivalent grant inspection/revocation.
 //

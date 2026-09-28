@@ -8,7 +8,7 @@ Each viewer owns its own track, bounded send queue and paced writer task. The en
 
 RTP timestamps follow the encoder's output clock rather than a nominal `1/fps` step per access unit. Several access units routinely arrive in one pipe read, so spacing holds the encoder's constant-rate grid; when capture genuinely falls behind by more than three frame intervals the clock resynchronizes to the arrival instant instead of drifting permanently behind wall time.
 
-Starting with Windows 0.1.10, the installer includes the pinned Gyan FFmpeg 8.1 executable as a Tauri resource beside its GPL license, setup metadata, and source/build references. The release workflow checks the pinned file lengths and SHA-256 values before building each Windows installer. Rust uses this packaged runtime first, so a fresh install needs no WinGet command, PATH change, restart, or separate runtime setup. The existing verified download into `%LOCALAPPDATA%\Bettercomms\ffmpeg-8.1` remains a repair fallback when packaged files are missing; an existing WinGet installation remains a final compatibility fallback for screen capture. A missing runtime or failed encoder probe leaves browser sharing available.
+Wails Windows packages stage pinned FFmpeg 8.1 beside the executable with its GPL license, setup metadata, and source/build references. `scripts/stage-wails-ffmpeg.ps1` verifies lengths and SHA-256 hashes in private app storage or installs the pinned runtime there. Missing runtime or encoder support leaves browser sharing available.
 
 The pinned archive is 247,913,948 bytes with SHA-256 `587B1C37DE29C5003D01CF65DA10001BAC43A58B88E61AF0FC77C61DAFF04761`. The extracted FFmpeg executable is 223,360,000 bytes with SHA-256 `D1E2A156261ECC675081943197A85F08F2868784A0AF499171EDE89353EDAD31`. The runtime is GPL-3.0 licensed. `LICENSE` and `SOURCE.txt` are distributed beside the executable.
 
@@ -31,9 +31,7 @@ Browser/received-screen recording bitrate is separately selectable in Settings. 
 
 ## Verification
 
-`scripts/test-native-screen.mjs` connects to a temporary loopback WebView debugging endpoint and captures only its own synthetic browser window. It exercises the actual native encoder, H.264 WebRTC browser decoder, native MP4 remux, frontend preview/recording integration, and cleanup. It writes test MP4s under `.local/capture-probe/` for independent `ffprobe` checks. Do not enable that debugging endpoint in distributed builds.
-
-Use `scripts/start-desktop.ps1` for ordinary development. It runs the Tauri Rust watcher and reuses this workspace's existing Vite server when one is already listening. After native changes, a directly launched old executable can otherwise keep serving new frontend code with an old IPC command registry.
+Use `scripts/start-desktop-wails.ps1` for development. The Wails Go tests and frontend unit tests cover adapter contracts and cleanup. A full native acceptance run must capture and record a real Windows window on a packaged Wails build; browser synthetic media cannot establish that result.
 
 ## Encoding efficiency and compatibility
 
@@ -64,9 +62,9 @@ Run `scripts/benchmark-nvenc-quality.ps1` for the reproducible synthetic 1080p60
 
 Five-second keyframes offered no useful quality improvement in that comparison. The recovery interval has since moved to one second on the separate evidence above. These controlled scores do not establish Discord parity, end-to-end latency, or performance while a game saturates the GPU. Existing recordings cannot regain lost detail. H.264 remains 8-bit YUV 4:2:0, so gradient quantization and repeated self-capture can still show bands.
 
-`scripts/test-native-stream-quality.mjs` passed actual Windows Graphics Capture, native RTP decoding in Chromium, and native-copy MP4 inspection for Baseline/Main/High at each of 8/12/20 Mbps, all 1920x1080 at a requested 60 FPS. Baseline and Main at 8 Mbps also passed encoded-frame loss recovery with a new decoded keyframe and late joining. The test captures only its synthetic source window and uses a temporary loopback debugging endpoint. Receiver support varies by browser; unsupported High is skipped explicitly by the harness. Older P4/P5 checks remain in `scripts/test-native-encoder-quality.ps1` as historical comparisons.
+A previous native host test passed actual Windows Graphics Capture, native RTP decoding in Chromium, and native-copy MP4 inspection for Baseline/Main/High at each of 8/12/20 Mbps, all 1920x1080 at a requested 60 FPS. Baseline and Main at 8 Mbps also passed encoded-frame loss recovery with a new decoded keyframe and late joining. The test captures only its synthetic source window and uses a temporary loopback debugging endpoint. Receiver support varies by browser; unsupported High is skipped explicitly by the harness. Older P4/P5 checks remain in `scripts/test-native-encoder-quality.ps1` as historical comparisons.
 
-The parameterized `scripts/test-native-screen.mjs` also passed 1280×720 at 120 FPS/12 Mbps and 240 FPS/20 Mbps through actual Windows Graphics Capture, NVENC and AMF, native RTP, Chromium decoding, and native MP4 recording. Measured decode rates on the development machine were approximately 120.5–120.7 FPS and 240.9–241.4 FPS. Those results establish the pipeline and tested hardware path; a static or slower-refresh source, encoder saturation, receiver decode limits, or network capacity can reduce the delivered rate.
+A previous native host test also passed 1280×720 at 120 FPS/12 Mbps and 240 FPS/20 Mbps through actual Windows Graphics Capture, NVENC and AMF, native RTP, Chromium decoding, and native MP4 recording. Measured decode rates on the development machine were approximately 120.5–120.7 FPS and 240.9–241.4 FPS. Those results establish the pipeline and tested hardware path; a static or slower-refresh source, encoder saturation, receiver decode limits, or network capacity can reduce the delivered rate.
 
 ## Native system audio and source previews
 
@@ -76,7 +74,7 @@ Native PCM is 48 kHz float32 stereo. A bounded 500ms ring returns the newest at 
 
 Verification includes real WASAPI activation/start/stop and a controlled spectral exclusion test: an independent 880Hz sibling process was captured while a 440Hz child of the excluded process was below the leakage threshold. No captured PCM was persisted. Browser tests exercise actual AudioWorklet stereo output, binary pull behavior, cancellation, failure, resource cleanup, and engine screen/audio coupling.
 
-The packaged WebView exclusion harness `scripts/test-native-call-audio.mjs` plays 770Hz through a real WebView `AudioContext` while an unrelated FFplay process plays 660Hz. On the same isolated debug host, excluding the old BetterComms root produced WebView magnitude `0.192614`; excluding the directly owned WebView2 browser tree reduced it to `0.000003663`, while the unrelated tone remained effectively unchanged (`0.017457` versus `0.017290`). This confirms WebView call playback is attributed to Chromium's audio-service process and verifies the new exclusion target on this Windows host.
+A previous WebView exclusion harness played 770Hz through a real WebView `AudioContext` while an unrelated FFplay process plays 660Hz. On the same isolated debug host, excluding the old BetterComms root produced WebView magnitude `0.192614`; excluding the directly owned WebView2 browser tree reduced it to `0.000003663`, while the unrelated tone remained effectively unchanged (`0.017457` versus `0.017290`). This confirms WebView call playback is attributed to Chromium's audio-service process and verifies the new exclusion target on this Windows host.
 
 Native preview enumeration reuses opaque IDs for unchanged currently listed windows, so overlapping refreshes do not invalidate visible cards. Deleted sources are removed. The frontend accepts native binary response formats, validates JPEG boundaries, and retries one failed preview; unsupported sources show a refresh hint. A controlled application-window acceptance test produced a 640x360 JPEG through Windows Graphics Capture.
 

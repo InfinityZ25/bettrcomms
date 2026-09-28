@@ -1,6 +1,6 @@
 # BetterComms Wails v3 host
 
-A second desktop shell beside Tauri, using the same React/Vite frontend in
+The desktop shell uses the shared React/Vite frontend in
 `apps/web`. Wails v3.0.0-beta.18 is pinned. No better-gui port is used.
 
 Window controls use Wails' built-in `Window` runtime API. Windows caption and
@@ -61,8 +61,8 @@ bin/
 ```
 
 Keep this directory together. The runtime is resolved relative to the executable,
-not the working directory. Preparation reuses the verified Tauri bundle or runs
-the existing pinned preparation script, which can require a download. Optional
+not the working directory. Preparation verifies the pinned private runtime or
+installs it through the pinned setup script, which can require a download. Optional
 GPU audio runtimes still require explicit setup. This directory is the portable
 distribution, not an installer.
 
@@ -77,8 +77,8 @@ compiler path or an already validated portable build, use from the repo root:
 ```
 
 Omit `-SkipBuild` to rebuild the embedded frontend and native host first. The
-installer is per-user, unsigned, and separate from Tauri in its installation
-directory, shortcut and uninstall registration. It requires Windows x64 and an
+installer is per-user and unsigned. It owns its installation directory,
+shortcut and uninstall registration. It requires Windows x64 and an
 existing WebView2 Evergreen Runtime; if missing, it stops before copying files
 and gives the official download address. It does not yet install that prerequisite
 itself. Uninstall removes only known package files, not profiles, credentials,
@@ -114,6 +114,21 @@ From the repository root, `./scripts/test-wails-build-origin.ps1` checks rejecte
 origins and compiles a custom-origin binary, verifies it without environment
 overrides, then restores the normal binary. The Windows CI job runs this check.
 
+## macOS preview package
+
+On macOS 15 or later, run the package script from the repository root:
+
+```bash
+npm run build:desktop-wails:macos
+```
+
+The script builds and stages the shared frontend, builds `BetterComms.app`,
+ad hoc signs and verifies its bundle, and
+produces ZIP and DMG previews in `apps/desktop-wails/bin/`. Open the DMG and
+drag the app to Applications. Gatekeeper may block this unnotarized preview;
+use System Settings → Privacy & Security → Open Anyway for this app. Developer
+ID signing and notarization remain release gates.
+
 ## Boundaries and remaining acceptance
 
 - Sensitive media operations require a per-launch page token. File exports use
@@ -127,12 +142,12 @@ overrides, then restores the normal binary. The Windows CI job runs this check.
 - API origins must be HTTPS, or loopback HTTP in development, without credentials,
   paths, queries or fragments. Proxy and native tokens are separate.
 - Microphone/camera use WebView2's normal permission decision/prompt on Windows,
-  not blanket allow. Unlike Tauri's permission IPC, this host cannot inspect or
+  not blanket allow. This host cannot inspect or
   revoke stored grants dynamically. OS privacy settings still apply.
 - Packaged login, navigation/resource cleanup, interactive native UI and sustained
   hardware acceptance remain release gates.
-- Existing Tauri recordings/preferences are not automatically imported. macOS
-  packaging and acceptance remain outstanding.
+- Existing recordings/preferences are not automatically imported. macOS
+  physical-device and packaged sign-in acceptance remain outstanding.
 
 Shared browser media, chat and calls remain in `apps/web`. Native modules live
 in `internal/native`; host policy/auth/assets live in `internal/desktop`.

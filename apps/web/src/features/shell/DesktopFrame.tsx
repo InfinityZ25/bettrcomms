@@ -9,7 +9,6 @@ import {
 } from 'react';
 import {
   dragRegionStyle,
-  getDesktopRuntime,
   getDesktopWindowApi,
   isDesktopShell,
   nativeNonClientRegion,
@@ -41,17 +40,13 @@ import {
   type WindowButton,
   type WindowControlsState,
 } from './windowControls';
-import { syncNativeCaptionTheme } from './nativeCaptionTheme';
 import {
   getHistoryNavigation,
   subscribeToHistoryNavigation,
 } from './historyNavigation';
 
 export default function DesktopFrame({ children }: { children: ReactNode }) {
-  // Either desktop shell gets the custom frame; only the Tauri host owns the
-  // native caption theme, which better-gui publishes and Wails does not have.
   const desktop = isDesktopShell();
-  const tauri = getDesktopRuntime() === 'tauri';
   // Memoised because the api is a fresh object each call, and it is an effect
   // dependency below.
   const windowApi = useMemo(() => getDesktopWindowApi(), []);
@@ -68,11 +63,6 @@ export default function DesktopFrame({ children }: { children: ReactNode }) {
   const [maximized, setMaximized] = useState(false);
   const [error, setError] = useState('');
   useEffect(() => {
-    if (!tauri || !['native-frame', 'native-overlay'].includes(controls.mode))
-      return;
-    return syncNativeCaptionTheme();
-  }, [tauri, controls.mode]);
-  useEffect(() => {
     if (!windowApi) return;
     let disposed = false;
     const update = () =>
@@ -83,8 +73,7 @@ export default function DesktopFrame({ children }: { children: ReactNode }) {
         })
         .catch(() => {});
     void update();
-    // The webview resizes whenever the window does, on both hosts, so one DOM
-    // listener replaces the host-specific resize subscription.
+    // The webview resizes with its host window.
     window.addEventListener('resize', update);
     return () => {
       disposed = true;

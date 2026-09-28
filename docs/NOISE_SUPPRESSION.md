@@ -22,7 +22,7 @@ The published package version inspected during implementation was 0.4.0, with an
 
 Implementation evidence on 2026-09-05: `npx playwright test tests/denoise.spec.ts --reporter=line` passed in Chromium against the live Vite server (1 test, 1.7 seconds). The test generated a 48 kHz oscillator track without microphone access, dynamically loaded the real Vite module, observed nonzero samples after RNNoise, disposed twice, confirmed the processed track ended, and confirmed the raw track remained live until caller teardown. This proves the adapter's basic browser data flow and ownership behavior; it does not replace the quality, stress, or multi-browser work below.
 
-Run these tests in a real Chromium browser or Tauri WebView2 because jsdom cannot execute AudioWorklet or WASM processing:
+Run these tests in a real Chromium browser or Wails WebView2 because jsdom cannot execute AudioWorklet or WASM processing:
 
 1. Create a synthetic 48 kHz audio source with an `OscillatorNode` plus controlled noise, route it into a `MediaStreamAudioDestinationNode`, and pass its audio track to `createDenoiser`.
 2. Assert the returned track exists, has kind `audio`, remains `live`, and can be attached to a second `AudioContext` analyser or `MediaRecorder` without connecting the denoiser graph to speakers.

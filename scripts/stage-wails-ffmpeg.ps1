@@ -10,7 +10,6 @@ if (($env:PSModulePath -split ';') -notcontains $systemModules) {
 }
 Import-Module (Join-Path $systemModules 'Microsoft.PowerShell.Utility/Microsoft.PowerShell.Utility.psd1') -Force -ErrorAction Stop
 $repo = Split-Path -Parent $PSScriptRoot
-$source = Join-Path $repo 'apps/desktop/src-tauri/generated/ffmpeg/windows-x64'
 $destination = Join-Path $repo 'apps/desktop-wails/bin/ffmpeg'
 $pins = @{
     'ffmpeg.exe' = @(223360000L, 'D1E2A156261ECC675081943197A85F08F2868784A0AF499171EDE89353EDAD31')
@@ -25,20 +24,27 @@ function Assert-Runtime([string]$Root) {
             throw "Bundled runtime failed verification: $name"
         }
     }
-    foreach ($name in @('setup.json', 'SOURCE.txt')) {
+    foreach ($name in @('setup.json')) {
         if (-not (Test-Path -LiteralPath (Join-Path $Root $name) -PathType Leaf)) {
             throw "Bundled runtime is missing $name"
         }
     }
 }
 
-try { Assert-Runtime $source } catch {
-    & (Join-Path $PSScriptRoot 'prepare-ffmpeg-bundle.ps1')
-    Assert-Runtime $source
+$privateRoot = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Bettercomms/ffmpeg-8.1'
+try { Assert-Runtime $privateRoot } catch {
+    $work = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) "Bettercomms/ffmpeg-install-$([Guid]::NewGuid().ToString('N'))"
+    & (Join-Path $PSScriptRoot 'install-ffmpeg-runtime.ps1') -Destination $privateRoot -WorkingDirectory $work
+    Assert-Runtime $privateRoot
 }
 [void](New-Item -ItemType Directory -Force -Path $destination)
-foreach ($name in @('ffmpeg.exe', 'LICENSE', 'setup.json', 'SOURCE.txt')) {
-    Copy-Item -LiteralPath (Join-Path $source $name) -Destination (Join-Path $destination $name) -Force
+foreach ($name in @('ffmpeg.exe', 'LICENSE', 'setup.json')) {
+    Copy-Item -LiteralPath (Join-Path $privateRoot $name) -Destination (Join-Path $destination $name) -Force
 }
+[IO.File]::WriteAllText(
+    (Join-Path $destination 'SOURCE.txt'),
+    "BetterComms bundles FFmpeg 8.1 from Gyan Doshi's official Windows build.`r`nBinary package: https://github.com/GyanD/codexffmpeg/releases/tag/8.1`r`nFFmpeg corresponding source: https://github.com/FFmpeg/FFmpeg/archive/refs/tags/n8.1.tar.gz`r`nBuild scripts: https://github.com/GyanD/codexffmpeg/tree/8.1`r`n",
+    [Text.UTF8Encoding]::new($false)
+)
 Assert-Runtime $destination
 Write-Host 'Verified FFmpeg runtime and notices staged beside the Wails executable.'

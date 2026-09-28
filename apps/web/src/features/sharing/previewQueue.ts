@@ -28,7 +28,7 @@ function pump() {
   }
 }
 
-/** Tauri may hand back an ArrayBuffer, a view, a number array, or a wrapper. */
+/** The native host may hand back an ArrayBuffer, a view, a number array, or a wrapper. */
 export function thumbnailBytes(data: unknown): Uint8Array {
   if (data instanceof ArrayBuffer) return new Uint8Array(data);
   if (ArrayBuffer.isView(data))

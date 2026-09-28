@@ -21,7 +21,6 @@
     "@radix-ui/react-slot": "^1.2.4",
     "@sapphi-red/web-noise-suppressor": "^0.4.0",
     "@tailwindcss/vite": "^4.3.3",
-    "@tauri-apps/api": "^2.11.1",
     "@wailsio/runtime": "^3.0.0-beta.18",
     "blobatar": "^2.7.0",
     "class-variance-authority": "^0.7.1",

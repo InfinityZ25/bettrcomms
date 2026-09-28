@@ -12,7 +12,7 @@ test-results
 playwright-report
 tests
 docs
-apps/desktop
+apps/desktop-wails
 server/bettercomms.exe
 *.log
 *.tsbuildinfo

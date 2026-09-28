@@ -14,17 +14,12 @@ function requireDesktop() {
 
 export async function openCameraOverlay(options: CameraOverlaySettings): Promise<CameraOverlaySession> {
   requireDesktop();
-  if (getDesktopRuntime() === 'wails') {
-    const token = nativePageToken();
-    return (await service()).CameraOverlayOpen(token, options as Options);
-  }
-  return (await import('@tauri-apps/api/core')).invoke('camera_overlay_open', options);
+  return (await service()).CameraOverlayOpen(nativePageToken(), options as Options);
 }
 
 export async function updateCameraOverlay(overlayId: string, options: CameraOverlaySettings): Promise<CameraOverlaySession> {
   requireDesktop();
-  if (getDesktopRuntime() === 'wails') return (await service()).CameraOverlayUpdate(nativePageToken(), overlayId, options as Options);
-  return (await import('@tauri-apps/api/core')).invoke('camera_overlay_update', { overlayId, ...options });
+  return (await service()).CameraOverlayUpdate(nativePageToken(), overlayId, options as Options);
 }
 
 export async function sendCameraOverlayFrame(session: CameraOverlaySession, rgba: Uint8Array): Promise<void> {
@@ -34,21 +29,12 @@ export async function sendCameraOverlayFrame(session: CameraOverlaySession, rgba
       width > 640 || height > 900 || rgba.byteLength !== width * height * 4) {
     throw new Error('Invalid camera overlay frame dimensions.');
   }
-  if (getDesktopRuntime() === 'wails') {
-    // Generated Go []byte bindings use base64. The caller keeps only one
-    // frame in flight; the native host independently validates and paces it.
-    await (await service()).CameraOverlayFrame(nativePageToken(), overlayId, width, height, encodeNativeBytes(rgba));
-    return;
-  }
-  await (await import('@tauri-apps/api/core')).invoke('camera_overlay_frame', rgba, { headers: {
-    'x-bettercomms-overlay-id': overlayId,
-    'x-bettercomms-frame-width': String(width),
-    'x-bettercomms-frame-height': String(height),
-  } });
+  // Generated Go []byte bindings use base64. The caller keeps only one
+  // frame in flight; the native host independently validates and paces it.
+  await (await service()).CameraOverlayFrame(nativePageToken(), overlayId, width, height, encodeNativeBytes(rgba));
 }
 
 export async function closeCameraOverlay(overlayId: string): Promise<void> {
   requireDesktop();
-  if (getDesktopRuntime() === 'wails') return (await service()).CameraOverlayClose(nativePageToken(), overlayId);
-  return (await import('@tauri-apps/api/core')).invoke('camera_overlay_close', { overlayId });
+  return (await service()).CameraOverlayClose(nativePageToken(), overlayId);
 }

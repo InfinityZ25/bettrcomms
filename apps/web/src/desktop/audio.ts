@@ -2,10 +2,9 @@ import { getDesktopRuntime } from './runtime';
 import { nativePageToken } from './nativeMedia';
 import type { NvidiaInvoke } from '../media/nvidiaDenoise';
 
-/** Preserve the existing Worker protocol while selecting the native host. */
+/** Preserve the existing Worker protocol through the Wails host. */
 export const invokeNativeAudio: NvidiaInvoke = async (command, args = {}) => {
   const runtime = getDesktopRuntime();
-  if (runtime === 'tauri') return (await import('@tauri-apps/api/core')).invoke(command, args);
   if (runtime !== 'wails') throw new Error('Native microphone processing requires a desktop host.');
   const token = nativePageToken();
   const api = await import('./wailsbindings/bettercomms/desktop-wails/nativemediaservice');
@@ -28,7 +27,6 @@ type SetupOperation = 'nvidia_status' | 'nvidia_install_info' | 'nvidia_install'
 /** Adapt Go status field names to the shared settings contract. */
 export async function invokeAudioSetup<T>(command: SetupOperation): Promise<T> {
   const runtime = getDesktopRuntime();
-  if (runtime === 'tauri') return (await import('@tauri-apps/api/core')).invoke<T>(command);
   if (runtime !== 'wails') throw new Error('Native microphone setup requires a desktop host.');
   const token = nativePageToken();
   const api = await import('./wailsbindings/bettercomms/desktop-wails/nativemediaservice');

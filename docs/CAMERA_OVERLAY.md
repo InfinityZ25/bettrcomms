@@ -10,4 +10,4 @@ The window uses the display containing BetterComms. Native presets are constrain
 
 Exclusive fullscreen and game-specific anti-cheat compatibility are not supported by this topmost-window approach. There is no DLL injection or DirectX/OpenGL/Vulkan presentation hook. macOS and browser clients do not expose this Windows-only control.
 
-Validation includes `tests/camera-overlay.spec.ts` for real synthetic-camera composition/source ownership, native unit checks for frame bounds and premultiplied alpha, and `scripts/test-native-camera-overlay.mjs` against an isolated development desktop host for binary IPC, resizing, grant revocation and frame timing. A test window is not an acceptance test for every fullscreen game.
+Validation includes `tests/camera-overlay.spec.ts` for real synthetic-camera composition/source ownership, native unit checks for frame bounds and premultiplied alpha, and Wails Go tests for resizing, grant revocation and frame bounds. A test window is not an acceptance test for every fullscreen game.

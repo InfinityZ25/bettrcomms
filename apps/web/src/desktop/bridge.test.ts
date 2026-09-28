@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  isTauri: vi.fn(() => false),
   wails: {
     Minimise: vi.fn(async () => {}),
     ToggleMaximise: vi.fn(async () => {}),
@@ -14,17 +13,8 @@ const mocks = vi.hoisted(() => ({
     BrowserSignInStatus: vi.fn(async () => ({ state: 'complete', detail: 'Signed in.' })),
     BrowserSignInCancel: vi.fn(async () => {}),
   },
-  tauri: {
-    minimize: vi.fn(async () => {}),
-    toggleMaximize: vi.fn(async () => {}),
-    close: vi.fn(async () => {}),
-    isMaximized: vi.fn(async () => true),
-    startDragging: vi.fn(async () => {}),
-  },
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ isTauri: mocks.isTauri }));
-vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => mocks.tauri }));
 vi.mock('@wailsio/runtime', () => ({ Window: mocks.wails }));
 vi.mock('./wailsbindings/bettercomms/desktop-wails/authservice.js', () => mocks.auth);
 
@@ -63,9 +53,7 @@ async function loadBridge(boot?: unknown) {
 describe('window api selection', () => {
   beforeEach(() => {
     vi.unstubAllGlobals();
-    mocks.isTauri.mockReturnValue(false);
     Object.values(mocks.wails).forEach((fn) => fn.mockClear());
-    Object.values(mocks.tauri).forEach((fn) => fn.mockClear());
   });
 
   it('drives the Wails window through its built-in runtime API', async () => {
@@ -78,15 +66,6 @@ describe('window api selection', () => {
     expect(mocks.wails.ToggleMaximise).toHaveBeenCalledOnce();
     expect(mocks.wails.Close).toHaveBeenCalledOnce();
     expect(mocks.wails.IsMaximised).toHaveBeenCalledOnce();
-  });
-
-  it('drives the Tauri window through its own API', async () => {
-    mocks.isTauri.mockReturnValue(true);
-    const api = (await loadBridge()).getDesktopWindowApi()!;
-    await api.minimize();
-    await api.toggleMaximize();
-    expect(mocks.tauri.minimize).toHaveBeenCalledOnce();
-    expect(mocks.tauri.toggleMaximize).toHaveBeenCalledOnce();
   });
 
   it('offers no window API in a browser', async () => {
@@ -124,7 +103,6 @@ describe('browser sign-in hand-off', () => {
 
   beforeEach(() => {
     vi.unstubAllGlobals();
-    mocks.isTauri.mockReturnValue(false);
     Object.values(mocks.auth).forEach((fn) => fn.mockClear());
   });
 
@@ -154,9 +132,7 @@ describe('browser sign-in hand-off', () => {
     expect(status.detail).not.toBe('');
   });
 
-  it('offers no hand-off in a browser or in Tauri', async () => {
-    expect((await loadBridge()).getDesktopSignInApi()).toBeNull();
-    mocks.isTauri.mockReturnValue(true);
+  it('offers no hand-off in a browser', async () => {
     expect((await loadBridge()).getDesktopSignInApi()).toBeNull();
   });
 

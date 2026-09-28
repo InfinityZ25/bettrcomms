@@ -2,25 +2,8 @@ package desktop
 
 import (
 	"errors"
-	"os"
-	"strings"
 	"testing"
 )
-
-// TestReleaseOriginMatchesTheTauriHost keeps both desktop shells pinned to the
-// same production origin. Two hosts trusting different origins is exactly the
-// kind of drift a reader would assume cannot happen.
-func TestReleaseOriginMatchesTheTauriHost(t *testing.T) {
-	const rust = "../../../desktop/src-tauri/src/media_permissions.rs"
-	source, err := os.ReadFile(rust)
-	if err != nil {
-		t.Skipf("the Tauri host is not in this checkout: %v", err)
-	}
-	want := `pub(crate) const RELEASE_ORIGIN: &str = "` + ReleaseOrigin + `";`
-	if !strings.Contains(string(source), want) {
-		t.Errorf("%s does not contain %s", rust, want)
-	}
-}
 
 func TestResolveAPIOriginAcceptsHTTPS(t *testing.T) {
 	for _, raw := range []string{

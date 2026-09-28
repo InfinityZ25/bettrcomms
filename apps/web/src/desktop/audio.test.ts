@@ -1,9 +1,8 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import { invokeNativeAudio, invokeAudioSetup } from './audio';
-const mock = vi.hoisted(() => ({ runtime: 'wails', token: 'fixture', start: vi.fn(), stop: vi.fn(), invoke: vi.fn(), nvidiaStatus: vi.fn(), deepfilterStatus: vi.fn(), nvidiaInstall: vi.fn(), deepfilterInstall: vi.fn() }));
+const mock = vi.hoisted(() => ({ runtime: 'wails', token: 'fixture', start: vi.fn(), stop: vi.fn(), nvidiaStatus: vi.fn(), deepfilterStatus: vi.fn(), nvidiaInstall: vi.fn(), deepfilterInstall: vi.fn() }));
 vi.mock('./runtime', () => ({ getDesktopRuntime: () => mock.runtime, readDesktopBootReport: () => ({ pageToken: mock.token }) }));
 vi.mock('./wailsbindings/bettercomms/desktop-wails/nativemediaservice', () => ({ AudioStreamStart: mock.start, AudioStreamStop: mock.stop, NvidiaStatus: mock.nvidiaStatus, DeepfilterStatus: mock.deepfilterStatus, NvidiaInstall: mock.nvidiaInstall, DeepfilterInstall: mock.deepfilterInstall }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mock.invoke }));
 beforeEach(() => { vi.resetAllMocks(); mock.runtime = 'wails'; mock.token = 'fixture'; });
 
 it('selects independent native processors and passes their exact tuning', async () => {
@@ -12,7 +11,6 @@ it('selects independent native processors and passes their exact tuning', async 
   expect(mock.start).toHaveBeenLastCalledWith('fixture', 'nvidia', .7, true, 100);
   await invokeNativeAudio('deepfilter_stream_start', { attenuationDb: 35 });
   expect(mock.start).toHaveBeenLastCalledWith('fixture', 'deepfilter', 1, false, 35);
-  expect(mock.invoke).not.toHaveBeenCalled();
 });
 
 it('authorises shutdown of the specific worker session', async () => {
@@ -28,13 +26,6 @@ it('refuses unauthorised, browser and unknown operations', async () => {
   await expect(invokeNativeAudio('shell_exec')).rejects.toThrow('Unsupported');
   mock.runtime = 'browser';
   await expect(invokeNativeAudio('nvidia_stream_start')).rejects.toThrow('desktop');
-  expect(mock.start).not.toHaveBeenCalled();
-});
-
-it('preserves Tauri stream command arguments', async () => {
-  mock.runtime = 'tauri';
-  await invokeNativeAudio('nvidia_stream_start', { intensity: .5 });
-  expect(mock.invoke).toHaveBeenCalledWith('nvidia_stream_start', { intensity: .5 });
   expect(mock.start).not.toHaveBeenCalled();
 });
 

@@ -38,10 +38,8 @@ src/
   multiple features.
 - Keep browser/native media lifecycle code in `media/`; React-facing orchestration
   belongs in the relevant feature.
-- Ask `desktop/` which host is running, not `@tauri-apps/api` directly. Gate
-  shell chrome on `isDesktopShell()` and native media features on
-  `hasTauriNativeCommands()`: the Wails host in `apps/desktop-wails` has none of
-  the native adapters, so those features must take their browser path there. See
-  [the migration notes](../../../docs/WAILS_MIGRATION.md).
+- Ask `desktop/` which runtime is running. Gate shell chrome on
+  `isDesktopShell()` and native media on `hasNativeMediaHost()`; the Wails host
+  owns native adapters and browsers use their fallback paths.
 - Avoid feature barrel files unless they provide a deliberate public API. Direct
   imports make dependencies and future moves easier to trace.

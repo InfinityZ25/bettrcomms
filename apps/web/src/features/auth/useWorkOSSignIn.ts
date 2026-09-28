@@ -10,7 +10,7 @@ const POLL_MS = 700;
 /**
  * Starting a sign-in, on whichever host is running.
  *
- * In a browser tab and in the Tauri shell the page navigates to the login route
+ * In a browser tab and in the desktop shell the page navigates to the login route
  * and the session comes back in the same cookie jar. The Wails host serves the
  * page from its own origin, so that round trip cannot work there: sign-in runs
  * in the system browser and the host claims the session into its own process.

@@ -3,6 +3,35 @@ on: [push, pull_request]
 permissions:
   contents: read
 jobs:
+  wails-macos:
+    name: Wails macOS package signature
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache-dependency-path: apps/desktop-wails/go.sum
+      - run: npm ci
+      - name: Test Wails host
+        working-directory: apps/desktop-wails
+        run: go test ./... && go vet ./...
+      - name: Package and verify macOS app
+        run: |
+          bash scripts/package-desktop-wails-macos.sh
+          codesign --verify --deep --strict --verbose=2 apps/desktop-wails/bin/BetterComms.app
+          test -s apps/desktop-wails/bin/*-macos-arm64.zip
+          test -s apps/desktop-wails/bin/*-macos-arm64.dmg
+          mountpoint=$(mktemp -d)
+          hdiutil attach -readonly -nobrowse -mountpoint "$mountpoint" apps/desktop-wails/bin/*-macos-arm64.dmg
+          codesign --verify --deep --strict --verbose=2 "$mountpoint/BetterComms.app"
+          hdiutil detach "$mountpoint"
+          rmdir "$mountpoint"
   wails-windows:
     name: Wails Windows build and native contracts
     runs-on: windows-latest

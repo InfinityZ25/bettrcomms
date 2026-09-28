@@ -3,10 +3,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
 }));
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: mocks.invoke,
-  isTauri: () => true,
-}));
+vi.mock('../desktop/nativeMedia', () => ({ hasNativeMediaHost: () => true }));
 
 import { createNativeSystemAudio } from './nativeSystemAudio';
 

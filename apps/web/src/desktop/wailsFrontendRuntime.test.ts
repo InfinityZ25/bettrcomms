@@ -7,11 +7,9 @@ import { describe, expect, it, vi } from 'vitest';
   like a title bar the window manager has never heard of.
 */
 const mocks = vi.hoisted(() => ({
-  isTauri: vi.fn(() => false),
   loads: { count: 0 },
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ isTauri: mocks.isTauri }));
 vi.mock('@wailsio/runtime', () => {
   mocks.loads.count += 1;
   return { Window: {} };
@@ -88,10 +86,5 @@ describe('the Wails frontend runtime', () => {
     expect(module.startWailsFrontendRuntime()).toBe(false);
   });
 
-  it('is left alone under Tauri, which drags through its own IPC', async () => {
-    mocks.isTauri.mockReturnValue(true);
-    const module = await load();
-    expect(module.startWailsFrontendRuntime()).toBe(false);
-    mocks.isTauri.mockReturnValue(false);
-  });
+
 });

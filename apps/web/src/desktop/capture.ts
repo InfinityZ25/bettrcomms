@@ -14,7 +14,7 @@ export function decodeNativeBytes(value: string | null, maxBytes: number): Array
 
 /** Adapt the shared capture contract, without letting callers choose Go methods. */
 export async function invokeNativeCapture<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {
-  if (getDesktopRuntime() !== 'wails') return (await import('@tauri-apps/api/core')).invoke<T>(command, args);
+  if (getDesktopRuntime() !== 'wails') throw new Error('Native capture requires the desktop host.');
   const token = nativePageToken();
   const api = await import('./wailsbindings/bettercomms/desktop-wails/nativemediaservice');
   const text = (name: string) => {
@@ -65,9 +65,7 @@ export async function invokeNativeCapture<T>(command: string, args: Record<strin
 }
 
 export async function onNativeCaptureEnded(handler: (event: { payload: { sessionId: string; reason: string } }) => void): Promise<() => void> {
-  if (getDesktopRuntime() === 'wails') {
-    const { Events } = await import('@wailsio/runtime');
-    return Events.On('native-screen-ended', event => handler({ payload: event.data as { sessionId: string; reason: string } }));
-  }
-  return (await import('@tauri-apps/api/event')).listen('native-screen-ended', handler);
+  if (getDesktopRuntime() !== 'wails') throw new Error('Native capture requires the desktop host.');
+  const { Events } = await import('@wailsio/runtime');
+  return Events.On('native-screen-ended', event => handler({ payload: event.data as { sessionId: string; reason: string } }));
 }

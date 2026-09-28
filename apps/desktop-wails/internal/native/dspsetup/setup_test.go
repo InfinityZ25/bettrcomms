@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestEmbeddedAssetsMatchTauriSources(t *testing.T) {
+func TestEmbeddedAssetsMatchInstallersAndModelPin(t *testing.T) {
 	repo := filepath.Join("..", "..", "..", "..", "..")
 	for _, name := range []string{"install-deepfilter.ps1", "install-nvidia-audio.ps1"} {
 		source, err := os.ReadFile(filepath.Join(repo, "scripts", name))
@@ -33,17 +33,8 @@ func TestEmbeddedAssetsMatchTauriSources(t *testing.T) {
 		t.Fatal("model or licence missing")
 	}
 	for _, entry := range entries {
-		name := entry.Name()
-		source, err := os.ReadFile(filepath.Join(repo, "apps", "desktop", "src-tauri", "resources", "deepfilter", name))
-		if err != nil {
+		if _, err := assets.ReadFile("assets/deepfilter/" + entry.Name()); err != nil {
 			t.Fatal(err)
-		}
-		copy, err := assets.ReadFile("assets/deepfilter/" + name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !bytes.Equal(source, copy) {
-			t.Fatalf("stale model asset %s", name)
 		}
 	}
 	model, _ := assets.ReadFile("assets/deepfilter/denoiser_model.onnx")

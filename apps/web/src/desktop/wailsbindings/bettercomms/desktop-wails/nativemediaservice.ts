@@ -191,7 +191,7 @@ export function GpuAdapters(): $CancellablePromise<gpudevices$0.Adapter[]> {
  * 
  * The page asks so it can render the truth rather than a control that would do
  * nothing: this host allows capture outright and cannot revoke it, which is a
- * different shape from the Tauri host's per-origin grant.
+ * opaque grant bound to the current page token.
  */
 export function MediaPermission(kind: string): $CancellablePromise<desktop$0.MediaPermissionPolicy> {
     return $Call.ByID(3965183451, kind).then(($result: any) => {

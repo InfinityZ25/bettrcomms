@@ -1,8 +1,8 @@
 // Package ffmpegsetup installs and locates the private FFmpeg runtime that
 // native sharing depends on.
 //
-// The Tauri host delegated this to a PowerShell script. Here it is Go: the
-// download, the pinned-length and SHA-256 checks, the archive extraction, the
+// This setup runs in Go: the download, pinned-length and SHA-256 checks,
+// archive extraction, the
 // capability probe, and the atomic swap all happen in this process. That
 // removes a scripting host from the trusted path and makes every check
 // testable.

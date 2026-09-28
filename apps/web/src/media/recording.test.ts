@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
   nativeTrackId: undefined as string | undefined,
 }));
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('../desktop/capture', () => ({ invokeNativeCapture: mocks.invoke }));
 vi.mock('./nativeCaptureRegistry', () => ({
   nativeScreenSessionForTrack: (track: MediaStreamTrack) =>
     track.id === mocks.nativeTrackId ? 'capture-session' : undefined,

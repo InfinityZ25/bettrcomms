@@ -1,6 +1,6 @@
 # Bettercomms
 
-A browser-first communication app for small groups, with a Go control plane and a Tauri desktop foundation. Direct-first WebRTC media stays separate from persistent messages and room membership.
+A browser-first communication app for small groups, with a Go control plane and a Wails v3 desktop host. Direct-first WebRTC media stays separate from persistent messages and room membership.
 
 Hosted preview: [Open BetterComms](https://bettrcomms-production.up.railway.app).
 
@@ -49,7 +49,7 @@ Restart the API after starting the relay. The script generates a private coturn 
 - PostgreSQL-backed friends, requests, private rooms, direct rooms, membership, and chat.
 - Room permissions, membership removal, room management, and authenticated signaling.
 - Browser microphone, camera, screen sharing, and shared audio where supported by the browser.
-- Optional keyboard/mouse push-to-talk, disabled by default and configurable in Settings. Windows Tauri includes global input; browsers use focused-window input. See [usage, validation status and local setup](docs/PUSH_TO_TALK.md).
+- Optional keyboard/mouse push-to-talk, disabled by default and configurable in Settings. Windows Wails includes global input; browsers use focused-window input. See [usage, validation status and local setup](docs/PUSH_TO_TALK.md).
 - Direct-first and direct-only WebRTC, configurable quality ceilings, and live media statistics.
 - Cameras above or beside content, focus layout, screen zoom/pan/fullscreen, and local layout preferences.
 - Per-person playback gain, optional voice leveling, and browser noise suppression.
@@ -77,16 +77,15 @@ The browser suite uses two isolated authenticated browser contexts against the r
 
 ## Native desktop and remaining scope
 
-`apps/desktop/` contains a Tauri 2 host with minimal capabilities and explicit native feature reporting. Visual Studio C++ Build Tools is installed on this Windows host; MSVC checks and the desktop test suite pass. The native development preview runs against the local Vite server; see [desktop setup](apps/desktop/README.md). Packaged desktop authentication/API routing, native process-specific game audio, native GPU capture, Krisp integration, continuous rewind, in-progress recording crash recovery, signed installers, and macOS/Linux parity remain release gates—not claimed working features.
+`apps/desktop-wails/` is the Wails v3 desktop host. Build it with `npm run build:desktop-wails` on Windows or `npm run build:desktop-wails:macos` on macOS; see [desktop setup](apps/desktop-wails/README.md). Native process-specific game audio, Krisp integration, continuous rewind, in-progress recording crash recovery, signed installers, and macOS/Linux native media parity remain release gates; see the [completion ledger](docs/WAILS_COMPLETION.md).
 
-Read [the product spec](docs/PRODUCT_SPEC.md), [implementation matrix](docs/IMPLEMENTATION_MATRIX.md), [desktop validation](docs/DESKTOP_VALIDATION.md), [native roadmap](docs/NATIVE_MEDIA_ROADMAP.md), and [server protocol](server/PROTOCOL.md).
+Read [the product spec](docs/PRODUCT_SPEC.md), [implementation matrix](docs/IMPLEMENTATION_MATRIX.md), [Wails completion ledger](docs/WAILS_COMPLETION.md), and [server protocol](server/PROTOCOL.md).
 
 ## Repository
 
 ```text
 apps/web/       React client and browser media engine
-apps/desktop/   Tauri shell and native capability boundary
-apps/desktop-wails/  Wails v3 shell over the same frontend; no native media yet
+apps/desktop-wails/  Wails v3 native shell and media adapters
 server/        Go API, signaling, migrations, authorization tests
 tests/         Browser integration and media tests
 scripts/       Local service launchers

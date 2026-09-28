@@ -10,9 +10,7 @@ import (
 // PageGate is how a native call proves it came from a document this host
 // served.
 //
-// The Tauri host answers the same question by reading the window's current URL
-// and checking it against TrustedAppOrigin. Wails exposes no way to read that
-// URL, so this host answers it the other way round: it injects a per-launch
+// Wails exposes no way to read the window's current URL, so the host injects a per-launch
 // secret into every document it serves, and native calls that matter must
 // present it.
 //

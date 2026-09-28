@@ -1,2 +1,2 @@
 # Pinned model and license hashes must survive checkout byte-for-byte.
-apps/desktop/src-tauri/resources/deepfilter/* -text
+apps/desktop-wails/internal/native/dspsetup/assets/deepfilter/* -text

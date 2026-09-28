@@ -6,7 +6,7 @@ Status: implementation target, September 2026. “Required” describes the inte
 
 BetterComms is a central place to talk with friends and persistent communities while playing, watching, and sharing. Text and presence must feel immediate; joining voice must be one action; media must preserve fidelity when the network and hardware allow it without making ordinary hardware unreliable.
 
-The browser is the reference client. Windows desktop follows as a Tauri 2 shell with a narrowly scoped native media adapter. macOS and Linux follow only after the Windows contract is stable.
+The browser is the reference client. Windows desktop uses a Wails v3 shell with a narrowly scoped native media adapter. macOS and Linux follow only after the Windows contract is stable.
 
 ## Information architecture
 
@@ -58,7 +58,7 @@ Viewer-local rewind keeps a rolling, bounded, segmented buffer on the viewer's d
 
 Audio join has the highest media priority. Reconnect preserves the text session, re-establishes signaling, restarts ICE when needed, and reports whether capture continued. Metrics include join success, time to first audio, ICE candidate pair type, relay rate, packet loss, jitter, round-trip time, freeze duration, encoder fallback, CPU pressure, and recording gaps. Metrics contain opaque IDs and coarse device classes; SDP, message text, filenames, and raw device labels are excluded.
 
-Required security controls include least-privilege Tauri capabilities, CSP, dependency review, short-lived media credentials, rate limits, attachment scanning, abuse reporting, moderation audit logs, and account/session revocation. The desktop webview exposes no arbitrary shell or unrestricted filesystem API.
+Required security controls include least-privilege desktop capabilities, CSP, dependency review, short-lived media credentials, rate limits, attachment scanning, abuse reporting, moderation audit logs, and account/session revocation. The desktop webview exposes no arbitrary shell or unrestricted filesystem API.
 
 ## Non-goals for the first release
 

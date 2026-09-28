@@ -71,13 +71,6 @@ jobs:
           go-version: "1.26"
           cache-dependency-path: apps/desktop-wails/go.sum
       - run: npm ci
-      - run: npm run build
-      - name: Stage shared frontend
-        run: cp -R apps/web/dist/. apps/desktop-wails/frontend/dist/
-      - name: Refresh embedded native installer assets
-        run: |
-          cp scripts/install-deepfilter.ps1 scripts/install-nvidia-audio.ps1 apps/desktop-wails/internal/native/dspsetup/assets/
-          cp -R apps/desktop/src-tauri/resources/deepfilter/. apps/desktop-wails/internal/native/dspsetup/assets/deepfilter/
       - name: Test Wails host
         working-directory: apps/desktop-wails
         run: |
@@ -88,7 +81,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: bettercomms-wails-macos-${{ matrix.arch }}
-          path: apps/desktop-wails/bin/*-macos-${{ matrix.arch }}.zip
+          path: |
+            apps/desktop-wails/bin/*-macos-${{ matrix.arch }}.zip
+            apps/desktop-wails/bin/*-macos-${{ matrix.arch }}.dmg
           if-no-files-found: error
 
   release:
@@ -116,4 +111,4 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" release-assets/* \
             --verify-tag --prerelease --title "BetterComms Wails ${GITHUB_REF_NAME#wails-v} (preview)" \
-            --notes "Unsigned Wails v3 preview for Windows x64 and macOS 15+ Apple Silicon/Intel. Windows requires WebView2 Evergreen. macOS users may need to explicitly allow this unnotarized app. Packaged authentication, native media and cross-device acceptance remain open; see docs/WAILS_COMPLETION.md."
+            --notes "Unsigned Windows x64 preview and ad hoc signed macOS 15+ Apple Silicon/Intel DMG/ZIP previews. Windows requires WebView2 Evergreen. On macOS, drag BetterComms into Applications and use Privacy & Security → Open Anyway if Gatekeeper blocks this unnotarized build. Packaged authentication, native media and cross-device acceptance remain open; see docs/WAILS_COMPLETION.md."

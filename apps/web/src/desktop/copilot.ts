@@ -2,10 +2,7 @@ import { getDesktopRuntime } from './runtime';
 import { encodeNativeBytes, nativePageToken } from './nativeMedia';
 
 export async function invokeNativeCopilot(command: string, rgba?: Uint8Array, options?: { headers: Record<string, string> }): Promise<void> {
-  if (getDesktopRuntime() !== 'wails') {
-    const { invoke } = await import('@tauri-apps/api/core');
-    return rgba ? invoke(command, rgba, options) : invoke(command);
-  }
+  if (getDesktopRuntime() !== 'wails') throw new Error('Native copilot requires the desktop host.');
   const token = nativePageToken();
   const api = await import('./wailsbindings/bettercomms/desktop-wails/nativemediaservice');
   if (command === 'copilot_overlay_clear') return api.CopilotOverlayClear(token);

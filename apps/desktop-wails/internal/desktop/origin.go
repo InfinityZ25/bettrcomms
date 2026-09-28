@@ -15,9 +15,7 @@ import (
 	"strings"
 )
 
-// ReleaseOrigin is the pinned hosted deployment. It must stay byte-identical
-// to RELEASE_ORIGIN in apps/desktop/src-tauri/src/media_permissions.rs so both
-// desktop hosts trust exactly the same production origin.
+// ReleaseOrigin is the pinned hosted deployment for desktop API access.
 const ReleaseOrigin = "https://app.bettrcomms.com"
 
 // ErrMissingAPIOrigin reports an empty origin in a build that has no default.
@@ -26,7 +24,7 @@ var ErrMissingAPIOrigin = errors.New("BETTERCOMMS_API_ORIGIN is required in prod
 // ResolveAPIOrigin applies the desktop transport policy to a configured API
 // origin and returns its canonical serialization.
 //
-// The rules mirror the Tauri host's desktop_boot_config: HTTPS is required,
+// HTTPS is required,
 // plaintext loopback is tolerated only in development builds, and the value
 // must carry nothing but scheme, host, and an optional port. Credentials, a
 // path, a query, or a fragment are rejected rather than silently trimmed,
@@ -78,8 +76,7 @@ var AppOriginError = errors.New("native commands are restricted to the BetterCom
 // TrustedAppOrigin validates that a page URL belongs to this application and
 // returns its origin.
 //
-// This is the same policy the Rust host applies, with this host's own asset
-// origins in place of Tauri's. It matters because a webview that has navigated
+// This policy matters because a webview that has navigated
 // to an identity provider is still the same webview: without this check, a page
 // the application does not control could reach a native command.
 //

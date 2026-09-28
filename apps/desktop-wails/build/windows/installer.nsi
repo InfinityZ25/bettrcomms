@@ -1,4 +1,4 @@
-; Wails-only, per-user package. Never touch Tauri's profile or registration.
+; Per-user Wails package with owned profile and registration.
 Unicode true
 !include "MUI2.nsh"
 !include "LogicLib.nsh"

@@ -1,5 +1,5 @@
 # Real, opt-in install/upgrade/uninstall acceptance. Never overwrite an existing
-# Wails registration or shortcut. Tauri and webview profiles are not touched.
+# Wails registration or shortcut. Existing webview profiles are not touched.
 [CmdletBinding()]
 param([Parameter(Mandatory = $true)][string]$Installer)
 $ErrorActionPreference = 'Stop'

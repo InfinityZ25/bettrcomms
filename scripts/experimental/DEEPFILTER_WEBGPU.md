@@ -6,7 +6,7 @@ Generate the pinned research graph with the repository's probe Python environmen
 
 ```powershell
 & .local/amd-probe/python/python.exe scripts/prepare-deepfilter-webgpu.py `
-  apps/desktop/src-tauri/resources/deepfilter/denoiser_model.onnx `
+  apps/desktop-wails/internal/native/dspsetup/assets/deepfilter/denoiser_model.onnx `
   .local/amd-probe/model/denoiser_model_webgpu.onnx
 ```
 

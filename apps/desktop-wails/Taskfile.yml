@@ -42,7 +42,7 @@ tasks:
 
   # The executable's icon and version metadata. Windows takes the window and
   # taskbar icons from the .exe resource, so this is what puts the application
-  # mark on the window; the artwork is the same one the Tauri host ships.
+  # mark on the window; the artwork is embedded in the Wails host.
   #
   # The .syso is committed because a plain `go build` needs it present. Rerun
   # this after changing build/appicon.png.

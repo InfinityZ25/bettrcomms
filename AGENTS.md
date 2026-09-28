@@ -1,6 +1,6 @@
 # Bettercomms development
 
-This repository is a browser and native communication application. Preserve the agreed React/Vite/TypeScript frontend, Go server, PostgreSQL persistence, WorkOS authentication, and Tauri boundary. Local Docker is the default development infrastructure; do not replace this with a hosted-site scaffold.
+This repository is a browser and native communication application. Preserve the agreed React/Vite/TypeScript frontend, Go server, PostgreSQL persistence, WorkOS authentication, and Wails v3 desktop boundary. Local Docker is the default development infrastructure; do not replace this with a hosted-site scaffold.
 
 ## Scope and ownership
 
@@ -17,4 +17,4 @@ Run `npm run build`, `npm test`, and appropriate Playwright tests. Backend chang
 
 Prefer targeted tests while iterating and one full pass after the final changes. Do not run multiple Playwright suites concurrently against the same local auth rate limiter or overwrite screenshots from another test run.
 
-Use npm workspaces and preserve the lockfile. Do not switch to pnpm. The desktop package is separately installable until its compiler/auth gates are cleared.
+Use npm workspaces and preserve the lockfile. Do not switch to pnpm. The Wails desktop package is separately installable until its compiler/auth gates are cleared.

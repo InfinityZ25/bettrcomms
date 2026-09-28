@@ -9,11 +9,8 @@ import { getDesktopRuntime, readDesktopBootReport } from './runtime';
 /**
  * Honest capability reporting for the current host.
  *
- * The rule this file exists to enforce: a capability is reported working only
- * where its code actually runs. The Wails host has none of the native media
- * adapters, so it reports them unavailable together with the browser path used
- * instead. The Tauri host answers for itself through IPC. A browser reports the
- * browser.
+ * A capability is reported working only where its code actually runs. Wails
+ * injects its report before the page loads; a browser reports browser media.
  *
  * No function here may return `implemented` for a native capability on the
  * strength of another host's tests.
@@ -66,80 +63,17 @@ export function browserCapabilities(): DesktopMediaCapabilities {
 /**
  * The capability report available without waiting for a round trip.
  *
- * The Wails host injects its report into the document, so it is exact. The
- * Tauri host answers asynchronously, so this returns a conservative view for it
- * and callers that need the real one await {@link loadDesktopCapabilities}.
+ * The Wails host injects its report into the document before rendering.
  */
 export function getDesktopCapabilities(): DesktopMediaCapabilities {
   const boot = readDesktopBootReport();
   if (boot) return boot.capabilities;
-  if (getDesktopRuntime() === 'tauri') return pendingTauriCapabilities();
   return browserCapabilities();
 }
 
-/**
- * The Tauri view before its report arrives. Every native capability is reported
- * unavailable while unknown: showing a native control that then fails is worse
- * than showing the browser path and upgrading once the host has answered.
- */
-function pendingTauriCapabilities(): DesktopMediaCapabilities {
-  const detail =
-    'The Tauri host has not reported yet; the browser path applies until it does.';
-  return {
-    ...browserCapabilities(),
-    platform: 'tauri-pending',
-    nativeGameVideo: unavailable('nativeGameVideo', detail),
-    nativeProcessAudio: unavailable('nativeProcessAudio', detail),
-    nativeMicrophoneDsp: unavailable('nativeMicrophoneDsp', detail),
-    localTrackRecording: unavailable('localTrackRecording', detail),
-    mediaPermissions: unavailable('mediaPermissions', detail),
-    globalInput: unavailable('globalInput', detail),
-    nativeOverlays: unavailable('nativeOverlays', detail),
-  };
-}
-
-/**
- * The host's own capability report.
- *
- * Wails answers from the injected report. Tauri answers through
- * `desktop_media_capabilities`, whose schema covers four of these capabilities;
- * the rest keep an explicit "not reported by this host" state rather than a
- * guess in either direction, because the Tauri feature modules probe the host
- * directly for those and this report must not contradict them.
- */
+/** The current host's capability report. */
 export async function loadDesktopCapabilities(): Promise<DesktopMediaCapabilities> {
-  if (getDesktopRuntime() !== 'tauri') return getDesktopCapabilities();
-
-  const notReported =
-    'This host does not include the capability in its report schema; the feature probes it directly.';
-  const base: DesktopMediaCapabilities = {
-    ...pendingTauriCapabilities(),
-    nativeMicrophoneDsp: unavailable('nativeMicrophoneDsp', notReported),
-    mediaPermissions: unavailable('mediaPermissions', notReported),
-    globalInput: unavailable('globalInput', notReported),
-    nativeOverlays: unavailable('nativeOverlays', notReported),
-  };
-
-  try {
-    const { invoke } = await import('@tauri-apps/api/core');
-    const reported = await invoke<Partial<DesktopMediaCapabilities>>(
-      'desktop_media_capabilities',
-    );
-    return {
-      ...base,
-      platform: reported.platform ?? base.platform,
-      architecture: reported.architecture ?? base.architecture,
-      browserMedia: reported.browserMedia ?? base.browserMedia,
-      nativeGameVideo: reported.nativeGameVideo ?? base.nativeGameVideo,
-      nativeProcessAudio: reported.nativeProcessAudio ?? base.nativeProcessAudio,
-      localTrackRecording:
-        reported.localTrackRecording ?? base.localTrackRecording,
-      notes: reported.notes ?? base.notes,
-    };
-  } catch {
-    // An older host without the command keeps the conservative report.
-    return base;
-  }
+  return getDesktopCapabilities();
 }
 
 /** True when a capability is genuinely available on this host right now. */
