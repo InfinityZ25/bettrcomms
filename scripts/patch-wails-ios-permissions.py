@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply the iOS-only WKWebView media decision missing in Wails beta.18.
+"""Patch Wails beta.18's iOS media decision and edge-to-edge webview layout.
 
 The patch is made in a temporary copy of the pinned module during packaging.
 Exact anchors intentionally fail the build if Wails changes its implementation.
@@ -30,6 +30,19 @@ replace_once(
     implementation,
     "    self.webView.navigationDelegate = self;\n",
     "    self.webView.navigationDelegate = self;\n    self.webView.UIDelegate = self;\n",
+)
+replace_once(
+    implementation,
+    """    CGFloat webTop = safe.top;
+    CGFloat webBottom = safe.bottom + tabH;
+    self.webView.frame = UIEdgeInsetsInsetRect(self.view.bounds, UIEdgeInsetsMake(webTop, safe.left, webBottom, safe.right));
+""",
+    """    // The packaged page uses viewport-fit=cover and safe-area CSS for its
+    // controls. Insetting WKWebView itself leaves blank bars at the top and
+    // bottom, even when the document fills its own viewport.
+    CGFloat webBottom = tabH > 0 ? safe.bottom + tabH : 0;
+    self.webView.frame = UIEdgeInsetsInsetRect(self.view.bounds, UIEdgeInsetsMake(0, 0, webBottom, 0));
+""",
 )
 replace_once(
     implementation,
