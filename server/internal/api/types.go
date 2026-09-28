@@ -18,20 +18,29 @@ type Room struct {
 	Role        string    `json:"role"`
 	Kind        string    `json:"kind"`
 	CreatedAt   time.Time `json:"created_at"`
+	ActivityAt  time.Time `json:"activity_at"`
 }
 type Message struct {
-	ID        string            `json:"id"`
-	RoomID    string            `json:"room_id"`
-	Author    User              `json:"author"`
-	Body      string            `json:"body"`
-	CreatedAt time.Time         `json:"created_at"`
-	Sequence  int64             `json:"sequence"`
-	Version   int64             `json:"version"`
-	EditedAt  *time.Time        `json:"edited_at,omitempty"`
-	DeletedAt *time.Time        `json:"deleted_at,omitempty"`
-	Reply     *MessageReply     `json:"reply,omitempty"`
-	Mentions  []MessageMention  `json:"mentions"`
-	Reactions []MessageReaction `json:"reactions"`
+	ID          string              `json:"id"`
+	RoomID      string              `json:"room_id"`
+	Author      User                `json:"author"`
+	Body        string              `json:"body"`
+	CreatedAt   time.Time           `json:"created_at"`
+	Sequence    int64               `json:"sequence"`
+	Version     int64               `json:"version"`
+	EditedAt    *time.Time          `json:"edited_at,omitempty"`
+	DeletedAt   *time.Time          `json:"deleted_at,omitempty"`
+	Reply       *MessageReply       `json:"reply,omitempty"`
+	Mentions    []MessageMention    `json:"mentions"`
+	Reactions   []MessageReaction   `json:"reactions"`
+	Attachments []MessageAttachment `json:"attachments"`
+}
+
+type MessageAttachment struct {
+	ID          string `json:"id"`
+	Filename    string `json:"filename"`
+	ContentType string `json:"content_type"`
+	SizeBytes   int64  `json:"size_bytes"`
 }
 
 type MessageReply struct {
@@ -49,8 +58,9 @@ type MessageReaction struct {
 	Users []string `json:"users"`
 }
 type MessagePage struct {
-	Messages []Message `json:"messages"`
-	BeforeID string    `json:"before_id,omitempty"`
+	Messages     []Message `json:"messages"`
+	BeforeID     string    `json:"before_id,omitempty"`
+	ReadSequence int64     `json:"read_sequence"`
 }
 type RoomUnread struct {
 	RoomID       string `json:"room_id"`

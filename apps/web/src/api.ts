@@ -22,6 +22,13 @@ export interface Room {
   kind?: 'channel' | 'direct';
   role?: string;
   display_name?: string;
+  activity_at?: string;
+}
+export interface MessageAttachment {
+  id: string;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
 }
 export interface CallParticipant {
   user_id: string;
@@ -43,10 +50,12 @@ export interface Message {
   mentions?: { id: string; name: string }[];
   reply?: { id: string; name: string; body: string; deleted: boolean };
   reactions?: { emoji: string; users: string[] }[];
+  attachments?: MessageAttachment[];
 }
 export interface MessagePage {
   messages: Message[];
   before_id?: string;
+  read_sequence?: number;
 }
 export interface RoomUnread {
   room_id: string;
@@ -93,4 +102,29 @@ export async function api<T>(
     );
   }
   return response.status === 204 ? (undefined as T) : response.json();
+}
+
+export async function uploadMessageAttachment(
+  roomId: string,
+  file: File,
+): Promise<MessageAttachment> {
+  const body = new FormData();
+  body.append('file', file);
+  const response = await fetch(
+    apiHttpUrl(`/api/v1/rooms/${roomId}/attachments`),
+    {
+      method: 'POST',
+      credentials: apiCredentials(),
+      headers: apiAuthHeaders(),
+      body,
+    },
+  );
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new ApiRequestError(
+      error?.error?.message ?? `Upload failed (${response.status})`,
+      response.status,
+    );
+  }
+  return (await response.json()).attachment as MessageAttachment;
 }

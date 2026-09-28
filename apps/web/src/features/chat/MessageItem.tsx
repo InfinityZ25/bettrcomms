@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Pencil, Reply, Smile, Trash2 } from 'lucide-react';
-import type { Message } from '@/api';
+import { Flag, Paperclip, Pencil, Reply, ShieldX, Smile, Trash2 } from 'lucide-react';
+import { api, type Message } from '@/api';
 import { Avatar } from '@/components/avatar';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -41,6 +41,10 @@ export default function MessageItem({
   onEdit,
   onReact,
   onDelete,
+  onReport,
+  onModerate,
+  canModerate,
+  onError,
 }: {
   message: Message;
   userId: string;
@@ -55,9 +59,29 @@ export default function MessageItem({
     remove: boolean,
   ) => Promise<boolean>;
   onDelete: (message: Message) => Promise<boolean>;
+  onReport: (message: Message, reason: string) => Promise<boolean>;
+  onModerate: (message: Message, reason: string) => Promise<boolean>;
+  canModerate: boolean;
+  onError: (message: string) => void;
 }) {
   const [reacting, setReacting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [reporting, setReporting] = useState(false);
+  const [moderating, setModerating] = useState(false);
+  const [reason, setReason] = useState('');
+  const [reported, setReported] = useState(false);
+  const openAttachment = async (id: string) => {
+    const tab = window.open('about:blank', '_blank');
+    if (tab) tab.opener = null;
+    try {
+      const result = await api<{ url: string }>(`/rooms/${message.room_id}/attachments/${id}?link=1`);
+      if (tab) tab.location.href = result.url;
+      else window.location.href = result.url;
+    } catch (error) {
+      tab?.close();
+      onError(error instanceof Error ? error.message : 'Could not open attachment');
+    }
+  };
   return (
     <article
       data-message-id={message.id}
@@ -113,6 +137,15 @@ export default function MessageItem({
               <MessageBody message={message} />
             )}
           </p>
+          {!message.deleted_at && !!message.attachments?.length && (
+            <div className="mt-2 flex flex-wrap gap-1" aria-label="Attachments">
+              {message.attachments.map((attachment) => (
+                <Button key={attachment.id} variant="outline" size="sm" onClick={() => void openAttachment(attachment.id)}>
+                  <Paperclip size={13} /> <span className="max-w-48 truncate">{attachment.filename}</span>
+                </Button>
+              ))}
+            </div>
+          )}
           {!message.deleted_at && (
             <>
               <div className="mt-1 flex flex-wrap gap-1">
@@ -183,6 +216,12 @@ export default function MessageItem({
                     </Button>
                   </>
                 )}
+                {message.author.id !== userId && (
+                  <Button variant="ghost" size="icon-sm" aria-label="Report message" disabled={busy} onClick={() => { setReporting(true); setModerating(false); }}><Flag size={14} /></Button>
+                )}
+                {canModerate && message.author.id !== userId && (
+                  <Button variant="ghost" size="icon-sm" aria-label="Remove message as moderator" disabled={busy} onClick={() => { setModerating(true); setReporting(false); }}><ShieldX size={14} /></Button>
+                )}
               </div>
               {reacting && (
                 <div
@@ -233,6 +272,26 @@ export default function MessageItem({
                   </Button>
                 </div>
               )}
+              {(reporting || moderating) && (
+                <form className="mt-2 flex flex-col gap-2 rounded-lg border p-2 text-xs" onSubmit={(event) => {
+                  event.preventDefault();
+                  const action = reporting ? onReport : onModerate;
+                  void (async () => {
+                    const done = await action(message, reason.trim());
+                    if (done) {
+                      setReporting(false);
+                      setModerating(false);
+                      setReported(reporting);
+                      setReason('');
+                    }
+                  })();
+                }}>
+                  <label htmlFor={`reason-${message.id}`}>{reporting ? 'Why are you reporting this message?' : 'Reason for removing this message'}</label>
+                  <input id={`reason-${message.id}`} className="rounded border bg-background px-2 py-1" value={reason} maxLength={500} minLength={3} required onChange={(event) => setReason(event.target.value)} />
+                  <div className="flex gap-2"><Button size="sm" type="submit" disabled={busy || reason.trim().length < 3}>{reporting ? 'Send report' : 'Remove message'}</Button><Button size="sm" variant="ghost" type="button" onClick={() => { setReporting(false); setModerating(false); }}>Cancel</Button></div>
+                </form>
+              )}
+              {reported && <span className="text-xs text-muted-foreground">Report sent</span>}
             </>
           )}
         </div>

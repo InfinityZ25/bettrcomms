@@ -5,6 +5,9 @@ import { api, type Room, type User } from '@/api';
 import { Button } from '@/components/ui/button';
 import { AppDialog } from '@/components/app-dialog';
 import { Input } from '@/components/ui/input';
+
+type MessageReport = { id: string; message_id: string; reporter_name: string; author_name: string; excerpt: string; reason: string };
+
 export default function RoomSettings({
   room,
   user,
@@ -24,6 +27,7 @@ export default function RoomSettings({
 }) {
   const [name, setName] = useState(room?.name ?? ''),
     [members, setMembers] = useState<{ user: User; role: string }[]>([]),
+    [reports, setReports] = useState<MessageReport[]>([]),
     [busy, setBusy] = useState(false),
     [confirm, setConfirm] = useState(false);
   const owner = room?.owner_id === user?.id;
@@ -36,7 +40,12 @@ export default function RoomSettings({
       )
         .then((r) => setMembers(r.members))
         .catch((e) => onError(e.message));
-  }, [open, room?.id, refreshRevision]);
+    if (open && room && room.owner_id === user?.id && room.kind !== 'direct')
+      api<{ reports: MessageReport[] }>('/rooms/' + room.id + '/reports')
+        .then((result) => setReports(result.reports ?? []))
+        .catch((error) => onError(errorMessage(error)));
+    else setReports([]);
+  }, [open, room?.id, room?.name, room?.owner_id, room?.kind, user?.id, refreshRevision, onError]);
   async function action(fn: () => Promise<void>) {
     setBusy(true);
     try {
@@ -44,6 +53,32 @@ export default function RoomSettings({
       onChanged();
     } catch (e) {
       onError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function removeReportedMessage(report: MessageReport) {
+    if (!room) return;
+    setBusy(true);
+    try {
+      await api('/rooms/' + room.id + '/messages/' + report.message_id + '/moderation', { reason: `Report: ${report.reason}`.slice(0, 500) }, 'DELETE');
+      setReports((current) => current.filter((item) => item.message_id !== report.message_id));
+      onChanged();
+    } catch (error) {
+      onError(errorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function dismissReport(report: MessageReport) {
+    if (!room) return;
+    setBusy(true);
+    try {
+      await api('/rooms/' + room.id + '/reports/' + report.id + '/dismiss', {}, 'POST');
+      setReports((current) => current.filter((item) => item.id !== report.id));
+      onChanged();
+    } catch (error) {
+      onError(errorMessage(error));
     } finally {
       setBusy(false);
     }
@@ -121,6 +156,20 @@ export default function RoomSettings({
               </div>
             ))}
           </div>
+          {owner && reports.length > 0 && (
+            <div className="flex flex-col gap-2 border-t pt-4">
+              <h3 className="text-sm font-semibold">Message reports</h3>
+              {reports.map((report) => (
+                <div key={report.id} className="rounded-lg border p-3 text-xs">
+                  <p><strong>{report.reporter_name}</strong> reported a message from {report.author_name}</p>
+                  <p className="mt-1 truncate text-muted-foreground">{report.excerpt}</p>
+                  <p className="mt-1">{report.reason}</p>
+                  <Button className="mt-2" size="sm" variant="destructive" disabled={busy} onClick={() => void removeReportedMessage(report)}>Remove message</Button>
+                  <Button className="mt-2" size="sm" variant="ghost" disabled={busy} onClick={() => void dismissReport(report)}>Dismiss report</Button>
+                </div>
+              ))}
+            </div>
+          )}
           {confirm ? (
             <div className="rounded-xl border border-destructive/40 p-4">
               <p className="mb-3.5 text-xs leading-6 text-destructive">

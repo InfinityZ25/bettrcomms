@@ -1,5 +1,10 @@
 # BetterComms preview release notes
 
+## Unreleased — messaging controls and attachments
+
+Message sends now carry an idempotency key, and an active conversation fills message gaps through paginated HTTP after reconnect. Room and direct-message lists follow recent message activity. The composer keeps a per-conversation draft on this device across browser restarts, shows typing and the first unread message, and supports up to four 10 MB attachments per message when private S3 storage is configured. Room owners can review, dismiss, and act on message reports; message sends, reactions, reports, uploads, and moderation have rate limits. Per-conversation notification modes are stored with the account, while Do Not Disturb and browser notification opt-in are local to the device. See [messaging controls and limits](MESSAGING.md).
+
+
 ## Unreleased — Wails-only desktop build
 
 The desktop app now builds solely from `apps/desktop-wails`. The removed desktop host, its JavaScript dependency, packaging workflow, and obsolete native test fixtures are no longer part of the repository. The shared frontend selects browser or Wails adapters from the validated desktop boot report. Windows builds stage the pinned FFmpeg runtime and model assets for Wails. macOS places native traffic lights over the app's own title area, bundles the BetterComms icon, ad hoc signs and verifies the Wails app, then provides one drag-to-Applications DMG per architecture. GitHub Actions wraps each DMG in an artifact ZIP. These builds remain unsigned by Developer ID and unnotarized; users may need Privacy & Security → Open Anyway.

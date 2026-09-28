@@ -205,6 +205,13 @@ func (h *RealtimeHub) publishRoom(room string, message wire) {
 	}
 }
 
+func (h *RealtimeHub) canPublishRoom(client *realtimeClient, room string) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	_, allowed := client.rooms[room]
+	return allowed
+}
+
 func (h *RealtimeHub) publishUser(user string, message wire) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -310,6 +317,22 @@ func (a *API) realtimeWebsocket(w http.ResponseWriter, r *http.Request, user Use
 		readCancel()
 		if err != nil {
 			return
+		}
+		if message.Type == "chat.typing" {
+			var value struct {
+				RoomID string `json:"room_id"`
+				Typing bool   `json:"typing"`
+			}
+			if json.Unmarshal(message.Payload, &value) != nil || !uuidPattern.MatchString(value.RoomID) || !a.Realtime.canPublishRoom(client, value.RoomID) {
+				enqueueRealtime(client, wire{Type: "error", Error: &apiError{Code: "forbidden", Message: "room membership required"}})
+				continue
+			}
+			if !a.limiter.allow("chat-typing:"+user.ID+":"+value.RoomID, 60, time.Minute) {
+				continue
+			}
+			payload, _ := json.Marshal(map[string]any{"room_id": value.RoomID, "user_id": user.ID, "typing": value.Typing})
+			a.Realtime.publishRoom(value.RoomID, wire{Type: "chat.typing", From: user.ID, Payload: payload})
+			continue
 		}
 		if message.Type != "ping" || message.RequestID == "" || len(message.RequestID) > 128 {
 			enqueueRealtime(client, wire{Type: "error", Error: &apiError{Code: "invalid_event", Message: "only ping events are accepted"}})

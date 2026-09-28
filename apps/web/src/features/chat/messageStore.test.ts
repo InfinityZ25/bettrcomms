@@ -8,6 +8,7 @@ import {
   receiveMessage,
   reconcileMessaging,
   startMessagingSession,
+  subscribeConversation,
 } from './messageStore';
 
 vi.mock('@/api', async (importOriginal) => ({
@@ -56,6 +57,27 @@ describe('message reconciliation', () => {
     expect(
       conversationSnapshot('room').messages.map((item) => item.id),
     ).toEqual(['new']);
+  });
+  it('recovers every missed message for an open conversation without losing older pages', async () => {
+    vi.mocked(api).mockResolvedValueOnce({ rooms: [] });
+    stop = startMessagingSession('user');
+    const unsubscribe = subscribeConversation('room', () => {});
+    vi.mocked(api)
+      .mockResolvedValueOnce({ messages: [message('old', 1)], before_id: 'older', read_sequence: 0 })
+      .mockResolvedValueOnce({ members: [] });
+    await loadConversation('room');
+    vi.mocked(api)
+      .mockResolvedValueOnce({ rooms: [] })
+      .mockResolvedValueOnce({ messages: [{ ...message('old', 1, 2), body: 'edited' }, message('two', 2), message('three', 3)], before_id: 'three' })
+      .mockResolvedValueOnce({ messages: [message('four', 4)] });
+    reconcileMessaging('user');
+    await vi.waitFor(() => {
+      expect(conversationSnapshot('room').messages.map((item) => item.id)).toEqual(['old', 'two', 'three', 'four']);
+      expect(conversationSnapshot('room').messages[0].body).toBe('edited');
+    });
+    expect(conversationSnapshot('room').before).toBe('older');
+    expect(vi.mocked(api).mock.calls.some(([path]) => path === '/rooms/room/messages?after_sequence=0&limit=100')).toBe(true);
+    unsubscribe();
   });
   it('keeps a distant search hit out of pagination and updates its deletion live', async () => {
     vi.mocked(api).mockResolvedValueOnce({ rooms: [] });

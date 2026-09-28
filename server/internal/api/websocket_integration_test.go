@@ -27,7 +27,7 @@ func TestWebSocketSignalIntegration(t *testing.T) {
 		t.Fatal(e)
 	}
 	defer pool.Close()
-	for _, path := range []string{"../../migrations/001_init.sql", "../../migrations/002_direct_rooms.sql", "../../migrations/003_messaging.sql"} {
+	for _, path := range []string{"../../migrations/001_init.sql", "../../migrations/002_direct_rooms.sql", "../../migrations/003_messaging.sql", "../../migrations/004_messaging_complete.sql", "../../migrations/005_attachment_cleanup_attempts.sql"} {
 		migration, e := os.ReadFile(path)
 		if e != nil {
 			t.Fatal(e)
@@ -246,7 +246,7 @@ func TestRoomManagementAuthorization(t *testing.T) {
 		t.Fatal(e)
 	}
 	defer pool.Close()
-	for _, path := range []string{"../../migrations/001_init.sql", "../../migrations/002_direct_rooms.sql", "../../migrations/003_messaging.sql"} {
+	for _, path := range []string{"../../migrations/001_init.sql", "../../migrations/002_direct_rooms.sql", "../../migrations/003_messaging.sql", "../../migrations/004_messaging_complete.sql", "../../migrations/005_attachment_cleanup_attempts.sql"} {
 		sql, e := os.ReadFile(path)
 		if e != nil {
 			t.Fatal(e)

@@ -57,6 +57,7 @@ type API struct {
 	pairings      map[string]*desktopPairing
 	pairingMu     sync.Mutex
 	limiter       *rateLimiter
+	Attachments   AttachmentStorage
 }
 type apiError struct {
 	Code    string `json:"code"`
@@ -232,7 +233,7 @@ func (a *API) authed(w http.ResponseWriter, r *http.Request) {
 		a.callPresence(w, u)
 	case r.Method == "GET" && p == "events":
 		a.realtimeWebsocket(w, r, u)
-	case p == "messages/search" || p == "messages/unread":
+	case p == "messages/search" || p == "messages/unread" || p == "messages/notification-preferences":
 		a.messagingGlobal(w, r, u, p)
 	case r.Method == "GET" && p == "users":
 		if !a.limiter.allow("search:"+u.ID, 30, time.Minute) {
@@ -413,7 +414,15 @@ func (a *API) room(w http.ResponseWriter, r *http.Request, u User, p []string) {
 		a.fail(w, 403, "not_a_member", "room membership required")
 		return
 	}
-	if len(p) >= 3 && (p[2] == "messages" || p[2] == "read") && (r.Method != "GET" || r.URL.Query().Get("before") == "") {
+	if len(p) == 3 && p[2] == "attachments" && r.Method == "POST" {
+		a.uploadAttachment(w, r, u, rid)
+		return
+	}
+	if len(p) == 4 && p[2] == "attachments" && r.Method == "GET" {
+		a.downloadAttachment(w, r, u, rid, p[3])
+		return
+	}
+	if len(p) >= 3 && (p[2] == "messages" || p[2] == "read" || p[2] == "reports") && (r.Method != "GET" || r.URL.Query().Get("before") == "") {
 		if store, ok := a.Store.(MessagingStore); ok {
 			a.messagingRoom(w, r, u, p, store)
 			return
@@ -732,6 +741,10 @@ func (a *API) resultStatus(w http.ResponseWriter, v any, e error, status int) {
 	}
 	if errors.Is(e, ErrForbidden) {
 		a.fail(w, 403, "forbidden", "you do not have permission to perform this action")
+		return
+	}
+	if errors.Is(e, ErrConflict) {
+		a.fail(w, 409, "conflict", "this request key was already used for different content")
 		return
 	}
 	a.fail(w, 500, "internal", fmt.Sprintf("operation failed"))

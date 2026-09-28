@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { ModeToggle } from '@/components/mode-toggle';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
@@ -20,6 +20,7 @@ import {
   type SoundName,
 } from '@/media/sounds';
 import type { User } from '@/api';
+import { notificationSnapshot, setBrowserNotifications, setDoNotDisturb, subscribeNotifications } from '@/features/chat/notificationSettings';
 import './SettingsScreen.css';
 
 export type SettingsPage = 'audio' | 'voice' | 'recording' | 'stream' | 'connection' | 'appearance';
@@ -35,6 +36,7 @@ export default function SettingsScreen({ page, user, noise, onNoiseChange, balan
   onLayoutChange: (value: string) => void;
 }) {
   const face = useOwnFace();
+  const messageNotifications = useSyncExternalStore(subscribeNotifications, notificationSnapshot);
   const [sounds, setSounds] = useState(soundsEnabled);
   const [volume, setVolume] = useState(soundVolume);
   const [each, setEach] = useState(() =>
@@ -97,6 +99,12 @@ export default function SettingsScreen({ page, user, noise, onNoiseChange, balan
   if (page === 'appearance') return (
     <SettingsSection id="settings-appearance" title="Look & feel">
       <SettingRow as="div" title="Theme" description="Light, dark, or match your system." control={<ModeToggle />} />
+      {user && (
+        <>
+          <SettingRow as="div" title="Do not disturb" description="Pause message sounds and notifications on this device." control={<Switch aria-label="Do not disturb" checked={messageNotifications.dnd} onCheckedChange={setDoNotDisturb} />} />
+          <SettingRow as="div" title="Browser notifications" description="Show message alerts while this browser tab is open but not in front. Your browser will ask for permission." control={<Switch aria-label="Browser notifications" checked={messageNotifications.browser} disabled={typeof window === 'undefined' || !('Notification' in window)} onCheckedChange={(enabled) => { void setBrowserNotifications(enabled); }} />} />
+        </>
+      )}
       {user && (
         <SettingRow
           as="div"

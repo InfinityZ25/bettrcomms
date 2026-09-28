@@ -393,6 +393,7 @@ export default function App() {
                           roomId={room.id}
                           user={user}
                           label={room.name}
+                          canModerate={room.kind !== 'direct' && room.owner_id === user.id}
                           targetId={
                             messageTarget?.room === room.id
                               ? messageTarget.id
@@ -562,6 +563,7 @@ export default function App() {
           user={user}
           viewing={conversation || chatBeside ? room : null}
           messages={presence.messages}
+          onOpenRoom={openRoomById}
         />
         <IncomingCall
           user={user}

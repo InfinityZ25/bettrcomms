@@ -12,6 +12,7 @@ export type ConversationState = {
   anchor?: Message;
   members: User[];
   before?: string;
+  unreadBoundary?: number;
   loading: boolean;
   loadingOlder: boolean;
   error: string;
@@ -27,7 +28,9 @@ const conversations = new Map<string, ConversationState>();
 const subscribers = new Map<string, Set<() => void>>();
 const pending = new Map<string, AbortController>();
 const unreadListeners = new Set<() => void>();
+const activityListeners = new Set<() => void>();
 let unread: Record<string, RoomUnread> = {};
+let activity: Record<string, string> = {};
 let userId: string | undefined;
 let generation = 0;
 let unreadTimer: ReturnType<typeof setTimeout> | undefined;
@@ -92,6 +95,11 @@ function put(room: string, patch: Partial<ConversationState>) {
   for (const listener of subscribers.get(room) ?? []) listener();
 }
 export const unreadSnapshot = () => unread;
+export const activitySnapshot = () => activity;
+export function subscribeActivity(listener: () => void) {
+  activityListeners.add(listener);
+  return () => { activityListeners.delete(listener); };
+}
 export function subscribeUnread(listener: () => void) {
   unreadListeners.add(listener);
   return () => {
@@ -131,6 +139,7 @@ export function startMessagingSession(id: string) {
   conversations.clear();
   reading.clear();
   putUnread({});
+  activity = {};
   void refreshUnread();
   return () => {
     generation += 1;
@@ -141,6 +150,8 @@ export function startMessagingSession(id: string) {
     if (unreadTimer !== undefined) clearTimeout(unreadTimer);
     unreadTimer = undefined;
     putUnread({});
+    activity = {};
+    for (const listener of activityListeners) listener();
   };
 }
 
@@ -184,6 +195,7 @@ export async function loadConversation(room: string, older = false) {
       members,
       before:
         older || !snapshot.messages.length ? page.before_id : snapshot.before,
+      unreadBoundary: older ? snapshot.unreadBoundary : (snapshot.unreadBoundary ?? page.read_sequence),
     });
   } catch (error) {
     if (
@@ -206,6 +218,10 @@ export async function loadConversation(room: string, older = false) {
 
 export function receiveMessage(id: string, message: Message) {
   if (id !== userId) return;
+  if (!activity[message.room_id] || Date.parse(message.created_at) > Date.parse(activity[message.room_id])) {
+    activity = { ...activity, [message.room_id]: message.created_at };
+    for (const listener of activityListeners) listener();
+  }
   // Only opened conversations retain history; the app's existing socket keeps
   // its bounded notification backlog independently.
   if (conversations.has(message.room_id)) {
@@ -227,15 +243,51 @@ export function receiveMessage(id: string, message: Message) {
   }
   scheduleUnread();
 }
-export function reconcileMessaging(id: string) {
+export function reconcileMessaging(id: string, reset = false) {
   if (id !== userId) return;
   void refreshUnread();
   for (const request of pending.values()) request.abort();
   pending.clear();
-  conversations.clear();
+  if (reset) conversations.clear();
+  else for (const room of conversations.keys()) if (!subscribers.has(room)) conversations.delete(room);
   for (const room of subscribers.keys()) {
-    put(room, { ...emptyConversation });
-    void loadConversation(room);
+    if (reset || !conversationSnapshot(room).messages.length) {
+      put(room, { ...emptyConversation });
+      void loadConversation(room);
+    } else void catchUpConversation(room);
+  }
+}
+
+async function catchUpConversation(room: string) {
+  if (!userId || pending.has(room)) return;
+  const first = conversationSnapshot(room).messages[0];
+  if (!first?.sequence) { void loadConversation(room); return; }
+  const currentGeneration = generation;
+  const controller = new AbortController();
+  pending.set(room, controller);
+  try {
+    // Reload the range already on screen as well as new messages. Edits,
+    // reactions and deletions keep their original sequence.
+    let cursor = first.sequence - 1;
+    for (;;) {
+      const page = await api<MessagePage>(`/rooms/${room}/messages?after_sequence=${cursor}&limit=100`, undefined, undefined, controller.signal);
+      if (controller.signal.aborted || generation !== currentGeneration) return;
+      if (!page.messages.length) break;
+      put(room, { messages: mergeMessages(conversationSnapshot(room).messages, page.messages) });
+      cursor = page.messages.at(-1)!.sequence ?? cursor;
+      if (!page.before_id) break;
+    }
+    const anchor = conversationSnapshot(room).anchor;
+    if (anchor && (anchor.sequence ?? 0) < first.sequence) {
+      const result = await api<{ message: Message }>(`/rooms/${room}/messages/${anchor.id}`, undefined, undefined, controller.signal);
+      if (!controller.signal.aborted && generation === currentGeneration)
+        put(room, { anchor: result.message });
+    }
+  } catch (error) {
+    if (!controller.signal.aborted && generation === currentGeneration)
+      put(room, { error: error instanceof Error ? error.message : 'Could not reconcile messages' });
+  } finally {
+    if (pending.get(room) === controller) pending.delete(room);
   }
 }
 const reading = new Map<string, number>();
@@ -261,11 +313,13 @@ export async function writeMessage(
   body: string,
   reply?: string,
   id?: string,
+  attachmentIDs: string[] = [],
+  nonce?: string,
 ) {
   const currentGeneration = generation;
   const result = await api<{ message: Message }>(
     `/rooms/${room}/messages${id ? `/${id}` : ''}`,
-    { body, reply_to_id: reply },
+    { body, reply_to_id: reply, attachment_ids: attachmentIDs, client_nonce: nonce },
     id ? 'PATCH' : 'POST',
   );
   if (generation === currentGeneration && userId)

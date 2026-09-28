@@ -6,6 +6,7 @@ import {
   refreshUnread,
 } from '@/features/chat/messageStore';
 import { apiSocketUrl } from '@/desktop/apiTransport';
+import { receiveTyping, setTypingSocket } from '@/features/chat/typingStore';
 
 type RoomPresence = { room_id: string; participants: CallParticipant[] };
 type RealtimeMessage = { sequence: number; value: Message };
@@ -64,6 +65,7 @@ export function useCallPresence(userId?: string) {
       current.onopen = () => {
         if (stopped || socket !== current) return;
         reconnectDelay = 500;
+        setTypingSocket(current, userId);
         const ping = () => {
           if (current.readyState === WebSocket.OPEN)
             current.send(
@@ -117,6 +119,9 @@ export function useCallPresence(userId?: string) {
             if (value?.id && value.room_id) receiveMessage(userId, value);
           } else if (message.type === 'chat.read') {
             void refreshUnread();
+          } else if (message.type === 'chat.typing') {
+            const value = message.payload as { room_id?: string; user_id?: string; typing?: boolean };
+            if (value?.room_id && value.user_id && value.user_id !== userId && typeof value.typing === 'boolean') receiveTyping(value.room_id, value.user_id, value.typing);
           } else if (message.type === 'chat.message') {
             const value = message.payload as Message;
             if (!value?.id || !value.room_id) return;
@@ -130,7 +135,7 @@ export function useCallPresence(userId?: string) {
               ],
             }));
           } else if (message.type === 'rooms.changed') {
-            reconcileMessaging(userId);
+            reconcileMessaging(userId, true);
             setState((currentState) => ({
               ...currentState,
               roomsRevision: currentState.roomsRevision + 1,
@@ -163,6 +168,7 @@ export function useCallPresence(userId?: string) {
         if (pingTimer !== undefined) window.clearInterval(pingTimer);
         pingTimer = undefined;
         socket = undefined;
+        setTypingSocket(null);
         if (stopped) return;
         setState((currentState) => ({ ...currentState, known: false }));
         reconnectTimer = window.setTimeout(connect, reconnectDelay);
@@ -176,6 +182,7 @@ export function useCallPresence(userId?: string) {
       if (pingTimer !== undefined) window.clearInterval(pingTimer);
       if (reconnectTimer !== undefined) window.clearTimeout(reconnectTimer);
       socket?.close(1000, 'signed out or window closed');
+      setTypingSocket(null);
     };
   }, [userId]);
 
