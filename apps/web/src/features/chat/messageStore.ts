@@ -218,10 +218,11 @@ export function receiveMessage(id: string, message: Message) {
       messages: mergeMessages(state.messages, [message]).filter(
         (item) => inRange || item.id !== message.id,
       ),
-      anchor:
-        state.anchor?.id === message.id
-          ? mergeMessages([state.anchor], [message])[0]
-          : state.anchor,
+      anchor: state.anchor
+        ? mergeMessages([state.anchor], state.messages, [message]).find(
+            (item) => item.id === state.anchor?.id,
+          )
+        : undefined,
     });
   }
   scheduleUnread();

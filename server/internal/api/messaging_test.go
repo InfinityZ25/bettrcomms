@@ -184,3 +184,111 @@ func TestMessagingIntegration(t *testing.T) {
 		t.Fatal("revoked membership retained search access")
 	}
 }
+
+func TestMessagingMigrationWithExistingHistory(t *testing.T) {
+	url := os.Getenv("TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("TEST_DATABASE_URL not set")
+	}
+	ctx := context.Background()
+	admin, err := pgxpool.New(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Close()
+	schema := fmt.Sprintf("messaging_migration_%d", time.Now().UnixNano())
+	if _, err = admin.Exec(ctx, `CREATE SCHEMA `+schema); err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Exec(ctx, `DROP SCHEMA `+schema+` CASCADE`)
+	config, err := pgxpool.ParseConfig(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.ConnConfig.RuntimeParams["search_path"] = schema
+	db, err := pgxpool.NewWithConfig(ctx, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	apply := func(file string) {
+		t.Helper()
+		data, e := os.ReadFile("../../migrations/" + file)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if _, e = db.Exec(ctx, string(data)); e != nil {
+			t.Fatalf("%s: %v", file, e)
+		}
+	}
+	apply("001_init.sql")
+	apply("002_direct_rooms.sql")
+	var alice, bob, carol, room string
+	for i, target := range []*string{&alice, &bob, &carol} {
+		err = db.QueryRow(ctx, `INSERT INTO users(email,name) VALUES($1,$2) RETURNING id::text`, fmt.Sprintf("old-%d@example.test", i), "Old member").Scan(target)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = db.QueryRow(ctx, `INSERT INTO rooms(name,owner_id) VALUES('Old room',$1) RETURNING id::text`, alice).Scan(&room); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Exec(ctx, `INSERT INTO room_members(room_id,user_id) VALUES($1,$2),($1,$3)`, room, alice, bob); err != nil {
+		t.Fatal(err)
+	}
+	oldIDs := make([]string, 3)
+	for i := range oldIDs {
+		err = db.QueryRow(ctx, `INSERT INTO messages(room_id,author_id,body,created_at) VALUES($1,$2,$3,$4) RETURNING id::text`, room, alice, fmt.Sprintf("old %d", i), time.Date(2026, 9, 1, 0, 0, i, 0, time.UTC)).Scan(&oldIDs[i])
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	apply("003_messaging.sql")
+	store := &PostgresStore{DB: db}
+	seen := []string{}
+	cursor := ""
+	for {
+		page, e := store.MessagePage(room, bob, cursor, 2)
+		if e != nil {
+			t.Fatal(e)
+		}
+		pageIDs := make([]string, 0, len(page.Messages))
+		for _, m := range page.Messages {
+			pageIDs = append(pageIDs, m.ID)
+		}
+		seen = append(pageIDs, seen...)
+		if page.BeforeID == "" {
+			break
+		}
+		cursor = page.BeforeID
+	}
+	if len(seen) != len(oldIDs) {
+		t.Fatalf("migrated history: got %v, want %v", seen, oldIDs)
+	}
+	for i, id := range oldIDs {
+		if seen[i] != id {
+			t.Fatalf("migrated history: got %v, want %v", seen, oldIDs)
+		}
+	}
+	checkUnread := func(user string, wantCount, wantSequence int64) {
+		t.Helper()
+		rooms, e := store.UnreadRooms(user)
+		if e != nil || len(rooms) != 1 || rooms[0].Unread != wantCount || rooms[0].ReadSequence != wantSequence {
+			t.Fatalf("unread for %s: %+v, err=%v; want count %d sequence %d", user, rooms, e, wantCount, wantSequence)
+		}
+	}
+	var baseline int64
+	if err = db.QueryRow(ctx, `SELECT sequence FROM messages WHERE id=$1`, oldIDs[2]).Scan(&baseline); err != nil {
+		t.Fatal(err)
+	}
+	checkUnread(bob, 0, baseline)
+	if _, err = db.Exec(ctx, `INSERT INTO room_members(room_id,user_id) VALUES($1,$2)`, room, carol); err != nil {
+		t.Fatal(err)
+	}
+	checkUnread(carol, 0, baseline)
+	if _, err = store.WriteMessage(room, alice, "", "new after upgrade", ""); err != nil {
+		t.Fatal(err)
+	}
+	checkUnread(bob, 1, baseline)
+	checkUnread(carol, 1, baseline)
+}

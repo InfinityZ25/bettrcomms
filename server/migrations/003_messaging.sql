@@ -33,3 +33,24 @@ CREATE TABLE IF NOT EXISTS room_reads (
   sequence bigint NOT NULL DEFAULT 0,
   PRIMARY KEY(room_id,user_id)
 );
+-- Existing memberships start at the end of their room's pre-messaging history.
+INSERT INTO room_reads(room_id,user_id,sequence)
+SELECT rm.room_id,rm.user_id,COALESCE(max(m.sequence),0)
+FROM room_members rm LEFT JOIN messages m ON m.room_id=rm.room_id
+GROUP BY rm.room_id,rm.user_id
+ON CONFLICT(room_id,user_id) DO NOTHING;
+
+-- A later invitation starts at the committed end of the room. Message writes
+-- take the same advisory lock, so a concurrent send cannot slip behind it.
+CREATE OR REPLACE FUNCTION baseline_room_read() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  PERFORM pg_advisory_xact_lock(hashtextextended(NEW.room_id::text,0));
+  INSERT INTO room_reads(room_id,user_id,sequence)
+  SELECT NEW.room_id,NEW.user_id,COALESCE(max(sequence),0)
+  FROM messages WHERE room_id=NEW.room_id
+  ON CONFLICT(room_id,user_id) DO UPDATE SET sequence=EXCLUDED.sequence;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS room_member_read_baseline ON room_members;
+CREATE TRIGGER room_member_read_baseline AFTER INSERT ON room_members
+FOR EACH ROW EXECUTE FUNCTION baseline_room_read();

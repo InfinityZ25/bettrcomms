@@ -225,10 +225,22 @@ func (s *PostgresStore) ListMessages(rid string, before time.Time, limit int) ([
 	return out, rows.Err()
 }
 func (s *PostgresStore) CreateMessage(rid, uid, body string) (Message, error) {
+	ctx := context.Background()
+	tx, e := s.DB.Begin(ctx)
+	if e != nil {
+		return Message{}, e
+	}
+	defer tx.Rollback(ctx)
+	if _, e = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, rid); e != nil {
+		return Message{}, e
+	}
 	var m Message
-	e := s.DB.QueryRow(context.Background(), `INSERT INTO messages(room_id,author_id,body) SELECT $1,$2,$3 WHERE EXISTS(SELECT 1 FROM room_members WHERE room_id=$1 AND user_id=$2) RETURNING id::text,room_id::text,body,created_at`, rid, uid, body).Scan(&m.ID, &m.RoomID, &m.Body, &m.CreatedAt)
+	e = tx.QueryRow(ctx, `INSERT INTO messages(room_id,author_id,body) SELECT $1,$2,$3 WHERE EXISTS(SELECT 1 FROM room_members WHERE room_id=$1 AND user_id=$2) RETURNING id::text,room_id::text,body,created_at`, rid, uid, body).Scan(&m.ID, &m.RoomID, &m.Body, &m.CreatedAt)
 	if e != nil {
 		return m, norm(e)
+	}
+	if e = tx.Commit(ctx); e != nil {
+		return m, e
 	}
 	m.Author, e = s.UserByID(uid)
 	return m, e

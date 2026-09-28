@@ -81,6 +81,36 @@ describe('message reconciliation', () => {
     expect(conversationSnapshot('room').before).toBe('recent');
     expect(conversationSnapshot('room').messages.at(-1)?.id).toBe('recent');
   });
+  it('updates a distant reply quote when its unloaded parent changes', async () => {
+    vi.mocked(api).mockResolvedValueOnce({ rooms: [] });
+    stop = startMessagingSession('user');
+    vi.mocked(api)
+      .mockResolvedValueOnce({ messages: [message('recent', 101)] })
+      .mockResolvedValueOnce({ members: [] });
+    await loadConversation('room');
+    vi.mocked(api).mockResolvedValueOnce({
+      message: {
+        ...message('reply', 2),
+        reply: { id: 'parent', name: 'Person', body: 'old quote', deleted: false },
+      },
+    });
+    await jumpToMessage('room', 'reply');
+
+    receiveMessage('user', { ...message('parent', 1, 2), body: 'new quote' });
+    expect(conversationSnapshot('room').anchor?.reply?.body).toBe('new quote');
+    receiveMessage('user', {
+      ...message('parent', 1, 3),
+      body: '',
+      deleted_at: '2026-09-02T00:00:00Z',
+    });
+    expect(conversationSnapshot('room').anchor?.reply).toMatchObject({
+      body: '',
+      deleted: true,
+    });
+    expect(conversationSnapshot('room').messages.map((item) => item.id)).toEqual([
+      'recent',
+    ]);
+  });
   it('does not restore an old version when a fetch overlaps a live edit or deletion', () => {
     const deleted = {
       ...message('one', 1, 3),
