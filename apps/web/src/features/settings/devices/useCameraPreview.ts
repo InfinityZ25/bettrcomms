@@ -92,6 +92,11 @@ export function useCameraPreview({
         stream.current = media;
         const track = media.getVideoTracks()[0];
         if (!track) throw new Error('The camera preview did not produce video.');
+        track.addEventListener('ended', () => {
+          if (stream.current !== media) return;
+          stop();
+          if (alive.current) onStatus('Camera preview stopped. Select it again to reconnect.');
+        }, { once: true });
         setActual(track.getSettings());
         setCapabilities(
           typeof track.getCapabilities === 'function' ? track.getCapabilities() : null,

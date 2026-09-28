@@ -63,7 +63,7 @@ export async function startMetaGlassesCamera(): Promise<{
     if (detail.kind === 'error') {
       rejectFirst(new Error(detail.message));
       if (firstFrame) {
-        track.stop();
+        dispose();
         track.dispatchEvent(new Event('ended'));
       }
       return;
@@ -71,7 +71,7 @@ export async function startMetaGlassesCamera(): Promise<{
     if (detail.kind === 'stopped') {
       if (!firstFrame) rejectFirst(new Error('Glasses camera stopped before video arrived.'));
       else {
-        track.stop();
+        dispose();
         track.dispatchEvent(new Event('ended'));
       }
       return;
