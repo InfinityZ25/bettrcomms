@@ -41,6 +41,9 @@ meta_camera="$meta_sdk/MWDATCamera.xcframework/ios-arm64"
 # dialog, while navigated/untrusted pages keep WebKit's prompt.
 wails_module="$(cd "$app" && go list -m -f '{{.Dir}}' github.com/wailsapp/wails/v3)"
 cp -R "$wails_module" "$scratch/wails"
+# Go's module cache is read-only; make the disposable copy removable by the
+# EXIT trap after packaging.
+chmod -R u+w "$scratch/wails"
 python3 "$repo/scripts/patch-wails-ios-permissions.py" "$scratch/wails"
 cp "$app/go.mod" "$scratch/build.mod"
 cp "$app/go.sum" "$scratch/build.sum"
