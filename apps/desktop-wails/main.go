@@ -283,6 +283,7 @@ func services(
 	}
 	if runtime.GOOS == "ios" && gate != nil {
 		registered = append(registered, metaCameraService(gate))
+		registered = append(registered, application.NewService(&IOSCallAudioService{gate: gate}))
 	}
 	return registered
 }

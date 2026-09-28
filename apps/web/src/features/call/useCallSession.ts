@@ -26,6 +26,7 @@ import { useSpeakingActivity } from '@/media/useSpeakingActivity';
 import { readQuality } from '@/features/settings/MediaSettings';
 import { readConnectionMode } from '@/media/connectionMode';
 import { hasNativeMediaHost } from '@/desktop/nativeMedia';
+import { startIOSCallAudio, stopIOSCallAudio } from '@/desktop/iosCallAudio';
 import { errorMessage } from '@/lib/errors';
 import { readStored, writeStored } from '@/lib/storage';
 import { createCallPeerId } from './callPeerId';
@@ -209,6 +210,7 @@ export function useCallSession({
 
   const leave = () => {
     callMicrophone.stop();
+    void stopIOSCallAudio().catch(() => {});
     disposeCallPlayback();
     // Clears the confirmation from an earlier recording; one that is still
     // running is stopped and archived below and raises a fresh notice of its
@@ -241,6 +243,7 @@ export function useCallSession({
       active.current = false;
       socket.current?.close();
       engine.current?.dispose();
+      void stopIOSCallAudio().catch(() => {});
       disposeCallPlayback();
       const metadata = recordingMetadata.current;
       void recorder.current
@@ -585,6 +588,7 @@ export function useCallSession({
         callMicrophone.stop();
         void finishRecording();
         media.dispose();
+        void stopIOSCallAudio().catch(() => {});
         disposeCallPlayback();
         engine.current = null;
         setJoined(false);
@@ -599,6 +603,11 @@ export function useCallSession({
 
       try {
         await media.captureUserMedia({ camera: false, ...captureOptions() });
+        try {
+          await startIOSCallAudio();
+        } catch (error) {
+          onError(`iPhone background audio unavailable: ${errorMessage(error)}`);
+        }
         await connection.connect();
         setJoined(true);
         const input = callMicrophone.getSnapshot();
@@ -614,6 +623,7 @@ export function useCallSession({
         callMicrophone.stop();
         connection.close();
         media.dispose();
+        void stopIOSCallAudio().catch(() => {});
         disposeCallPlayback();
         engine.current = null;
         socket.current = null;

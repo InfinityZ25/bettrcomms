@@ -11,6 +11,9 @@ An experimental iOS-only Ray-Ban Meta source is being wired into the call
 camera picker through Meta's native Device Access Toolkit. It currently needs
 Developer Mode and physical Gen 1/Gen 2 device acceptance; browser builds do
 not expose glasses as a normal `videoinput` device.
+The iOS host now sets a native call audio session only for active calls and
+declares audio background mode. It still needs a signed-device background call
+test before promising uninterrupted audio outside the app.
 
 ## Unreleased — Wails-only desktop build
 

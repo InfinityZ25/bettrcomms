@@ -39,6 +39,13 @@ remote viewing, switching, and teardown before calling it working. The app
 does not claim background glasses video, because DAT raw frames and WKWebView
 publishing stop when the iPhone backgrounds.
 
+During an iPhone call, the host also activates a native play-and-record audio
+session with iOS's audio background mode, then deactivates it on leave, error,
+or shutdown. This is the required platform setup for continued two-way audio;
+it does not prove that the WKWebView WebRTC graph stays active after the app
+backgrounds. Test a signed device with the screen locked and with another app
+foregrounded before claiming background calling works.
+
 The iOS build uses Wails' UIKit browser opener for WorkOS sign-in and reports
 native window chrome to the shared frontend, so desktop minimize/maximize/close
 controls are not drawn on iPhone. A signed build opened on a physical iPhone

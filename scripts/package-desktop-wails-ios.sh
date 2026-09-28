@@ -72,7 +72,9 @@ mkdir -p "$app/bin"
 xcrun --sdk iphoneos clang -target arm64-apple-ios17.2 -isysroot "$sdk" \
   -fobjc-arc -fmodules -I "$scratch/wails/pkg/application" \
   -F "$meta_core" -F "$meta_camera" \
-  -c "$app/meta_camera_ios.m" -o "$app/bin/meta_camera_ios.o"
+  -c "$app/native/ios/meta_camera_ios.m" -o "$app/bin/meta_camera_ios.o"
+xcrun --sdk iphoneos clang -target arm64-apple-ios17.2 -isysroot "$sdk" \
+  -fobjc-arc -c "$app/native/ios/ios_call_audio.m" -o "$app/bin/ios_call_audio.o"
 
 xcrun --sdk iphoneos clang -target arm64-apple-ios17.2 -isysroot "$sdk" \
   -F "$meta_core" -F "$meta_camera" \
@@ -84,6 +86,7 @@ xcrun --sdk iphoneos clang -target arm64-apple-ios17.2 -isysroot "$sdk" \
   -Wl,-rpath,@executable_path/Frameworks \
   -lresolv -o "$app/bin/BetterComms" \
   "$app/build/ios/xcode/main/main.m" "$app/bin/meta_camera_ios.o" \
+  "$app/bin/ios_call_audio.o" \
   -Wl,-force_load,"$archive"
 
 rm -rf "$bundle"
@@ -103,6 +106,7 @@ cp "$app/build/ios/xcode/main/Info.plist" "$bundle/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :UIBackgroundModes:0 string bluetooth-central' "$bundle/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :UIBackgroundModes:1 string bluetooth-peripheral' "$bundle/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :UIBackgroundModes:2 string external-accessory' "$bundle/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :UIBackgroundModes:3 string audio' "$bundle/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes array' "$bundle/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes:0 dict' "$bundle/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes:0:CFBundleURLSchemes array' "$bundle/Info.plist"
