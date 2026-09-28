@@ -407,6 +407,9 @@ export class MediaEngine extends EventTarget {
     isCurrent: () => boolean = () => true,
   ): Promise<void> {
     this.ensureActive();
+    if (typeof navigator.mediaDevices?.getDisplayMedia !== 'function') {
+      throw new Error('Screen sharing is unavailable in this browser. On iPhone, use the BetterComms app to share its screen.');
+    }
     const captureOptions: DisplayMediaStreamOptions & { windowAudio: 'window' | 'exclude' } = {
       // Follow the configured stream quality rather than a fixed ceiling, so a
       // high-refresh display is not silently halved before encoding starts.
