@@ -184,6 +184,13 @@
   html {
     @apply font-sans;
   }
+  html,
+  body,
+  #root {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
   button:not(:disabled) {
     @apply cursor-pointer;
   }

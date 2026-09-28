@@ -29,6 +29,16 @@ ReplayKit broadcast implementation and device testing.
 
 The iOS build uses Wails' UIKit browser opener for WorkOS sign-in and reports
 native window chrome to the shared frontend, so desktop minimize/maximize/close
-controls are not drawn on iPhone. These paths compile in CI but have not been
-exercised on a signed physical device. The sign-in panel also exposes the
+controls are not drawn on iPhone. A signed build opened on a physical iPhone
+and reached a call; packaged authentication and the current media changes
+still need complete device acceptance. The sign-in panel also exposes the
 confirmation link while a pairing is pending.
+
+The iOS host enables inline video so call tiles stay inside the app, disables
+the root webview's bounce, and lets the viewport extend to the screen edges
+while padding interactive UI by the device safe area. Packaging applies a
+small patch to a temporary copy of the pinned Wails beta.18 module: WebKit's
+media delegate grants the *packaged top-level* `wails://localhost` page after
+iOS handles the app-level microphone/camera permission. Other origins keep
+WebKit's normal prompt. This needs signed-device verification; changing Wails
+versions intentionally fails the patch until its anchors are reviewed.

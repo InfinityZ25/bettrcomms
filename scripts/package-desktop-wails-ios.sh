@@ -21,6 +21,19 @@ archive="$app/bin/BetterComms-ios.a"
 bundle="$app/bin/BetterComms.app"
 binary="$bundle/BetterComms"
 ipa="$app/bin/bettercomms-wails-$version-ios-arm64-adhoc.ipa"
+scratch="$(mktemp -d)"
+trap 'rm -rf "$scratch"' EXIT
+
+# Wails beta.18 has no iOS media-permission delegate. Patch a disposable
+# module copy so the packaged page gets only the system's native permission
+# dialog, while navigated/untrusted pages keep WebKit's prompt.
+wails_module="$(cd "$app" && go list -m -f '{{.Dir}}' github.com/wailsapp/wails/v3)"
+cp -R "$wails_module" "$scratch/wails"
+python3 "$repo/scripts/patch-wails-ios-permissions.py" "$scratch/wails"
+cp "$app/go.mod" "$scratch/build.mod"
+cp "$app/go.sum" "$scratch/build.sum"
+(cd "$app" && go mod edit -modfile="$scratch/build.mod" \
+  -replace="github.com/wailsapp/wails/v3=$scratch/wails")
 
 (cd "$repo" && npm run build)
 staged="$app/frontend/dist"
@@ -35,7 +48,7 @@ mkdir -p "$app/bin"
   export GOOS=ios GOARCH=arm64 CGO_ENABLED=1
   export CGO_CFLAGS="-isysroot $sdk -target arm64-apple-ios15.0 -miphoneos-version-min=15.0"
   export CGO_LDFLAGS="-isysroot $sdk -target arm64-apple-ios15.0"
-  go build -buildmode=c-archive -overlay build/ios/xcode/overlay.json \
+  go build -buildmode=c-archive -modfile="$scratch/build.mod" -overlay build/ios/xcode/overlay.json \
     -tags production,ios -trimpath -buildvcs=false \
     -ldflags '-X main.bakedAPIOrigin=https://app.bettrcomms.com' \
     -o "$archive" .
@@ -61,7 +74,7 @@ xcrun --sdk iphoneos ibtool --compile "$bundle/LaunchScreen.storyboardc" \
 
 assets="$(mktemp -d)"
 payload="$(mktemp -d)"
-trap 'rm -rf "$assets" "$payload"' EXIT
+trap 'rm -rf "$assets" "$payload" "$scratch"' EXIT
 xcrun --sdk iphoneos actool \
   --compile "$assets" --app-icon AppIcon --platform iphoneos \
   --minimum-deployment-target 15.0 --product-type com.apple.product-type.application \

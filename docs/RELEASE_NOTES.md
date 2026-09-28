@@ -1,5 +1,12 @@
 # BetterComms preview release notes
 
+The experimental iPhone host now keeps videos inline in the call, fills the
+mobile viewport without the 600 px minimum-height overflow, and suppresses
+WebKit's extra media prompt for its own packaged page while retaining iOS's
+native permission prompt. This is a build-level change awaiting a fresh signed
+device check. Background calls, Meta glasses capture, and iPhone screen
+sharing remain native-media work, not browser capabilities.
+
 ## Unreleased — Wails-only desktop build
 
 The desktop app now builds solely from `apps/desktop-wails`. The removed desktop host, its JavaScript dependency, packaging workflow, and obsolete native test fixtures are no longer part of the repository. The shared frontend selects browser or Wails adapters from the validated desktop boot report. Windows builds stage the pinned FFmpeg runtime and model assets for Wails. macOS places native traffic lights over the app's own title area, bundles the BetterComms icon, ad hoc signs and verifies the Wails app, then provides one drag-to-Applications DMG per architecture. GitHub Actions wraps each DMG in an artifact ZIP. These builds remain unsigned by Developer ID and unnotarized; users may need Privacy & Security → Open Anyway.
