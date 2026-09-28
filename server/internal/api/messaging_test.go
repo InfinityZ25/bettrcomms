@@ -61,18 +61,38 @@ func TestMessagingIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeDone := make(chan error, 1)
-	writeStarted := make(chan struct{})
 	go func() {
-		close(writeStarted)
 		_, writeErr := store.WriteMessage(strings.ToUpper(lockRoom.ID), alice.ID, "", "lock probe", "")
 		writeDone <- writeErr
 	}()
-	<-writeStarted
-	select {
-	case writeErr := <-writeDone:
-		t.Fatalf("uppercase room writer bypassed advisory lock: %v", writeErr)
-	case <-time.After(150 * time.Millisecond):
+	// Observe the database waiting on the advisory lock. A start signal from
+	// the goroutine would not prove that it had entered WriteMessage yet.
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	poll := time.NewTicker(10 * time.Millisecond)
+	defer poll.Stop()
+	for {
+		select {
+		case writeErr := <-writeDone:
+			t.Fatalf("uppercase room writer bypassed advisory lock: %v", writeErr)
+		case <-deadline.C:
+			t.Fatal("uppercase room writer never waited on the advisory lock")
+		case <-poll.C:
+			var waiting bool
+			err = db.QueryRow(ctx, `SELECT EXISTS (
+				SELECT 1 FROM pg_locks l JOIN pg_stat_activity a ON a.pid=l.pid
+				WHERE l.locktype='advisory' AND NOT l.granted
+				AND a.query LIKE 'SELECT pg_advisory_xact_lock(hashtextextended(%'
+			)`).Scan(&waiting)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if waiting {
+				goto writerWaited
+			}
+		}
 	}
+writerWaited:
 	if err = lockTx.Commit(ctx); err != nil {
 		t.Fatal(err)
 	}
