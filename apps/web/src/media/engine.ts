@@ -406,6 +406,9 @@ export class MediaEngine extends EventTarget {
     isCurrent: () => boolean = () => true,
   ): Promise<void> {
     this.ensureActive();
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      throw new Error('This browser cannot share its screen. Present from the desktop app or a desktop browser instead.');
+    }
     const captureOptions: DisplayMediaStreamOptions & { windowAudio: 'window' | 'exclude' } = {
       // Follow the configured stream quality rather than a fixed ceiling, so a
       // high-refresh display is not silently halved before encoding starts.

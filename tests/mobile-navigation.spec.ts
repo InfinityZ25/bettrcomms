@@ -96,3 +96,35 @@ test('friends dialog stays within a short phone viewport and scrolls to its acti
     await context.close();
   }
 });
+
+test('unsupported mobile screen sharing explains the limit inside the viewport', async ({ browser }) => {
+  const context = await browser.newContext({ baseURL, viewport: { width: 390, height: 650 } });
+  try {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    await login(context, 'Mobile Share', `mobile-share-${suffix}@example.test`);
+    await json(await context.request.post('/api/v1/rooms', {
+      headers: { Origin: origin }, data: { name: `Mobile share ${suffix}` },
+    }));
+    await context.addInitScript(() => {
+      Object.defineProperty(navigator.mediaDevices, 'getDisplayMedia', {
+        configurable: true, value: undefined,
+      });
+    });
+    const page = await context.newPage();
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Join call' }).click();
+    await expect(page.getByRole('button', { name: 'Share screen' })).toBeVisible();
+    await page.getByRole('button', { name: 'Share screen' }).click();
+    const notice = page.getByRole('alert').filter({ hasText: 'This browser cannot share its screen' });
+    await expect(notice).toBeVisible();
+    const box = await notice.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+    expect(box!.y).toBeGreaterThanOrEqual(0);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(650);
+    await expect(notice.getByRole('button', { name: 'Dismiss notification' })).toBeInViewport();
+  } finally {
+    await context.close();
+  }
+});

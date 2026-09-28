@@ -12,6 +12,8 @@ Mobile browser calls now offer an in-call camera picker for sources the browser 
 
 On narrow screens, the conversations toggle opens a right-side drawer over the current view. The drawer takes two-thirds of the viewport, and selecting a room closes it. The Friends dialog stays within the visible phone viewport and scrolls its contents when the list is long.
 
+When a mobile browser does not expose `getDisplayMedia` (including the reported iPhone Safari and Chrome cases), Share now explains that screen presentation requires the desktop app or a supporting desktop browser. The error notice wraps within the phone viewport instead of overflowing sideways. The website cannot grant a screen-capture API that the iPhone browser does not provide.
+
 ## Unreleased — messaging basics
 
 Direct and room conversations support persistent unread and mention badges, mark-as-read, paginated history, authorized full-text search with conversation and author filters, own-message edit and delete, replies, and emoji reactions. Changes synchronize through the event stream, and reconnect reconciles history. Migration 003 preserves existing content. See [messaging controls and limits](MESSAGING.md).
