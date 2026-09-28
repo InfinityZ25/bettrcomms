@@ -65,5 +65,15 @@ staging="$(mktemp -d)"
 trap 'rm -rf "$staging"' EXIT
 ditto "$bundle" "$staging/BetterComms.app"
 ln -s /Applications "$staging/Applications"
-hdiutil create -ov -fs HFS+ -srcfolder "$staging" -volname BetterComms -format UDZO "$dmg"
+for attempt in 1 2 3; do
+  if hdiutil create -ov -fs HFS+ -srcfolder "$staging" -volname BetterComms -format UDZO "$dmg"; then
+    break
+  fi
+  rm -f "$dmg"
+  if [[ "$attempt" == 3 ]]; then
+    echo 'Could not create the macOS disk image after three attempts.' >&2
+    exit 1
+  fi
+  sleep 3
+done
 echo "macOS disk image: $dmg"
