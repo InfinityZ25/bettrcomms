@@ -81,9 +81,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: bettercomms-wails-macos-${{ matrix.arch }}
-          path: |
-            apps/desktop-wails/bin/*-macos-${{ matrix.arch }}.zip
-            apps/desktop-wails/bin/*-macos-${{ matrix.arch }}.dmg
+          path: apps/desktop-wails/bin/*-macos-${{ matrix.arch }}.dmg
           if-no-files-found: error
 
   release:
@@ -111,4 +109,4 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" release-assets/* \
             --verify-tag --prerelease --title "BetterComms Wails ${GITHUB_REF_NAME#wails-v} (preview)" \
-            --notes "Unsigned Windows x64 preview and ad hoc signed macOS 15+ Apple Silicon/Intel DMG/ZIP previews. Windows requires WebView2 Evergreen. On macOS, drag BetterComms into Applications and use Privacy & Security → Open Anyway if Gatekeeper blocks this unnotarized build. Packaged authentication, native media and cross-device acceptance remain open; see docs/WAILS_COMPLETION.md."
+            --notes "Unsigned Windows x64 preview and ad hoc signed macOS 15+ Apple Silicon/Intel DMG previews. Windows requires WebView2 Evergreen. On macOS, drag BetterComms into Applications and use Privacy & Security → Open Anyway if Gatekeeper blocks this unnotarized build. Packaged authentication, native media and cross-device acceptance remain open; see docs/WAILS_COMPLETION.md."
