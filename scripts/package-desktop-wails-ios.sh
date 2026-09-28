@@ -142,6 +142,8 @@ plutil -lint "$bundle/Info.plist"
 mkdir -p "$bundle/Frameworks"
 cp -R "$meta_core/MWDATCore.framework" "$bundle/Frameworks/"
 cp -R "$meta_camera/MWDATCamera.framework" "$bundle/Frameworks/"
+cp "$meta_sdk/LICENSE" "$bundle/MetaWearables-LICENSE.txt"
+cp "$meta_sdk/NOTICE" "$bundle/MetaWearables-NOTICE.txt"
 codesign --force --sign - "$bundle/Frameworks/MWDATCore.framework"
 codesign --force --sign - "$bundle/Frameworks/MWDATCamera.framework"
 
