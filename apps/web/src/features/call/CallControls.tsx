@@ -92,6 +92,7 @@ export default function CallControls({
             variant={sharing ? 'default' : 'secondary'}
             size="icon"
             aria-label={sharing ? 'Stop sharing' : hasIOSAppScreen() ? 'Share BetterComms screen' : 'Share screen'}
+            title={!sharing && hasIOSAppScreen() ? 'Share the BetterComms screen while this app is open' : undefined}
             onClick={onToggleShare}
             disabled={busy}
           >

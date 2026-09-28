@@ -4,13 +4,19 @@
 #import "webview_window_ios.h"
 #import "application_ios_delegate.h"
 
-static void BCScreenEmit(NSDictionary *detail) {
+static WailsViewController *BCScreenPage(void) {
     UIViewController *controller = appDelegate.window.rootViewController;
-    if (![controller isKindOfClass:[WailsViewController class]]) return;
+    if (![controller isKindOfClass:[WailsViewController class]]) return nil;
     WailsViewController *page = (WailsViewController *)controller;
     NSURL *url = page.webView.URL;
     if (![url.scheme isEqualToString:@"wails"] ||
-        ![url.host isEqualToString:@"localhost"]) return;
+        ![url.host isEqualToString:@"localhost"]) return nil;
+    return page;
+}
+
+static void BCScreenEmit(NSDictionary *detail) {
+    WailsViewController *page = BCScreenPage();
+    if (!page) return;
     NSData *data = [NSJSONSerialization dataWithJSONObject:detail options:0 error:nil];
     if (!data) return;
     NSString *json = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
@@ -107,8 +113,9 @@ static void BCScreenEmit(NSDictionary *detail) {
     NSNumber *height = @((NSInteger)scaled.extent.size.height);
     dispatch_async(dispatch_get_main_queue(), ^{
         if (self.capturing && self.generation == generation) {
-            BCScreenEmit(@{@"kind": @"frame", @"jpeg": base64,
-                           @"width": width, @"height": height});
+            if (!BCScreenPage()) [self stop];
+            else BCScreenEmit(@{@"kind": @"frame", @"jpeg": base64,
+                                @"width": width, @"height": height});
         }
         self.framePending = NO;
     });

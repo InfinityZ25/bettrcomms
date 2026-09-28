@@ -198,9 +198,10 @@ static void BCMetaEmit(NSDictionary *detail) {
     NSNumber *width = @(CGImageGetWidth(image.CGImage));
     NSNumber *height = @(CGImageGetHeight(image.CGImage));
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (self.stream && BCMetaPage()) {
-            BCMetaEmit(@{@"kind": @"frame", @"jpeg": base64,
-                         @"width": width, @"height": height});
+        if (self.stream) {
+            if (!BCMetaPage()) [self stop];
+            else BCMetaEmit(@{@"kind": @"frame", @"jpeg": base64,
+                              @"width": width, @"height": height});
         }
         @synchronized (self) { self.framePending = NO; }
     });
