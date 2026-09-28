@@ -668,7 +668,9 @@ export function useCallSession({
         return;
       }
       await allowDesktopCapture('camera');
-      if (deviceId && current.getLocalTracks().get('camera')?.getSettings().deviceId === deviceId) {
+      const cameraTrack = current.getLocalTracks().get('camera');
+      // Choosing a source while video is off must not start publishing it.
+      if (!cameraTrack || (deviceId && cameraTrack.getSettings().deviceId === deviceId)) {
         writeStored('bc-camera', deviceId);
         window.dispatchEvent(new Event('bc-camera-selected'));
         return;

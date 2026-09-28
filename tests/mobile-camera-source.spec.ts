@@ -93,10 +93,13 @@ test('mobile call switches to a browser-exposed camera without recapturing the m
     await page.getByRole('button', { name: 'Join call' }).click();
     await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
 
-    await page.getByRole('button', { name: 'Turn on camera' }).click();
-    await expect(page.getByRole('button', { name: 'Turn off camera' })).toBeVisible();
-    await page.getByRole('button', { name: 'Choose camera' }).click();
     if (browserName === 'webkit') {
+      // WebKit does not reveal device IDs until camera access has been granted.
+      await page.getByRole('button', { name: 'Turn on camera' }).click();
+      await expect(page.getByRole('button', { name: 'Turn off camera' })).toBeVisible();
+      await page.getByRole('button', { name: 'Turn off camera' }).click();
+      await expect(page.getByRole('button', { name: 'Turn on camera' })).toBeVisible();
+      await page.getByRole('button', { name: 'Choose camera' }).click();
       const cameras = await page.evaluate(async () =>
         (await navigator.mediaDevices.enumerateDevices()).filter((device) => device.kind === 'videoinput' && device.deviceId)
           .map((device) => ({ id: device.deviceId, label: device.label })),
@@ -104,10 +107,26 @@ test('mobile call switches to a browser-exposed camera without recapturing the m
       expect(cameras.length).toBeGreaterThan(1);
       await page.getByRole('menuitemradio', { name: cameras[1].label }).click();
       await expect.poll(() => page.evaluate(() => localStorage.getItem('bc-camera'))).toBe(cameras[1].id);
+      await expect(page.getByRole('button', { name: 'Turn on camera' })).toBeVisible();
+      await page.getByRole('button', { name: 'Turn on camera' }).click();
+      await expect(page.getByRole('button', { name: 'Turn off camera' })).toBeVisible();
       await page.getByRole('button', { name: 'Leave call' }).click();
       return;
     }
+    await page.getByRole('button', { name: 'Choose camera' }).click();
     await expect(page.getByRole('menuitemradio', { name: 'Back camera' })).toBeVisible();
+    await page.getByRole('menuitemradio', { name: 'Back camera' }).click();
+    await expect(page.getByRole('button', { name: 'Turn on camera' })).toBeVisible();
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('bc-camera'))).toBe('phone-back');
+    expect(await page.evaluate(() => {
+      const probe = (window as typeof window & { __cameraSourceProbe: {
+        captures: string[]; microphoneCaptures: number;
+      } }).__cameraSourceProbe;
+      return { captures: probe.captures, microphoneCaptures: probe.microphoneCaptures };
+    })).toEqual({ captures: [], microphoneCaptures: 1 });
+    await page.getByRole('button', { name: 'Turn on camera' }).click();
+    await expect(page.getByRole('button', { name: 'Turn off camera' })).toBeVisible();
+    await page.getByRole('button', { name: 'Choose camera' }).click();
     await expect(page.getByRole('menuitemradio', { name: 'Connected camera' })).toBeVisible();
     await page.getByRole('menuitemradio', { name: 'Connected camera' }).click();
     await expect.poll(() => page.evaluate(() => localStorage.getItem('bc-camera'))).toBe('browser-accessory');
@@ -121,7 +140,7 @@ test('mobile call switches to a browser-exposed camera without recapturing the m
         microphoneCaptures: probe.microphoneCaptures,
       };
     })).toEqual({
-      captures: ['phone-front', 'browser-accessory', 'browser-accessory'],
+      captures: ['phone-back', 'browser-accessory', 'browser-accessory'],
       oldCameraStopped: true,
       microphoneCaptures: 1,
     });
