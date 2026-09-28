@@ -19,5 +19,6 @@ server/bettercomms.exe
 apps/desktop-wails/frontend/dist/*
 !apps/desktop-wails/frontend/dist/.gitkeep
 apps/desktop-wails/bin/
+apps/desktop-wails/build/ios/
 
 apps/sfu/turnserver.conf
