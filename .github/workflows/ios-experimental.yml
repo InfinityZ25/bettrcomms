@@ -10,6 +10,7 @@ on:
       - apps/web/**
       - scripts/package-desktop-wails-ios.sh
       - scripts/patch-wails-ios-permissions.py
+      - package.json
       - package-lock.json
   pull_request:
     paths:
@@ -18,6 +19,7 @@ on:
       - apps/web/**
       - scripts/package-desktop-wails-ios.sh
       - scripts/patch-wails-ios-permissions.py
+      - package.json
       - package-lock.json
 
 permissions:
