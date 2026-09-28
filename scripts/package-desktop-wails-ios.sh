@@ -75,18 +75,22 @@ xcrun --sdk iphoneos clang -target arm64-apple-ios17.2 -isysroot "$sdk" \
   -c "$app/native/ios/meta_camera_ios.m" -o "$app/bin/meta_camera_ios.o"
 xcrun --sdk iphoneos clang -target arm64-apple-ios17.2 -isysroot "$sdk" \
   -fobjc-arc -c "$app/native/ios/ios_call_audio.m" -o "$app/bin/ios_call_audio.o"
+xcrun --sdk iphoneos clang -target arm64-apple-ios17.2 -isysroot "$sdk" \
+  -fobjc-arc -fmodules -I "$scratch/wails/pkg/application" \
+  -c "$app/native/ios/ios_app_screen.m" -o "$app/bin/ios_app_screen.o"
 
 xcrun --sdk iphoneos clang -target arm64-apple-ios17.2 -isysroot "$sdk" \
   -F "$meta_core" -F "$meta_camera" \
   -framework Foundation -framework UIKit -framework WebKit \
   -framework Security -framework CoreFoundation -framework UniformTypeIdentifiers \
   -framework LocalAuthentication -framework UserNotifications -framework AVFoundation \
+  -framework ReplayKit -framework CoreImage -framework CoreMedia -framework CoreVideo \
   -framework CoreLocation -framework CoreMotion -framework SystemConfiguration \
   -framework MWDATCore -framework MWDATCamera \
   -Wl,-rpath,@executable_path/Frameworks \
   -lresolv -o "$app/bin/BetterComms" \
   "$app/build/ios/xcode/main/main.m" "$app/bin/meta_camera_ios.o" \
-  "$app/bin/ios_call_audio.o" \
+  "$app/bin/ios_call_audio.o" "$app/bin/ios_app_screen.o" \
   -Wl,-force_load,"$archive"
 
 rm -rf "$bundle"

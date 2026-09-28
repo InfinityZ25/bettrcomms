@@ -23,6 +23,7 @@ import { createDeepfilterDenoiser } from './deepfilterDenoise';
 import { createDeepfilterWasmDenoiser } from './deepfilterWasmDenoise';
 import { createMicrophoneEffects } from './microphoneEffects';
 import { hasNativeMediaHost } from '../desktop/nativeMedia';
+import { startIOSAppScreen } from './iosAppScreen';
 import { createNativeSystemAudio, type NativeSystemAudioTrack } from './nativeSystemAudio';
 import type { DenoisedTrack } from './denoise';
 import type { MicrophoneProcessingSettings } from './types';
@@ -457,6 +458,18 @@ export class MediaEngine extends EventTarget {
       for (const track of stream.getTracks()) {
         if (![...this.localTracks.values()].includes(track)) track.stop();
       }
+      throw error;
+    }
+  }
+
+  async captureIOSAppScreen(): Promise<void> {
+    this.ensureActive();
+    const capture = await startIOSAppScreen();
+    try {
+      this.ensureActive();
+      await this.replaceLocalTrack('screen', capture.track, capture.dispose);
+    } catch (error) {
+      capture.dispose();
       throw error;
     }
   }

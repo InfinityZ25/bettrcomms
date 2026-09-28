@@ -5,7 +5,9 @@ mobile viewport without the 600 px minimum-height overflow, and suppresses
 WebKit's extra media prompt for its own packaged page while retaining iOS's
 native permission prompt. This is a build-level change awaiting a fresh signed
 device check. Background calls, Meta glasses capture, and iPhone screen
-sharing remain native-media work, not browser capabilities.
+sharing remain native-media work, not browser capabilities. The iPhone build
+now has a ReplayKit in-app screen track for the foreground BetterComms screen;
+full-phone sharing and device acceptance are still outstanding.
 
 An experimental iOS-only Ray-Ban Meta source is being wired into the call
 camera picker through Meta's native Device Access Toolkit. It currently needs

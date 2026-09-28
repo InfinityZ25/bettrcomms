@@ -14,6 +14,7 @@ import { CallMicrophone } from '@/media/pushToTalk';
 import { allowDesktopCapture } from '@/media/permissions';
 import { cameraCaptureConstraints, readCameraSettings } from '@/media/cameraSettings';
 import { META_GLASSES_CAMERA_ID, startMetaGlassesCamera } from '@/media/metaGlassesCamera';
+import { hasIOSAppScreen } from '@/media/iosAppScreen';
 import { microphoneCaptureOptions } from '@/media/processingSettings';
 import { readRecordingQuality } from '@/media/recordingQuality';
 import { saveRecording } from '@/media/recordingLibrary';
@@ -646,6 +647,12 @@ export function useCallSession({
           await engine.current!.setLocalTrack('screen', null);
           await engine.current!.setLocalTrack('system', null);
         }
+      });
+      return;
+    }
+    if (hasIOSAppScreen()) {
+      await perform(async () => {
+        await engine.current?.captureIOSAppScreen();
       });
       return;
     }

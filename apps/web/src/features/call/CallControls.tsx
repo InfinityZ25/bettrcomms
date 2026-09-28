@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import CameraSourceMenu from './CameraSourceMenu';
+import { hasIOSAppScreen } from '@/media/iosAppScreen';
 
 /** The microphone, headphones, camera, share, record and leave row. */
 export default function CallControls({
@@ -90,7 +91,7 @@ export default function CallControls({
           <Button
             variant={sharing ? 'default' : 'secondary'}
             size="icon"
-            aria-label={sharing ? 'Stop sharing' : 'Share screen'}
+            aria-label={sharing ? 'Stop sharing' : hasIOSAppScreen() ? 'Share BetterComms screen' : 'Share screen'}
             onClick={onToggleShare}
             disabled={busy}
           >
