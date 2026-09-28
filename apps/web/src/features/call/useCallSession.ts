@@ -676,32 +676,19 @@ export function useCallSession({
         return;
       }
       const settings = readCameraSettings();
-      const capture = () => current.captureUserMedia({
-        camera: cameraCaptureConstraints(deviceId, settings),
-        microphone: false,
-      });
       try {
-        await capture();
+        await current.captureUserMedia({
+          camera: cameraCaptureConstraints(deviceId, settings),
+          microphone: false,
+        });
       } catch (error) {
-        // Some mobile browsers cannot open a second camera until the first
-        // track is released. Keep the old track for all other failures.
-        if (!current.getLocalTracks().has('camera') ||
-            !(error instanceof DOMException) ||
-            !['NotReadableError', 'AbortError'].includes(error.name)) throw error;
-        await current.setLocalTrack('camera', null);
-        try {
-          await capture();
-        } catch (retryError) {
-          try {
-            await current.captureUserMedia({
-              camera: cameraCaptureConstraints(readStored('bc-camera') ?? '', settings),
-              microphone: false,
-            });
-          } catch {
-            // The previous camera disappeared too; keep the original error.
-          }
-          throw retryError;
+        // Preserve the working feed when the browser cannot open two cameras
+        // at once. The user can switch with an explicit off/select/on sequence.
+        if (error instanceof DOMException &&
+            ['NotReadableError', 'AbortError'].includes(error.name)) {
+          throw new Error('Turn off your camera, choose the new source, then turn it on.');
         }
+        throw error;
       }
       writeStored('bc-camera', deviceId);
       window.dispatchEvent(new Event('bc-camera-selected'));

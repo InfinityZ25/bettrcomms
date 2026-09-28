@@ -129,7 +129,32 @@ test('mobile call switches to a browser-exposed camera without recapturing the m
     await page.getByRole('button', { name: 'Choose camera' }).click();
     await expect(page.getByRole('menuitemradio', { name: 'Connected camera' })).toBeVisible();
     await page.getByRole('menuitemradio', { name: 'Connected camera' }).click();
+    await expect(page.getByRole('button', { name: 'Turn off camera' })).toBeVisible();
+    await expect.poll(() => page.evaluate(() => {
+      const probe = (window as typeof window & { __cameraSourceProbe: {
+        captures: string[]; tracks: MediaStreamTrack[]; microphoneCaptures: number;
+      } }).__cameraSourceProbe;
+      return {
+        captures: probe.captures,
+        oldCameraLive: probe.tracks[0]?.readyState === 'live',
+        microphoneCaptures: probe.microphoneCaptures,
+        selected: localStorage.getItem('bc-camera'),
+      };
+    })).toEqual({
+      captures: ['phone-back', 'browser-accessory'],
+      oldCameraLive: true,
+      microphoneCaptures: 1,
+      selected: 'phone-back',
+    });
+    await expect(page.getByRole('alert')).toContainText('Turn off your camera, choose the new source, then turn it on.');
+    await page.getByRole('button', { name: 'Dismiss notification' }).click();
+    await page.getByRole('button', { name: 'Turn off camera' }).click();
+    await expect(page.getByRole('button', { name: 'Turn on camera' })).toBeVisible();
+    await page.getByRole('button', { name: 'Choose camera' }).click();
+    await page.getByRole('menuitemradio', { name: 'Connected camera' }).click();
     await expect.poll(() => page.evaluate(() => localStorage.getItem('bc-camera'))).toBe('browser-accessory');
+    await page.getByRole('button', { name: 'Turn on camera' }).click();
+    await expect(page.getByRole('button', { name: 'Turn off camera' })).toBeVisible();
     await expect.poll(() => page.evaluate(() => {
       const probe = (window as typeof window & { __cameraSourceProbe: {
         captures: string[]; tracks: MediaStreamTrack[]; microphoneCaptures: number;
