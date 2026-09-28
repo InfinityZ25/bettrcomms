@@ -32,9 +32,9 @@ The in-app path still needs signed-device sender, viewer, stop, and background
 acceptance; it must not be advertised as working until those checks pass.
 
 The experimental Ray-Ban Meta camera path uses Meta Wearables Device Access
-Toolkit 1.0.0 in the iOS host. It is available in the in-call camera picker on
-this native build only. Pair Gen 1 or Gen 2 glasses in the Meta AI app and
-enable Developer Mode there; the first selection may redirect to Meta AI for
+Toolkit 1.0.0 in the iOS host. It is available in the in-call camera picker and
+camera settings preview on this native build only. Pair Gen 1 or Gen 2 glasses
+in the Meta AI app and enable Developer Mode there; the first selection may redirect to Meta AI for
 registration or glasses-camera consent. The native host sends bounded JPEG
 frames to the packaged page, which publishes them as a canvas camera track.
 This is a foreground-only proof of the media bridge. It needs physical glasses

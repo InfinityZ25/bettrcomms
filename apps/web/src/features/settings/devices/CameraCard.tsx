@@ -16,6 +16,7 @@ import {
 import { isDenied } from './deviceHelpers';
 import type { useCameraPreview } from './useCameraPreview';
 import { SettingsSelect } from '../SettingsControls';
+import { META_GLASSES_CAMERA_ID } from '@/media/metaGlassesCamera';
 
 export default function CameraCard({
   options,
@@ -40,7 +41,10 @@ export default function CameraCard({
   return (
     <DeviceCard>
       <DeviceSelect label="Camera" value={value} options={options} onChange={onChange} />
-      <div className="camera-quality" aria-label="Camera quality">
+      {value === META_GLASSES_CAMERA_ID && (
+        <p className="text-xs text-muted-foreground">Pair your glasses in Meta AI and enable Developer Mode. Their video quality is set by the glasses.</p>
+      )}
+      {value !== META_GLASSES_CAMERA_ID && <div className="camera-quality" aria-label="Camera quality">
         <label>
           Resolution
           <SettingsSelect
@@ -75,15 +79,15 @@ export default function CameraCard({
             })}
           />
         </label>
-      </div>
-      {previewing && actual && (
+      </div>}
+      {value !== META_GLASSES_CAMERA_ID && previewing && actual && (
         <p className="camera-quality__actual">
           Camera reports {actual.width ?? 'unknown'}×{actual.height ?? 'unknown'} at{' '}
           {actual.frameRate ? `${Math.round(actual.frameRate)} FPS` : 'an unknown frame rate'}.
         </p>
       )}
       <DeviceActions>
-        <LinkButton onClick={onEnable}>Enable camera</LinkButton>
+        {value !== META_GLASSES_CAMERA_ID && <LinkButton onClick={onEnable}>Enable camera</LinkButton>}
         <LinkButton onClick={() => void preview.toggle()}>
           {previewing ? 'Stop preview' : 'Preview camera'}
         </LinkButton>

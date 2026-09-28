@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { isWindowsDesktop, openDesktopPrivacySettings } from '@/media/permissions';
+import { hasMetaGlassesCamera, META_GLASSES_CAMERA_ID } from '@/media/metaGlassesCamera';
 import { readStored, writeStored } from '@/lib/storage';
 import { deviceError, ensureDesktopPermission, type PermissionKind } from './deviceHelpers';
 
@@ -101,7 +102,10 @@ export function useDeviceInventory({
     refresh,
     microphones: listing('audioinput', 'Microphone'),
     speakers: listing('audiooutput', 'Speaker'),
-    cameras: listing('videoinput', 'Camera'),
+    cameras: [
+      ...listing('videoinput', 'Camera'),
+      ...(hasMetaGlassesCamera() ? [{ id: META_GLASSES_CAMERA_ID, label: 'Ray-Ban Meta glasses' }] : []),
+    ],
     input,
     output,
     camera,

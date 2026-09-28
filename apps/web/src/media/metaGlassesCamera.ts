@@ -14,6 +14,10 @@ type MetaEvent =
 const nativeCall = (method: string) =>
   Call.ByName(`bettercomms/desktop-wails.MetaCameraService.${method}`, nativePageToken());
 
+// Call video and the Settings preview may use the same SDK session together.
+// Stopping one canvas must not disconnect the other's glasses stream.
+let activeConsumers = 0;
+
 /** Convert native DAT frames into an ordinary call camera track on iOS. */
 export async function startMetaGlassesCamera(): Promise<{
   track: MediaStreamTrack;
@@ -32,6 +36,7 @@ export async function startMetaGlassesCamera(): Promise<{
   const track = stream.getVideoTracks()[0];
   if (!track) throw new Error('Could not create a glasses camera track.');
   let disposed = false;
+  let ownsNative = false;
   let firstFrame = false;
   let resolveFirst!: () => void;
   let rejectFirst!: (reason: Error) => void;
@@ -48,7 +53,8 @@ export async function startMetaGlassesCamera(): Promise<{
     window.clearTimeout(timeout);
     window.removeEventListener('bc-meta-camera', onMetaEvent);
     track.stop();
-    void nativeCall('MetaStop').catch(() => {});
+    if (ownsNative && --activeConsumers === 0)
+      void nativeCall('MetaStop').catch(() => {});
   };
   const onMetaEvent = (event: Event) => {
     if (disposed) return;
@@ -89,6 +95,8 @@ export async function startMetaGlassesCamera(): Promise<{
   };
   window.addEventListener('bc-meta-camera', onMetaEvent);
   try {
+    activeConsumers++;
+    ownsNative = true;
     await nativeCall('MetaStart');
     await ready;
     return { track, dispose };
