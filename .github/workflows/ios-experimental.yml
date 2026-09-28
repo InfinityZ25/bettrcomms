@@ -2,12 +2,22 @@ name: Experimental Wails iOS build
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ios-experimental.yml
+      - apps/desktop-wails/**
+      - apps/web/**
+      - scripts/package-desktop-wails-ios.sh
+      - scripts/patch-wails-ios-permissions.py
+      - package-lock.json
   pull_request:
     paths:
       - .github/workflows/ios-experimental.yml
       - apps/desktop-wails/**
       - apps/web/**
       - scripts/package-desktop-wails-ios.sh
+      - scripts/patch-wails-ios-permissions.py
       - package-lock.json
 
 permissions:
