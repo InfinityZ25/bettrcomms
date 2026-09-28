@@ -171,7 +171,7 @@ func run() error {
 		Assets: application.AssetOptions{
 			Handler: handler,
 		},
-		Services: services(&AuthService{signIn: signIn}, media, toasts),
+		Services: services(&AuthService{signIn: signIn}, media, toasts, gate),
 		Windows: application.WindowsOptions{
 			AdditionalBrowserArgs: []string{
 				"--autoplay-policy=no-user-gesture-required",
@@ -270,6 +270,7 @@ func services(
 	auth *AuthService,
 	media *NativeMediaService,
 	toasts *notifications.NotificationService,
+	gate *desktop.PageGate,
 ) []application.Service {
 	registered := []application.Service{
 		application.NewService(auth),
@@ -279,6 +280,9 @@ func services(
 	}
 	if toasts != nil {
 		registered = append(registered, application.NewService(toasts))
+	}
+	if runtime.GOOS == "ios" && gate != nil {
+		registered = append(registered, metaCameraService(gate))
 	}
 	return registered
 }

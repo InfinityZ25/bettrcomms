@@ -7,6 +7,11 @@ native permission prompt. This is a build-level change awaiting a fresh signed
 device check. Background calls, Meta glasses capture, and iPhone screen
 sharing remain native-media work, not browser capabilities.
 
+An experimental iOS-only Ray-Ban Meta source is being wired into the call
+camera picker through Meta's native Device Access Toolkit. It currently needs
+Developer Mode and physical Gen 1/Gen 2 device acceptance; browser builds do
+not expose glasses as a normal `videoinput` device.
+
 ## Unreleased — Wails-only desktop build
 
 The desktop app now builds solely from `apps/desktop-wails`. The removed desktop host, its JavaScript dependency, packaging workflow, and obsolete native test fixtures are no longer part of the repository. The shared frontend selects browser or Wails adapters from the validated desktop boot report. Windows builds stage the pinned FFmpeg runtime and model assets for Wails. macOS places native traffic lights over the app's own title area, bundles the BetterComms icon, ad hoc signs and verifies the Wails app, then provides one drag-to-Applications DMG per architecture. GitHub Actions wraps each DMG in an artifact ZIP. These builds remain unsigned by Developer ID and unnotarized; users may need Privacy & Security → Open Anyway.

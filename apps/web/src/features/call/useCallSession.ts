@@ -13,6 +13,7 @@ import { api, type Room, type User } from '@/api';
 import { CallMicrophone } from '@/media/pushToTalk';
 import { allowDesktopCapture } from '@/media/permissions';
 import { cameraCaptureConstraints, readCameraSettings } from '@/media/cameraSettings';
+import { META_GLASSES_CAMERA_ID, startMetaGlassesCamera } from '@/media/metaGlassesCamera';
 import { microphoneCaptureOptions } from '@/media/processingSettings';
 import { readRecordingQuality } from '@/media/recordingQuality';
 import { saveRecording } from '@/media/recordingLibrary';
@@ -41,6 +42,24 @@ type RecordingMetadata = { title: string; labels: Record<string, string> };
 const captureOptions = () => microphoneCaptureOptions(readStored('bc-input') ?? '');
 const cameraConstraints = () =>
   cameraCaptureConstraints(readStored('bc-camera') ?? '', readCameraSettings());
+
+async function captureSelectedCamera(media: MediaEngine, deviceId: string): Promise<void> {
+  if (deviceId === META_GLASSES_CAMERA_ID) {
+    const glasses = await startMetaGlassesCamera();
+    try {
+      await media.setLocalTrack('camera', glasses.track, glasses.dispose);
+    } catch (error) {
+      glasses.dispose();
+      throw error;
+    }
+  } else {
+    await allowDesktopCapture('camera');
+    await media.captureUserMedia({
+      camera: cameraCaptureConstraints(deviceId, readCameraSettings()),
+      microphone: false,
+    });
+  }
+}
 
 /**
  * Everything that makes a call a call: the media engine, the signaling socket,
@@ -379,7 +398,8 @@ export function useCallSession({
       try {
         await current.captureUserMedia({
           ...captureOptions(),
-          camera: current.getLocalTracks().has('camera') ? cameraConstraints() : false,
+          camera: current.getLocalTracks().has('camera') &&
+            readStored('bc-camera') !== META_GLASSES_CAMERA_ID ? cameraConstraints() : false,
         });
       } catch (error) {
         onError(errorMessage(error));
@@ -400,6 +420,7 @@ export function useCallSession({
         if (request !== current) return;
         const activeEngine = engine.current;
         if (!activeEngine?.getLocalTracks().has('camera')) return;
+        if (readStored('bc-camera') === META_GLASSES_CAMERA_ID) return;
         try {
           await activeEngine.captureUserMedia({
             camera: cameraConstraints(),
@@ -651,11 +672,7 @@ export function useCallSession({
       }
       if (locals.has('camera')) await engine.current.setLocalTrack('camera', null);
       else {
-        await allowDesktopCapture('camera');
-        await engine.current.captureUserMedia({
-          camera: cameraConstraints(),
-          microphone: false,
-        });
+        await captureSelectedCamera(engine.current, readStored('bc-camera') ?? '');
       }
     });
   }
@@ -667,20 +684,19 @@ export function useCallSession({
         onError('Join the call to choose a camera.');
         return;
       }
-      await allowDesktopCapture('camera');
       const cameraTrack = current.getLocalTracks().get('camera');
       // Choosing a source while video is off must not start publishing it.
-      if (!cameraTrack || (deviceId && cameraTrack.getSettings().deviceId === deviceId)) {
+      if (!cameraTrack || (deviceId && (
+        deviceId === META_GLASSES_CAMERA_ID
+          ? readStored('bc-camera') === deviceId
+          : cameraTrack.getSettings().deviceId === deviceId
+      ))) {
         writeStored('bc-camera', deviceId);
         window.dispatchEvent(new Event('bc-camera-selected'));
         return;
       }
-      const settings = readCameraSettings();
       try {
-        await current.captureUserMedia({
-          camera: cameraCaptureConstraints(deviceId, settings),
-          microphone: false,
-        });
+        await captureSelectedCamera(current, deviceId);
       } catch (error) {
         // The selected device may belong to another app, or the browser may
         // reject opening a second camera. We cannot distinguish those cases;

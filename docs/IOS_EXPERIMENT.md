@@ -27,6 +27,18 @@ the reported iPhone Safari and Chrome browsers do not expose
 `getDisplayMedia`. Capturing the iPhone display would need a separate native
 ReplayKit broadcast implementation and device testing.
 
+The experimental Ray-Ban Meta camera path uses Meta Wearables Device Access
+Toolkit 1.0.0 in the iOS host. It is available in the in-call camera picker on
+this native build only. Pair Gen 1 or Gen 2 glasses in the Meta AI app and
+enable Developer Mode there; the first selection may redirect to Meta AI for
+registration or glasses-camera consent. The native host sends bounded JPEG
+frames to the packaged page, which publishes them as a canvas camera track.
+This is a foreground-only proof of the media bridge. It needs physical glasses
+acceptance for registration, permission callback, WebKit canvas publication,
+remote viewing, switching, and teardown before calling it working. The app
+does not claim background glasses video, because DAT raw frames and WKWebView
+publishing stop when the iPhone backgrounds.
+
 The iOS build uses Wails' UIKit browser opener for WorkOS sign-in and reports
 native window chrome to the shared frontend, so desktop minimize/maximize/close
 controls are not drawn on iPhone. A signed build opened on a physical iPhone

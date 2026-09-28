@@ -516,8 +516,9 @@ export class MediaEngine extends EventTarget {
   async setLocalTrack(
     source: MediaSourceKind,
     track: MediaStreamTrack | null,
+    cleanup?: () => void,
   ): Promise<void> {
-    return this.replaceLocalTrack(source, track);
+    return this.replaceLocalTrack(source, track, cleanup);
   }
 
   private async replaceLocalTrack(

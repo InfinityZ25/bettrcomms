@@ -24,6 +24,18 @@ ipa="$app/bin/bettercomms-wails-$version-ios-arm64-adhoc.ipa"
 scratch="$(mktemp -d)"
 trap 'rm -rf "$scratch"' EXIT
 
+# DAT 1.0.0 ships binary Swift frameworks. Pin both the tag and commit so a
+# changed upstream tag cannot silently change what the iPhone archive embeds.
+meta_sdk="$scratch/meta-wearables-dat-ios"
+git clone --quiet --depth 1 --branch 1.0.0 \
+  https://github.com/facebook/meta-wearables-dat-ios.git "$meta_sdk"
+if [[ "$(git -C "$meta_sdk" rev-parse HEAD)" != "1f38beecba83c4c8b5e343540f9cd615323ab19a" ]]; then
+  echo 'Unexpected Meta Wearables DAT 1.0.0 commit.' >&2
+  exit 1
+fi
+meta_core="$meta_sdk/MWDATCore.xcframework/ios-arm64"
+meta_camera="$meta_sdk/MWDATCamera.xcframework/ios-arm64"
+
 # Wails beta.18 has no iOS media-permission delegate. Patch a disposable
 # module copy so the packaged page gets only the system's native permission
 # dialog, while navigated/untrusted pages keep WebKit's prompt.
@@ -46,21 +58,30 @@ mkdir -p "$app/bin"
   wails3 ios overlay:gen -out build/ios/xcode/overlay.json -config build/config.yml
   wails3 ios xcode:gen -outdir build/ios/xcode -config build/config.yml
   export GOOS=ios GOARCH=arm64 CGO_ENABLED=1
-  export CGO_CFLAGS="-isysroot $sdk -target arm64-apple-ios15.0 -miphoneos-version-min=15.0"
-  export CGO_LDFLAGS="-isysroot $sdk -target arm64-apple-ios15.0"
+  export CGO_CFLAGS="-isysroot $sdk -target arm64-apple-ios17.2 -miphoneos-version-min=17.2"
+  export CGO_LDFLAGS="-isysroot $sdk -target arm64-apple-ios17.2"
   go build -buildmode=c-archive -modfile="$scratch/build.mod" -overlay build/ios/xcode/overlay.json \
     -tags production,ios -trimpath -buildvcs=false \
     -ldflags '-X main.bakedAPIOrigin=https://app.bettrcomms.com' \
     -o "$archive" .
 )
 
-xcrun --sdk iphoneos clang -target arm64-apple-ios15.0 -isysroot "$sdk" \
+xcrun --sdk iphoneos clang -target arm64-apple-ios17.2 -isysroot "$sdk" \
+  -fobjc-arc -fmodules -I "$scratch/wails/pkg/application" \
+  -F "$meta_core" -F "$meta_camera" \
+  -c "$app/meta_camera_ios.m" -o "$app/bin/meta_camera_ios.o"
+
+xcrun --sdk iphoneos clang -target arm64-apple-ios17.2 -isysroot "$sdk" \
+  -F "$meta_core" -F "$meta_camera" \
   -framework Foundation -framework UIKit -framework WebKit \
   -framework Security -framework CoreFoundation -framework UniformTypeIdentifiers \
   -framework LocalAuthentication -framework UserNotifications -framework AVFoundation \
   -framework CoreLocation -framework CoreMotion -framework SystemConfiguration \
+  -framework MWDATCore -framework MWDATCamera \
+  -Wl,-rpath,@executable_path/Frameworks \
   -lresolv -o "$app/bin/BetterComms" \
-  "$app/build/ios/xcode/main/main.m" -Wl,-force_load,"$archive"
+  "$app/build/ios/xcode/main/main.m" "$app/bin/meta_camera_ios.o" \
+  -Wl,-force_load,"$archive"
 
 rm -rf "$bundle"
 mkdir -p "$bundle"
@@ -69,6 +90,25 @@ cp "$app/build/ios/xcode/main/Info.plist" "$bundle/Info.plist"
 /usr/libexec/PlistBuddy -c 'Set :CFBundleExecutable BetterComms' "$bundle/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :NSCameraUsageDescription string BetterComms uses your camera when you enable video.' "$bundle/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :NSMicrophoneUsageDescription string BetterComms uses your microphone when you join a call.' "$bundle/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :NSBluetoothAlwaysUsageDescription string BetterComms connects to your Meta AI glasses when you select their camera.' "$bundle/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :NSLocalNetworkUsageDescription string BetterComms connects to your Meta AI glasses over your local network.' "$bundle/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :NSBonjourServices array' "$bundle/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :NSBonjourServices:0 string _bonjour._tcp' "$bundle/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :UISupportedExternalAccessoryProtocols array' "$bundle/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :UISupportedExternalAccessoryProtocols:0 string com.meta.ar.wearable' "$bundle/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :UIBackgroundModes array' "$bundle/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :UIBackgroundModes:0 string bluetooth-central' "$bundle/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :UIBackgroundModes:1 string bluetooth-peripheral' "$bundle/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :UIBackgroundModes:2 string external-accessory' "$bundle/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes array' "$bundle/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes:0 dict' "$bundle/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes:0:CFBundleURLSchemes array' "$bundle/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string bettrcomms-meta' "$bundle/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :MWDAT dict' "$bundle/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :MWDAT:AppLinkURLScheme string bettrcomms-meta://' "$bundle/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :MWDAT:MetaAppID string 0' "$bundle/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :MWDAT:ClientToken string' "$bundle/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :MWDAT:TeamID string 764FPKS8YP' "$bundle/Info.plist"
 xcrun --sdk iphoneos ibtool --compile "$bundle/LaunchScreen.storyboardc" \
   "$app/build/ios/xcode/main/LaunchScreen.storyboard"
 
@@ -84,6 +124,12 @@ xcrun --sdk iphoneos actool \
 cp "$assets/Assets.car" "$bundle/Assets.car"
 /usr/libexec/PlistBuddy -c "Merge $bundle/assetcatalog_generated_info.plist" "$bundle/Info.plist"
 plutil -lint "$bundle/Info.plist"
+
+mkdir -p "$bundle/Frameworks"
+cp -R "$meta_core/MWDATCore.framework" "$bundle/Frameworks/"
+cp -R "$meta_camera/MWDATCamera.framework" "$bundle/Frameworks/"
+codesign --force --sign - "$bundle/Frameworks/MWDATCore.framework"
+codesign --force --sign - "$bundle/Frameworks/MWDATCamera.framework"
 
 # The artifact is a device-target IPA for a developer to re-sign with their
 # own certificate and provisioning profile. Ad-hoc signing is not installable
