@@ -1,5 +1,8 @@
 name: Validate
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
 permissions:
   contents: read
 jobs:
@@ -25,8 +28,9 @@ jobs:
         run: |
           bash scripts/package-desktop-wails-macos.sh
           codesign --verify --deep --strict --verbose=2 apps/desktop-wails/bin/BetterComms.app
-          test -s apps/desktop-wails/bin/*-macos-arm64.zip
           test -s apps/desktop-wails/bin/*-macos-arm64.dmg
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' apps/desktop-wails/bin/BetterComms.app/Contents/Info.plist)" = appicon.icns
+          test -s apps/desktop-wails/bin/BetterComms.app/Contents/Resources/appicon.icns
           mountpoint=$(mktemp -d)
           hdiutil attach -readonly -nobrowse -mountpoint "$mountpoint" apps/desktop-wails/bin/*-macos-arm64.dmg
           codesign --verify --deep --strict --verbose=2 "$mountpoint/BetterComms.app"

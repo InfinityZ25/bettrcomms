@@ -122,9 +122,11 @@ On macOS 15 or later, run the package script from the repository root:
 npm run build:desktop-wails:macos
 ```
 
-The script builds and stages the shared frontend, builds `BetterComms.app`,
-ad hoc signs and verifies its bundle, and
-produces ZIP and DMG previews in `apps/desktop-wails/bin/`. Open the DMG and
+The script builds and stages the shared frontend, builds `BetterComms.app` with
+the BetterComms icon and an integrated macOS title bar, ad hoc signs and
+verifies its bundle, and produces one DMG in `apps/desktop-wails/bin/`. GitHub
+Actions wraps each uploaded DMG in an artifact ZIP; extracting it yields just
+the DMG. Open the DMG and
 drag the app to Applications. Gatekeeper may block this unnotarized preview;
 use System Settings → Privacy & Security → Open Anyway for this app. Developer
 ID signing and notarization remain release gates.

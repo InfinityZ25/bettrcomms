@@ -12,6 +12,7 @@ const viewports = [
 type Violation = { id: string; impact: string | null; targets: string[][] };
 
 async function audit(page: Page): Promise<Violation[]> {
+  await expect(page.locator('html')).toHaveClass(/dark/);
   const result = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
     .analyze();
@@ -108,6 +109,9 @@ test("utility screens have no A/AA violations or viewport overflow", async ({ br
     const page = await context.newPage();
     for (const screen of screens) {
       await page.goto(screen.route === 'settings' ? '/' : `/#/${screen.route}`);
+      // Hash navigation reuses the document and axe's cached light-theme colors
+      // from the Settings audit. A reload audits the Recordings screen as drawn.
+      if (screen.route === 'recordings') await page.reload();
       if (screen.route === 'settings') {
         await page.getByRole('button', { name: 'Accessibility QA and account options' }).click();
         await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();

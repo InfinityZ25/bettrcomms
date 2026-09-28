@@ -369,6 +369,7 @@ export default function CallStage({
           onToggleMute={call.toggleMute}
           onToggleDeafen={call.toggleDeafen}
           onToggleCamera={call.toggleCamera}
+          onSelectCamera={call.selectCamera}
           onToggleShare={call.toggleScreen}
           onToggleRecord={call.toggleRecord}
           onLeave={call.leave}

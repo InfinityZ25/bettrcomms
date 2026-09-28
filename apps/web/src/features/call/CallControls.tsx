@@ -10,6 +10,7 @@ import {
   VideoOff,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import CameraSourceMenu from './CameraSourceMenu';
 
 /** The microphone, headphones, camera, share, record and leave row. */
 export default function CallControls({
@@ -25,6 +26,7 @@ export default function CallControls({
   onToggleMute,
   onToggleDeafen,
   onToggleCamera,
+  onSelectCamera,
   onToggleShare,
   onToggleRecord,
   onLeave,
@@ -42,6 +44,7 @@ export default function CallControls({
   onToggleMute(): void;
   onToggleDeafen(): void;
   onToggleCamera(): void;
+  onSelectCamera(deviceId: string): Promise<void>;
   onToggleShare(): void;
   onToggleRecord(): void;
   onLeave(): void;
@@ -81,6 +84,7 @@ export default function CallControls({
       >
         {cameraOn ? <Video size={19} /> : <VideoOff size={19} />}
       </Button>
+      {joined && <CameraSourceMenu busy={busy} onSelect={onSelectCamera} />}
       {joined ? (
         <>
           <Button

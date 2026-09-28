@@ -181,11 +181,14 @@ func run() error {
 		Title:  "BetterComms",
 		Width:  1440,
 		Height: 900,
-		// The page draws its own title bar everywhere except macOS, matching
-		// apps/web/src/features/shell/DesktopFrame.tsx.
+		// macOS keeps native traffic lights but extends the webview into their
+		// title area, where DesktopFrame reserves space for them.
 		Frameless:        controls.Mode == "client-side",
 		BackgroundColour: application.NewRGB(20, 20, 24),
 		URL:              "/",
+		Mac: application.MacWindow{
+			TitleBar: application.MacTitleBarHidden,
+		},
 		// WebView2 owns caption dragging while Wails maps the frontend button
 		// rectangles to HTMINBUTTON/HTMAXBUTTON/HTCLOSE. This preserves native
 		// hit testing and Windows 11 Snap Layouts without better-gui.

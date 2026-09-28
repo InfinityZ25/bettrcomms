@@ -26,7 +26,7 @@ import { readQuality } from '@/features/settings/MediaSettings';
 import { readConnectionMode } from '@/media/connectionMode';
 import { hasNativeMediaHost } from '@/desktop/nativeMedia';
 import { errorMessage } from '@/lib/errors';
-import { readStored } from '@/lib/storage';
+import { readStored, writeStored } from '@/lib/storage';
 import { createCallPeerId } from './callPeerId';
 import type {
   CallPresence,
@@ -660,6 +660,42 @@ export function useCallSession({
     });
   }
 
+  async function selectCamera(deviceId: string) {
+    await perform(async () => {
+      const current = engine.current;
+      if (!current) {
+        onError('Join the call to choose a camera.');
+        return;
+      }
+      await allowDesktopCapture('camera');
+      const cameraTrack = current.getLocalTracks().get('camera');
+      // Choosing a source while video is off must not start publishing it.
+      if (!cameraTrack || (deviceId && cameraTrack.getSettings().deviceId === deviceId)) {
+        writeStored('bc-camera', deviceId);
+        window.dispatchEvent(new Event('bc-camera-selected'));
+        return;
+      }
+      const settings = readCameraSettings();
+      try {
+        await current.captureUserMedia({
+          camera: cameraCaptureConstraints(deviceId, settings),
+          microphone: false,
+        });
+      } catch (error) {
+        // The selected device may belong to another app, or the browser may
+        // reject opening a second camera. We cannot distinguish those cases;
+        // keep the working feed and make the workaround conditional.
+        if (error instanceof DOMException &&
+            ['NotReadableError', 'AbortError'].includes(error.name)) {
+          throw new Error('Could not open that camera; it may be busy or unavailable. Your current video is still live. If your browser limits cameras, turn video off, select it, then turn video on.');
+        }
+        throw error;
+      }
+      writeStored('bc-camera', deviceId);
+      window.dispatchEvent(new Event('bc-camera-selected'));
+    });
+  }
+
   function toggleMute() {
     if (engine.current) callMicrophone.toggleMute();
     else onError('Join a call to use your microphone.');
@@ -748,6 +784,7 @@ export function useCallSession({
     leave,
     toggleScreen,
     toggleCamera,
+    selectCamera,
     toggleMute,
     toggleDeafen,
     toggleRecord,

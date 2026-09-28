@@ -22,9 +22,9 @@ cp -R "$repo/apps/web/dist/." "$staged/"
 
 bundle="$app/bin/BetterComms.app"
 binary="$bundle/Contents/MacOS/bettercomms-wails"
-archive="$app/bin/bettercomms-wails-$version-macos-$arch.zip"
 dmg="$app/bin/bettercomms-wails-$version-macos-$arch.dmg"
 rm -rf "$bundle"
+rm -f "$app/bin/bettercomms-wails-$version-macos-$arch.zip"
 mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
 
 (
@@ -47,6 +47,7 @@ cat > "$bundle/Contents/Info.plist" <<PLIST
   <key>CFBundleName</key><string>BetterComms</string>
   <key>CFBundleDisplayName</key><string>BetterComms</string>
   <key>CFBundleExecutable</key><string>bettercomms-wails</string>
+  <key>CFBundleIconFile</key><string>appicon.icns</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$version</string>
   <key>CFBundleVersion</key><string>$version</string>
@@ -56,15 +57,23 @@ cat > "$bundle/Contents/Info.plist" <<PLIST
   <key>NSCameraUsageDescription</key><string>BetterComms uses your camera when you enable video.</string>
 </dict></plist>
 PLIST
-cp "$app/build/appicon.png" "$bundle/Contents/Resources/appicon.png"
+cp "$app/build/darwin/icon.icns" "$bundle/Contents/Resources/appicon.icns"
 plutil -lint "$bundle/Contents/Info.plist"
 codesign --force --deep --sign - --identifier com.bettrcomms.wails "$bundle"
 codesign --verify --deep --strict --verbose=2 "$bundle"
-ditto -c -k --sequesterRsrc --keepParent "$bundle" "$archive"
 staging="$(mktemp -d)"
 trap 'rm -rf "$staging"' EXIT
 ditto "$bundle" "$staging/BetterComms.app"
 ln -s /Applications "$staging/Applications"
-hdiutil create -ov -fs HFS+ -srcfolder "$staging" -volname BetterComms -format UDZO "$dmg"
-echo "macOS archive: $archive"
+for attempt in 1 2 3; do
+  if hdiutil create -ov -fs HFS+ -srcfolder "$staging" -volname BetterComms -format UDZO "$dmg"; then
+    break
+  fi
+  rm -f "$dmg"
+  if [[ "$attempt" == 3 ]]; then
+    echo 'Could not create the macOS disk image after three attempts.' >&2
+    exit 1
+  fi
+  sleep 3
+done
 echo "macOS disk image: $dmg"

@@ -1,5 +1,6 @@
 import { openMessageSearch } from '@/features/chat/searchEvents';
-import { Headphones, Plus, Search } from 'lucide-react';
+import { useEffect } from 'react';
+import { Headphones, Plus, Search, X } from 'lucide-react';
 import { Avatar } from '@/components/avatar';
 import { Mascot } from '@/components/mascot';
 import { Button } from '@/components/ui/button';
@@ -10,6 +11,13 @@ import {
   SidebarHeader,
   useSidebar,
 } from '@/components/ui/sidebar';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import RoomNavigation, { roomLabel } from '@/features/rooms/RoomNavigation';
 import type { CallParticipant, Room, User } from '@/api';
 import type { Screen } from './useScreenRoute';
@@ -57,12 +65,15 @@ export default function RoomSidebar({
   onRoomsChanged: () => void;
   onError: (message: string) => void;
 }) {
-  const { open } = useSidebar();
+  const { open, openMobile, setOpenMobile, isMobile } = useSidebar();
   // Being in a call used to hide this outright. Whether the room list is on
   // screen is the reader's choice, made with the toggle, and a call is not a
   // reason to take it away from them; full-focus mode still hides everything,
   // because that is what asking for it means.
   const visible = open && !hidden;
+  useEffect(() => {
+    if (!isMobile || hidden || screen === 'share') setOpenMobile(false);
+  }, [hidden, isMobile, screen, setOpenMobile]);
 
   const messages = section === 'messages';
   const listed = rooms.filter(
@@ -74,74 +85,133 @@ export default function RoomSidebar({
   const conversation =
     messages && room && (room.kind ?? 'channel') === 'direct' ? room : null;
 
-  return (
-    <motion.div
-      className="hidden h-full shrink-0 overflow-hidden min-[821px]:block [--room-sidebar-width:186px] min-[1251px]:[--room-sidebar-width:210px] min-[1400px]:[--room-sidebar-width:248px]"
-      initial={false}
-      animate={{
-        width: visible ? 'var(--room-sidebar-width)' : 0,
-        opacity: visible ? 1 : 0,
-      }}
-      transition={softSpring}
-      aria-hidden={!visible}
-    >
-      <Sidebar
-        aria-label="Conversations"
-        collapsible="none"
-        className="sidebar h-full w-(--room-sidebar-width) shrink-0 rounded-2xl bg-sidebar"
-        inert={screen === 'share' || !visible}
-      >
-        <SidebarHeader className="px-3 pt-3 pb-1">
-          {user && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => openMessageSearch()}
-              aria-label="Search all messages"
-            >
-              <Search size={14} />
-              Search messages
-            </Button>
-          )}
-          <h2 className="font-heading text-sm font-semibold tracking-tight">
-            {messages ? 'Messages' : 'Calls'}
-          </h2>
-          <p className="text-[0.65rem] leading-4 text-muted-foreground">
-            {messages
-              ? 'Your direct conversations.'
-              : 'Rooms you and your friends call in.'}
-          </p>
-        </SidebarHeader>
+  const sidebarContent = (
+    <>
+      <SidebarHeader className="px-3 pt-3 pb-1 max-[820px]:pr-10">
+        {user && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setOpenMobile(false);
+              openMessageSearch();
+            }}
+            aria-label="Search all messages"
+          >
+            <Search size={14} />
+            Search messages
+          </Button>
+        )}
+        <h2 className="font-heading text-sm font-semibold tracking-tight">
+          {messages ? 'Messages' : 'Calls'}
+        </h2>
+        <p className="text-[0.65rem] leading-4 text-muted-foreground">
+          {messages
+            ? 'Your direct conversations.'
+            : 'Rooms you and your friends call in.'}
+        </p>
+      </SidebarHeader>
 
-        <SidebarContent className="px-1">
-          {conversation && (
-            <ConversationProfile
-              room={conversation}
-              callers={presence[conversation.id] ?? []}
-              known={presenceKnown}
-            />
-          )}
-          {listed.length ? (
-            <RoomNavigation
-              rooms={listed}
-              kind={messages ? 'direct' : 'channel'}
-              user={user}
-              selected={room?.id}
-              presence={presence}
-              known={presenceKnown}
-              onSelect={onSelectRoom}
-              onCreate={onCreateRoom}
-              onRoomSettings={onRoomSettings}
-              onInviteToRoom={onInviteToRoom}
-              onRoomsChanged={onRoomsChanged}
-              onError={onError}
-            />
-          ) : (
-            <Empty messages={messages} onCreateRoom={onCreateRoom} />
-          )}
-        </SidebarContent>
-      </Sidebar>
-    </motion.div>
+      <SidebarContent className="px-1">
+        {conversation && (
+          <ConversationProfile
+            room={conversation}
+            callers={presence[conversation.id] ?? []}
+            known={presenceKnown}
+          />
+        )}
+        {listed.length ? (
+          <RoomNavigation
+            rooms={listed}
+            kind={messages ? 'direct' : 'channel'}
+            user={user}
+            selected={room?.id}
+            presence={presence}
+            known={presenceKnown}
+            onSelect={(next) => {
+              setOpenMobile(false);
+              onSelectRoom(next);
+            }}
+            onCreate={() => {
+              setOpenMobile(false);
+              onCreateRoom();
+            }}
+            onRoomSettings={(next) => {
+              setOpenMobile(false);
+              onRoomSettings(next);
+            }}
+            onInviteToRoom={(next) => {
+              setOpenMobile(false);
+              onInviteToRoom(next);
+            }}
+            onRoomsChanged={onRoomsChanged}
+            onError={onError}
+          />
+        ) : (
+          <Empty
+            messages={messages}
+            onCreateRoom={() => {
+              setOpenMobile(false);
+              onCreateRoom();
+            }}
+          />
+        )}
+      </SidebarContent>
+    </>
+  );
+
+  return (
+    <>
+      <motion.div
+        className="hidden h-full shrink-0 overflow-hidden min-[821px]:block [--room-sidebar-width:186px] min-[1251px]:[--room-sidebar-width:210px] min-[1400px]:[--room-sidebar-width:248px]"
+        initial={false}
+        animate={{
+          width: visible ? 'var(--room-sidebar-width)' : 0,
+          opacity: visible ? 1 : 0,
+        }}
+        transition={softSpring}
+        aria-hidden={!visible}
+      >
+        <Sidebar
+          aria-label="Conversations"
+          collapsible="none"
+          className="sidebar h-full w-(--room-sidebar-width) shrink-0 rounded-2xl bg-sidebar"
+          inert={screen === 'share' || !visible}
+        >
+          {sidebarContent}
+        </Sidebar>
+      </motion.div>
+      <Sheet open={openMobile && !hidden && screen !== 'share'} onOpenChange={setOpenMobile}>
+        <SheetContent
+          side="right"
+          showCloseButton={false}
+          className="min-[821px]:hidden bg-sidebar p-0"
+          style={{ width: '66.667vw', maxWidth: 'none' }}
+        >
+          <SheetHeader className="sr-only">
+            <SheetTitle>Conversations</SheetTitle>
+            <SheetDescription>Rooms and direct messages.</SheetDescription>
+          </SheetHeader>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="absolute top-2 right-2 z-10"
+            aria-label="Close sidebar"
+            onClick={() => setOpenMobile(false)}
+          >
+            <X size={16} />
+          </Button>
+          <Sidebar
+            aria-label="Conversations"
+            collapsible="none"
+            className="sidebar h-full w-full min-w-0 rounded-l-2xl bg-sidebar"
+            inert={screen === 'share'}
+          >
+            {sidebarContent}
+          </Sidebar>
+        </SheetContent>
+      </Sheet>
+    </>
   );
 }
 
