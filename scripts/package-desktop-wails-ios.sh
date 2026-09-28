@@ -123,6 +123,10 @@ cp "$app/build/ios/xcode/main/Info.plist" "$bundle/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :MWDAT:MetaAppID string 0' "$bundle/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :MWDAT:ClientToken string' "$bundle/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :MWDAT:TeamID string 764FPKS8YP' "$bundle/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :MWDAT:Analytics dict' "$bundle/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :MWDAT:Analytics:OptOut bool true' "$bundle/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :MWDAT:CrashReporting dict' "$bundle/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :MWDAT:CrashReporting:OptOut bool true' "$bundle/Info.plist"
 xcrun --sdk iphoneos ibtool --compile "$bundle/LaunchScreen.storyboardc" \
   "$app/build/ios/xcode/main/LaunchScreen.storyboard"
 
