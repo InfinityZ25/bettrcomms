@@ -275,7 +275,7 @@ export default function App() {
         data-app-shell
         data-in-call={callJoined}
         data-call-focused={immersive}
-        className="app-shell flex h-dvh min-h-0 gap-1.5 overflow-hidden overscroll-none bg-sidebar px-2 py-2 pt-[max(0.5rem,env(safe-area-inset-top))] pb-[max(0.5rem,env(safe-area-inset-bottom))] min-[821px]:min-h-[680px] select-none [[data-desktop-frame]_&]:pt-0"
+        className="app-shell flex h-dvh min-h-0 gap-1.5 overflow-hidden overscroll-none bg-sidebar px-2 py-2 pt-[max(0.5rem,env(safe-area-inset-top))] pb-[max(0.5rem,env(safe-area-inset-bottom))] select-none [[data-desktop-frame]_&]:pt-0"
       >
         <div className="relative min-w-0 flex-1 overflow-hidden">
           <main
