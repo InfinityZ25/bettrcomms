@@ -17,15 +17,21 @@ static WailsViewController *BCMetaPage(void) {
     return page;
 }
 
-static void BCMetaEmit(NSDictionary *detail) {
+static void BCMetaEmitWithCompletion(NSDictionary *detail, void (^completion)(void)) {
     WailsViewController *page = BCMetaPage();
-    if (!page) return;
+    if (!page) { if (completion) completion(); return; }
     NSData *data = [NSJSONSerialization dataWithJSONObject:detail options:0 error:nil];
-    if (!data) return;
+    if (!data) { if (completion) completion(); return; }
     NSString *json = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
     NSString *script = [NSString stringWithFormat:
         @"window.dispatchEvent(new CustomEvent('bc-meta-camera',{detail:%@}));", json];
-    [page.webView evaluateJavaScript:script completionHandler:nil];
+    [page.webView evaluateJavaScript:script completionHandler:^(__unused id result, __unused NSError *error) {
+        if (completion) completion();
+    }];
+}
+
+static void BCMetaEmit(NSDictionary *detail) {
+    BCMetaEmitWithCompletion(detail, nil);
 }
 
 @interface BCMetaCamera : NSObject
@@ -200,8 +206,13 @@ static void BCMetaEmit(NSDictionary *detail) {
     dispatch_async(dispatch_get_main_queue(), ^{
         if (self.stream) {
             if (!BCMetaPage()) [self stop];
-            else BCMetaEmit(@{@"kind": @"frame", @"jpeg": base64,
-                              @"width": width, @"height": height});
+            else {
+                BCMetaEmitWithCompletion(@{@"kind": @"frame", @"jpeg": base64,
+                                           @"width": width, @"height": height}, ^{
+                    @synchronized (self) { self.framePending = NO; }
+                });
+                return;
+            }
         }
         @synchronized (self) { self.framePending = NO; }
     });
@@ -215,6 +226,7 @@ static void BCMetaEmit(NSDictionary *detail) {
     self.stream = nil;
     self.camera = nil;
     self.session = nil;
+    self.framePending = NO;
     BCMetaEmit(@{@"kind": @"stopped"});
 }
 

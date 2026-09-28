@@ -14,15 +14,21 @@ static WailsViewController *BCScreenPage(void) {
     return page;
 }
 
-static void BCScreenEmit(NSDictionary *detail) {
+static void BCScreenEmitWithCompletion(NSDictionary *detail, void (^completion)(void)) {
     WailsViewController *page = BCScreenPage();
-    if (!page) return;
+    if (!page) { if (completion) completion(); return; }
     NSData *data = [NSJSONSerialization dataWithJSONObject:detail options:0 error:nil];
-    if (!data) return;
+    if (!data) { if (completion) completion(); return; }
     NSString *json = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
     NSString *script = [NSString stringWithFormat:
         @"window.dispatchEvent(new CustomEvent('bc-ios-app-screen',{detail:%@}));", json];
-    [page.webView evaluateJavaScript:script completionHandler:nil];
+    [page.webView evaluateJavaScript:script completionHandler:^(__unused id result, __unused NSError *error) {
+        if (completion) completion();
+    }];
+}
+
+static void BCScreenEmit(NSDictionary *detail) {
+    BCScreenEmitWithCompletion(detail, nil);
 }
 
 @interface BCIOSAppScreen : NSObject
@@ -114,8 +120,13 @@ static void BCScreenEmit(NSDictionary *detail) {
     dispatch_async(dispatch_get_main_queue(), ^{
         if (self.capturing && self.generation == generation) {
             if (!BCScreenPage()) [self stop];
-            else BCScreenEmit(@{@"kind": @"frame", @"jpeg": base64,
-                                @"width": width, @"height": height});
+            else {
+                BCScreenEmitWithCompletion(@{@"kind": @"frame", @"jpeg": base64,
+                                              @"width": width, @"height": height}, ^{
+                    self.framePending = NO;
+                });
+                return;
+            }
         }
         self.framePending = NO;
     });
