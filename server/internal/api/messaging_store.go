@@ -106,7 +106,7 @@ func (s *PostgresStore) WriteMessage(room, user, id, body, replyID string) (Mess
 	defer tx.Rollback(ctx)
 	// Allocate per-room message order only after earlier room writes commit.
 	// Otherwise a late commit with a lower sequence could land behind a read cursor.
-	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, room); err != nil {
+	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::uuid::text,0))`, room); err != nil {
 		return Message{}, err
 	}
 	// Lock membership until the write commits; a revoked member cannot race a

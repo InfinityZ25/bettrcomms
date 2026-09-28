@@ -231,7 +231,7 @@ func (s *PostgresStore) CreateMessage(rid, uid, body string) (Message, error) {
 		return Message{}, e
 	}
 	defer tx.Rollback(ctx)
-	if _, e = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, rid); e != nil {
+	if _, e = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::uuid::text,0))`, rid); e != nil {
 		return Message{}, e
 	}
 	var m Message

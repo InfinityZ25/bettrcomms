@@ -45,6 +45,45 @@ func TestMessagingIntegration(t *testing.T) {
 	if _, err = db.Exec(ctx, `INSERT INTO room_members(room_id,user_id) VALUES($1,$2)`, room.ID, bob.ID); err != nil {
 		t.Fatal(err)
 	}
+	// The invitation trigger hashes PostgreSQL's canonical UUID text. A writer
+	// using an uppercase spelling must wait on that same per-room lock.
+	lockRoom, err := store.CreateRoom(alice.ID, "Lock probe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Exec(ctx, `DELETE FROM rooms WHERE id=$1`, lockRoom.ID)
+	lockTx, err := db.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lockTx.Rollback(ctx)
+	if _, err = lockTx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::uuid::text,0))`, lockRoom.ID); err != nil {
+		t.Fatal(err)
+	}
+	writeDone := make(chan error, 1)
+	writeStarted := make(chan struct{})
+	go func() {
+		close(writeStarted)
+		_, writeErr := store.WriteMessage(strings.ToUpper(lockRoom.ID), alice.ID, "", "lock probe", "")
+		writeDone <- writeErr
+	}()
+	<-writeStarted
+	select {
+	case writeErr := <-writeDone:
+		t.Fatalf("uppercase room writer bypassed advisory lock: %v", writeErr)
+	case <-time.After(150 * time.Millisecond):
+	}
+	if err = lockTx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case writeErr := <-writeDone:
+		if writeErr != nil {
+			t.Fatal(writeErr)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("uppercase room writer did not resume after releasing the lock")
+	}
 	sessions := Sessions{Store: store}
 	a := New(store, sessions, Config{AppURL: "http://localhost"})
 	call := func(user User, method, path, body string, want int) []byte {
