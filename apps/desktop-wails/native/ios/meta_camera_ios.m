@@ -167,12 +167,17 @@ static void BCMetaEmit(NSDictionary *detail) {
     }
     if (now - self.deviceWaitStarted >= 60) {
         [self reportError:@"Meta AI authorized BetterComms, but its glasses camera link did not become available. Headset audio can still work. Check the glasses connection and developer component in Meta AI."];
+        [self stop];
         return;
     }
     if (self.deviceRetryScheduled) return;
     self.deviceRetryScheduled = YES;
     NSUInteger generation = self.deviceWaitGeneration;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(NSEC_PER_SEC)),
+    // A connected Bluetooth device can still be waiting for Meta's DAT data
+    // channel. Give that channel time to settle instead of rapidly cycling
+    // sessions and abandoning the request after only five attempts.
+    NSTimeInterval retryDelay = self.sessionCreateRetries ? 3.0 : 1.0;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(retryDelay * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
         if (generation != self.deviceWaitGeneration) return;
         self.deviceRetryScheduled = NO;
@@ -204,6 +209,7 @@ static void BCMetaEmit(NSDictionary *detail) {
         return;
     }
     self.startingSession = YES;
+    if (self.deviceWaitStarted == 0) self.deviceWaitStarted = CFAbsoluteTimeGetCurrent();
     BCMetaEmit(@{@"kind": @"starting"});
     // Meta's CameraAccess sample opens the device session before checking or
     // requesting camera consent. Keep the ready session across the Meta AI
@@ -237,9 +243,8 @@ static void BCMetaEmit(NSDictionary *detail) {
     if (!session) {
         NSLog(@"BetterComms Meta: session creation failed (%@, %ld, selected=%d)",
               error.domain, (long)error.code, selectedDevice.length > 0);
-        if ((!self.deviceSelector.activeDevice.length ||
-             [error.localizedDescription localizedCaseInsensitiveContainsString:@"eligible device"]) &&
-            self.sessionCreateRetries < 4) {
+        if (!self.deviceSelector.activeDevice.length ||
+            [error.localizedDescription localizedCaseInsensitiveContainsString:@"eligible device"]) {
             self.sessionCreateRetries++;
             self.startingSession = NO;
             [self waitForDevice];
@@ -260,7 +265,7 @@ static void BCMetaEmit(NSDictionary *detail) {
                       (unsigned long)self.sessionCreateRetries + 1);
                 [session stop];
                 self.session = nil;
-                if (self.sessionCreateRetries < 4) {
+                if ([startError.localizedDescription localizedCaseInsensitiveContainsString:@"eligible device"]) {
                     self.sessionCreateRetries++;
                     self.startingSession = NO;
                     [self waitForDevice];
