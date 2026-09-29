@@ -1,5 +1,12 @@
 # BetterComms preview release notes
 
+The iPhone Meta glasses camera request now stays pending while Meta AI opens
+for registration or camera permission. Returning from Meta AI resumes capture
+automatically, and the app no longer reports an immediate error or stops the
+pending request merely because the handoff backgrounds BetterComms. Meta AI
+can still report its own registration error; streaming from Gen 1 and Gen 2
+glasses awaits a successful physical-device acceptance test.
+
 The next iPhone preview stores its proxy session in Apple Keychain so closing
 the app no longer discards sign-in. The iPhone native call, screen, and glasses
 bridges now use stable Wails binding IDs. Camera startup retries with lower

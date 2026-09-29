@@ -40,9 +40,14 @@ export async function startMetaGlassesCamera(): Promise<{
     resolveFirst = resolve;
     rejectFirst = reject;
   });
-  const timeout = window.setTimeout(() => {
-    rejectFirst(new Error('Glasses camera did not send video. Check Meta AI and try again.'));
-  }, 30_000);
+  let timeout: number;
+  const waitForFrame = (milliseconds: number) => {
+    window.clearTimeout(timeout);
+    timeout = window.setTimeout(() => {
+      rejectFirst(new Error('Glasses camera did not send video. Check Meta AI and try again.'));
+    }, milliseconds);
+  };
+  waitForFrame(30_000);
   const dispose = () => {
     if (disposed) return;
     disposed = true;
@@ -56,6 +61,20 @@ export async function startMetaGlassesCamera(): Promise<{
     if (disposed) return;
     const detail = (event as CustomEvent<MetaEvent>).detail;
     if (!detail) return;
+    if (detail.kind === 'connecting') {
+      // Registration switches to Meta AI; allow time to approve and return.
+      waitForFrame(5 * 60_000);
+      return;
+    }
+    if (detail.kind === 'registered' || detail.kind === 'starting') {
+      // Camera permission may require a second Meta AI round trip.
+      waitForFrame(2 * 60_000);
+      return;
+    }
+    if (detail.kind === 'streaming') {
+      waitForFrame(30_000);
+      return;
+    }
     if (detail.kind === 'error') {
       rejectFirst(new Error(detail.message));
       if (firstFrame) {

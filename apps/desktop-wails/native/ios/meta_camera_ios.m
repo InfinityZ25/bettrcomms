@@ -39,10 +39,14 @@ static void BCMetaEmit(NSDictionary *detail) {
 @property (nonatomic, strong) MWDATCamera *camera;
 @property (nonatomic, strong) MWDATStream *stream;
 @property (nonatomic, assign) BOOL configured;
+@property (nonatomic, assign) BOOL registrationInFlight;
+@property (nonatomic, assign) BOOL startPending;
+@property (nonatomic, assign) BOOL startingSession;
 @property (nonatomic, assign) BOOL framePending;
 @property (nonatomic, assign) CFAbsoluteTime lastFrame;
 + (instancetype)shared;
 - (void)connect;
+- (void)continueStart;
 - (void)start;
 - (void)stop;
 - (void)handleURL:(NSURL *)url;
@@ -82,13 +86,20 @@ static void BCMetaEmit(NSDictionary *detail) {
     MWDATWearables *wearables = [MWDATWearables sharedInstance];
     if (wearables.registrationState == MWDATRegistrationStateRegistered) {
         BCMetaEmit(@{@"kind": @"registered"});
+        if (self.startPending) [self continueStart];
         return;
     }
+    if (self.registrationInFlight) return;
+    self.registrationInFlight = YES;
     BCMetaEmit(@{@"kind": @"connecting"});
     [wearables startRegistrationWithCompletionHandler:^(NSError *error) {
         dispatch_async(dispatch_get_main_queue(), ^{
+            self.registrationInFlight = NO;
             if (error) [self reportError:error.localizedDescription];
-            else BCMetaEmit(@{@"kind": @"registered"});
+            else {
+                BCMetaEmit(@{@"kind": @"registered"});
+                if (self.startPending) [self continueStart];
+            }
         });
     }];
 }
@@ -98,24 +109,34 @@ static void BCMetaEmit(NSDictionary *detail) {
     [[MWDATWearables sharedInstance] handleUrl:url completionHandler:^(BOOL handled, NSError *error) {
         dispatch_async(dispatch_get_main_queue(), ^{
             if (error) [self reportError:error.localizedDescription];
-            else if (handled) BCMetaEmit(@{@"kind": @"registered"});
+            else if (handled && [MWDATWearables sharedInstance].registrationState ==
+                                  MWDATRegistrationStateRegistered) {
+                BCMetaEmit(@{@"kind": @"registered"});
+                if (self.startPending) [self continueStart];
+            }
         });
     }];
 }
 
 - (void)start {
     if (![self prepare]) return;
+    self.startPending = YES;
+    [self continueStart];
+}
+
+- (void)continueStart {
+    if (!self.startPending || self.startingSession || self.session) return;
     if (self.stream) return;
     MWDATWearables *wearables = [MWDATWearables sharedInstance];
     if (wearables.registrationState != MWDATRegistrationStateRegistered) {
         [self connect];
-        [self reportError:@"Connect your Ray-Ban Meta glasses in the Meta AI app, then choose them again."];
         return;
     }
     if (wearables.devices.count == 0) {
         [self reportError:@"No Meta glasses are available. Put them on and connect them in Meta AI."];
         return;
     }
+    self.startingSession = YES;
     BCMetaEmit(@{@"kind": @"starting"});
     [wearables checkPermissionStatus:MWDATPermissionCamera
         completionHandler:^(enum MWDATPermissionStatus status, NSError *error) {
@@ -140,7 +161,7 @@ static void BCMetaEmit(NSDictionary *detail) {
 }
 
 - (void)beginSession {
-    if (self.session) return;
+    if (!self.startPending || self.session) return;
     MWDATWearables *wearables = [MWDATWearables sharedInstance];
     MWDATAutoDeviceSelector *selector = [MWDATAutoDeviceSelector new];
     NSError *error = nil;
@@ -219,6 +240,8 @@ static void BCMetaEmit(NSDictionary *detail) {
 }
 
 - (void)stop {
+    self.startPending = NO;
+    self.startingSession = NO;
     self.stream.onVideoFrame = nil;
     self.stream.onError = nil;
     [self.camera stop];
@@ -231,8 +254,9 @@ static void BCMetaEmit(NSDictionary *detail) {
 }
 
 - (void)backgrounded:(NSNotification *)notification {
-    // Raw frames and WKWebView publishing cannot continue in the background.
-    [self stop];
+    // Meta AI briefly backgrounds us during registration and camera consent.
+    // Only a running capture needs to stop when WKWebView is suspended.
+    if (self.session || self.stream) [self stop];
 }
 @end
 
