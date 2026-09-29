@@ -159,8 +159,23 @@ describe('notification preferences', () => {
     vi.mocked(api).mockResolvedValue({ rooms: {} });
     stop = startNotificationSession('user');
     expect(await setSystemNotifications(true)).toBe(true);
-    notifyBrowser('Alice', 'Hello', () => {}, 'message:room-1');
+    await notifyBrowser('Alice', 'Hello', () => {}, 'room-1');
     expect(notification).toHaveBeenCalledWith('Alice', { body: 'Hello', tag: 'message:room-1' });
+  });
+
+  it('uses a persistent notification when Web Push is registered', async () => {
+    vi.stubGlobal('window', { Notification: true });
+    const notification = vi.fn(function () { return { close: vi.fn() }; });
+    Object.assign(notification, { permission: 'granted', requestPermission: vi.fn().mockResolvedValue('granted') });
+    vi.stubGlobal('Notification', notification);
+    const registration = { active: {}, showNotification: vi.fn().mockResolvedValue(undefined) };
+    vi.stubGlobal('navigator', { serviceWorker: { getRegistration: vi.fn().mockResolvedValue(registration) } });
+    vi.mocked(api).mockResolvedValue({ rooms: {} });
+    stop = startNotificationSession('user');
+    expect(await setSystemNotifications(true)).toBe(true);
+    await notifyBrowser('Alice', 'Hello', () => {}, 'room-1');
+    expect(registration.showNotification).toHaveBeenCalledWith('Alice', { body: 'Hello', tag: 'message:room-1', data: { roomId: 'room-1' } });
+    expect(notification).not.toHaveBeenCalled();
   });
 
   it('keeps desktop alerts off when macOS denies authorization', async () => {
