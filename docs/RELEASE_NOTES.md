@@ -8,6 +8,9 @@ can briefly return before its glasses link reconnects, so the host now waits
 up to a minute for an eligible device before checking camera permission. The
 next device build keeps Meta's selector alive during the request, retries
 transient session startup failures, and logs error codes without device IDs.
+The following device experiment also keeps the native glasses session alive
+when BetterComms backgrounds; whether the WebKit call continues publishing
+frames then still requires a two-device test.
 Meta AI can still report its own registration error; streaming from Gen 1 and Gen 2
 glasses awaits a successful physical-device acceptance test.
 

@@ -66,8 +66,8 @@ static void BCMetaEmit(NSDictionary *detail) {
     dispatch_once(&once, ^{
         instance = [BCMetaCamera new];
         [[NSNotificationCenter defaultCenter] addObserver:instance
-            selector:@selector(backgrounded:)
-            name:UIApplicationDidEnterBackgroundNotification object:nil];
+            selector:@selector(appActivated:)
+            name:UIApplicationDidBecomeActiveNotification object:nil];
     });
     return instance;
 }
@@ -354,10 +354,15 @@ static void BCMetaEmit(NSDictionary *detail) {
     BCMetaEmit(@{@"kind": @"stopped"});
 }
 
-- (void)backgrounded:(NSNotification *)notification {
-    // Meta AI briefly backgrounds us during registration and camera consent.
-    // Only a running capture needs to stop when WKWebView is suspended.
-    if (self.session || self.stream) [self stop];
+- (void)appActivated:(NSNotification *)notification {
+    // The SDK can keep its external-accessory session across an app switch.
+    // WebKit may defer a frame's JavaScript completion while in the background;
+    // allow a fresh frame immediately when the call becomes visible again.
+    @synchronized (self) {
+        self.framePending = NO;
+        self.lastFrame = 0;
+    }
+    if (self.startPending && !self.session) [self continueStart];
 }
 @end
 
