@@ -55,6 +55,16 @@ export default function SignInPanel({
               {signInStatus.code}
             </strong>
           )}
+          {signInStatus.confirmUrl && (
+            <a
+              className="text-xs underline underline-offset-2"
+              href={signInStatus.confirmUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Open sign-in page
+            </a>
+          )}
           <Button variant="secondary" onClick={onCancelSignIn}>
             Cancel sign-in
           </Button>

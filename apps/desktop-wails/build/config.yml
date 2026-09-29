@@ -1,0 +1,10 @@
+version: '3'
+info:
+  productName: BetterComms
+  productIdentifier: com.bettrcomms.ios
+  version: 0.0.1
+ios:
+  bundleID: com.bettrcomms.ios
+  displayName: BetterComms
+  version: 0.0.1
+  minIOSVersion: '15.0'

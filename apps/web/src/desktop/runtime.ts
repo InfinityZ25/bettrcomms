@@ -245,7 +245,7 @@ function parseCapability(value: unknown): Capability | null {
 
 function parseWindowControls(value: unknown): DesktopWindowControls | null {
   if (!isRecord(value)) return null;
-  const platforms = ['windows', 'macos', 'linux', 'unknown'];
+  const platforms = ['windows', 'macos', 'linux', 'ios', 'unknown'];
   const modes = [
     'native-frame',
     'native-overlay',

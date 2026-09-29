@@ -59,6 +59,18 @@ describe('desktop runtime detection', () => {
     expect(runtime.getDesktopApiOrigin()).toBe('http://127.0.0.1:8080');
   });
 
+  it('accepts the iOS host without desktop window controls', async () => {
+    const boot = validBoot();
+    boot.platform = 'ios';
+    boot.windowControls = {
+      platform: 'ios', mode: 'native-frame', height: 0,
+      insetStart: 0, insetEnd: 0, buttons: [], buttonSide: 'end',
+    };
+    const runtime = await loadRuntime(boot);
+
+    expect(runtime.readDesktopBootReport()?.windowControls).toEqual(boot.windowControls);
+  });
+
   it('reports a browser when no host is present', async () => {
     const runtime = await loadRuntime();
 

@@ -163,6 +163,12 @@ func run() error {
 		Name:        "BetterComms",
 		Description: "BetterComms desktop (Wails v3 host)",
 		Icon:        appIcon,
+		IOS: application.IOSOptions{
+			// Camera tiles and remote video belong inside the call UI. WKWebView
+			// otherwise opens video playback in iOS's full-screen player.
+			EnableInlineMediaPlayback: true,
+			DisableBounce:            true,
+		},
 		Assets: application.AssetOptions{
 			Handler: handler,
 		},

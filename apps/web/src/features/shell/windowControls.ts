@@ -17,7 +17,7 @@ export type ControlsMode =
   | 'native-overlay'
   | 'native-traffic-lights'
   | 'client-side';
-export type DesktopPlatform = 'windows' | 'macos' | 'linux' | 'unknown';
+export type DesktopPlatform = 'windows' | 'macos' | 'linux' | 'ios' | 'unknown';
 
 export interface WindowControlsState {
   platform: DesktopPlatform;
@@ -127,7 +127,7 @@ function isWindowControlsState(value: unknown): value is WindowControlsState {
   const state = value as Record<string, unknown>;
 
   return (
-    isOneOf(state.platform, ['windows', 'macos', 'linux', 'unknown']) &&
+    isOneOf(state.platform, ['windows', 'macos', 'linux', 'ios', 'unknown']) &&
     isOneOf(state.mode, [
       'native-frame',
       'native-overlay',

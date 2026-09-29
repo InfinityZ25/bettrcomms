@@ -1,5 +1,14 @@
 # BetterComms preview release notes
 
+## Unreleased — experimental iPhone host
+
+The experimental iPhone host now keeps videos inline in the call, fills the
+mobile viewport without the 600 px minimum-height overflow, and suppresses
+WebKit's extra media prompt for its own packaged page while retaining iOS's
+native permission prompt. This is a build-level change awaiting a fresh signed
+device check. Background calls, Meta glasses capture, and iPhone screen
+sharing remain native-media work, not browser capabilities.
+
 ## Unreleased — message privacy, previews and background alerts
 
 Direct conversations now require friendship or an accepted message request;

@@ -43,7 +43,7 @@ export type DesktopCapabilityName = Exclude<
 
 /** Window-control description from the desktop host. */
 export interface DesktopWindowControls {
-  platform: 'windows' | 'macos' | 'linux' | 'unknown';
+  platform: 'windows' | 'macos' | 'linux' | 'ios' | 'unknown';
   mode:
     | 'native-frame'
     | 'native-overlay'

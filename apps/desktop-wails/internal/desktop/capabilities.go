@@ -130,6 +130,14 @@ func DefaultWindowControls() WindowControls {
 	const macTrafficLightInset = 78
 
 	switch runtime.GOOS {
+	case "ios":
+		return WindowControls{
+			Platform:   "ios",
+			Mode:       "native-frame",
+			Height:     0,
+			Buttons:    []string{},
+			ButtonSide: "end",
+		}
 	case "darwin":
 		return WindowControls{
 			Platform:   "macos",

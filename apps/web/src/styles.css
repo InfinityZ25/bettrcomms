@@ -184,6 +184,13 @@
   html {
     @apply font-sans;
   }
+  html,
+  body,
+  #root {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
   button:not(:disabled) {
     @apply cursor-pointer;
   }
@@ -215,7 +222,14 @@
 .share-source-preview { border-color: var(--border) !important; border-radius: var(--radius-2xl) !important; background: var(--card) !important; }
 
 @media (max-width: 820px) {
-  [data-app-shell] { gap: 0.25rem; padding: 0.375rem; }
+  [data-app-shell] {
+    gap: 0.25rem;
+    padding-top: max(0.375rem, env(safe-area-inset-top));
+    padding-bottom: max(0.375rem, env(safe-area-inset-bottom));
+    padding-left: max(0.375rem, env(safe-area-inset-left));
+    padding-right: max(0.375rem, env(safe-area-inset-right));
+  }
+  [data-desktop-frame] > [data-app-shell] { padding-top: 0; }
   .content-canvas { border-radius: var(--radius-2xl); }
 }
 
