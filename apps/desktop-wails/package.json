@@ -1,7 +1,7 @@
 {
   "name": "@bettercomms/desktop-wails",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.1.17",
   "type": "module",
   "description": "Wails v3 desktop host. Not an npm workspace member: it has no JavaScript dependencies and reuses apps/web as its frontend.",
   "scripts": {

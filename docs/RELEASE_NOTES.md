@@ -1,5 +1,11 @@
 # BetterComms preview release notes
 
+## 0.1.17 — current Wails application release
+
+Windows x64, macOS Apple Silicon/Intel DMGs, and an experimental re-signable
+iOS IPA are published together as the latest release. See the [download and
+compatibility notes](releases/0.1.17.md). Native acceptance limits still apply.
+
 ## Unreleased — experimental iPhone host
 
 The iPhone Meta glasses camera request now stays pending while Meta AI opens
