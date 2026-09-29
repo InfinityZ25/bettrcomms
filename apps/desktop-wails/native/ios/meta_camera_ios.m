@@ -36,9 +36,6 @@ static void BCMetaEmit(NSDictionary *detail) {
 
 @interface BCMetaCamera : NSObject
 @property (nonatomic, strong) MWDATDeviceSession *session;
-@property (nonatomic, strong) MWDATAutoDeviceSelector *deviceSelector;
-@property (nonatomic, strong) ObjC_AnyListenerToken *deviceListener;
-@property (nonatomic, strong) MWDATCamera *camera;
 @property (nonatomic, strong) MWDATStream *stream;
 @property (nonatomic, assign) BOOL configured;
 @property (nonatomic, assign) BOOL registrationInFlight;
@@ -62,6 +59,7 @@ static void BCMetaEmit(NSDictionary *detail) {
 - (void)beginCameraWhenActive:(MWDATDeviceSession *)session;
 - (void)addCameraToSession:(MWDATDeviceSession *)session;
 - (void)waitForDevice;
+- (NSString *)eligibleDeviceIdentifier;
 - (void)start;
 - (void)stop;
 - (void)handleURL:(NSURL *)url;
@@ -185,6 +183,16 @@ static void BCMetaEmit(NSDictionary *detail) {
     });
 }
 
+- (NSString *)eligibleDeviceIdentifier {
+    MWDATWearables *wearables = [MWDATWearables sharedInstance];
+    for (NSString *identifier in wearables.devices) {
+        MWDATDevice *device = [wearables deviceForIdentifier:identifier];
+        if (device.linkState == MWDATLinkStateConnected &&
+            device.compatibility == MWDATCompatibilityCompatible) return identifier;
+    }
+    return nil;
+}
+
 - (void)continueStart {
     if (!self.startPending || self.startingSession || self.session) return;
     if (self.stream) return;
@@ -193,18 +201,7 @@ static void BCMetaEmit(NSDictionary *detail) {
         [self connect];
         return;
     }
-    if (!self.deviceSelector) {
-        self.deviceSelector = [MWDATAutoDeviceSelector new];
-        __weak BCMetaCamera *weakSelf = self;
-        self.deviceListener = [self.deviceSelector addActiveDeviceListener:^(NSString *identifier) {
-            if (!identifier.length) return;
-            dispatch_async(dispatch_get_main_queue(), ^{
-                BCMetaCamera *camera = weakSelf;
-                if (camera.startPending) [camera continueStart];
-            });
-        }];
-    }
-    if (!self.deviceSelector.activeDevice.length) {
+    if (![self eligibleDeviceIdentifier].length) {
         [self waitForDevice];
         return;
     }
@@ -226,7 +223,7 @@ static void BCMetaEmit(NSDictionary *detail) {
         return;
     }
     if (CFAbsoluteTimeGetCurrent() < self.activationWaitUntil ||
-        !self.deviceSelector.activeDevice.length) {
+        ![self eligibleDeviceIdentifier].length) {
         self.startingSession = NO;
         [self waitForDevice];
         return;
@@ -238,12 +235,12 @@ static void BCMetaEmit(NSDictionary *detail) {
     if (!self.startPending || self.session) return;
     MWDATWearables *wearables = [MWDATWearables sharedInstance];
     NSError *error = nil;
-    NSString *selectedDevice = self.deviceSelector.activeDevice;
+    NSString *selectedDevice = [self eligibleDeviceIdentifier];
     MWDATDeviceSession *session = [wearables createSessionForDeviceIdentifier:selectedDevice error:&error];
     if (!session) {
         NSLog(@"BetterComms Meta: session creation failed (%@, %ld, selected=%d)",
               error.domain, (long)error.code, selectedDevice.length > 0);
-        if (!self.deviceSelector.activeDevice.length ||
+        if (![self eligibleDeviceIdentifier].length ||
             [error.localizedDescription localizedCaseInsensitiveContainsString:@"eligible device"]) {
             self.sessionCreateRetries++;
             self.startingSession = NO;
@@ -359,14 +356,13 @@ static void BCMetaEmit(NSDictionary *detail) {
         initWithVideoCodec:MWDATVideoCodecRaw
         resolution:MWDATStreamingResolutionLow frameRate:15];
     NSError *cameraError = nil;
-    MWDATCamera *camera = [session addCameraWithConfig:config error:&cameraError];
-    if (!camera) {
+    MWDATStream *stream = [session addStreamWithConfig:config error:&cameraError];
+    if (!stream) {
         [self reportError:cameraError.localizedDescription ?: @"Glasses camera is unavailable."];
         [self stop];
         return;
     }
-    self.camera = camera;
-    self.stream = camera.stream;
+    self.stream = stream;
     __weak BCMetaCamera *weakSelf = self;
     self.stream.onVideoFrame = ^(MWDATVideoFrame *frame) {
         [weakSelf publishFrame:frame];
@@ -423,15 +419,11 @@ static void BCMetaEmit(NSDictionary *detail) {
     self.cameraWaitStarted = 0;
     self.deviceWaitGeneration++;
     self.sessionCreateRetries = 0;
-    [self.deviceListener cancel];
-    self.deviceListener = nil;
-    self.deviceSelector = nil;
     self.stream.onVideoFrame = nil;
     self.stream.onError = nil;
-    [self.camera stop];
+    [self.stream stop];
     [self.session stop];
     self.stream = nil;
-    self.camera = nil;
     self.session = nil;
     self.framePending = NO;
     BCMetaEmit(@{@"kind": @"stopped"});

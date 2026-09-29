@@ -24,13 +24,13 @@ ipa="$app/bin/bettercomms-wails-$version-ios-arm64-adhoc.ipa"
 scratch="$(mktemp -d)"
 trap 'rm -rf "$scratch"' EXIT
 
-# DAT 1.0.0 ships binary Swift frameworks. Pin both the tag and commit so a
+# DAT 0.8.0 ships binary Swift frameworks. Pin both the tag and commit so a
 # changed upstream tag cannot silently change what the iPhone archive embeds.
 meta_sdk="$scratch/meta-wearables-dat-ios"
-git clone --quiet --depth 1 --branch 1.0.0 \
+git clone --quiet --depth 1 --branch 0.8.0 \
   https://github.com/facebook/meta-wearables-dat-ios.git "$meta_sdk"
-if [[ "$(git -C "$meta_sdk" rev-parse HEAD)" != "1f38beecba83c4c8b5e343540f9cd615323ab19a" ]]; then
-  echo 'Unexpected Meta Wearables DAT 1.0.0 commit.' >&2
+if [[ "$(git -C "$meta_sdk" rev-parse HEAD)" != "2e30f1253ab76ee3c448a29dce39114ab09763c3" ]]; then
+  echo 'Unexpected Meta Wearables DAT 0.8.0 commit.' >&2
   exit 1
 fi
 meta_core="$meta_sdk/MWDATCore.xcframework/ios-arm64"
