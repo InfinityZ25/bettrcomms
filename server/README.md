@@ -10,6 +10,8 @@ go run ./cmd/server
 
 `DATABASE_URL` is required. WorkOS login also requires `WORKOS_CLIENT_ID` and `WORKOS_API_KEY`. `WORKOS_REDIRECT_URI` must exactly match the AuthKit redirect; local development defaults to `http://localhost:5173/api/v1/auth/callback`, which Vite proxies to the API. Sessions use opaque random cookies with only their hashes stored in PostgreSQL.
 
+Message attachments require an existing **private** S3 bucket. Set `AWS_S3_BUCKET` and `AWS_REGION` in the server's private `.env`. For local development, also set `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`; an IAM role or `AWS_PROFILE` may supply credentials instead. Grant `s3:PutObject`, `s3:GetObject`, and `s3:DeleteObject` on the bucket's `messages/*` objects. The API uploads files and issues five-minute signed download URLs, so the browser does not need S3 credentials or bucket CORS rules. Restart the API after setting these values. Without a bucket, attachment controls report that storage is unavailable; text messages still work. Do not put credentials in `VITE_` variables or commit `.env`.
+
 For local coturn REST authentication, configure the same secret in coturn's `static-auth-secret` and `TURN_SECRET`, and set comma-separated `TURN_URLS`. Authenticated clients fetch ten-minute credentials from `GET /api/v1/ice`. The public config endpoint exposes STUN URLs only.
 
 Set `WEB_DIST` to a built web directory to serve its static assets and `index.html` SPA fallback from the Go process. Leave it empty when Vite or another web server owns the UI.

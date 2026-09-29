@@ -124,6 +124,7 @@ func run() error {
 	// host only needs to exist for the service to be bound, and to bring the
 	// window back when one is clicked.
 	toasts := notifications.New()
+	tray := newTrayService(gate)
 
 	boot := func() desktop.BootReport {
 		report := desktop.BootReport{
@@ -171,7 +172,7 @@ func run() error {
 		Assets: application.AssetOptions{
 			Handler: handler,
 		},
-		Services: services(&AuthService{signIn: signIn, gate: gate}, media, toasts),
+		Services: services(&AuthService{signIn: signIn, gate: gate}, media, toasts, tray),
 		Windows: application.WindowsOptions{
 			AdditionalBrowserArgs: []string{
 				"--autoplay-policy=no-user-gesture-required",
@@ -205,6 +206,7 @@ func run() error {
 		Permissions: nativeWindowPermissions(),
 	})
 	attachNotifications(toasts, window)
+	tray.attach(app, window)
 	if media != nil {
 		// The window is how push-to-talk reports focus and publishes snapshots;
 		// the gate is how a native call proves it came from this host's page.
@@ -270,9 +272,11 @@ func services(
 	auth *AuthService,
 	media *NativeMediaService,
 	toasts *notifications.NotificationService,
+	tray *TrayService,
 ) []application.Service {
 	registered := []application.Service{
 		application.NewService(auth),
+		application.NewService(tray),
 	}
 	if media != nil {
 		registered = append(registered, application.NewService(media))

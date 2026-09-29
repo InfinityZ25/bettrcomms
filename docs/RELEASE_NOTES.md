@@ -1,5 +1,7 @@
 # BetterComms preview release notes
 
+## Unreleased — experimental iPhone host
+
 The iPhone Meta glasses camera request now stays pending while Meta AI opens
 for registration or camera permission. Returning from Meta AI resumes capture
 automatically, and the app no longer reports an immediate error or stops the
@@ -65,6 +67,25 @@ not expose glasses as a normal `videoinput` device.
 The iOS host now sets a native call audio session only for active calls and
 declares audio background mode. It still needs a signed-device background call
 test before promising uninterrupted audio outside the app.
+
+## Unreleased — message privacy, previews and background alerts
+
+Direct conversations now require friendship or an accepted message request;
+receiving requests is opt-in. Blocking revokes the direct conversation and
+prevents further contact. Messages link HTTP(S) URLs and show lazy image,
+on-demand audio/video previews while preserving file downloads. Optional
+browser Web Push can notify after a tab closes when the server has VAPID keys;
+optional Wails close-to-tray keeps native Windows and macOS notifications
+available while the process remains running. Desktop alerts now have their own
+device-local opt-in, and clicking one opens its conversation. Web Push delivery
+was verified in local Chrome with the recipient tab closed; packaged desktop
+behavior and other browsers still need acceptance. Attachment malware
+scanning is not part of this change.
+
+## Unreleased — messaging controls and attachments
+
+Message sends now carry an idempotency key, and an active conversation fills message gaps through paginated HTTP after reconnect. Room and direct-message lists follow recent message activity. The composer keeps a per-conversation draft on this device across browser restarts, shows typing and the first unread message, and supports up to four 10 MB attachments per message when private S3 storage is configured. Room owners can review, dismiss, and act on message reports; message sends, reactions, reports, uploads, and moderation have rate limits. Per-conversation notification modes are stored with the account, while Do Not Disturb and system notification opt-in are local to the device. See [messaging controls and limits](MESSAGING.md).
+
 
 ## Unreleased — Wails-only desktop build
 

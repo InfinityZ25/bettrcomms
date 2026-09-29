@@ -30,6 +30,7 @@ type Config struct {
 	TURNURLs                                                []string
 	TURNSecret                                              string
 	WebDist                                                 string
+	VAPIDPublicKey, VAPIDPrivateKey, VAPIDSubject           string
 	// SFUURL is the public wss:// endpoint clients open once they hold a
 	// join token (see sfuJoin). Empty means no SFU is configured yet and
 	// clients should stay on direct P2P.
@@ -57,6 +58,7 @@ type API struct {
 	pairings      map[string]*desktopPairing
 	pairingMu     sync.Mutex
 	limiter       *rateLimiter
+	Attachments   AttachmentStorage
 }
 type apiError struct {
 	Code    string `json:"code"`
@@ -148,7 +150,7 @@ func (a *API) security(next http.Handler) http.Handler {
 		w.Header().Set("Permissions-Policy", "camera=(self), microphone=(self), display-capture=(self)")
 		w.Header().Set("Cache-Control", "no-store")
 		if a.Config.WebDist != "" {
-			w.Header().Set("Content-Security-Policy", "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self' blob: 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost ws://127.0.0.1:*; worker-src 'self' blob:; img-src 'self' data: blob: https:; media-src 'self' blob: mediastream:")
+			w.Header().Set("Content-Security-Policy", "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self' blob: 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost ws://127.0.0.1:*; worker-src 'self' blob:; img-src 'self' data: blob: https:; media-src 'self' blob: mediastream: https:")
 		}
 		if r.Method != "GET" && r.Method != "HEAD" && r.Method != "OPTIONS" && !a.sameOrigin(r) {
 			a.fail(w, 403, "cross_site_request", "request origin is not allowed")
@@ -232,8 +234,14 @@ func (a *API) authed(w http.ResponseWriter, r *http.Request) {
 		a.callPresence(w, u)
 	case r.Method == "GET" && p == "events":
 		a.realtimeWebsocket(w, r, u)
-	case p == "messages/search" || p == "messages/unread":
+	case p == "messages/search" || p == "messages/unread" || p == "messages/notification-preferences":
 		a.messagingGlobal(w, r, u, p)
+	case p == "privacy" || strings.HasPrefix(p, "privacy/blocks/"):
+		a.privacy(w, r, u, p)
+	case p == "push/subscription":
+		a.push(w, r, u)
+	case p == "dm-requests" || strings.HasPrefix(p, "dm-requests/"):
+		a.dmRequests(w, r, u, p)
 	case r.Method == "GET" && p == "users":
 		if !a.limiter.allow("search:"+u.ID, 30, time.Minute) {
 			a.fail(w, 429, "rate_limited", "too many searches")
@@ -297,11 +305,19 @@ func (a *API) authed(w http.ResponseWriter, r *http.Request) {
 		a.result(w, map[string]bool{"ok": true}, e)
 	case strings.HasPrefix(p, "friends/") && r.Method == "DELETE":
 		otherID := strings.TrimPrefix(p, "friends/")
-		e := a.Store.DeleteFriendship(u.ID, otherID)
+		room, e := a.Store.DeleteFriendship(u.ID, otherID)
 		if e == nil {
 			a.Realtime.publishUser(u.ID, wire{Type: "friends.changed"})
 			a.Realtime.publishUser(otherID, wire{Type: "friends.changed"})
 			a.Realtime.unsubscribeContacts(u.ID, otherID)
+			if room != "" {
+				a.Realtime.unsubscribeUser(room, u.ID)
+				a.Realtime.unsubscribeUser(room, otherID)
+				a.Hub.disconnectRoomUser(room, u.ID)
+				a.Hub.disconnectRoomUser(room, otherID)
+				a.Realtime.publishUser(u.ID, wire{Type: "rooms.changed"})
+				a.Realtime.publishUser(otherID, wire{Type: "rooms.changed"})
+			}
 		}
 		a.result(w, map[string]bool{"ok": true}, e)
 	default:
@@ -413,7 +429,15 @@ func (a *API) room(w http.ResponseWriter, r *http.Request, u User, p []string) {
 		a.fail(w, 403, "not_a_member", "room membership required")
 		return
 	}
-	if len(p) >= 3 && (p[2] == "messages" || p[2] == "read") && (r.Method != "GET" || r.URL.Query().Get("before") == "") {
+	if len(p) == 3 && p[2] == "attachments" && r.Method == "POST" {
+		a.uploadAttachment(w, r, u, rid)
+		return
+	}
+	if len(p) == 4 && p[2] == "attachments" && r.Method == "GET" {
+		a.downloadAttachment(w, r, u, rid, p[3])
+		return
+	}
+	if len(p) >= 3 && (p[2] == "messages" || p[2] == "read" || p[2] == "reports") && (r.Method != "GET" || r.URL.Query().Get("before") == "") {
 		if store, ok := a.Store.(MessagingStore); ok {
 			a.messagingRoom(w, r, u, p, store)
 			return
@@ -732,6 +756,10 @@ func (a *API) resultStatus(w http.ResponseWriter, v any, e error, status int) {
 	}
 	if errors.Is(e, ErrForbidden) {
 		a.fail(w, 403, "forbidden", "you do not have permission to perform this action")
+		return
+	}
+	if errors.Is(e, ErrConflict) {
+		a.fail(w, 409, "conflict", "this request key was already used for different content")
 		return
 	}
 	a.fail(w, 500, "internal", fmt.Sprintf("operation failed"))

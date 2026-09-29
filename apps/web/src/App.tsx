@@ -24,6 +24,7 @@ import { onDesktopNotificationClick } from '@/desktop/notifications';
 import MessageThread from '@/features/chat/MessageThread';
 import MessageSearch from '@/features/chat/MessageSearch';
 import MessagingSession from '@/features/chat/MessagingSession';
+import { stopPushForThisBrowser } from '@/features/chat/notificationSettings';
 import DirectConversation from '@/features/chat/DirectConversation';
 import FriendsDialog from '@/features/friends/FriendsDialog';
 import RecordingsLibrary from '@/features/recordings/RecordingsLibrary';
@@ -119,10 +120,18 @@ export default function App() {
     notification was about, so the reply box is already in front of you.
   */
   useEffect(
-    () =>
-      onDesktopNotificationClick(({ data }) => {
+    () => {
+      const target = new URLSearchParams(window.location.search).get('open_room');
+      if (target && rooms.some((candidate) => candidate.id === target)) {
+        openRoomById(target);
+        const url = new URL(window.location.href);
+        url.searchParams.delete('open_room');
+        window.history.replaceState(null, '', url);
+      }
+      return onDesktopNotificationClick(({ data }) => {
         if (typeof data.roomId === 'string') openRoomById(data.roomId);
-      }),
+      });
+    },
     [rooms],
   );
   const selectRoom = (next: Room) => {
@@ -224,6 +233,7 @@ export default function App() {
   };
   const signOut = () =>
     void run(async () => {
+      await stopPushForThisBrowser();
       await api('/auth/logout', {}, 'POST');
       setUser(null);
       clear();
@@ -394,6 +404,7 @@ export default function App() {
                           roomId={room.id}
                           user={user}
                           label={room.name}
+                          canModerate={room.kind !== 'direct' && room.owner_id === user.id}
                           targetId={
                             messageTarget?.room === room.id
                               ? messageTarget.id
@@ -563,6 +574,7 @@ export default function App() {
           user={user}
           viewing={conversation || chatBeside ? room : null}
           messages={presence.messages}
+          onOpenRoom={openRoomById}
         />
         <IncomingCall
           user={user}

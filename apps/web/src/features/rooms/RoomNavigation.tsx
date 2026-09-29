@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { subscribeUnread, unreadSnapshot } from '@/features/chat/messageStore';
+import { activitySnapshot, subscribeActivity, subscribeUnread, unreadSnapshot } from '@/features/chat/messageStore';
 import {
   Hash,
   Headphones,
@@ -59,6 +59,14 @@ export default function RoomNavigation({
   onError: (message: string) => void;
 }) {
   const unread = useSyncExternalStore(subscribeUnread, unreadSnapshot);
+  const activity = useSyncExternalStore(subscribeActivity, activitySnapshot);
+  const latestActivity = (room: Room) => Math.max(
+    Date.parse(activity[room.id] ?? '') || 0,
+    Date.parse(room.activity_at ?? room.created_at) || 0,
+  );
+  const sortedRooms = [...rooms].sort((left, right) =>
+    latestActivity(right) - latestActivity(left),
+  );
   return (
     <div className="conversation-navigation min-h-0 overflow-x-hidden overflow-y-auto">
       <SidebarGroup
@@ -80,7 +88,7 @@ export default function RoomNavigation({
           )}
         </SidebarGroupLabel>
         <SidebarMenu>
-          {rooms.map((room) => {
+          {sortedRooms.map((room) => {
             const callers = presence[room.id] ?? [];
             return (
               <SidebarMenuItem key={room.id}>
