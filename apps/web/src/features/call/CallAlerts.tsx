@@ -1,8 +1,9 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
 import type { Message, Room, User } from '@/api';
 import { notifyDesktop } from '@/desktop/notifications';
 import { playSound } from '@/media/sounds';
 import { useActiveCall } from './CallSessionContext';
+import { notificationSnapshot, notifyBrowser, subscribeNotifications } from '@/features/chat/notificationSettings';
 
 /** True when this window is not the one being looked at. */
 const away = () => document.hidden || !document.hasFocus();
@@ -33,6 +34,7 @@ export default function CallAlerts({
   user,
   viewing,
   messages,
+  onOpenRoom,
 }: {
   user: User | null;
   /**
@@ -42,7 +44,9 @@ export default function CallAlerts({
    */
   viewing: Room | null;
   messages: { sequence: number; value: Message }[];
+  onOpenRoom: (roomId: string) => void;
 }) {
+  const notifications = useSyncExternalStore(subscribeNotifications, notificationSnapshot);
   const call = useActiveCall();
   const { joined, peers, remote } = call;
 
@@ -89,20 +93,27 @@ export default function CallAlerts({
     whole backlog at once, and the reader wants to know what they missed, not
     to dismiss it one message at a time.
   */
-  const lastSeen = useRef(0);
+  const lastSeen = useRef({ userId: user?.id, sequence: 0 });
   useEffect(() => {
+    if (lastSeen.current.userId !== user?.id)
+      lastSeen.current = { userId: user?.id, sequence: 0 };
+    if (!user || !notifications.ready) return;
     const fresh = messages.filter(
       (entry) =>
-        entry.sequence > lastSeen.current &&
+        entry.sequence > lastSeen.current.sequence &&
         entry.value.author.id !== user?.id &&
-        Date.now() - Date.parse(entry.value.created_at) < STALE_AFTER,
+        Date.now() - Date.parse(entry.value.created_at) < STALE_AFTER &&
+        !notifications.dnd &&
+        notifications.rooms[entry.value.room_id] !== 'mute' &&
+        (notifications.rooms[entry.value.room_id] !== 'mentions' ||
+          entry.value.mentions?.some((mention) => mention.id === user?.id)),
     );
     const latest = messages.at(-1);
-    if (latest) lastSeen.current = Math.max(lastSeen.current, latest.sequence);
+    if (latest) lastSeen.current.sequence = Math.max(lastSeen.current.sequence, latest.sequence);
     if (!fresh.length) return;
 
     const watching = (roomId: string) =>
-      roomId === viewing?.id && !document.hidden;
+      roomId === viewing?.id && !document.hidden && document.hasFocus();
     if (fresh.some((entry) => !watching(entry.value.room_id)))
       playSound('notification');
     if (!away()) return;
@@ -124,9 +135,11 @@ export default function CallAlerts({
             ? `${last.body}\n+${group.length - 1} more`
             : last.body,
         data: { roomId },
+      }).then((sent) => {
+        if (!sent) notifyBrowser(last.author.name, group.length > 1 ? `${last.body}\n+${group.length - 1} more` : last.body, () => onOpenRoom(roomId));
       });
     }
-  }, [messages, viewing?.id, user?.id]);
+  }, [messages, viewing?.id, user?.id, notifications, onOpenRoom]);
 
   return null;
 }

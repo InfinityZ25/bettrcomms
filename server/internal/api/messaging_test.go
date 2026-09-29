@@ -1,11 +1,15 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -24,7 +28,7 @@ func TestMessagingIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	for _, file := range []string{"001_init.sql", "002_direct_rooms.sql", "003_messaging.sql"} {
+	for _, file := range []string{"001_init.sql", "002_direct_rooms.sql", "003_messaging.sql", "004_messaging_complete.sql", "005_attachment_cleanup_attempts.sql", "006_attachment_lifecycle.sql"} {
 		data, e := os.ReadFile("../../migrations/" + file)
 		if e != nil {
 			t.Fatal(e)
@@ -233,6 +237,110 @@ writerWaited:
 	if unread[0].ReadSequence != reply.Sequence || unread[0].Unread != 4 {
 		t.Fatal("read cursor moved backwards")
 	}
+	nonce, _ := randomAttachmentID()
+	idempotentBody := `{"body":"sent once","client_nonce":"` + nonce + `"}`
+	first := call(alice, "POST", "/rooms/"+room.ID+"/messages", idempotentBody, 201)
+	second := call(alice, "POST", "/rooms/"+room.ID+"/messages", idempotentBody, 200)
+	var sentFirst, sentSecond struct {
+		Message Message `json:"message"`
+	}
+	if err = json.Unmarshal(first, &sentFirst); err != nil {
+		t.Fatal(err)
+	}
+	if err = json.Unmarshal(second, &sentSecond); err != nil {
+		t.Fatal(err)
+	}
+	if sentFirst.Message.ID != sentSecond.Message.ID {
+		t.Fatal("retry duplicated the message")
+	}
+	call(alice, "POST", "/rooms/"+room.ID+"/messages", `{"body":"different","client_nonce":"`+nonce+`"}`, 409)
+	var count int
+	if err = db.QueryRow(ctx, `SELECT count(*) FROM messages WHERE client_nonce=$1`, nonce).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("idempotent count=%d err=%v", count, err)
+	}
+	page, err := store.MessagesAfter(room.ID, bob.ID, reply.Sequence, 2)
+	if err != nil || len(page.Messages) != 2 || page.Messages[0].Sequence <= reply.Sequence || page.Messages[1].Sequence <= page.Messages[0].Sequence {
+		t.Fatalf("after-sequence page: %+v %v", page, err)
+	}
+	call(bob, "PUT", "/messages/notification-preferences", `{"room_id":"`+room.ID+`","mode":"mentions"}`, 200)
+	var preferences struct {
+		Rooms map[string]string `json:"rooms"`
+	}
+	if err = json.Unmarshal(call(bob, "GET", "/messages/notification-preferences", "", 200), &preferences); err != nil || preferences.Rooms[room.ID] != "mentions" {
+		t.Fatalf("notification preferences: %+v %v", preferences, err)
+	}
+	call(outsider, "PUT", "/messages/notification-preferences", `{"room_id":"`+room.ID+`","mode":"mute"}`, 403)
+	storage := &fakeAttachmentStorage{}
+	a.Attachments = storage
+	var upload bytes.Buffer
+	writer := multipart.NewWriter(&upload)
+	part, err := writer.CreateFormFile("file", "note.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = part.Write([]byte("hello attachment")); err != nil {
+		t.Fatal(err)
+	}
+	if err = writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	issued := httptest.NewRecorder()
+	if err = sessions.Set(httptest.NewRequest("GET", "/", nil), issued, alice.ID); err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest("POST", "http://localhost/api/v1/rooms/"+room.ID+"/attachments", &upload)
+	request.Header.Set("Origin", "http://localhost")
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	request.AddCookie(issued.Result().Cookies()[0])
+	response := httptest.NewRecorder()
+	a.Handler().ServeHTTP(response, request)
+	if response.Code != 201 {
+		t.Fatalf("upload: %d %s", response.Code, response.Body.String())
+	}
+	var uploaded struct {
+		Attachment MessageAttachment `json:"attachment"`
+	}
+	if err = json.Unmarshal(response.Body.Bytes(), &uploaded); err != nil {
+		t.Fatal(err)
+	}
+	if storage.putCount != 1 || uploaded.Attachment.Filename != "note.txt" {
+		t.Fatalf("upload result: %+v %+v", uploaded, storage)
+	}
+	attachmentMessage := call(alice, "POST", "/rooms/"+room.ID+"/messages", `{"body":"","attachment_ids":["`+uploaded.Attachment.ID+`"]}`, 201)
+	var attached struct {
+		Message Message `json:"message"`
+	}
+	if err = json.Unmarshal(attachmentMessage, &attached); err != nil || len(attached.Message.Attachments) != 1 {
+		t.Fatalf("message attachment: %+v %v", attached, err)
+	}
+	call(bob, "GET", "/rooms/"+room.ID+"/attachments/"+uploaded.Attachment.ID+"?link=1", "", 200)
+	call(outsider, "GET", "/rooms/"+room.ID+"/attachments/"+uploaded.Attachment.ID+"?link=1", "", 403)
+	call(bob, "POST", "/rooms/"+room.ID+"/messages/"+attached.Message.ID+"/reports", `{"reason":"Please review this file"}`, 200)
+	var reports struct {
+		Reports []MessageReport `json:"reports"`
+	}
+	if err = json.Unmarshal(call(alice, "GET", "/rooms/"+room.ID+"/reports", "", 200), &reports); err != nil || len(reports.Reports) == 0 {
+		t.Fatalf("reports: %+v %v", reports, err)
+	}
+	if reports.Reports[0].Excerpt != "[attachment]" {
+		t.Fatalf("attachment report excerpt: %+v", reports.Reports[0])
+	}
+	call(bob, "GET", "/rooms/"+room.ID+"/reports", "", 403)
+	call(bob, "POST", "/rooms/"+room.ID+"/reports/"+reports.Reports[0].ID+"/dismiss", "", 403)
+	call(alice, "POST", "/rooms/"+room.ID+"/reports/"+reports.Reports[0].ID+"/dismiss", "", 200)
+	if err = json.Unmarshal(call(alice, "GET", "/rooms/"+room.ID+"/reports", "", 200), &reports); err != nil || len(reports.Reports) != 0 {
+		t.Fatalf("dismissed reports: %+v %v", reports, err)
+	}
+	call(bob, "POST", "/rooms/"+room.ID+"/messages/"+attached.Message.ID+"/reports", `{"reason":"Please review this file again"}`, 200)
+	if err = json.Unmarshal(call(alice, "GET", "/rooms/"+room.ID+"/reports", "", 200), &reports); err != nil || len(reports.Reports) != 1 {
+		t.Fatalf("reopened reports: %+v %v", reports, err)
+	}
+	call(bob, "DELETE", "/rooms/"+room.ID+"/messages/"+attached.Message.ID+"/moderation", `{"reason":"Reviewed report"}`, 403)
+	call(alice, "DELETE", "/rooms/"+room.ID+"/messages/"+attached.Message.ID+"/moderation", `{"reason":"Reviewed report"}`, 200)
+	if err = json.Unmarshal(call(alice, "GET", "/rooms/"+room.ID+"/reports", "", 200), &reports); err != nil || len(reports.Reports) != 0 {
+		t.Fatalf("resolved reports: %+v %v", reports, err)
+	}
+	call(bob, "GET", "/rooms/"+room.ID+"/attachments/"+uploaded.Attachment.ID+"?link=1", "", 404)
 	call(bob, "PUT", "/rooms/"+room.ID+"/read", `{"message_id":"`+foreign.ID+`"}`, 404)
 	if _, err = db.Exec(ctx, `DELETE FROM room_members WHERE room_id=$1 AND user_id=$2`, room.ID, bob.ID); err != nil {
 		t.Fatal(err)
@@ -242,6 +350,55 @@ writerWaited:
 	if len(restricted.Messages) != 0 {
 		t.Fatal("revoked membership retained search access")
 	}
+	cleanupRoom, err := store.CreateRoom(alice.ID, "Attachment cleanup")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanupID, err := randomAttachmentID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanupKey := "messages/" + cleanupID
+	if err = store.SavePendingAttachment(cleanupRoom.ID, alice.ID, cleanupKey, MessageAttachment{ID: cleanupID, Filename: "cleanup.txt", ContentType: "text/plain", SizeBytes: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.CompletePendingAttachment(cleanupID, cleanupRoom.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.DeleteRoom(cleanupRoom.ID, alice.ID); err != nil {
+		t.Fatal(err)
+	}
+	var retained int
+	if err = db.QueryRow(ctx, `SELECT count(*) FROM message_attachments WHERE id=$1 AND room_id IS NULL`, cleanupID).Scan(&retained); err != nil || retained != 1 {
+		t.Fatalf("room deletion lost attachment cleanup record: count=%d err=%v", retained, err)
+	}
+	if err = store.CleanPendingAttachments(ctx, storage); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.QueryRow(ctx, `SELECT count(*) FROM message_attachments WHERE id=$1`, cleanupID).Scan(&retained); err != nil || retained != 0 {
+		t.Fatalf("attachment cleanup record remains: count=%d err=%v", retained, err)
+	}
+	if !slices.Contains(storage.deleted, cleanupKey) {
+		t.Fatal("room deletion did not delete its S3 object")
+	}
+}
+
+type fakeAttachmentStorage struct {
+	putCount int
+	deleted  []string
+}
+
+func (f *fakeAttachmentStorage) Put(_ context.Context, _ string, reader io.Reader, _ int64, _ string) error {
+	_, err := io.Copy(io.Discard, reader)
+	f.putCount++
+	return err
+}
+func (f *fakeAttachmentStorage) URL(_ context.Context, _, _, _ string) (string, error) {
+	return "https://example.test/file", nil
+}
+func (f *fakeAttachmentStorage) Delete(_ context.Context, key string) error {
+	f.deleted = append(f.deleted, key)
+	return nil
 }
 
 func TestMessagingMigrationWithExistingHistory(t *testing.T) {
@@ -303,6 +460,9 @@ func TestMessagingMigrationWithExistingHistory(t *testing.T) {
 		}
 	}
 	apply("003_messaging.sql")
+	apply("004_messaging_complete.sql")
+	apply("005_attachment_cleanup_attempts.sql")
+	apply("006_attachment_lifecycle.sql")
 	store := &PostgresStore{DB: db}
 	seen := []string{}
 	cursor := ""
@@ -350,4 +510,10 @@ func TestMessagingMigrationWithExistingHistory(t *testing.T) {
 	}
 	checkUnread(bob, 1, baseline)
 	checkUnread(carol, 1, baseline)
+	if _, err = db.Exec(ctx, `INSERT INTO messages(room_id,author_id,body) VALUES($1,$2,'')`, room, alice); err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range []string{"003_messaging.sql", "004_messaging_complete.sql", "005_attachment_cleanup_attempts.sql", "006_attachment_lifecycle.sql"} {
+		apply(file)
+	}
 }

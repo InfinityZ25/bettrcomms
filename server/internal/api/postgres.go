@@ -13,6 +13,7 @@ type PostgresStore struct{ DB *pgxpool.Pool }
 
 var ErrNotFound = errors.New("not found")
 var ErrForbidden = errors.New("forbidden")
+var ErrConflict = errors.New("conflict")
 
 func (s *PostgresStore) CreateSession(ctx context.Context, h []byte, uid string, expires time.Time) error {
 	_, e := s.DB.Exec(ctx, `INSERT INTO sessions(token_hash,user_id,expires_at) VALUES($1,$2,$3)`, h, uid, expires)
@@ -72,7 +73,7 @@ func (s *PostgresStore) FindUsers(q, uid string) ([]User, error) {
 	return out, rows.Err()
 }
 func (s *PostgresStore) ListRooms(uid string) ([]Room, error) {
-	rows, e := s.DB.Query(context.Background(), `SELECT r.id::text,r.name,r.owner_id::text,rm.role,r.kind,r.created_at,CASE WHEN r.kind='direct' THEN (SELECT u.name FROM room_members other JOIN users u ON u.id=other.user_id WHERE other.room_id=r.id AND other.user_id<>$1 ORDER BY other.joined_at LIMIT 1) END FROM rooms r JOIN room_members rm ON rm.room_id=r.id WHERE rm.user_id=$1 ORDER BY r.created_at DESC`, uid)
+	rows, e := s.DB.Query(context.Background(), `SELECT r.id::text,r.name,r.owner_id::text,rm.role,r.kind,r.created_at,CASE WHEN r.kind='direct' THEN (SELECT u.name FROM room_members other JOIN users u ON u.id=other.user_id WHERE other.room_id=r.id AND other.user_id<>$1 ORDER BY other.joined_at LIMIT 1) END,COALESCE((SELECT m.created_at FROM messages m WHERE m.room_id=r.id ORDER BY m.sequence DESC LIMIT 1),r.created_at) activity_at FROM rooms r JOIN room_members rm ON rm.room_id=r.id WHERE rm.user_id=$1 ORDER BY activity_at DESC,r.id`, uid)
 	if e != nil {
 		return nil, e
 	}
@@ -80,7 +81,7 @@ func (s *PostgresStore) ListRooms(uid string) ([]Room, error) {
 	out := []Room{}
 	for rows.Next() {
 		var r Room
-		if e = rows.Scan(&r.ID, &r.Name, &r.OwnerID, &r.Role, &r.Kind, &r.CreatedAt, &r.DisplayName); e != nil {
+		if e = rows.Scan(&r.ID, &r.Name, &r.OwnerID, &r.Role, &r.Kind, &r.CreatedAt, &r.DisplayName, &r.ActivityAt); e != nil {
 			return nil, e
 		}
 		out = append(out, r)

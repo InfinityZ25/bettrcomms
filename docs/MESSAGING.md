@@ -1,4 +1,4 @@
-# Messaging basics
+# Messaging
 
 Direct conversations and room chat share the same message controls. Open a
 direct conversation from Messages; open room chat with **Room messages** in
@@ -40,9 +40,37 @@ are retained, with at most twelve inactive conversations; a long active history
 grows only as the user requests older pages. Unread refreshes coalesce bursts.
 Requests and UI observers/listeners are released on close or account change.
 
-This increment does not introduce attachments, nested reply threads, edit
-revision archives or send idempotency keys. It does not change native media or
-clear the existing desktop capture/auth acceptance gates.
+Migration `004_messaging_complete.sql` adds send idempotency keys, attachment
+metadata, reports, moderation audit records, and room notification preferences.
+The composer retries a send with the same key so an uncertain response does not
+make a duplicate message. The active conversation fetches missed new messages
+by sequence after reconnect. Edits and reactions on older, unloaded messages
+are visible when that part of history is loaded; this is not yet a durable
+event-by-event replay for every historical mutation.
+
+Choose up to four files of 10 MB each from the composer or drop/paste them.
+Images, audio, video, plain text, PDF, and ZIP/Office files are accepted after
+server-side type detection; executable and active web formats are rejected.
+Uploads remain private in S3 and are readable only to current conversation
+members through five-minute signed URLs. An attachment waiting more than 24
+hours for a message and attachments from deleted messages are removed by a
+periodic cleanup. The file picker remains visible without S3 configured but
+reports the missing configuration when used. Type checks do not replace malware
+scanning, which remains a production gate.
+
+Draft text persists per account and conversation on this device until sent,
+including across browser restarts. Uploaded attachment references expire from
+the draft after 24 hours. A local File object must be chosen again after a
+reload if its upload did not finish. Typing is ephemeral over the existing
+WebSocket. A divider marks the first unread loaded message. Right-click a
+conversation to select all notifications, mentions only, or mute. Do Not
+Disturb and browser notification permission are device-local in Settings;
+browser notifications work while the web app is running, not as offline push.
+Room members can report another member's message; room owners can dismiss a
+report or remove its message, with an audit record.
+
+This work does not add nested reply threads or edit revision archives. It does
+not change native media or clear the desktop capture/auth acceptance gates.
 
 ## Local development
 

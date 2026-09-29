@@ -7,6 +7,7 @@ import {
 } from 'react';
 import { ArrowDown, Search } from 'lucide-react';
 import type { Message, User } from '@/api';
+import { api, uploadMessageAttachment } from '@/api';
 import MessageItem from './MessageItem';
 import MessageComposer from './MessageComposer';
 import { Button } from '@/components/ui/button';
@@ -22,6 +23,9 @@ import {
 import { openMessageSearch } from './searchEvents';
 import { useMessageViewport } from './useMessageViewport';
 import { editableMessage, encodeMentions, mentionLabel } from './mentions';
+import { clearDraft, readDraft, saveDraft, type PendingAttachment, type SavedDraft } from './drafts';
+import { publishTyping, subscribeTyping, typingSnapshot } from './typingStore';
+import { useMountEffect } from '@/hooks/useMountEffect';
 
 export default function MessageThread({
   roomId,
@@ -29,12 +33,14 @@ export default function MessageThread({
   label,
   onError,
   targetId,
+  canModerate = false,
 }: {
   roomId: string;
   user: User;
   label: string;
   onError: (message: string) => void;
   targetId?: string;
+  canModerate?: boolean;
 }) {
   const chat = useSyncExternalStore(
     (listener) => subscribeConversation(roomId, listener),
@@ -46,16 +52,70 @@ export default function MessageThread({
       ? chat.anchor
       : undefined;
   const messages = anchor ? [anchor, ...chat.messages] : chat.messages;
-  const [draft, setDraft] = useState('');
+  const [savedDraft] = useState(() => readDraft(user.id, roomId));
+  const [draft, setDraft] = useState(savedDraft.body);
+  const [attachments, setAttachments] = useState<PendingAttachment[]>(savedDraft.attachments);
   const [reply, setReply] = useState<Message | null>(null);
   const [editing, setEditing] = useState<Message | null>(null);
   const [busy, setBusy] = useState(false);
   const [highlight, setHighlight] = useState<string | undefined>(targetId);
   const [suggestion, setSuggestion] = useState(0);
   const mentions = useRef(new Map<string, string>());
+  const nonce = useRef<{ fingerprint: string; id: string } | null>(
+    savedDraft.nonce && savedDraft.fingerprint
+      ? { fingerprint: savedDraft.fingerprint, id: savedDraft.nonce }
+      : null,
+  );
+  const beforeEdit = useRef<SavedDraft | null>(null);
+  const typingTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const lastTyping = useRef(0);
+  const typing = useSyncExternalStore(
+    (listener) => subscribeTyping(roomId, listener),
+    () => typingSnapshot(roomId),
+  );
   const input = useRef<HTMLTextAreaElement>(null);
   const { viewport, end, nearBottom, awayFromBottom, jump, older } =
     useMessageViewport(roomId, onError, targetId, setHighlight);
+  const stopTyping = () => {
+    if (typingTimeout.current) clearTimeout(typingTimeout.current);
+    typingTimeout.current = undefined;
+    if (lastTyping.current) publishTyping(user.id, roomId, false);
+    lastTyping.current = 0;
+  };
+  useMountEffect(() => () => stopTyping());
+  const changeDraft = (value: string) => {
+    setDraft(value);
+    if (!editing) {
+      nonce.current = null;
+      saveDraft(user.id, roomId, { body: value, attachments });
+      if (value.trim()) {
+        if (Date.now() - lastTyping.current > 2000) {
+          publishTyping(user.id, roomId, true);
+          lastTyping.current = Date.now();
+        }
+        if (typingTimeout.current) clearTimeout(typingTimeout.current);
+        typingTimeout.current = setTimeout(stopTyping, 4000);
+      } else stopTyping();
+    }
+  };
+  const addFiles = (files: FileList | null) => {
+    if (busy || !files?.length) return;
+    const selected = Array.from(files);
+    if (attachments.length + selected.length > 4 || selected.some((file) => file.size < 1 || file.size > 10 * 1024 * 1024)) {
+      onError('Choose up to four files, each 10 MB or less.');
+      return;
+    }
+    const next: PendingAttachment[] = [...attachments, ...selected.map((file) => ({ id: '', localId: crypto.randomUUID(), filename: file.name, content_type: file.type, size_bytes: file.size, file }))];
+    setAttachments(next);
+    nonce.current = null;
+    saveDraft(user.id, roomId, { body: draft, attachments: next });
+  };
+  const removeFile = (index: number) => {
+    const next = attachments.filter((_, position) => position !== index);
+    setAttachments(next);
+    nonce.current = null;
+    saveDraft(user.id, roomId, { body: draft, attachments: next });
+  };
   const runMessageAction = async (action: () => Promise<unknown>) => {
     if (busy) return false;
     setBusy(true);
@@ -71,14 +131,37 @@ export default function MessageThread({
   };
   const send = (event?: FormEvent) => {
     event?.preventDefault();
-    if (!draft.trim() || busy) return;
+    if ((!draft.trim() && (editing || !attachments.length)) || busy) return;
     const body = encodeMentions(draft.trim(), mentions.current);
     const submitMessage = async () => {
-      await writeMessage(roomId, body, reply?.id, editing?.id);
-      setDraft('');
+      if (editing) {
+        await writeMessage(roomId, body, undefined, editing.id);
+        const saved = beforeEdit.current;
+        setDraft(saved?.body ?? '');
+        beforeEdit.current = null;
+      } else {
+        const ready = [...attachments];
+        for (let index = 0; index < ready.length; index++) {
+          if (ready[index].id) continue;
+          if (!ready[index].file) throw new Error('Choose the file again before sending.');
+          ready[index] = await uploadMessageAttachment(roomId, ready[index].file!);
+          setAttachments([...ready]);
+          saveDraft(user.id, roomId, { body: draft, attachments: ready });
+        }
+        const ids = ready.map((item) => item.id);
+        const fingerprint = JSON.stringify([body, reply?.id ?? '', ids]);
+        if (nonce.current?.fingerprint !== fingerprint) nonce.current = { fingerprint, id: crypto.randomUUID() };
+        saveDraft(user.id, roomId, { body: draft, attachments: ready, nonce: nonce.current.id, fingerprint });
+        await writeMessage(roomId, body, reply?.id, undefined, ids, nonce.current.id);
+        nonce.current = null;
+        setAttachments([]);
+        setDraft('');
+        clearDraft(user.id, roomId);
+      }
       setReply(null);
       setEditing(null);
       mentions.current.clear();
+      stopTyping();
       nearBottom.current = true;
       end.current?.scrollIntoView({ block: 'end' });
       input.current?.focus();
@@ -89,11 +172,13 @@ export default function MessageThread({
     await deleteMessage(roomId, message.id);
     if (editing?.id === message.id) {
       setEditing(null);
-      setDraft('');
+      setDraft(beforeEdit.current?.body ?? '');
+      beforeEdit.current = null;
       mentions.current.clear();
     }
   };
   const startEdit = (message: Message) => {
+    beforeEdit.current = { body: draft, attachments };
     const { body, mentions: selected } = editableMessage(message, chat.members);
     mentions.current = selected;
     setDraft(body);
@@ -113,10 +198,16 @@ export default function MessageThread({
   const mention = (person: User) => {
     const label = mentionLabel(person, chat.members);
     mentions.current.set(label, person.id);
-    setDraft(draft.replace(/@([^@\n<>]*)$/, label + ' '));
+    changeDraft(draft.replace(/@([^@\n<>]*)$/, label + ' '));
     setSuggestion(0);
     input.current?.focus();
   };
+  const firstUnread = chat.unreadBoundary === undefined
+    ? -1
+    : messages.findIndex((message) => message.author.id !== user.id && (message.sequence ?? 0) > chat.unreadBoundary!);
+  const typingNames = typing
+    .map((id) => chat.members.find((member) => member.id === id)?.name)
+    .filter((name): name is string => Boolean(name));
   return (
     <div
       className="relative flex min-h-0 flex-1 flex-col select-text"
@@ -198,8 +289,9 @@ export default function MessageThread({
             The conversation starts here. Say hello.
           </p>
         )}
-        {messages.map((message) => (
+        {messages.map((message, index) => (
           <Fragment key={message.id}>
+            {index === firstUnread && <p className="my-3 border-t border-primary pt-1 text-center text-xs font-medium text-primary">New messages</p>}
             {anchor?.id === message.id && (
               <p className="mb-2 text-xs text-muted-foreground">
                 Earlier message — load older messages for surrounding history.
@@ -225,6 +317,10 @@ export default function MessageThread({
               onDelete={(message) =>
                 runMessageAction(() => removeMessage(message))
               }
+              onReport={(message, reason) => runMessageAction(() => api(`/rooms/${roomId}/messages/${message.id}/reports`, { reason }))}
+              onModerate={(message, reason) => runMessageAction(() => api(`/rooms/${roomId}/messages/${message.id}/moderation`, { reason }, 'DELETE').then(() => loadConversation(roomId)))}
+              canModerate={canModerate}
+              onError={onError}
             />
             {anchor?.id === message.id && (
               <p className="my-3 border-t pt-2 text-xs text-muted-foreground">
@@ -250,9 +346,12 @@ export default function MessageThread({
           Jump to latest
         </Button>
       )}
+      {typingNames.length > 0 && (
+        <p className="px-4 py-1 text-xs text-muted-foreground" role="status">{typingNames.join(', ')} {typingNames.length === 1 ? 'is' : 'are'} typing…</p>
+      )}
       <MessageComposer
         draft={draft}
-        onDraft={setDraft}
+        onDraft={changeDraft}
         editing={!!editing}
         reply={reply}
         busy={busy}
@@ -263,7 +362,8 @@ export default function MessageThread({
         onSend={send}
         onCancel={() => {
           if (editing) {
-            setDraft('');
+            setDraft(beforeEdit.current?.body ?? '');
+            beforeEdit.current = null;
             mentions.current.clear();
           }
           setEditing(null);
@@ -271,6 +371,10 @@ export default function MessageThread({
         }}
         inputRef={input}
         label={label}
+        attachments={editing ? [] : attachments}
+        onFiles={addFiles}
+        onRemoveFile={removeFile}
+        onTypingStop={stopTyping}
       />
     </div>
   );

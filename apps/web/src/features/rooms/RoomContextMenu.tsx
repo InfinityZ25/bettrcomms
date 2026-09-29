@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { LogOut, Settings2, Trash2, UserPlus } from 'lucide-react';
+import { useState, useSyncExternalStore } from 'react';
+import { Check, LogOut, Settings2, Trash2, UserPlus } from 'lucide-react';
 import { api, type Room, type User } from '@/api';
 import { errorMessage } from '@/lib/errors';
 import { AppDialog } from '@/components/app-dialog';
@@ -14,6 +14,7 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { roomLabel } from './RoomNavigation';
+import { notificationSnapshot, setRoomNotificationMode, subscribeNotifications, type NotificationMode } from '@/features/chat/notificationSettings';
 
 /**
  * Right-click a room.
@@ -26,8 +27,7 @@ import { roomLabel } from './RoomNavigation';
  *   add a member     owner, and only someone already an accepted friend
  *   leave            a channel member who is not the owner
  *
- * A direct conversation permits none of them, which is why it gets no menu at
- * all rather than a menu of refusals.
+ * Direct conversations only expose notification choices.
  */
 export default function RoomContextMenu({
   room,
@@ -48,12 +48,17 @@ export default function RoomContextMenu({
 }) {
   const [pending, setPending] = useState<'delete' | 'leave' | null>(null);
   const [busy, setBusy] = useState(false);
+  const notifications = useSyncExternalStore(subscribeNotifications, notificationSnapshot);
 
   const channel = (room.kind ?? 'channel') === 'channel';
   const owner = Boolean(user && room.owner_id === user.id);
   const label = roomLabel(room);
 
-  if (!channel || !user) return <>{children}</>;
+  if (!user) return <>{children}</>;
+
+  const chooseNotifications = (mode: NotificationMode) => {
+    void setRoomNotificationMode(room.id, mode).catch((error) => onError(errorMessage(error)));
+  };
 
   const confirmed = async () => {
     setBusy(true);
@@ -87,29 +92,27 @@ export default function RoomContextMenu({
             </ContextMenuLabel>
           </ContextMenuGroup>
           <ContextMenuSeparator />
-          <ContextMenuItem onClick={() => onSettings(room)}>
-            <Settings2 /> Room settings…
-          </ContextMenuItem>
-          {owner && (
-            <ContextMenuItem onClick={() => onInvite(room)}>
-              <UserPlus /> Invite a friend…
-            </ContextMenuItem>
-          )}
-          <ContextMenuSeparator />
-          {owner ? (
-            <ContextMenuItem
-              variant="destructive"
-              onClick={() => setPending('delete')}
-            >
-              <Trash2 /> Delete room
-            </ContextMenuItem>
-          ) : (
-            <ContextMenuItem
-              variant="destructive"
-              onClick={() => setPending('leave')}
-            >
-              <LogOut /> Leave room
-            </ContextMenuItem>
+          <ContextMenuGroup>
+            <ContextMenuLabel>Message notifications</ContextMenuLabel>
+            {(['all', 'mentions', 'mute'] as NotificationMode[]).map((mode) => (
+              <ContextMenuItem key={mode} onClick={() => chooseNotifications(mode)}>
+                {notifications.rooms[room.id] === mode || (!notifications.rooms[room.id] && mode === 'all') ? <Check size={15} /> : <span className="inline-block w-[15px]" />}
+                {mode === 'all' ? 'All messages' : mode === 'mentions' ? 'Mentions only' : 'Mute conversation'}
+              </ContextMenuItem>
+            ))}
+          </ContextMenuGroup>
+          {channel && (
+            <>
+              <ContextMenuSeparator />
+              <ContextMenuItem onClick={() => onSettings(room)}><Settings2 /> Room settings…</ContextMenuItem>
+              {owner && <ContextMenuItem onClick={() => onInvite(room)}><UserPlus /> Invite a friend…</ContextMenuItem>}
+              <ContextMenuSeparator />
+              {owner ? (
+                <ContextMenuItem variant="destructive" onClick={() => setPending('delete')}><Trash2 /> Delete room</ContextMenuItem>
+              ) : (
+                <ContextMenuItem variant="destructive" onClick={() => setPending('leave')}><LogOut /> Leave room</ContextMenuItem>
+              )}
+            </>
           )}
         </ContextMenuContent>
       </ContextMenu>

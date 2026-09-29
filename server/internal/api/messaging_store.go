@@ -13,8 +13,10 @@ import (
 // stores can retain the original plain-text routes during the rollout.
 type MessagingStore interface {
 	MessagePage(room, user, beforeID string, limit int) (MessagePage, error)
+	MessagesAfter(room, user string, after int64, limit int) (MessagePage, error)
 	MessageByID(room, id string) (Message, error)
 	WriteMessage(room, user, id, body, replyID string) (Message, error)
+	SendMessage(room, user, body, replyID, nonce string, attachmentIDs []string) (Message, bool, error)
 	DeleteMessage(room, user, id string) (Message, error)
 	ReactMessage(room, user, id, emoji string, remove bool) (Message, error)
 	SearchMessages(user, room, author, query, beforeID string, limit int) (MessagePage, error)
@@ -29,14 +31,15 @@ const messageSelect = `SELECT m.id::text,m.room_id::text,m.body,m.created_at,m.s
  u.id::text,u.email,u.name,u.avatar_url,u.created_at,
  CASE WHEN parent.id IS NOT NULL THEN jsonb_build_object('id',parent.id,'name',pu.name,'body',left(parent.body,400),'deleted',parent.deleted_at IS NOT NULL) END,
  COALESCE((SELECT jsonb_agg(jsonb_build_object('id',mu.id,'name',mu.name) ORDER BY mu.id) FROM message_mentions mm JOIN users mu ON mu.id=mm.user_id WHERE mm.message_id=m.id),'[]'),
- COALESCE((SELECT jsonb_agg(jsonb_build_object('emoji',r.emoji,'users',r.users) ORDER BY r.emoji) FROM (SELECT emoji,jsonb_agg(user_id::text ORDER BY user_id) users FROM message_reactions WHERE message_id=m.id GROUP BY emoji) r),'[]')
+ COALESCE((SELECT jsonb_agg(jsonb_build_object('emoji',r.emoji,'users',r.users) ORDER BY r.emoji) FROM (SELECT emoji,jsonb_agg(user_id::text ORDER BY user_id) users FROM message_reactions WHERE message_id=m.id GROUP BY emoji) r),'[]'),
+	COALESCE((SELECT jsonb_agg(jsonb_build_object('id',a.id::text,'filename',a.filename,'content_type',a.content_type,'size_bytes',a.size_bytes) ORDER BY a.created_at) FROM message_attachments a WHERE a.message_id=m.id AND a.deleted_at IS NULL),'[]')
  FROM messages m JOIN users u ON u.id=m.author_id LEFT JOIN messages parent ON parent.id=m.reply_to_id LEFT JOIN users pu ON pu.id=parent.author_id `
 
 func scanMessage(row pgx.Row) (Message, error) {
 	var m Message
-	var reply, mentions, reactions []byte
+	var reply, mentions, reactions, attachments []byte
 	err := row.Scan(&m.ID, &m.RoomID, &m.Body, &m.CreatedAt, &m.Sequence, &m.Version, &m.EditedAt, &m.DeletedAt,
-		&m.Author.ID, &m.Author.Email, &m.Author.Name, &m.Author.AvatarURL, &m.Author.CreatedAt, &reply, &mentions, &reactions)
+		&m.Author.ID, &m.Author.Email, &m.Author.Name, &m.Author.AvatarURL, &m.Author.CreatedAt, &reply, &mentions, &reactions, &attachments)
 	if err != nil {
 		return m, norm(err)
 	}
@@ -48,7 +51,10 @@ func scanMessage(row pgx.Row) (Message, error) {
 	if err = json.Unmarshal(mentions, &m.Mentions); err != nil {
 		return m, err
 	}
-	err = json.Unmarshal(reactions, &m.Reactions)
+	if err = json.Unmarshal(reactions, &m.Reactions); err != nil {
+		return m, err
+	}
+	err = json.Unmarshal(attachments, &m.Attachments)
 	return m, err
 }
 
@@ -94,87 +100,193 @@ func (s *PostgresStore) MessagePage(room, user, beforeID string, limit int) (Mes
 	for i, j := 0, len(page.Messages)-1; i < j; i, j = i+1, j-1 {
 		page.Messages[i], page.Messages[j] = page.Messages[j], page.Messages[i]
 	}
+	if err == nil {
+		err = s.DB.QueryRow(context.Background(), `SELECT COALESCE((SELECT sequence FROM room_reads WHERE room_id=$1 AND user_id=$2),0)`, room, user).Scan(&page.ReadSequence)
+	}
+	return page, err
+}
+
+func (s *PostgresStore) MessagesAfter(room, user string, after int64, limit int) (MessagePage, error) {
+	if after < 0 {
+		return MessagePage{}, ErrNotFound
+	}
+	rows, err := s.DB.Query(context.Background(), messageSelect+` WHERE m.room_id=$1 AND m.sequence>$2 AND EXISTS(SELECT 1 FROM room_members WHERE room_id=m.room_id AND user_id=$3) ORDER BY m.sequence ASC LIMIT $4`, room, after, user, limit+1)
+	if err != nil {
+		return MessagePage{}, err
+	}
+	page, err := messageRows(rows, limit)
+	if len(page.Messages) > 0 && page.BeforeID != "" {
+		page.BeforeID = page.Messages[len(page.Messages)-1].ID
+	}
 	return page, err
 }
 
 func (s *PostgresStore) WriteMessage(room, user, id, body, replyID string) (Message, error) {
+	message, _, err := s.writeMessage(room, user, id, body, replyID, "", nil)
+	return message, err
+}
+
+func (s *PostgresStore) SendMessage(room, user, body, replyID, nonce string, attachmentIDs []string) (Message, bool, error) {
+	return s.writeMessage(room, user, "", body, replyID, nonce, attachmentIDs)
+}
+
+func (s *PostgresStore) writeMessage(room, user, id, body, replyID, nonce string, attachmentIDs []string) (Message, bool, error) {
 	ctx := context.Background()
 	tx, err := s.DB.Begin(ctx)
 	if err != nil {
-		return Message{}, err
+		return Message{}, false, err
 	}
 	defer tx.Rollback(ctx)
 	// Allocate per-room message order only after earlier room writes commit.
 	// Otherwise a late commit with a lower sequence could land behind a read cursor.
 	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::uuid::text,0))`, room); err != nil {
-		return Message{}, err
+		return Message{}, false, err
 	}
 	// Lock membership until the write commits; a revoked member cannot race a
 	// successful permission check and add content after removal has committed.
 	var member string
 	if err = tx.QueryRow(ctx, `SELECT user_id::text FROM room_members WHERE room_id=$1 AND user_id=$2 FOR SHARE`, room, user).Scan(&member); err != nil {
-		return Message{}, ErrForbidden
+		return Message{}, false, ErrForbidden
+	}
+	if id == "" && nonce != "" {
+		var existingID, existingBody, existingReply string
+		err = tx.QueryRow(ctx, `SELECT id::text,body,COALESCE(reply_to_id::text,'') FROM messages WHERE room_id=$1 AND author_id=$2 AND client_nonce=$3`, room, user, nonce).Scan(&existingID, &existingBody, &existingReply)
+		if err == nil {
+			if existingBody != body || existingReply != replyID {
+				return Message{}, false, ErrConflict
+			}
+			var ids []string
+			rows, queryErr := tx.Query(ctx, `SELECT id::text FROM message_attachments WHERE message_id=$1 ORDER BY id`, existingID)
+			if queryErr != nil {
+				return Message{}, false, queryErr
+			}
+			for rows.Next() {
+				var value string
+				if scanErr := rows.Scan(&value); scanErr != nil {
+					rows.Close()
+					return Message{}, false, scanErr
+				}
+				ids = append(ids, value)
+			}
+			queryErr = rows.Err()
+			rows.Close()
+			if queryErr != nil {
+				return Message{}, false, queryErr
+			}
+			if !sameIDs(ids, attachmentIDs) {
+				return Message{}, false, ErrConflict
+			}
+			// Read through this transaction: asking the pool for a second
+			// connection while holding the room lock can deadlock retries.
+			message, getErr := scanMessage(tx.QueryRow(ctx, messageSelect+` WHERE m.room_id=$1 AND m.id=$2`, room, existingID))
+			return message, false, getErr
+		}
+		if err != pgx.ErrNoRows {
+			return Message{}, false, err
+		}
 	}
 	if id != "" {
 		var author string
 		var deleted bool
 		err = tx.QueryRow(ctx, `SELECT author_id::text,deleted_at IS NOT NULL FROM messages WHERE room_id=$1 AND id=$2 FOR UPDATE`, room, id).Scan(&author, &deleted)
 		if err != nil {
-			return Message{}, norm(err)
+			return Message{}, false, norm(err)
 		}
 		if author != user {
-			return Message{}, ErrForbidden
+			return Message{}, false, ErrForbidden
 		}
 		if deleted {
-			return Message{}, ErrNotFound
+			return Message{}, false, ErrNotFound
 		}
 	} else if replyID != "" {
 		var found string
 		if !uuidPattern.MatchString(replyID) {
-			return Message{}, ErrNotFound
+			return Message{}, false, ErrNotFound
 		}
 		err = tx.QueryRow(ctx, `SELECT id::text FROM messages WHERE room_id=$1 AND id=$2 FOR SHARE`, room, replyID).Scan(&found)
 		if err != nil {
-			return Message{}, norm(err)
+			return Message{}, false, norm(err)
 		}
 	}
 	mentions := map[string]bool{}
 	for _, match := range mentionPattern.FindAllStringSubmatch(body, -1) {
 		uid := strings.ToLower(match[1])
 		if !uuidPattern.MatchString(uid) {
-			return Message{}, ErrNotFound
+			return Message{}, false, ErrNotFound
 		}
 		mentions[uid] = true
 	}
 	if len(mentions) > 50 {
-		return Message{}, ErrForbidden
+		return Message{}, false, ErrForbidden
 	}
 	for uid := range mentions {
 		var found string
 		if err = tx.QueryRow(ctx, `SELECT user_id::text FROM room_members WHERE room_id=$1 AND user_id=$2 FOR SHARE`, room, uid).Scan(&found); err != nil {
-			return Message{}, ErrForbidden
+			return Message{}, false, ErrForbidden
+		}
+	}
+	if id == "" && len(attachmentIDs) > 0 {
+		if len(attachmentIDs) > 4 {
+			return Message{}, false, ErrForbidden
+		}
+		seenAttachments := make(map[string]bool, len(attachmentIDs))
+		for _, attachmentID := range attachmentIDs {
+			if !uuidPattern.MatchString(attachmentID) {
+				return Message{}, false, ErrNotFound
+			}
+			if seenAttachments[attachmentID] {
+				return Message{}, false, ErrConflict
+			}
+			seenAttachments[attachmentID] = true
+			var found string
+			if err = tx.QueryRow(ctx, `SELECT id::text FROM message_attachments WHERE id=$1 AND room_id=$2 AND uploader_id=$3 AND message_id IS NULL AND created_at>now()-interval '24 hours' FOR UPDATE`, attachmentID, room, user).Scan(&found); err != nil {
+				return Message{}, false, norm(err)
+			}
 		}
 	}
 	if id == "" {
-		err = tx.QueryRow(ctx, `INSERT INTO messages(room_id,author_id,body,reply_to_id) VALUES($1,$2,$3,NULLIF($4,'')::uuid) RETURNING id::text`, room, user, body, replyID).Scan(&id)
+		err = tx.QueryRow(ctx, `INSERT INTO messages(room_id,author_id,body,reply_to_id,client_nonce) VALUES($1,$2,$3,NULLIF($4,'')::uuid,NULLIF($5,'')::uuid) RETURNING id::text`, room, user, body, replyID, nonce).Scan(&id)
 	} else {
 		_, err = tx.Exec(ctx, `UPDATE messages SET body=$3,edited_at=clock_timestamp(),version=version+1 WHERE room_id=$1 AND id=$2`, room, id, body)
 	}
 	if err != nil {
-		return Message{}, err
+		return Message{}, false, err
+	}
+	for _, attachmentID := range attachmentIDs {
+		if _, err = tx.Exec(ctx, `UPDATE message_attachments SET message_id=$1 WHERE id=$2`, id, attachmentID); err != nil {
+			return Message{}, false, err
+		}
 	}
 	if _, err = tx.Exec(ctx, `DELETE FROM message_mentions WHERE message_id=$1`, id); err != nil {
-		return Message{}, err
+		return Message{}, false, err
 	}
 	for uid := range mentions {
 		if _, err = tx.Exec(ctx, `INSERT INTO message_mentions(message_id,user_id) VALUES($1,$2)`, id, uid); err != nil {
-			return Message{}, err
+			return Message{}, false, err
 		}
 	}
 	if err = tx.Commit(ctx); err != nil {
-		return Message{}, err
+		return Message{}, false, err
 	}
-	return s.MessageByID(room, id)
+	message, err := s.MessageByID(room, id)
+	return message, true, err
+}
+
+func sameIDs(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	seen := make(map[string]bool, len(left))
+	for _, id := range left {
+		seen[id] = true
+	}
+	for _, id := range right {
+		if !seen[id] {
+			return false
+		}
+		delete(seen, id)
+	}
+	return len(seen) == 0
 }
 
 func (s *PostgresStore) DeleteMessage(room, user, id string) (Message, error) {
@@ -198,6 +310,12 @@ func (s *PostgresStore) DeleteMessage(room, user, id string) (Message, error) {
 	}
 	_, err = tx.Exec(ctx, `UPDATE messages SET body='',deleted_at=COALESCE(deleted_at,clock_timestamp()),version=version+1 WHERE id=$1`, id)
 	if err != nil {
+		return Message{}, err
+	}
+	if _, err = tx.Exec(ctx, `UPDATE message_attachments SET deleted_at=clock_timestamp() WHERE message_id=$1 AND deleted_at IS NULL`, id); err != nil {
+		return Message{}, err
+	}
+	if _, err = tx.Exec(ctx, `UPDATE message_reports SET status='resolved' WHERE message_id=$1 AND status='open'`, id); err != nil {
 		return Message{}, err
 	}
 	for _, table := range []string{"message_mentions", "message_reactions"} {
