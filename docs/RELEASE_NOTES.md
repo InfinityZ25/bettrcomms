@@ -5,7 +5,9 @@ for registration or camera permission. Returning from Meta AI resumes capture
 automatically, and the app no longer reports an immediate error or stops the
 pending request merely because the handoff backgrounds BetterComms. Meta AI
 can briefly return before its glasses link reconnects, so the host now waits
-up to a minute for a connected device before checking camera permission.
+up to a minute for an eligible device before checking camera permission. The
+next device build keeps Meta's selector alive during the request, retries
+transient session startup failures, and logs error codes without device IDs.
 Meta AI can still report its own registration error; streaming from Gen 1 and Gen 2
 glasses awaits a successful physical-device acceptance test.
 

@@ -36,6 +36,8 @@ static void BCMetaEmit(NSDictionary *detail) {
 
 @interface BCMetaCamera : NSObject
 @property (nonatomic, strong) MWDATDeviceSession *session;
+@property (nonatomic, strong) MWDATAutoDeviceSelector *deviceSelector;
+@property (nonatomic, strong) ObjC_AnyListenerToken *deviceListener;
 @property (nonatomic, strong) MWDATCamera *camera;
 @property (nonatomic, strong) MWDATStream *stream;
 @property (nonatomic, assign) BOOL configured;
@@ -45,6 +47,7 @@ static void BCMetaEmit(NSDictionary *detail) {
 @property (nonatomic, assign) BOOL deviceRetryScheduled;
 @property (nonatomic, assign) CFAbsoluteTime deviceWaitStarted;
 @property (nonatomic, assign) NSUInteger deviceWaitGeneration;
+@property (nonatomic, assign) NSUInteger sessionCreateRetries;
 @property (nonatomic, assign) BOOL framePending;
 @property (nonatomic, assign) CFAbsoluteTime lastFrame;
 + (instancetype)shared;
@@ -99,6 +102,8 @@ static void BCMetaEmit(NSDictionary *detail) {
     [wearables startRegistrationWithCompletionHandler:^(NSError *error) {
         dispatch_async(dispatch_get_main_queue(), ^{
             self.registrationInFlight = NO;
+            NSLog(@"BetterComms Meta: registration completed (state=%ld, error=%@/%ld)",
+                  (long)wearables.registrationState, error.domain, (long)error.code);
             if (error) [self reportError:error.localizedDescription];
             else {
                 BCMetaEmit(@{@"kind": @"registered"});
@@ -112,6 +117,9 @@ static void BCMetaEmit(NSDictionary *detail) {
     if (![self prepare]) return;
     [[MWDATWearables sharedInstance] handleUrl:url completionHandler:^(BOOL handled, NSError *error) {
         dispatch_async(dispatch_get_main_queue(), ^{
+            NSLog(@"BetterComms Meta: callback handled=%d (state=%ld, error=%@/%ld)",
+                  handled, (long)[MWDATWearables sharedInstance].registrationState,
+                  error.domain, (long)error.code);
             if (error) [self reportError:error.localizedDescription];
             else if (handled && [MWDATWearables sharedInstance].registrationState ==
                                   MWDATRegistrationStateRegistered) {
@@ -133,6 +141,17 @@ static void BCMetaEmit(NSDictionary *detail) {
     CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
     if (self.deviceWaitStarted == 0) {
         self.deviceWaitStarted = now;
+        MWDATWearables *wearables = [MWDATWearables sharedInstance];
+        NSUInteger connected = 0, compatible = 0;
+        for (NSString *identifier in wearables.devices) {
+            MWDATDevice *device = [wearables deviceForIdentifier:identifier];
+            if (device.linkState == MWDATLinkStateConnected) connected++;
+            if (device.compatibility == MWDATCompatibilityCompatible) compatible++;
+        }
+        NSLog(@"BetterComms Meta: waiting for eligible device (registered=%d, known=%lu, connected=%lu, compatible=%lu)",
+              wearables.registrationState == MWDATRegistrationStateRegistered,
+              (unsigned long)wearables.devices.count, (unsigned long)connected,
+              (unsigned long)compatible);
         BCMetaEmit(@{@"kind": @"waitingForDevice"});
     }
     if (now - self.deviceWaitStarted >= 60) {
@@ -158,15 +177,18 @@ static void BCMetaEmit(NSDictionary *detail) {
         [self connect];
         return;
     }
-    BOOL connected = NO;
-    for (NSString *identifier in wearables.devices) {
-        MWDATDevice *device = [wearables deviceForIdentifier:identifier];
-        if (device.linkState == MWDATLinkStateConnected) {
-            connected = YES;
-            break;
-        }
+    if (!self.deviceSelector) {
+        self.deviceSelector = [MWDATAutoDeviceSelector new];
+        __weak BCMetaCamera *weakSelf = self;
+        self.deviceListener = [self.deviceSelector addActiveDeviceListener:^(NSString *identifier) {
+            if (!identifier.length) return;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                BCMetaCamera *camera = weakSelf;
+                if (camera.startPending) [camera continueStart];
+            });
+        }];
     }
-    if (!connected) {
+    if (!self.deviceSelector.activeDevice.length) {
         [self waitForDevice];
         return;
     }
@@ -177,6 +199,8 @@ static void BCMetaEmit(NSDictionary *detail) {
             dispatch_async(dispatch_get_main_queue(), ^{
                 if (!self.startPending) return;
                 if (error) {
+                    NSLog(@"BetterComms Meta: camera permission check failed (%@, %ld)",
+                          error.domain, (long)error.code);
                     if ([error.domain isEqualToString:MWDATPermissionErrorDomain] &&
                         (error.code == MWDATPermissionErrorNoDevice ||
                          error.code == MWDATPermissionErrorNoDeviceWithConnection)) {
@@ -192,6 +216,8 @@ static void BCMetaEmit(NSDictionary *detail) {
                             dispatch_async(dispatch_get_main_queue(), ^{
                                 if (!self.startPending) return;
                                 if (permissionError) {
+                                    NSLog(@"BetterComms Meta: camera permission request failed (%@, %ld)",
+                                          permissionError.domain, (long)permissionError.code);
                                     if ([permissionError.domain isEqualToString:MWDATPermissionErrorDomain] &&
                                         (permissionError.code == MWDATPermissionErrorNoDevice ||
                                          permissionError.code == MWDATPermissionErrorNoDeviceWithConnection)) {
@@ -211,11 +237,20 @@ static void BCMetaEmit(NSDictionary *detail) {
 - (void)beginSession {
     if (!self.startPending || self.session) return;
     MWDATWearables *wearables = [MWDATWearables sharedInstance];
-    MWDATAutoDeviceSelector *selector = [MWDATAutoDeviceSelector new];
     NSError *error = nil;
-    MWDATDeviceSession *session = [wearables createSessionWithDeviceSelector:selector error:&error];
+    MWDATDeviceSession *session = [wearables createSessionWithDeviceSelector:self.deviceSelector error:&error];
     if (!session) {
-        [self reportError:error.localizedDescription ?: @"Could not connect to your glasses."];
+        NSLog(@"BetterComms Meta: session creation failed (%@, %ld, selected=%d)",
+              error.domain, (long)error.code, self.deviceSelector.activeDevice.length > 0);
+        if ((!self.deviceSelector.activeDevice.length ||
+             [error.localizedDescription localizedCaseInsensitiveContainsString:@"eligible device"]) &&
+            self.sessionCreateRetries < 4) {
+            self.sessionCreateRetries++;
+            self.startingSession = NO;
+            [self waitForDevice];
+            return;
+        }
+        [self reportError:@"Meta could not start a glasses session. Open Meta AI until the glasses show connected, then return and try again."];
         return;
     }
     self.session = session;
@@ -223,8 +258,19 @@ static void BCMetaEmit(NSDictionary *detail) {
         dispatch_async(dispatch_get_main_queue(), ^{
             if (self.session != session) return;
             if (startError) {
-                [self reportError:startError.localizedDescription];
-                [self stop];
+                NSLog(@"BetterComms Meta: session startup failed (%@, %ld, attempt=%lu)",
+                      startError.domain, (long)startError.code,
+                      (unsigned long)self.sessionCreateRetries + 1);
+                [session stop];
+                self.session = nil;
+                if (self.sessionCreateRetries < 4) {
+                    self.sessionCreateRetries++;
+                    self.startingSession = NO;
+                    [self waitForDevice];
+                } else {
+                    [self reportError:@"Meta could not connect to the glasses camera. Check that the glasses show connected in Meta AI, then try again."];
+                    [self stop];
+                }
                 return;
             }
             MWDATStreamConfiguration *config = [[MWDATStreamConfiguration alloc]
@@ -293,6 +339,10 @@ static void BCMetaEmit(NSDictionary *detail) {
     self.deviceRetryScheduled = NO;
     self.deviceWaitStarted = 0;
     self.deviceWaitGeneration++;
+    self.sessionCreateRetries = 0;
+    [self.deviceListener cancel];
+    self.deviceListener = nil;
+    self.deviceSelector = nil;
     self.stream.onVideoFrame = nil;
     self.stream.onError = nil;
     [self.camera stop];
