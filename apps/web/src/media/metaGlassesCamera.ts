@@ -8,7 +8,7 @@ export const hasMetaGlassesCamera = () =>
 type MetaEvent =
   | { kind: 'frame'; jpeg: string; width: number; height: number }
   | { kind: 'error'; message: string }
-  | { kind: 'stopped' | 'streaming' | 'starting' | 'connecting' | 'registered' };
+  | { kind: 'stopped' | 'streaming' | 'starting' | 'connecting' | 'registered' | 'waitingForDevice' };
 
 // Call video and the Settings preview may use the same SDK session together.
 // Stopping one canvas must not disconnect the other's glasses stream.
@@ -69,6 +69,10 @@ export async function startMetaGlassesCamera(): Promise<{
     if (detail.kind === 'registered' || detail.kind === 'starting') {
       // Camera permission may require a second Meta AI round trip.
       waitForFrame(2 * 60_000);
+      return;
+    }
+    if (detail.kind === 'waitingForDevice') {
+      waitForFrame(90_000);
       return;
     }
     if (detail.kind === 'streaming') {

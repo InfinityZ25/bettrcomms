@@ -4,7 +4,9 @@ The iPhone Meta glasses camera request now stays pending while Meta AI opens
 for registration or camera permission. Returning from Meta AI resumes capture
 automatically, and the app no longer reports an immediate error or stops the
 pending request merely because the handoff backgrounds BetterComms. Meta AI
-can still report its own registration error; streaming from Gen 1 and Gen 2
+can briefly return before its glasses link reconnects, so the host now waits
+up to a minute for a connected device before checking camera permission.
+Meta AI can still report its own registration error; streaming from Gen 1 and Gen 2
 glasses awaits a successful physical-device acceptance test.
 
 The next iPhone preview stores its proxy session in Apple Keychain so closing

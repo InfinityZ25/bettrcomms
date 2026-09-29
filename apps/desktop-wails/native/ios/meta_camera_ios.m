@@ -42,11 +42,15 @@ static void BCMetaEmit(NSDictionary *detail) {
 @property (nonatomic, assign) BOOL registrationInFlight;
 @property (nonatomic, assign) BOOL startPending;
 @property (nonatomic, assign) BOOL startingSession;
+@property (nonatomic, assign) BOOL deviceRetryScheduled;
+@property (nonatomic, assign) CFAbsoluteTime deviceWaitStarted;
+@property (nonatomic, assign) NSUInteger deviceWaitGeneration;
 @property (nonatomic, assign) BOOL framePending;
 @property (nonatomic, assign) CFAbsoluteTime lastFrame;
 + (instancetype)shared;
 - (void)connect;
 - (void)continueStart;
+- (void)waitForDevice;
 - (void)start;
 - (void)stop;
 - (void)handleURL:(NSURL *)url;
@@ -124,6 +128,28 @@ static void BCMetaEmit(NSDictionary *detail) {
     [self continueStart];
 }
 
+- (void)waitForDevice {
+    if (!self.startPending) return;
+    CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
+    if (self.deviceWaitStarted == 0) {
+        self.deviceWaitStarted = now;
+        BCMetaEmit(@{@"kind": @"waitingForDevice"});
+    }
+    if (now - self.deviceWaitStarted >= 60) {
+        [self reportError:@"Meta AI authorized BetterComms, but the glasses did not reconnect. Open the arms and check their connection in Meta AI."];
+        return;
+    }
+    if (self.deviceRetryScheduled) return;
+    self.deviceRetryScheduled = YES;
+    NSUInteger generation = self.deviceWaitGeneration;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        if (generation != self.deviceWaitGeneration) return;
+        self.deviceRetryScheduled = NO;
+        [self continueStart];
+    });
+}
+
 - (void)continueStart {
     if (!self.startPending || self.startingSession || self.session) return;
     if (self.stream) return;
@@ -132,8 +158,16 @@ static void BCMetaEmit(NSDictionary *detail) {
         [self connect];
         return;
     }
-    if (wearables.devices.count == 0) {
-        [self reportError:@"No Meta glasses are available. Put them on and connect them in Meta AI."];
+    BOOL connected = NO;
+    for (NSString *identifier in wearables.devices) {
+        MWDATDevice *device = [wearables deviceForIdentifier:identifier];
+        if (device.linkState == MWDATLinkStateConnected) {
+            connected = YES;
+            break;
+        }
+    }
+    if (!connected) {
+        [self waitForDevice];
         return;
     }
     self.startingSession = YES;
@@ -141,8 +175,14 @@ static void BCMetaEmit(NSDictionary *detail) {
     [wearables checkPermissionStatus:MWDATPermissionCamera
         completionHandler:^(enum MWDATPermissionStatus status, NSError *error) {
             dispatch_async(dispatch_get_main_queue(), ^{
+                if (!self.startPending) return;
                 if (error) {
-                    [self reportError:error.localizedDescription];
+                    if ([error.domain isEqualToString:MWDATPermissionErrorDomain] &&
+                        (error.code == MWDATPermissionErrorNoDevice ||
+                         error.code == MWDATPermissionErrorNoDeviceWithConnection)) {
+                        self.startingSession = NO;
+                        [self waitForDevice];
+                    } else [self reportError:error.localizedDescription];
                 } else if (status == MWDATPermissionStatusGranted) {
                     [self beginSession];
                 } else {
@@ -150,7 +190,15 @@ static void BCMetaEmit(NSDictionary *detail) {
                     [wearables requestPermission:MWDATPermissionCamera
                         completionHandler:^(enum MWDATPermissionStatus granted, NSError *permissionError) {
                             dispatch_async(dispatch_get_main_queue(), ^{
-                                if (permissionError) [self reportError:permissionError.localizedDescription];
+                                if (!self.startPending) return;
+                                if (permissionError) {
+                                    if ([permissionError.domain isEqualToString:MWDATPermissionErrorDomain] &&
+                                        (permissionError.code == MWDATPermissionErrorNoDevice ||
+                                         permissionError.code == MWDATPermissionErrorNoDeviceWithConnection)) {
+                                        self.startingSession = NO;
+                                        [self waitForDevice];
+                                    } else [self reportError:permissionError.localizedDescription];
+                                }
                                 else if (granted == MWDATPermissionStatusGranted) [self beginSession];
                                 else [self reportError:@"Allow glasses camera access in Meta AI, then try again."];
                             });
@@ -242,6 +290,9 @@ static void BCMetaEmit(NSDictionary *detail) {
 - (void)stop {
     self.startPending = NO;
     self.startingSession = NO;
+    self.deviceRetryScheduled = NO;
+    self.deviceWaitStarted = 0;
+    self.deviceWaitGeneration++;
     self.stream.onVideoFrame = nil;
     self.stream.onError = nil;
     [self.camera stop];
