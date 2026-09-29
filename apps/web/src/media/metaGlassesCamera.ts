@@ -15,10 +15,11 @@ type MetaEvent =
 let activeConsumers = 0;
 
 /** Convert native DAT frames into an ordinary call camera track on iOS. */
-export async function startMetaGlassesCamera(): Promise<{
+export async function startMetaGlassesCamera(signal?: AbortSignal): Promise<{
   track: MediaStreamTrack;
   dispose: () => void;
 }> {
+  signal?.throwIfAborted();
   if (!hasMetaGlassesCamera()) throw new Error('Meta glasses camera requires the iPhone app.');
   const canvas = document.createElement('canvas');
   if (typeof canvas.captureStream !== 'function') {
@@ -40,6 +41,9 @@ export async function startMetaGlassesCamera(): Promise<{
     resolveFirst = resolve;
     rejectFirst = reject;
   });
+  // Cancellation/native events can arrive before the binding promise settles.
+  // Keep the rejection observed until the caller reaches `await ready`.
+  void ready.catch(() => {});
   let timeout: number;
   const waitForFrame = (milliseconds: number) => {
     window.clearTimeout(timeout);
@@ -53,9 +57,14 @@ export async function startMetaGlassesCamera(): Promise<{
     disposed = true;
     window.clearTimeout(timeout);
     window.removeEventListener('bc-meta-camera', onMetaEvent);
+    signal?.removeEventListener('abort', onAbort);
     track.stop();
     if (ownsNative && --activeConsumers === 0)
       void callIOSNative(iosNativeBinding.metaStop).catch(() => {});
+  };
+  const onAbort = () => {
+    rejectFirst(new DOMException('Glasses camera connection cancelled.', 'AbortError'));
+    dispose();
   };
   const onMetaEvent = (event: Event) => {
     if (disposed) return;
@@ -113,7 +122,9 @@ export async function startMetaGlassesCamera(): Promise<{
     image.src = `data:image/jpeg;base64,${detail.jpeg}`;
   };
   window.addEventListener('bc-meta-camera', onMetaEvent);
+  signal?.addEventListener('abort', onAbort, { once: true });
   try {
+    if (signal?.aborted) { onAbort(); await ready; }
     activeConsumers++;
     ownsNative = true;
     await callIOSNative(iosNativeBinding.metaStart);

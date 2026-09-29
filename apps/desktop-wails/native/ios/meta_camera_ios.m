@@ -4,6 +4,8 @@
 #import <UIKit/UIKit.h>
 #import <MWDATCore/MWDATCore-Swift.h>
 #import <MWDATCamera/MWDATCamera-Swift.h>
+#import <os/log.h>
+#import "meta_camera_retry.h"
 #import "webview_window_ios.h"
 #import "application_ios_delegate.h"
 
@@ -36,6 +38,7 @@ static void BCMetaEmit(NSDictionary *detail) {
 
 @interface BCMetaCamera : NSObject
 @property (nonatomic, strong) MWDATDeviceSession *session;
+@property (nonatomic, strong) MWDATDeviceSession *retiringSession;
 @property (nonatomic, strong) MWDATAutoDeviceSelector *deviceSelector;
 @property (nonatomic, strong) ObjC_AnyListenerToken *deviceListener;
 @property (nonatomic, strong) MWDATCamera *camera;
@@ -50,6 +53,7 @@ static void BCMetaEmit(NSDictionary *detail) {
 @property (nonatomic, assign) CFAbsoluteTime deviceWaitStarted;
 @property (nonatomic, assign) CFAbsoluteTime activationWaitUntil;
 @property (nonatomic, assign) CFAbsoluteTime cameraWaitStarted;
+@property (nonatomic, assign) CFAbsoluteTime nextSessionAttemptAt;
 @property (nonatomic, assign) NSUInteger deviceWaitGeneration;
 @property (nonatomic, assign) NSUInteger sessionCreateRetries;
 @property (nonatomic, assign) BOOL framePending;
@@ -188,6 +192,13 @@ static void BCMetaEmit(NSDictionary *detail) {
 - (void)continueStart {
     if (!self.startPending || self.startingSession || self.session) return;
     if (self.stream) return;
+    // Selector notifications must respect the retry delay and SDK teardown.
+    if (CFAbsoluteTimeGetCurrent() < self.nextSessionAttemptAt ||
+        (self.retiringSession && self.retiringSession.state != MWDATDeviceSessionStateStopped)) {
+        [self waitForDevice];
+        return;
+    }
+    self.retiringSession = nil;
     MWDATWearables *wearables = [MWDATWearables sharedInstance];
     if (wearables.registrationState != MWDATRegistrationStateRegistered) {
         [self connect];
@@ -244,13 +255,15 @@ static void BCMetaEmit(NSDictionary *detail) {
         NSLog(@"BetterComms Meta: session creation failed (%@, %ld, selected=%d)",
               error.domain, (long)error.code, selectedDevice.length > 0);
         if (!self.deviceSelector.activeDevice.length ||
-            [error.localizedDescription localizedCaseInsensitiveContainsString:@"eligible device"]) {
+            BCMetaSessionErrorCanRetry(error, [NSBundle bundleForClass:[MWDATWearables class]])) {
             self.sessionCreateRetries++;
+            self.nextSessionAttemptAt = CFAbsoluteTimeGetCurrent() + 3.0;
             self.startingSession = NO;
             [self waitForDevice];
             return;
         }
         [self reportError:@"Meta could not start a glasses session. Open Meta AI until the glasses show connected, then return and try again."];
+        [self stop];
         return;
     }
     self.session = session;
@@ -260,17 +273,22 @@ static void BCMetaEmit(NSDictionary *detail) {
         dispatch_async(dispatch_get_main_queue(), ^{
             if (self.session != session) return;
             if (startError) {
-                NSLog(@"BetterComms Meta: session startup failed (%@, %ld, attempt=%lu)",
-                      startError.domain, (long)startError.code,
-                      (unsigned long)self.sessionCreateRetries + 1);
+                BOOL retryable = BCMetaSessionErrorCanRetry(startError,
+                    [NSBundle bundleForClass:[MWDATWearables class]]);
+                os_log_error(OS_LOG_DEFAULT,
+                    "BetterComms Meta: session startup failed domain=%{public}@ code=%ld retryable=%d attempt=%lu",
+                    startError.domain, (long)startError.code, retryable,
+                    (unsigned long)self.sessionCreateRetries + 1);
                 [session stop];
+                self.retiringSession = session;
                 self.session = nil;
-                if ([startError.localizedDescription localizedCaseInsensitiveContainsString:@"eligible device"]) {
+                if (retryable) {
                     self.sessionCreateRetries++;
+                    self.nextSessionAttemptAt = CFAbsoluteTimeGetCurrent() + 3.0;
                     self.startingSession = NO;
                     [self waitForDevice];
                 } else {
-                    [self reportError:@"Meta could not open the glasses camera link. Headset audio may still work. Check the connection and developer component in Meta AI, then try again."];
+                    [self reportError:startError.localizedDescription ?: @"Meta could not open the glasses camera link."];
                     [self stop];
                 }
                 return;
@@ -368,11 +386,13 @@ static void BCMetaEmit(NSDictionary *detail) {
     self.camera = camera;
     self.stream = camera.stream;
     __weak BCMetaCamera *weakSelf = self;
+    __weak MWDATStream *expectedStream = self.stream;
     self.stream.onVideoFrame = ^(MWDATVideoFrame *frame) {
         [weakSelf publishFrame:frame];
     };
     self.stream.onError = ^(enum MWDATStreamError streamError) {
         dispatch_async(dispatch_get_main_queue(), ^{
+            if (!expectedStream || weakSelf.stream != expectedStream) return;
             [weakSelf reportError:[NSString stringWithFormat:
                 @"Glasses stream stopped (error %ld).", (long)streamError]];
             [weakSelf stop];
@@ -421,6 +441,7 @@ static void BCMetaEmit(NSDictionary *detail) {
     self.deviceWaitStarted = 0;
     self.activationWaitUntil = 0;
     self.cameraWaitStarted = 0;
+    self.nextSessionAttemptAt = 0;
     self.deviceWaitGeneration++;
     self.sessionCreateRetries = 0;
     [self.deviceListener cancel];
@@ -430,6 +451,8 @@ static void BCMetaEmit(NSDictionary *detail) {
     self.stream.onError = nil;
     [self.camera stop];
     [self.session stop];
+    [self.retiringSession stop];
+    self.retiringSession = nil;
     self.stream = nil;
     self.camera = nil;
     self.session = nil;

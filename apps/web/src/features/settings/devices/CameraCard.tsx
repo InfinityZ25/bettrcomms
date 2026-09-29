@@ -89,7 +89,7 @@ export default function CameraCard({
       <DeviceActions>
         {value !== META_GLASSES_CAMERA_ID && <LinkButton onClick={onEnable}>Enable camera</LinkButton>}
         <LinkButton onClick={() => void preview.toggle()}>
-          {previewing ? 'Stop preview' : 'Preview camera'}
+          {preview.connecting ? 'Cancel connection' : previewing ? 'Stop preview' : 'Preview camera'}
         </LinkButton>
         {windowsDesktop && isDenied(status) && (
           <LinkButton onClick={onOpenPrivacy}>Open privacy settings</LinkButton>
