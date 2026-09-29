@@ -8,14 +8,26 @@ can briefly return before its glasses link reconnects, so the host now waits
 up to a minute for an eligible device before checking camera permission. The
 next device build keeps Meta's selector alive during the request, retries
 transient session startup failures, and logs error codes without device IDs.
+After a Meta AI camera grant, the native bridge now waits until BetterComms is
+active again before starting the glasses session. Device logs showed the prior
+build trying to start just before iOS returned the app to the foreground;
+whether this resolves the remaining Bluetooth link failures needs a device test.
 The following device experiment also keeps the native glasses session alive
 when BetterComms backgrounds; whether the WebKit call continues publishing
 frames then still requires a two-device test.
 The iPhone call now publishes its captured microphone directly instead of
 routing it through a Web Audio output track, which could be silent even while
 iOS showed the microphone privacy indicator. It also configures the native
-voice-call audio session before opening the WebKit microphone. Remote audibility requires a
-two-device check on the next signed build.
+voice-call audio session before opening the WebKit microphone. A two-person
+call confirmed that the other participant can hear the iPhone after it leaves
+BetterComms. Incoming audio still stopped in the background with the Web Audio
+playback graph, so iPhone remote tracks now play through media elements under
+the native audio session. Background incoming audibility needs a signed-device
+test; microphone effects and voice balancing are bypassed on this iPhone path.
+Remote voice and watched screen-audio playback now belong to the persistent
+call session, so opening Messages or another screen does not remove them while
+the call continues. A two-person browser regression test covers this
+navigation path.
 Meta AI can still report its own registration error; streaming from Gen 1 and Gen 2
 glasses awaits a successful physical-device acceptance test.
 

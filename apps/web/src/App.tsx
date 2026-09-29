@@ -247,6 +247,7 @@ export default function App() {
       user={user}
       browsingRoom={room}
       noise={preferences.noise}
+      balanced={preferences.balanced}
       presenceByRoom={presence.rooms}
       presenceKnown={presence.known}
       onError={setError}

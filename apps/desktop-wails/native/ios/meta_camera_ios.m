@@ -44,6 +44,7 @@ static void BCMetaEmit(NSDictionary *detail) {
 @property (nonatomic, assign) BOOL registrationInFlight;
 @property (nonatomic, assign) BOOL startPending;
 @property (nonatomic, assign) BOOL startingSession;
+@property (nonatomic, assign) BOOL permissionGrantedPending;
 @property (nonatomic, assign) BOOL deviceRetryScheduled;
 @property (nonatomic, assign) CFAbsoluteTime deviceWaitStarted;
 @property (nonatomic, assign) NSUInteger deviceWaitGeneration;
@@ -53,6 +54,7 @@ static void BCMetaEmit(NSDictionary *detail) {
 + (instancetype)shared;
 - (void)connect;
 - (void)continueStart;
+- (void)beginSessionWhenActive;
 - (void)waitForDevice;
 - (void)start;
 - (void)stop;
@@ -194,6 +196,10 @@ static void BCMetaEmit(NSDictionary *detail) {
     }
     self.startingSession = YES;
     BCMetaEmit(@{@"kind": @"starting"});
+    if (self.permissionGrantedPending) {
+        [self beginSessionWhenActive];
+        return;
+    }
     [wearables checkPermissionStatus:MWDATPermissionCamera
         completionHandler:^(enum MWDATPermissionStatus status, NSError *error) {
             dispatch_async(dispatch_get_main_queue(), ^{
@@ -208,7 +214,7 @@ static void BCMetaEmit(NSDictionary *detail) {
                         [self waitForDevice];
                     } else [self reportError:error.localizedDescription];
                 } else if (status == MWDATPermissionStatusGranted) {
-                    [self beginSession];
+                    [self beginSessionWhenActive];
                 } else {
                     // Meta AI owns glasses-camera consent and may switch apps.
                     [wearables requestPermission:MWDATPermissionCamera
@@ -225,13 +231,30 @@ static void BCMetaEmit(NSDictionary *detail) {
                                         [self waitForDevice];
                                     } else [self reportError:permissionError.localizedDescription];
                                 }
-                                else if (granted == MWDATPermissionStatusGranted) [self beginSession];
+                                else if (granted == MWDATPermissionStatusGranted) [self beginSessionWhenActive];
                                 else [self reportError:@"Allow glasses camera access in Meta AI, then try again."];
                             });
                         }];
                 }
             });
         }];
+}
+
+- (void)beginSessionWhenActive {
+    if (!self.startPending) return;
+    // Meta AI can call back with camera permission before BetterComms has
+    // foregrounded or before the accessory link has recovered from the app
+    // switch. Starting a session at that point consumes the retry budget while
+    // iOS is still handing the glasses back to this process.
+    if ([UIApplication sharedApplication].applicationState != UIApplicationStateActive) {
+        self.permissionGrantedPending = YES;
+        self.startingSession = NO;
+        self.deviceWaitStarted = 0;
+        NSLog(@"BetterComms Meta: camera permission granted; waiting for app activation");
+        return;
+    }
+    self.permissionGrantedPending = NO;
+    [self beginSession];
 }
 
 - (void)beginSession {
@@ -336,6 +359,7 @@ static void BCMetaEmit(NSDictionary *detail) {
 - (void)stop {
     self.startPending = NO;
     self.startingSession = NO;
+    self.permissionGrantedPending = NO;
     self.deviceRetryScheduled = NO;
     self.deviceWaitStarted = 0;
     self.deviceWaitGeneration++;

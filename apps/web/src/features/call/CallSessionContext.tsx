@@ -7,6 +7,7 @@ import {
 } from 'react';
 import type { CallParticipant, Room, User } from '@/api';
 import { useCallSession } from './useCallSession';
+import { RemoteAudio } from './PeerAudio';
 import {
   EMPTY_CALL_PRESENCE,
   type CallPresence,
@@ -25,6 +26,7 @@ export type CallSession = ReturnType<typeof useCallSession> & {
   room: Room | null;
   callPresence: CallPresence[];
   presenceKnown: boolean;
+  setAudibleShareIds: (ids: string[]) => void;
 };
 
 /** What the shell needs to know about the call to lay itself out. */
@@ -65,6 +67,7 @@ export function CallSessionProvider({
   user,
   browsingRoom,
   noise,
+  balanced,
   presenceByRoom,
   presenceKnown,
   onError,
@@ -76,6 +79,7 @@ export function CallSessionProvider({
   /** The room the sidebar has selected, which the call does not follow. */
   browsingRoom: Room | null;
   noise: boolean;
+  balanced: boolean;
   presenceByRoom: Record<string, CallParticipant[]>;
   presenceKnown: boolean;
   onError: (message: string) => void;
@@ -85,6 +89,7 @@ export function CallSessionProvider({
   children: ReactNode;
 }) {
   const [callRoom, setCallRoom] = useState<Room | null>(null);
+  const [audibleShareIds, setAudibleShareIds] = useState<string[]>([]);
   const room = callRoom ?? browsingRoom;
   const callPresence = room
     ? (presenceByRoom[room.id] ?? EMPTY_CALL_PRESENCE)
@@ -105,6 +110,7 @@ export function CallSessionProvider({
   // would otherwise tear the session down.
   useEffect(() => {
     setCallRoom((current) => (joined ? (current ?? browsingRoom) : null));
+    if (!joined) setAudibleShareIds([]);
   }, [joined]);
 
   useEffect(() => {
@@ -117,8 +123,22 @@ export function CallSessionProvider({
 
   return (
     <CallSessionContext.Provider
-      value={{ ...session, callRoom, room, callPresence, presenceKnown }}
+      value={{ ...session, callRoom, room, callPresence, presenceKnown, setAudibleShareIds }}
     >
+      {session.remote
+        .filter((track) => track.track.kind === 'audio' && (
+          track.source === 'microphone' ||
+          (track.source === 'system' && audibleShareIds.includes(track.peerId))
+        ))
+        .map((track) => (
+          <RemoteAudio
+            key={track.peerId + track.source + track.track.id}
+            track={track.track}
+            peerId={track.peerId}
+            source={track.source}
+            balanced={balanced}
+          />
+        ))}
       {children}
     </CallSessionContext.Provider>
   );
