@@ -1,12 +1,8 @@
-//go:build !windows
+//go:build !windows && (!darwin || !cgo)
 
 package desktop
 
-// No credential store is ported off Windows.
-//
-// This host ships for Windows, and a stub that quietly wrote a file would be
-// worse than an honest absence: the session would look protected without being
-// so. The session simply does not persist here, and the boot report says it.
+// Platforms without an OS credential store keep sessions for this process only.
 
 func storeSecret(string, []byte) error { return ErrNoCredentialStore }
 

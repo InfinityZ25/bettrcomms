@@ -166,12 +166,12 @@ func run() error {
 			// Camera tiles and remote video belong inside the call UI. WKWebView
 			// otherwise opens video playback in iOS's full-screen player.
 			EnableInlineMediaPlayback: true,
-			DisableBounce:            true,
+			DisableBounce:             true,
 		},
 		Assets: application.AssetOptions{
 			Handler: handler,
 		},
-		Services: services(&AuthService{signIn: signIn}, media, toasts, gate),
+		Services: services(&AuthService{signIn: signIn, gate: gate}, media, toasts),
 		Windows: application.WindowsOptions{
 			AdditionalBrowserArgs: []string{
 				"--autoplay-policy=no-user-gesture-required",
@@ -270,7 +270,6 @@ func services(
 	auth *AuthService,
 	media *NativeMediaService,
 	toasts *notifications.NotificationService,
-	gate *desktop.PageGate,
 ) []application.Service {
 	registered := []application.Service{
 		application.NewService(auth),
@@ -280,11 +279,6 @@ func services(
 	}
 	if toasts != nil {
 		registered = append(registered, application.NewService(toasts))
-	}
-	if runtime.GOOS == "ios" && gate != nil {
-		registered = append(registered, metaCameraService(gate))
-		registered = append(registered, application.NewService(&IOSCallAudioService{gate: gate}))
-		registered = append(registered, application.NewService(&IOSAppScreenService{gate: gate}))
 	}
 	return registered
 }
@@ -297,6 +291,7 @@ func services(
 // this process.
 type AuthService struct {
 	signIn *desktop.BrowserSignIn
+	gate   *desktop.PageGate
 }
 
 // BrowserSignInBegin opens the system browser on the confirmation page and
@@ -320,7 +315,9 @@ func (a *AuthService) BrowserSignInCancel() {
 // outlives the window.
 func (a *AuthService) ServiceShutdown() error {
 	a.signIn.Cancel()
-	return nil
+	_ = iosAppScreenStop()
+	_ = metaCameraStop()
+	return iosCallAudioStop()
 }
 
 func nativeWindowsWindowOptions() application.WindowsWindow {

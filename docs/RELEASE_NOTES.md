@@ -1,5 +1,13 @@
 # BetterComms preview release notes
 
+The next iPhone preview stores its proxy session in Apple Keychain so closing
+the app no longer discards sign-in. The iPhone native call, screen, and glasses
+bridges now use stable Wails binding IDs. Camera startup retries with lower
+constraints if WebKit rejects the requested mode, while permission denials
+still surface normally. Mobile dialogs and the conversations drawer reserve
+the status-bar safe area, and the packaged WKWebView disables whole-page pinch
+zoom. These changes await a fresh signed-device acceptance check.
+
 The experimental iPhone host now keeps videos inline in the call, fills the
 mobile viewport without the 600 px minimum-height overflow, and suppresses
 WebKit's extra media prompt for its own packaged page while retaining iOS's

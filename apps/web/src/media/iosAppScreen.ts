@@ -1,5 +1,4 @@
-import { Call } from '@wailsio/runtime';
-import { nativePageToken } from '@/desktop/nativeMedia';
+import { callIOSNative, iosNativeBinding } from '@/desktop/iosNativeBindings';
 import { readDesktopBootReport } from '@/desktop/runtime';
 
 export const hasIOSAppScreen = () => readDesktopBootReport()?.platform === 'ios';
@@ -8,9 +7,6 @@ type ScreenEvent =
   | { kind: 'frame'; jpeg: string; width: number; height: number }
   | { kind: 'error'; message: string }
   | { kind: 'starting' | 'capturing' | 'stopped' };
-
-const nativeCall = (method: string) =>
-  Call.ByName(`bettercomms/desktop-wails.IOSAppScreenService.${method}`, nativePageToken());
 
 /** Share the foreground BetterComms screen; other apps require a broadcast extension. */
 export async function startIOSAppScreen(): Promise<{
@@ -43,7 +39,7 @@ export async function startIOSAppScreen(): Promise<{
     window.clearTimeout(timeout);
     window.removeEventListener('bc-ios-app-screen', onScreenEvent);
     track.stop();
-    void nativeCall('ScreenStop').catch(() => {});
+    void callIOSNative(iosNativeBinding.screenStop).catch(() => {});
   };
   const onScreenEvent = (event: Event) => {
     if (disposed) return;
@@ -76,7 +72,7 @@ export async function startIOSAppScreen(): Promise<{
   };
   window.addEventListener('bc-ios-app-screen', onScreenEvent);
   try {
-    await nativeCall('ScreenStart');
+    await callIOSNative(iosNativeBinding.screenStart);
     await ready;
     return { track, dispose };
   } catch (error) {

@@ -185,7 +185,7 @@ export default function RoomSidebar({
         <SheetContent
           side="right"
           showCloseButton={false}
-          className="min-[821px]:hidden bg-sidebar p-0"
+          className="min-[821px]:hidden bg-sidebar p-0 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"
           style={{ width: '66.667vw', maxWidth: 'none' }}
         >
           <SheetHeader className="sr-only">
@@ -195,7 +195,7 @@ export default function RoomSidebar({
           <Button
             variant="ghost"
             size="icon-sm"
-            className="absolute top-2 right-2 z-10"
+            className="absolute top-[calc(env(safe-area-inset-top)+0.5rem)] right-2 z-10"
             aria-label="Close sidebar"
             onClick={() => setOpenMobile(false)}
           >

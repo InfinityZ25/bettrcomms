@@ -51,3 +51,26 @@ func TestSensitiveNativeMethodsRejectUnauthorisedPages(t *testing.T) {
 		})
 	}
 }
+
+func TestIOSNativeBridgeRejectsUnauthorisedPages(t *testing.T) {
+	gate, err := desktop.NewPageGate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bridge := &AuthService{gate: gate}
+	for name, call := range map[string]func(string) error{
+		"audio start":     bridge.IOSCallAudioStart,
+		"audio stop":      bridge.IOSCallAudioStop,
+		"screen start":    bridge.IOSScreenStart,
+		"screen stop":     bridge.IOSScreenStop,
+		"glasses connect": bridge.IOSMetaConnect,
+		"glasses start":   bridge.IOSMetaStart,
+		"glasses stop":    bridge.IOSMetaStop,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := call("invalid"); !errors.Is(err, desktop.ErrUntrustedCaller) {
+				t.Fatalf("native bridge did not reject an unauthorised caller: %v", err)
+			}
+		})
+	}
+}

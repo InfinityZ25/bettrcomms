@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  cameraCaptureConstraints,
+  captureCameraWithFallback,
   readCameraSettings,
   requestedCameraLabel,
   writeCameraSettings,
@@ -78,10 +78,11 @@ export function useCameraPreview({
         } else {
           await ensureDesktopPermission('camera');
           if (stale()) return;
-          media = await navigator.mediaDevices.getUserMedia({
-            video: cameraCaptureConstraints(camera, settings),
-            audio: false,
-          });
+          media = await captureCameraWithFallback(
+            (video) => navigator.mediaDevices.getUserMedia({ video, audio: false }),
+            camera,
+            settings,
+          );
         }
         if (stale()) {
           cleanup?.();

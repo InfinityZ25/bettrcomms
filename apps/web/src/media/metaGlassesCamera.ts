@@ -1,5 +1,4 @@
-import { Call } from '@wailsio/runtime';
-import { nativePageToken } from '@/desktop/nativeMedia';
+import { callIOSNative, iosNativeBinding } from '@/desktop/iosNativeBindings';
 import { readDesktopBootReport } from '@/desktop/runtime';
 
 export const META_GLASSES_CAMERA_ID = 'bettercomms:meta-glasses-camera';
@@ -10,9 +9,6 @@ type MetaEvent =
   | { kind: 'frame'; jpeg: string; width: number; height: number }
   | { kind: 'error'; message: string }
   | { kind: 'stopped' | 'streaming' | 'starting' | 'connecting' | 'registered' };
-
-const nativeCall = (method: string) =>
-  Call.ByName(`bettercomms/desktop-wails.MetaCameraService.${method}`, nativePageToken());
 
 // Call video and the Settings preview may use the same SDK session together.
 // Stopping one canvas must not disconnect the other's glasses stream.
@@ -54,7 +50,7 @@ export async function startMetaGlassesCamera(): Promise<{
     window.removeEventListener('bc-meta-camera', onMetaEvent);
     track.stop();
     if (ownsNative && --activeConsumers === 0)
-      void nativeCall('MetaStop').catch(() => {});
+      void callIOSNative(iosNativeBinding.metaStop).catch(() => {});
   };
   const onMetaEvent = (event: Event) => {
     if (disposed) return;
@@ -97,7 +93,7 @@ export async function startMetaGlassesCamera(): Promise<{
   try {
     activeConsumers++;
     ownsNative = true;
-    await nativeCall('MetaStart');
+    await callIOSNative(iosNativeBinding.metaStart);
     await ready;
     return { track, dispose };
   } catch (error) {

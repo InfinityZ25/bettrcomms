@@ -231,6 +231,18 @@
   }
   [data-desktop-frame] > [data-app-shell] { padding-top: 0; }
   .content-canvas { border-radius: var(--radius-2xl); }
+  .friends-dialog {
+    inset: calc(env(safe-area-inset-top) + 0.75rem) 0.75rem calc(env(safe-area-inset-bottom) + 0.75rem);
+    width: auto;
+    max-width: none;
+    max-height: none;
+    transform: none;
+    translate: none;
+    gap: 1rem;
+    padding: 1rem;
+  }
+  .friends-dialog [data-slot='dialog-header'] { padding-right: 2.5rem; }
+  .friends-dialog [data-slot='dialog-close'] { top: 0.75rem; right: 0.75rem; }
 }
 
 /*

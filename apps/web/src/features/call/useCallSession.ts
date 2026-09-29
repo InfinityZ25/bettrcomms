@@ -12,7 +12,7 @@ import {
 import { api, type Room, type User } from '@/api';
 import { CallMicrophone } from '@/media/pushToTalk';
 import { allowDesktopCapture } from '@/media/permissions';
-import { cameraCaptureConstraints, readCameraSettings } from '@/media/cameraSettings';
+import { cameraCaptureConstraints, captureCameraWithFallback, readCameraSettings } from '@/media/cameraSettings';
 import { META_GLASSES_CAMERA_ID, startMetaGlassesCamera } from '@/media/metaGlassesCamera';
 import { hasIOSAppScreen } from '@/media/iosAppScreen';
 import { microphoneCaptureOptions } from '@/media/processingSettings';
@@ -56,10 +56,10 @@ async function captureSelectedCamera(media: MediaEngine, deviceId: string): Prom
     }
   } else {
     await allowDesktopCapture('camera');
-    await media.captureUserMedia({
-      camera: cameraCaptureConstraints(deviceId, readCameraSettings()),
-      microphone: false,
-    });
+    await captureCameraWithFallback(
+      (camera) => media.captureUserMedia({ camera, microphone: false }),
+      deviceId,
+    );
   }
 }
 

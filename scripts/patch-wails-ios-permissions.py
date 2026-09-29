@@ -29,7 +29,17 @@ replace_once(
 replace_once(
     implementation,
     "    self.webView.navigationDelegate = self;\n",
-    "    self.webView.navigationDelegate = self;\n    self.webView.UIDelegate = self;\n",
+    """    self.webView.navigationDelegate = self;
+    self.webView.UIDelegate = self;
+    // The app has its own zoom controls for shared content. Pinch-zooming the
+    // entire WKWebView shrinks the navigation and leaves unusable blank space.
+    self.webView.scrollView.pinchGestureRecognizer.enabled = NO;
+    WKUserScript *viewportScript = [[WKUserScript alloc]
+        initWithSource:@"var viewport = document.querySelector('meta[name=viewport]'); if (viewport) viewport.content = 'width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover';"
+        injectionTime:WKUserScriptInjectionTimeAtDocumentEnd
+        forMainFrameOnly:YES];
+    [self.webView.configuration.userContentController addUserScript:viewportScript];
+""",
 )
 replace_once(
     implementation,

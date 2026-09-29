@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   cameraCaptureConstraints,
+  captureCameraWithFallback,
   cameraFrameRateSupported,
   cameraResolutionSupported,
   readCameraSettings,
@@ -64,5 +65,26 @@ describe('camera settings', () => {
     expect(cameraFrameRateSupported(30, capabilities)).toBe(true);
     expect(cameraFrameRateSupported(60, capabilities)).toBe(false);
     expect(cameraResolutionSupported('4k', null)).toBe(true);
+  });
+
+  it('tries a smaller camera mode and then the default only for constraint failures', async () => {
+    const attempts: Array<boolean | MediaTrackConstraints> = [];
+    const capture = async (video: boolean | MediaTrackConstraints) => {
+      attempts.push(video);
+      if (attempts.length < 3) throw new DOMException('Invalid constraint', 'OverconstrainedError');
+      return 'camera';
+    };
+    await expect(captureCameraWithFallback(capture, '', { resolution: '1080p', frameRate: 30 })).resolves.toBe('camera');
+    expect(attempts).toEqual([
+      { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
+      { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 15 } },
+      true,
+    ]);
+    const denied = new DOMException('Permission denied', 'NotAllowedError');
+    await expect(captureCameraWithFallback(
+      async () => { throw denied; },
+      '',
+      { resolution: '1080p', frameRate: 30 },
+    )).rejects.toBe(denied);
   });
 });
