@@ -23,6 +23,7 @@ import { createDeepfilterDenoiser } from './deepfilterDenoise';
 import { createDeepfilterWasmDenoiser } from './deepfilterWasmDenoise';
 import { createMicrophoneEffects } from './microphoneEffects';
 import { hasNativeMediaHost } from '../desktop/nativeMedia';
+import { readDesktopBootReport } from '../desktop/runtime';
 import { startIOSAppScreen } from './iosAppScreen';
 import { createNativeSystemAudio, type NativeSystemAudioTrack } from './nativeSystemAudio';
 import type { DenoisedTrack } from './denoise';
@@ -171,6 +172,7 @@ export class MediaEngine extends EventTarget {
 
   async captureUserMedia(options: CaptureOptions = {}): Promise<void> {
     this.ensureActive();
+    const iosNative = readDesktopBootReport()?.platform === 'ios';
     const requestedDenoiser = options.denoiser ?? 'standard';
     const denoiser =
       (requestedDenoiser === 'nvidia' || requestedDenoiser === 'deepfilter') &&
@@ -205,7 +207,9 @@ export class MediaEngine extends EventTarget {
                 ? options.microphone.channelCount
                 : { ideal: 1 },
             noiseSuppression:
-              denoiser === 'rnnoise' ||
+              iosNative
+                ? (options.noiseSuppression ?? true)
+                : denoiser === 'rnnoise' ||
               denoiser === 'speex' ||
               denoiser === 'deepfilter-wasm' ||
               denoiser === 'nvidia' ||
@@ -227,7 +231,12 @@ export class MediaEngine extends EventTarget {
       const video = stream.getVideoTracks()[0];
       const microphone = stream.getAudioTracks()[0];
       if (video) await this.replaceLocalTrack('camera', video);
-      if (
+      if (microphone && iosNative) {
+        // WKWebView can capture a microphone but suspend its Web Audio
+        // MediaStreamDestination track. Publish the device track directly on
+        // iPhone so a call never depends on that processing graph for speech.
+        await this.replaceLocalTrack('microphone', microphone, () => microphone.stop());
+      } else if (
         microphone &&
         (denoiser === 'rnnoise' ||
           denoiser === 'speex' ||
