@@ -21,7 +21,7 @@ export default function CallDock({ onOpen }: { onOpen: () => void }) {
   const name = callRoom ? roomLabel(callRoom) : 'Call';
 
   return (
-    <div className="fixed bottom-3 left-3 z-30 flex items-center gap-1 rounded-2xl border border-border bg-card/95 p-1.5 shadow-[0_14px_36px_rgb(0_0_0/0.3)] backdrop-blur">
+    <div className="fixed bottom-3 left-3 z-30 flex items-center gap-1 rounded-2xl max-[820px]:right-3 max-[820px]:bottom-[calc(4.25rem+env(safe-area-inset-bottom))] max-[820px]:[&>button:first-child]:flex-1 border border-border bg-card/95 p-1.5 shadow-[0_14px_36px_rgb(0_0_0/0.3)] backdrop-blur">
       {/* The label is the way back, so the pill reads as one thing you can
           press rather than a bar with a button on it. */}
       <button

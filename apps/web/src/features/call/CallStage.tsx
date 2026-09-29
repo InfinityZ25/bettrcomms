@@ -26,6 +26,9 @@ import {
 } from './stageItems';
 import './CallBase.css';
 import './CallWorkspace.css';
+import './CallPhone.css';
+import CallMoreMenu from './CallMoreMenu';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 export type { CallPresence, NativeShareActions } from './callTypes';
 
@@ -81,6 +84,7 @@ export default function CallStage({
   const workspace = useRef<HTMLDivElement>(null);
   const docking = useCallLayout(layout, onLayout, joined);
   const immersive = useImmersiveControls(workspace, onError);
+  const phone = useIsMobile();
   const [cameraAspects, setCameraAspects] = useState<Record<string, number>>({});
   const [featuredCamera, setFeaturedCamera] = useState('self');
   const [showStats, setShowStats] = useState(false);
@@ -361,8 +365,29 @@ export default function CallStage({
           onToggleRecord={call.toggleRecord}
           onLeave={call.leave}
           onJoin={() => call.join('replace')}
+          more={
+            phone ? (
+              <CallMoreMenu
+                busy={busy}
+                recording={call.recording}
+                onToggleRecord={call.toggleRecord}
+                galleryLayout={gallery.galleryLayout}
+                onGalleryLayout={gallery.setGalleryLayout}
+                galleryFit={gallery.galleryFit}
+                onToggleGalleryFit={gallery.toggleGalleryFit}
+                hasStageContent={hasStageContent}
+                onChat={onChat && (() => immersive.leavingFullscreen(onChat))}
+                chatOpen={chatOpen}
+                onInvite={onInvite && (() => immersive.leavingFullscreen(onInvite))}
+                focused={focused}
+                onFocus={onFocus}
+                fullscreen={immersive.fullscreen}
+                onFullscreen={immersive.toggleFullscreen}
+              />
+            ) : undefined
+          }
         />
-        <CallToolbar
+        {!phone && <CallToolbar
           galleryLayout={gallery.galleryLayout}
           onGalleryLayout={gallery.setGalleryLayout}
           galleryFit={gallery.galleryFit}
@@ -403,7 +428,7 @@ export default function CallStage({
           chatOpen={chatOpen}
           onFocus={onFocus}
           onFullscreen={immersive.toggleFullscreen}
-        />
+        />}
       </div>
       {showStats && (
         <ConnectionDetails

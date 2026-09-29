@@ -9,6 +9,7 @@ import {
   Video,
   VideoOff,
 } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import CameraSourceMenu from './CameraSourceMenu';
 import { hasIOSAppScreen } from '@/media/iosAppScreen';
@@ -32,6 +33,7 @@ export default function CallControls({
   onToggleRecord,
   onLeave,
   onJoin,
+  more,
 }: {
   joined: boolean;
   busy: boolean;
@@ -50,6 +52,11 @@ export default function CallControls({
   onToggleRecord(): void;
   onLeave(): void;
   onJoin(): void;
+  /**
+   * The phone's overflow menu. When present the row is one line of icons:
+   * recording moves into the menu and leaving loses its label.
+   */
+  more?: ReactNode;
 }) {
   return (
     <div className="call-controls">
@@ -98,18 +105,26 @@ export default function CallControls({
           >
             <MonitorUp size={19} />
           </Button>
-          <Button
-            variant={recording ? 'destructive' : 'secondary'}
-            size="icon"
-            aria-label={recording ? 'Stop recording' : 'Record separate tracks'}
-            onClick={onToggleRecord}
-            disabled={busy}
-          >
-            {recording ? <Square size={16} /> : <Circle size={17} />}
-          </Button>
-          <Button variant="destructive" onClick={onLeave}>
-            <PhoneOff size={18} /> Leave call
-          </Button>
+          {more ?? (
+            <Button
+              variant={recording ? 'destructive' : 'secondary'}
+              size="icon"
+              aria-label={recording ? 'Stop recording' : 'Record separate tracks'}
+              onClick={onToggleRecord}
+              disabled={busy}
+            >
+              {recording ? <Square size={16} /> : <Circle size={17} />}
+            </Button>
+          )}
+          {more ? (
+            <Button variant="destructive" size="icon" aria-label="Leave call" onClick={onLeave}>
+              <PhoneOff size={18} />
+            </Button>
+          ) : (
+            <Button variant="destructive" onClick={onLeave}>
+              <PhoneOff size={18} /> Leave call
+            </Button>
+          )}
         </>
       ) : (
         <Button onClick={onJoin} disabled={busy}>

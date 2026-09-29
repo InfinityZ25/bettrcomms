@@ -39,30 +39,44 @@ test('mobile sidebar overlays the call and closes after choosing a room', async 
     await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
     const main = page.locator('main');
     const before = await main.boundingBox();
-    await page.getByRole('button', { name: 'Toggle sidebar' }).click();
+    // Portrait phones navigate from a bottom tab bar; Calls opens the room list.
+    const tabs = page.getByRole('navigation', { name: 'Sections' });
+    const tabBar = await tabs.boundingBox();
+    expect(tabBar!.width).toBe(390);
+    expect(tabBar!.y + tabBar!.height).toBeCloseTo(650, 0);
+    await tabs.getByRole('button', { name: 'Calls' }).click();
     const drawer = page.getByRole('dialog', { name: 'Conversations' });
     await expect(drawer).toBeVisible();
     await expect(drawer).toBeInViewport({ ratio: 0.9 });
     const box = await drawer.boundingBox();
     expect(box).not.toBeNull();
-    expect(box!.width).toBeGreaterThan(390 * 0.64);
-    expect(box!.width).toBeLessThan(390 * 0.69);
+    expect(box!.width).toBeCloseTo(390 * 0.85, 0);
     expect((await main.boundingBox())?.width).toBe(before?.width);
     await page.screenshot({ path: '.local/mobile-sidebar-drawer.png' });
     await drawer.getByRole('button', { name: room.name }).click();
     await expect(drawer).toBeHidden();
     await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
 
-    await page.getByRole('button', { name: 'Toggle sidebar' }).click();
+    await tabs.getByRole('button', { name: 'Calls' }).click();
     await expect(drawer).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(drawer).toBeHidden();
 
     // The 768–820px range must use the same drawer as narrower phones.
     await page.setViewportSize({ width: 800, height: 650 });
+    await tabs.getByRole('button', { name: 'Calls' }).click();
+    await expect(drawer).toBeVisible();
+    expect((await drawer.boundingBox())?.width).toBeCloseTo(384, 0);
+    await page.keyboard.press('Escape');
+
+    // A phone on its side is wider than 820px but still gets the drawer, not
+    // a sidebar beside the call.
+    await page.setViewportSize({ width: 852, height: 393 });
+    await expect(drawer).toBeHidden();
+    // Only the section rail sits beside the call.
+    await expect.poll(async () => (await main.boundingBox())!.width).toBeGreaterThan(852 - 80);
     await page.getByRole('button', { name: 'Toggle sidebar' }).click();
     await expect(drawer).toBeVisible();
-    expect((await drawer.boundingBox())?.width).toBeGreaterThan(800 * 0.64);
   } finally {
     await context.close();
   }
@@ -94,5 +108,70 @@ test('friends dialog stays within a short phone viewport and scrolls to its acti
     await expect(dialog).toBeHidden();
   } finally {
     await context.close();
+  }
+});
+
+test('a phone call keeps every control in one row below cameras that fill the screen', async ({ browser }) => {
+  const phone = await browser.newContext({ baseURL, viewport: { width: 375, height: 667 }, hasTouch: true, isMobile: true });
+  const friend = await browser.newContext({ baseURL });
+  try {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    await login(phone, 'Phone Caller', `phone-caller-${suffix}@example.test`);
+    const other = await login(friend, 'Desk Friend', `desk-friend-${suffix}@example.test`);
+    const request = await json<{ request: { id: string } }>(await phone.request.post('/api/v1/friends/requests', {
+      headers: { Origin: origin }, data: { user_id: other.id },
+    }));
+    await json(await friend.request.post(`/api/v1/friends/requests/${request.request.id}/accept`, { headers: { Origin: origin }, data: {} }));
+    const room = (await json<{ room: { id: string; name: string } }>(await phone.request.post('/api/v1/rooms', {
+      headers: { Origin: origin }, data: { name: `Phone call ${suffix}` },
+    }))).room;
+    await json(await phone.request.post(`/api/v1/rooms/${room.id}/members`, { headers: { Origin: origin }, data: { user_id: other.id } }));
+
+    const page = await phone.newPage();
+    const desk = await friend.newPage();
+    await Promise.all([page.goto('/'), desk.goto('/')]);
+    await desk.getByRole('button', { name: room.name }).first().click();
+    await desk.getByRole('button', { name: 'Join call' }).click();
+    await page.getByRole('button', { name: 'Join call' }).click();
+    await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
+    await expect(page.locator('.camera-tile')).toHaveCount(2);
+
+    const buttons = ['Mute microphone', 'Deafen call', 'Turn on camera', 'More call options', 'Leave call'];
+    const boxes = await Promise.all(buttons.map(async (name) => (await page.getByRole('button', { name, exact: true }).boundingBox())!));
+    // One row, thumb-sized, inside the screen.
+    for (const box of boxes) {
+      expect(Math.round(box.y)).toBe(Math.round(boxes[0].y));
+      expect(box.height).toBeGreaterThanOrEqual(44);
+      expect(box.x + box.width).toBeLessThanOrEqual(375);
+    }
+    // The cameras end above the controls and share the height between them.
+    const tiles = await page.locator('.camera-tile').evaluateAll(elements =>
+      elements.map(element => element.getBoundingClientRect().toJSON() as DOMRect));
+    for (const tile of tiles) {
+      expect(tile.bottom).toBeLessThanOrEqual(boxes[0].y);
+      expect(tile.height).toBeGreaterThan(200);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(375);
+
+    // Recording and layout live in the overflow menu.
+    await page.getByRole('button', { name: 'More call options' }).click();
+    await expect(page.getByRole('menuitem', { name: 'Record separate tracks' })).toBeVisible();
+    await page.keyboard.press('Escape');
+
+    // Room chat covers the call on a phone, so it offers its own way back.
+    await page.getByRole('button', { name: 'More call options' }).click();
+    await page.getByRole('menuitem', { name: 'Chat' }).click();
+    await expect(page.getByRole('region', { name: 'Room chat' })).toBeVisible();
+    // Nothing from the call sits on top of the composer.
+    const composer = (await page.getByRole('region', { name: 'Room chat' }).getByRole('textbox').boundingBox())!;
+    const hit = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('[aria-label="Room chat"]') !== null,
+      { x: composer.x + composer.width / 2, y: composer.y + composer.height / 2 });
+    expect(hit).toBe(true);
+    await page.getByRole('button', { name: 'Close room messages' }).click();
+    await expect(page.getByRole('region', { name: 'Room chat' })).toBeHidden();
+    await page.screenshot({ path: '.local/mobile-call.png' });
+  } finally {
+    await phone.close();
+    await friend.close();
   }
 });

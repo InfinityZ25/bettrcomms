@@ -115,8 +115,9 @@ export default function MessageItem({
   return (
     <article
       data-message-id={message.id}
+      tabIndex={-1}
       className={cn(
-        'group mb-2 rounded-xl p-2 transition-colors hover:bg-muted/50',
+        'group mb-2 rounded-xl p-2 outline-none transition-colors hover:bg-muted/50 [@media(hover:none)]:focus-within:bg-muted/50',
         highlighted && 'bg-primary/10 ring-1 ring-primary/50',
       )}
     >
@@ -201,7 +202,7 @@ export default function MessageItem({
                   </button>
                 ))}
               </div>
-              <div className="mt-1 flex flex-wrap gap-0.5 opacity-70 group-hover:opacity-100 focus-within:opacity-100">
+              <div className="mt-1 flex flex-wrap gap-0.5 opacity-70 group-hover:opacity-100 focus-within:opacity-100 [@media(hover:none)]:hidden [@media(hover:none)]:group-focus-within:flex [@media(hover:none)]:opacity-100">
                 <Button
                   variant="ghost"
                   size="icon-sm"
