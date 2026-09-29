@@ -49,6 +49,7 @@ static void BCMetaEmit(NSDictionary *detail) {
 @property (nonatomic, assign) BOOL deviceRetryScheduled;
 @property (nonatomic, assign) CFAbsoluteTime deviceWaitStarted;
 @property (nonatomic, assign) CFAbsoluteTime activationWaitUntil;
+@property (nonatomic, assign) CFAbsoluteTime cameraWaitStarted;
 @property (nonatomic, assign) NSUInteger deviceWaitGeneration;
 @property (nonatomic, assign) NSUInteger sessionCreateRetries;
 @property (nonatomic, assign) BOOL framePending;
@@ -57,6 +58,9 @@ static void BCMetaEmit(NSDictionary *detail) {
 - (void)connect;
 - (void)continueStart;
 - (void)beginSessionWhenActive;
+- (void)requestCameraPermissionForSession:(MWDATDeviceSession *)session;
+- (void)beginCameraWhenActive:(MWDATDeviceSession *)session;
+- (void)addCameraToSession:(MWDATDeviceSession *)session;
 - (void)waitForDevice;
 - (void)start;
 - (void)stop;
@@ -201,74 +205,26 @@ static void BCMetaEmit(NSDictionary *detail) {
     }
     self.startingSession = YES;
     BCMetaEmit(@{@"kind": @"starting"});
-    if (self.permissionGrantedPending) {
-        [self beginSessionWhenActive];
-        return;
-    }
-    [wearables checkPermissionStatus:MWDATPermissionCamera
-        completionHandler:^(enum MWDATPermissionStatus status, NSError *error) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                if (!self.startPending) return;
-                if (error) {
-                    NSLog(@"BetterComms Meta: camera permission check failed (%@, %ld)",
-                          error.domain, (long)error.code);
-                    if ([error.domain isEqualToString:MWDATPermissionErrorDomain] &&
-                        (error.code == MWDATPermissionErrorNoDevice ||
-                         error.code == MWDATPermissionErrorNoDeviceWithConnection)) {
-                        self.startingSession = NO;
-                        [self waitForDevice];
-                    } else [self reportError:error.localizedDescription];
-                } else if (status == MWDATPermissionStatusGranted) {
-                    [self beginSessionWhenActive];
-                } else {
-                    // Meta AI owns glasses-camera consent and may switch apps.
-                    [wearables requestPermission:MWDATPermissionCamera
-                        completionHandler:^(enum MWDATPermissionStatus granted, NSError *permissionError) {
-                            dispatch_async(dispatch_get_main_queue(), ^{
-                                if (!self.startPending) return;
-                                if (permissionError) {
-                                    NSLog(@"BetterComms Meta: camera permission request failed (%@, %ld)",
-                                          permissionError.domain, (long)permissionError.code);
-                                    if ([permissionError.domain isEqualToString:MWDATPermissionErrorDomain] &&
-                                        (permissionError.code == MWDATPermissionErrorNoDevice ||
-                                         permissionError.code == MWDATPermissionErrorNoDeviceWithConnection)) {
-                                        self.startingSession = NO;
-                                        [self waitForDevice];
-                                    } else [self reportError:permissionError.localizedDescription];
-                                }
-                                else if (granted == MWDATPermissionStatusGranted) [self beginSessionWhenActive];
-                                else [self reportError:@"Allow glasses camera access in Meta AI, then try again."];
-                            });
-                        }];
-                }
-            });
-        }];
+    // Meta's CameraAccess sample opens the device session before checking or
+    // requesting camera consent. Keep the ready session across the Meta AI
+    // permission redirect; only add the camera capability after consent.
+    [self beginSessionWhenActive];
 }
 
 - (void)beginSessionWhenActive {
     if (!self.startPending) return;
-    // Meta AI can call back with camera permission before BetterComms has
-    // foregrounded or before the accessory link has recovered from the app
-    // switch. Starting a session at that point consumes the retry budget while
-    // iOS is still handing the glasses back to this process.
     if ([UIApplication sharedApplication].applicationState != UIApplicationStateActive) {
-        self.permissionGrantedPending = YES;
         self.startingSession = NO;
         self.deviceWaitStarted = 0;
-        NSLog(@"BetterComms Meta: camera permission granted; waiting for app activation");
+        NSLog(@"BetterComms Meta: waiting for app activation before session start");
         return;
     }
-    // Becoming active precedes Meta's accessory handoff. In device logs the
-    // previous build tried to open the camera session within 100 ms of this
-    // notification, while Meta AI still owned the data channel.
     if (CFAbsoluteTimeGetCurrent() < self.activationWaitUntil ||
         !self.deviceSelector.activeDevice.length) {
-        self.permissionGrantedPending = YES;
         self.startingSession = NO;
         [self waitForDevice];
         return;
     }
-    self.permissionGrantedPending = NO;
     [self beginSession];
 }
 
@@ -276,10 +232,11 @@ static void BCMetaEmit(NSDictionary *detail) {
     if (!self.startPending || self.session) return;
     MWDATWearables *wearables = [MWDATWearables sharedInstance];
     NSError *error = nil;
-    MWDATDeviceSession *session = [wearables createSessionWithDeviceSelector:self.deviceSelector error:&error];
+    NSString *selectedDevice = self.deviceSelector.activeDevice;
+    MWDATDeviceSession *session = [wearables createSessionForDeviceIdentifier:selectedDevice error:&error];
     if (!session) {
         NSLog(@"BetterComms Meta: session creation failed (%@, %ld, selected=%d)",
-              error.domain, (long)error.code, self.deviceSelector.activeDevice.length > 0);
+              error.domain, (long)error.code, selectedDevice.length > 0);
         if ((!self.deviceSelector.activeDevice.length ||
              [error.localizedDescription localizedCaseInsensitiveContainsString:@"eligible device"]) &&
             self.sessionCreateRetries < 4) {
@@ -292,6 +249,8 @@ static void BCMetaEmit(NSDictionary *detail) {
         return;
     }
     self.session = session;
+    NSLog(@"BetterComms Meta: device session created (selectedMatches=%d)",
+          [session.deviceIdentifier isEqualToString:selectedDevice]);
     [session startAndWaitUntilReadyWithCompletionHandler:^(NSError *startError) {
         dispatch_async(dispatch_get_main_queue(), ^{
             if (self.session != session) return;
@@ -311,33 +270,111 @@ static void BCMetaEmit(NSDictionary *detail) {
                 }
                 return;
             }
-            MWDATStreamConfiguration *config = [[MWDATStreamConfiguration alloc]
-                initWithVideoCodec:MWDATVideoCodecRaw
-                resolution:MWDATStreamingResolutionLow frameRate:15];
-            NSError *cameraError = nil;
-            MWDATCamera *camera = [session addCameraWithConfig:config error:&cameraError];
-            if (!camera) {
-                [self reportError:cameraError.localizedDescription ?: @"Glasses camera is unavailable."];
-                [self stop];
-                return;
-            }
-            self.camera = camera;
-            self.stream = camera.stream;
-            __weak BCMetaCamera *weakSelf = self;
-            self.stream.onVideoFrame = ^(MWDATVideoFrame *frame) {
-                [weakSelf publishFrame:frame];
-            };
-            self.stream.onError = ^(enum MWDATStreamError streamError) {
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [weakSelf reportError:[NSString stringWithFormat:
-                        @"Glasses stream stopped (error %ld).", (long)streamError]];
-                    [weakSelf stop];
-                });
-            };
-            [self.stream start];
-            BCMetaEmit(@{@"kind": @"streaming"});
+            NSLog(@"BetterComms Meta: device session ready; checking camera permission");
+            self.deviceWaitStarted = 0;
+            [self requestCameraPermissionForSession:session];
         });
     }];
+}
+
+- (void)requestCameraPermissionForSession:(MWDATDeviceSession *)session {
+    MWDATWearables *wearables = [MWDATWearables sharedInstance];
+    [wearables checkPermissionStatus:MWDATPermissionCamera
+        completionHandler:^(enum MWDATPermissionStatus status, NSError *error) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (!self.startPending || self.session != session) return;
+                if (error) {
+                    NSLog(@"BetterComms Meta: camera permission check failed (%@, %ld)",
+                          error.domain, (long)error.code);
+                    [self reportError:error.localizedDescription];
+                    [self stop];
+                } else if (status == MWDATPermissionStatusGranted) {
+                    [self beginCameraWhenActive:session];
+                } else {
+                    // Meta AI owns consent and may switch apps. Keep this
+                    // session; the sample only ends sessions on background
+                    // when they already have an active camera stream.
+                    [wearables requestPermission:MWDATPermissionCamera
+                        completionHandler:^(enum MWDATPermissionStatus granted, NSError *permissionError) {
+                            dispatch_async(dispatch_get_main_queue(), ^{
+                                if (!self.startPending || self.session != session) return;
+                                if (permissionError) {
+                                    NSLog(@"BetterComms Meta: camera permission request failed (%@, %ld)",
+                                          permissionError.domain, (long)permissionError.code);
+                                    [self reportError:permissionError.localizedDescription];
+                                    [self stop];
+                                } else if (granted == MWDATPermissionStatusGranted) {
+                                    [self beginCameraWhenActive:session];
+                                } else {
+                                    [self reportError:@"Allow glasses camera access in Meta AI, then try again."];
+                                    [self stop];
+                                }
+                            });
+                        }];
+                }
+            });
+        }];
+}
+
+- (void)beginCameraWhenActive:(MWDATDeviceSession *)session {
+    if (!self.startPending || self.session != session || self.stream) return;
+    if ([UIApplication sharedApplication].applicationState != UIApplicationStateActive) {
+        self.permissionGrantedPending = YES;
+        NSLog(@"BetterComms Meta: camera permission granted; waiting for app activation");
+        return;
+    }
+    CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
+    if (now < self.activationWaitUntil || session.state != MWDATDeviceSessionStateStarted) {
+        if (session.state == MWDATDeviceSessionStateStopped) {
+            [self reportError:@"The glasses ended their camera session while Meta AI was open. Please try again."];
+            [self stop];
+            return;
+        }
+        if (self.cameraWaitStarted == 0) self.cameraWaitStarted = now;
+        if (now - self.cameraWaitStarted >= 30) {
+            [self reportError:@"The Meta glasses camera session did not resume after permission. Please try again."];
+            [self stop];
+            return;
+        }
+        self.permissionGrantedPending = YES;
+        NSUInteger generation = self.deviceWaitGeneration;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC),
+                       dispatch_get_main_queue(), ^{
+            if (generation == self.deviceWaitGeneration) [self beginCameraWhenActive:session];
+        });
+        return;
+    }
+    self.permissionGrantedPending = NO;
+    self.cameraWaitStarted = 0;
+    [self addCameraToSession:session];
+}
+
+- (void)addCameraToSession:(MWDATDeviceSession *)session {
+    MWDATStreamConfiguration *config = [[MWDATStreamConfiguration alloc]
+        initWithVideoCodec:MWDATVideoCodecRaw
+        resolution:MWDATStreamingResolutionLow frameRate:15];
+    NSError *cameraError = nil;
+    MWDATCamera *camera = [session addCameraWithConfig:config error:&cameraError];
+    if (!camera) {
+        [self reportError:cameraError.localizedDescription ?: @"Glasses camera is unavailable."];
+        [self stop];
+        return;
+    }
+    self.camera = camera;
+    self.stream = camera.stream;
+    __weak BCMetaCamera *weakSelf = self;
+    self.stream.onVideoFrame = ^(MWDATVideoFrame *frame) {
+        [weakSelf publishFrame:frame];
+    };
+    self.stream.onError = ^(enum MWDATStreamError streamError) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [weakSelf reportError:[NSString stringWithFormat:
+                @"Glasses stream stopped (error %ld).", (long)streamError]];
+            [weakSelf stop];
+        });
+    };
+    [self.stream start];
+    BCMetaEmit(@{@"kind": @"streaming"});
 }
 
 - (void)publishFrame:(MWDATVideoFrame *)frame {
@@ -378,6 +415,7 @@ static void BCMetaEmit(NSDictionary *detail) {
     self.deviceRetryScheduled = NO;
     self.deviceWaitStarted = 0;
     self.activationWaitUntil = 0;
+    self.cameraWaitStarted = 0;
     self.deviceWaitGeneration++;
     self.sessionCreateRetries = 0;
     [self.deviceListener cancel];
@@ -408,9 +446,12 @@ static void BCMetaEmit(NSDictionary *detail) {
         // Notify the resumed UI that the previously published track ended.
         BCMetaEmit(@{@"kind": @"stopped"});
     }
-    if (self.startPending && !self.session) {
+    if (self.startPending) {
         self.activationWaitUntil = CFAbsoluteTimeGetCurrent() + 2.0;
-        [self continueStart];
+        if (self.session && self.permissionGrantedPending)
+            [self beginCameraWhenActive:self.session];
+        else if (!self.session)
+            [self continueStart];
     }
 }
 
@@ -419,7 +460,7 @@ static void BCMetaEmit(NSDictionary *detail) {
     // This bridge publishes frames through WKWebView, which cannot keep sending
     // them in the background. End an active native session deliberately until
     // the call media sender itself runs outside the webview.
-    if (!self.session && !self.stream) return;
+    if (!self.stream) return;
     self.backgroundStopped = YES;
     [self stop];
 }
