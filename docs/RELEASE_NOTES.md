@@ -1,5 +1,19 @@
 # BetterComms preview release notes
 
+## Unreleased — phone layout
+
+Phone-sized windows no longer render the desktop layout squeezed. Portrait
+phones navigate from a bottom tab bar, and Messages and Calls open the
+conversation drawer; content meets the screen edges instead of an inset card.
+A phone held sideways uses the drawer too. In a call, cameras share the
+available height (side by side in landscape) above a single row of 44 px
+controls, and recording, layout, chat, invite, focus and fullscreen are in a
+More menu. Room chat fills the screen with its own back button and sits above
+the call controls. On touch screens a message's actions appear when it is
+tapped. Checked with synthetic media in Chromium at iPhone 15 and iPhone SE
+sizes, portrait and landscape; the packaged iPhone app has not been
+re-accepted on a device.
+
 ## Unreleased — experimental iPhone host
 
 The iPhone Meta glasses camera request now stays pending while Meta AI opens
