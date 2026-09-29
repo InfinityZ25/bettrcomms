@@ -6,6 +6,9 @@
 #import <MWDATCamera/MWDATCamera-Swift.h>
 #import <os/log.h>
 #import "meta_camera_retry.h"
+#import "meta_video_encoder.h"
+extern void bc_meta_sender_ended(void);
+#import "BetterCommsMeta-Swift.h"
 #import "webview_window_ios.h"
 #import "application_ios_delegate.h"
 
@@ -38,13 +41,20 @@ static void BCMetaEmit(NSDictionary *detail) {
 
 @interface BCMetaCamera : NSObject
 @property (nonatomic, strong) MWDATDeviceSession *session;
+@property (nonatomic, strong) ObjC_AnyListenerToken *sessionListener;
 @property (nonatomic, strong) MWDATDeviceSession *retiringSession;
+@property (nonatomic, strong) MWDATCamera *retiringCamera;
+@property (nonatomic, strong) MWDATStream *retiringStream;
 @property (nonatomic, strong) MWDATAutoDeviceSelector *deviceSelector;
 @property (nonatomic, strong) ObjC_AnyListenerToken *deviceListener;
 @property (nonatomic, strong) MWDATCamera *camera;
 @property (nonatomic, strong) MWDATStream *stream;
+@property (atomic, strong) BCMetaVideoEncoder *videoEncoder;
+@property (atomic, assign) BOOL publishing;
+@property (atomic, assign) BOOL foreground;
 @property (nonatomic, assign) BOOL configured;
 @property (nonatomic, assign) BOOL registrationInFlight;
+@property (nonatomic, assign) BOOL unregistrationInFlight;
 @property (nonatomic, assign) BOOL startPending;
 @property (nonatomic, assign) BOOL startingSession;
 @property (nonatomic, assign) BOOL permissionGrantedPending;
@@ -58,8 +68,11 @@ static void BCMetaEmit(NSDictionary *detail) {
 @property (nonatomic, assign) NSUInteger sessionCreateRetries;
 @property (nonatomic, assign) BOOL framePending;
 @property (nonatomic, assign) CFAbsoluteTime lastFrame;
+@property (nonatomic, assign) UIBackgroundTaskIdentifier cleanupTask;
 + (instancetype)shared;
+- (BOOL)prepare;
 - (void)connect;
+- (void)reconnect;
 - (void)continueStart;
 - (void)beginSessionWhenActive;
 - (void)waitUntilSessionReady:(MWDATDeviceSession *)session;
@@ -74,14 +87,27 @@ static void BCMetaEmit(NSDictionary *detail) {
 @end
 
 @implementation BCMetaCamera
++ (void)load {
+    // Restore DAT registration/device discovery at launch, before a preview
+    // request can mistake SDK initialization for an unregistered account.
+    [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidFinishLaunchingNotification
+        object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(__unused NSNotification *note) {
+            [[BCMetaCamera shared] prepare];
+        }];
+}
 + (instancetype)shared {
     static BCMetaCamera *instance;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         instance = [BCMetaCamera new];
+        instance.cleanupTask = UIBackgroundTaskInvalid;
+        instance.foreground = YES;
         [[NSNotificationCenter defaultCenter] addObserver:instance
             selector:@selector(appActivated:)
             name:UIApplicationDidBecomeActiveNotification object:nil];
+        [[NSNotificationCenter defaultCenter] addObserver:instance
+            selector:@selector(appTerminating:)
+            name:UIApplicationWillTerminateNotification object:nil];
         [[NSNotificationCenter defaultCenter] addObserver:instance
             selector:@selector(appBackgrounded:)
             name:UIApplicationDidEnterBackgroundNotification object:nil];
@@ -102,7 +128,60 @@ static void BCMetaEmit(NSDictionary *detail) {
         return NO;
     }
     self.configured = YES;
+    [[NSNotificationCenter defaultCenter] addObserver:self
+        selector:@selector(registrationStateChanged:)
+        name:[NSNotification wearablesRegistrationStateChanged] object:nil];
     return YES;
+}
+
+- (void)registrationStateChanged:(NSNotification *)notification {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        MWDATRegistrationState state = [MWDATWearables sharedInstance].registrationState;
+        NSLog(@"BetterComms Meta: registration state changed=%ld", (long)state);
+        if (self.unregistrationInFlight) {
+            if (state == MWDATRegistrationStateAvailable) {
+                self.unregistrationInFlight = NO;
+                self.registrationInFlight = NO;
+                [self connect];
+            }
+            return;
+        }
+        if (state == MWDATRegistrationStateRegistered) {
+            self.registrationInFlight = NO;
+            BCMetaEmit(@{@"kind": @"registered"});
+            if (self.startPending) [self continueStart];
+        }
+        // Available is also a transient state during a successful Meta callback.
+        // Only the registration completion error may mark consent as cancelled.
+    });
+}
+
+- (void)reconnect {
+    if (![self prepare] || self.registrationInFlight) return;
+    [self stop];
+    MWDATWearables *wearables = [MWDATWearables sharedInstance];
+    if (wearables.registrationState != MWDATRegistrationStateRegistered) {
+        [self connect];
+        return;
+    }
+    self.registrationInFlight = YES;
+    BCMetaEmit(@{@"kind": @"connecting"});
+    self.unregistrationInFlight = YES;
+    [wearables startUnregistrationWithCompletionHandler:^(NSError *error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (error) {
+                self.unregistrationInFlight = NO;
+                self.registrationInFlight = NO;
+                [self reportError:error.localizedDescription];
+                return;
+            }
+            if (self.unregistrationInFlight && wearables.registrationState == MWDATRegistrationStateAvailable) {
+                self.unregistrationInFlight = NO;
+                self.registrationInFlight = NO;
+                [self connect];
+            }
+        });
+    }];
 }
 
 - (void)connect {
@@ -113,16 +192,23 @@ static void BCMetaEmit(NSDictionary *detail) {
         if (self.startPending) [self continueStart];
         return;
     }
-    if (self.registrationInFlight) return;
+    if (self.registrationInFlight || wearables.registrationState == MWDATRegistrationStateRegistering) return;
+    if (wearables.registrationState == MWDATRegistrationStateUnavailable) {
+        // Do not initiate registration while the SDK is restoring its state.
+        if (self.startPending) [self waitForDevice];
+        return;
+    }
     self.registrationInFlight = YES;
     BCMetaEmit(@{@"kind": @"connecting"});
     [wearables startRegistrationWithCompletionHandler:^(NSError *error) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            self.registrationInFlight = NO;
-            NSLog(@"BetterComms Meta: registration completed (state=%ld, error=%@/%ld)",
+            NSLog(@"BetterComms Meta: registration request returned (state=%ld, error=%@/%ld)",
                   (long)wearables.registrationState, error.domain, (long)error.code);
-            if (error) [self reportError:error.localizedDescription];
-            else {
+            if (error) {
+                self.registrationInFlight = NO;
+                [self reportError:error.localizedDescription];
+            } else if (wearables.registrationState == MWDATRegistrationStateRegistered) {
+                self.registrationInFlight = NO;
                 BCMetaEmit(@{@"kind": @"registered"});
                 if (self.startPending) [self continueStart];
             }
@@ -138,7 +224,7 @@ static void BCMetaEmit(NSDictionary *detail) {
                   handled, (long)[MWDATWearables sharedInstance].registrationState,
                   error.domain, (long)error.code);
             if (error) [self reportError:error.localizedDescription];
-            else if (handled && [MWDATWearables sharedInstance].registrationState ==
+            else if (handled && !self.unregistrationInFlight && [MWDATWearables sharedInstance].registrationState ==
                                   MWDATRegistrationStateRegistered) {
                 BCMetaEmit(@{@"kind": @"registered"});
                 if (self.startPending) [self continueStart];
@@ -200,6 +286,8 @@ static void BCMetaEmit(NSDictionary *detail) {
         [self waitForDevice];
         return;
     }
+    self.retiringStream = nil;
+    self.retiringCamera = nil;
     self.retiringSession = nil;
     MWDATWearables *wearables = [MWDATWearables sharedInstance];
     if (wearables.registrationState != MWDATRegistrationStateRegistered) {
@@ -269,6 +357,10 @@ static void BCMetaEmit(NSDictionary *detail) {
         return;
     }
     self.session = session;
+    [self.sessionListener cancel];
+    self.sessionListener = [session addStateListener:^(MWDATDeviceSessionState state) {
+        os_log_info(OS_LOG_DEFAULT, "BetterComms Meta: session state=%ld", (long)state);
+    }];
     NSLog(@"BetterComms Meta: device session created (selectedMatches=%d)",
           [session.deviceIdentifier isEqualToString:selectedDevice]);
     // Start directly so synchronous DAT errors retain their original domain
@@ -312,7 +404,10 @@ static void BCMetaEmit(NSDictionary *detail) {
         [session stop];
         self.retiringSession = session;
         self.session = nil;
-        if (retryable) {
+        if (retryable && self.sessionCreateRetries >= 2) {
+            [self reportError:@"The glasses rejected the camera session three times. If Meta AI shows an active broadcast, end it there, then try Preview again."];
+            [self stop];
+        } else if (retryable) {
             self.sessionCreateRetries++;
             self.nextSessionAttemptAt = CFAbsoluteTimeGetCurrent() + 3.0;
             self.startingSession = NO;
@@ -402,8 +497,8 @@ static void BCMetaEmit(NSDictionary *detail) {
 
 - (void)addCameraToSession:(MWDATDeviceSession *)session {
     MWDATStreamConfiguration *config = [[MWDATStreamConfiguration alloc]
-        initWithVideoCodec:MWDATVideoCodecRaw
-        resolution:MWDATStreamingResolutionLow frameRate:15];
+        initWithVideoCodec:MWDATVideoCodecHvc1
+        resolution:MWDATStreamingResolutionHigh frameRate:30];
     NSError *cameraError = nil;
     MWDATCamera *camera = [session addCameraWithConfig:config error:&cameraError];
     if (!camera) {
@@ -413,10 +508,25 @@ static void BCMetaEmit(NSDictionary *detail) {
     }
     self.camera = camera;
     self.stream = camera.stream;
+    self.videoEncoder = [BCMetaVideoEncoder new];
     __weak BCMetaCamera *weakSelf = self;
     __weak MWDATStream *expectedStream = self.stream;
+    BCMetaVideoEncoder *encoder = self.videoEncoder;
+    encoder.onError = ^(NSString *message) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (weakSelf.videoEncoder != encoder) return;
+            [weakSelf reportError:message];
+            [weakSelf stop];
+        });
+    };
     self.stream.onVideoFrame = ^(MWDATVideoFrame *frame) {
-        [weakSelf publishFrame:frame];
+        BCMetaCamera *owner = weakSelf;
+        if (!owner || owner.videoEncoder != encoder) return;
+        // Native encode/send never waits for JavaScript or the preview image.
+        BOOL preview = owner.foreground;
+        @synchronized(owner) { preview = preview && !owner.framePending && CFAbsoluteTimeGetCurrent() - owner.lastFrame >= 0.1; }
+        UIImage *image = [encoder process:frame.sampleBuffer publish:owner.publishing preview:preview];
+        if (image) [owner publishImage:image];
     };
     self.stream.onError = ^(enum MWDATStreamError streamError) {
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -430,15 +540,17 @@ static void BCMetaEmit(NSDictionary *detail) {
     BCMetaEmit(@{@"kind": @"streaming"});
 }
 
-- (void)publishFrame:(MWDATVideoFrame *)frame {
+- (void)publishImage:(UIImage *)image {
     @synchronized (self) {
         CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
-        if (self.framePending || now - self.lastFrame < 1.0 / 15.0) return;
+        // DAT controls capture cadence. A second wall-clock rate limiter drops
+        // valid frames whenever delivery jitters around the requested interval.
+        // Keep one-frame backpressure so a slow webview cannot build a queue.
+        if (self.framePending) return;
         self.framePending = YES;
         self.lastFrame = now;
     }
-    UIImage *image = frame.image;
-    NSData *jpeg = image ? UIImageJPEGRepresentation(image, 0.66) : nil;
+    NSData *jpeg = image ? UIImageJPEGRepresentation(image, 0.85) : nil;
     if (!jpeg) {
         @synchronized (self) { self.framePending = NO; }
         return;
@@ -462,6 +574,14 @@ static void BCMetaEmit(NSDictionary *detail) {
 }
 
 - (void)stop {
+    self.publishing = NO;
+    bc_meta_sender_ended();
+    BCMetaVideoEncoder *encoder = self.videoEncoder;
+    self.videoEncoder = nil;
+    encoder.onError = nil;
+    [encoder close];
+    [self.sessionListener cancel];
+    self.sessionListener = nil;
     self.startPending = NO;
     self.startingSession = NO;
     self.permissionGrantedPending = NO;
@@ -477,10 +597,19 @@ static void BCMetaEmit(NSDictionary *detail) {
     self.deviceSelector = nil;
     self.stream.onVideoFrame = nil;
     self.stream.onError = nil;
-    [self.camera stop];
-    [self.session stop];
+    // Session.stop cascades to the camera and stream. Do not concurrently
+    // detach the child camera while its parent is ending the device session.
+    // Retain all three until the terminal stopped state arrives.
+    if (self.session) {
+        self.retiringSession = self.session;
+        self.retiringCamera = self.camera;
+        self.retiringStream = self.stream;
+    } else if (!self.retiringSession) {
+        [self.camera stop];
+    }
     [self.retiringSession stop];
-    self.retiringSession = nil;
+    [self releaseRetiredSessionWhenStopped:self.retiringSession];
+    if (self.retiringSession) self.nextSessionAttemptAt = CFAbsoluteTimeGetCurrent() + 3.0;
     self.stream = nil;
     self.camera = nil;
     self.session = nil;
@@ -488,7 +617,20 @@ static void BCMetaEmit(NSDictionary *detail) {
     BCMetaEmit(@{@"kind": @"stopped"});
 }
 
+- (void)releaseRetiredSessionWhenStopped:(MWDATDeviceSession *)session {
+    if (!session || self.retiringSession != session) return;
+    if (session.state == MWDATDeviceSessionStateStopped) {
+        self.retiringStream = nil;
+        self.retiringCamera = nil;
+        self.retiringSession = nil;
+        return;
+    }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 10),
+                   dispatch_get_main_queue(), ^{ [self releaseRetiredSessionWhenStopped:session]; });
+}
+
 - (void)appActivated:(NSNotification *)notification {
+    self.foreground = YES;
     // The SDK can keep its external-accessory session across an app switch.
     // WebKit may defer a frame's JavaScript completion while in the background;
     // allow a fresh frame immediately when the call becomes visible again.
@@ -511,14 +653,45 @@ static void BCMetaEmit(NSDictionary *detail) {
     }
 }
 
+- (void)finishBackgroundCleanup {
+    if (self.cleanupTask == UIBackgroundTaskInvalid) return;
+    UIBackgroundTaskIdentifier task = self.cleanupTask;
+    self.cleanupTask = UIBackgroundTaskInvalid;
+    [[UIApplication sharedApplication] endBackgroundTask:task];
+}
+
+- (void)waitForBackgroundCleanup {
+    if (self.cleanupTask == UIBackgroundTaskInvalid) return;
+    if (!self.retiringSession || self.retiringSession.state == MWDATDeviceSessionStateStopped) {
+        self.retiringStream = nil;
+        self.retiringCamera = nil;
+        self.retiringSession = nil;
+        [self finishBackgroundCleanup];
+        return;
+    }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 10),
+                   dispatch_get_main_queue(), ^{ [self waitForBackgroundCleanup]; });
+}
+
+- (void)appTerminating:(NSNotification *)notification {
+    [self stop];
+}
+
 - (void)appBackgrounded:(NSNotification *)notification {
-    // DAT can retain a glasses broadcast when iOS suspends the app mid-stream.
-    // This bridge publishes frames through WKWebView, which cannot keep sending
-    // them in the background. End an active native session deliberately until
-    // the call media sender itself runs outside the webview.
+    self.foreground = NO;
+    // Calls transmit entirely natively. Only standalone previews stop here.
+    if (self.publishing) return;
+    // Permission redirects intentionally retain a session with no stream.
     if (!self.stream) return;
     self.backgroundStopped = YES;
+    if (self.cleanupTask == UIBackgroundTaskInvalid) {
+        self.cleanupTask = [[UIApplication sharedApplication]
+            beginBackgroundTaskWithName:@"End glasses camera session" expirationHandler:^{
+                [self finishBackgroundCleanup];
+            }];
+    }
     [self stop];
+    [self waitForBackgroundCleanup];
 }
 @end
 
@@ -532,7 +705,7 @@ static void BCMetaEmit(NSDictionary *detail) {
 @end
 
 void bc_meta_connect(void) {
-    dispatch_async(dispatch_get_main_queue(), ^{ [[BCMetaCamera shared] connect]; });
+    dispatch_async(dispatch_get_main_queue(), ^{ [[BCMetaCamera shared] reconnect]; });
 }
 void bc_meta_start(void) {
     dispatch_async(dispatch_get_main_queue(), ^{ [[BCMetaCamera shared] start]; });
@@ -540,3 +713,9 @@ void bc_meta_start(void) {
 void bc_meta_stop(void) {
     dispatch_async(dispatch_get_main_queue(), ^{ [[BCMetaCamera shared] stop]; });
 }
+
+void bc_meta_set_publishing(int value) {
+    dispatch_async(dispatch_get_main_queue(), ^{ [BCMetaCamera shared].publishing = value != 0; });
+}
+
+void bc_meta_log(const char *message) { os_log(OS_LOG_DEFAULT, "BetterComms Meta native: %{public}s", message); }

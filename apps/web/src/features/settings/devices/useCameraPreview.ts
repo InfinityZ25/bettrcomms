@@ -7,7 +7,7 @@ import {
   type CameraSettings,
 } from '@/media/cameraSettings';
 import { deviceError, ensureDesktopPermission } from './deviceHelpers';
-import { META_GLASSES_CAMERA_ID, startMetaGlassesCamera } from '@/media/metaGlassesCamera';
+import { META_GLASSES_CAMERA_ID, reconnectMetaGlassesCamera, startMetaGlassesCamera } from '@/media/metaGlassesCamera';
 
 const actualLabel = (settings: MediaTrackSettings) =>
   settings.width && settings.height
@@ -153,5 +153,24 @@ export function useCameraPreview({
     if (previewing) void start(next);
   };
 
-  return { quality, updateQuality, capabilities, actual, previewing, connecting, video, toggle, forget };
+  const [reconnecting, setReconnecting] = useState(false);
+  const reconnect = async () => {
+    if (reconnecting) return;
+    stop();
+    setReconnecting(true);
+    const controller = new AbortController();
+    pending.current = controller;
+    onStatus('Reconnecting through Meta AI. Approve the new connection, then return here.');
+    try {
+      await reconnectMetaGlassesCamera(controller.signal);
+      if (alive.current) onStatus('Meta connection renewed. Try Preview camera.');
+    } catch (error) {
+      if (alive.current) onStatus(deviceError(error, 'camera'));
+    } finally {
+      if (pending.current === controller) pending.current = null;
+      if (alive.current) setReconnecting(false);
+    }
+  };
+
+  return { reconnect, reconnecting, quality, updateQuality, capabilities, actual, previewing, connecting, video, toggle, forget };
 }

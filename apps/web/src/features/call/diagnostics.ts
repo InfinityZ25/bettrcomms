@@ -79,6 +79,7 @@ export async function buildDiagnosticReport({
     serverRtt,
     playback: getCallPlaybackStatus(),
     screen: await engine?.getScreenDiagnostics(),
+    camera: await engine?.getCameraDiagnostics(),
     peers: anonymisePeers(stats),
     videoElements: [...(workspace?.querySelectorAll('video') ?? [])].map((video) => ({
       self: video.classList.contains('self-video'),

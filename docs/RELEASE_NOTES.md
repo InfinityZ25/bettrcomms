@@ -83,3 +83,29 @@ Direct and room conversations support persistent unread and mention badges, mark
 ## Current browser and service limits
 
 Browser microphone, camera, and screen sharing use WebRTC, with synthetic-media browser tests against the real API/database. These tests do not prove native capture, physical devices, or external-network connectivity. The Go service has an encrypted microphone-only WebSocket fallback; camera, screen, and shared audio still need direct WebRTC or TURN. A production TURN deployment and cross-network validation remain outstanding. Packaged WorkOS sign-in and real account acceptance remain separate gates.
+
+## Unreleased — experimental iPhone glasses quality and teardown
+
+Ray-Ban Meta capture now requests 720×1280 at 30 fps instead of 360×640 at
+15 fps, raises bridge JPEG quality, and removes a duplicate timestamp-based
+frame limiter. The bridge still uses bounded, single-frame webview delivery;
+30 fps is a capture target, not a verified end-to-end result. A supplied remote
+recording from the previous build measured 360×640 and 8.9 fps over 267 seconds.
+
+Native teardown now lets the parent device session stop its camera/stream and
+retains those objects until the terminal stopped state. Repeated startup
+rejections are bounded. Glasses can still require a physical reset; repeated
+stop/restart, app-switch, and locked-phone acceptance remain outstanding.
+
+The iPhone app can now send glasses video from a native H.264 sender instead of
+the webview canvas, targeting 720×1280 at 30 fps. Phone logs measured the
+encoder producing about 30 fps at 720×1280; remote receipt of the native stream
+at that rate has not yet been measured on a real call. Each participant first
+receives the ordinary call camera. The phone switches a participant to the
+native stream only after that client answers a capability query and the native
+connection completes within 15 seconds, and switches back if the connection is
+lost for about six seconds. Clients built before the native receiver — for
+example desktop apps packaged before this change — therefore keep the
+lower-quality ordinary camera instead of showing no video. Receivers no longer
+report a native camera interruption while video is arriving. Background and
+locked-phone glasses video are still unverified.

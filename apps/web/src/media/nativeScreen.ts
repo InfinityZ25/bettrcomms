@@ -135,7 +135,7 @@ export class NativeScreenTransport {
       iceConfiguration: { stun: this.nativeIceServers().some(server => server.urls.some(url => /^stuns?:/i.test(url))), turn: this.nativeIceServers().some(server => server.urls.some(url => /^turns?:/i.test(url))) },
       directOnly: this.directOnly, activeProfile: this.activeProfile, sending: Boolean(this.session),
       outboundPeers: this.outboundPeers.size, capabilities: videoCapabilities(), events: [...this.diagnosticEvents], samples: [...this.samples],
-      sender: this.session ? await invoke('native_screen_diagnostics', { sessionId: this.session.sessionId }).catch(() => ({ unavailable: true, requiresDesktop: '0.1.5' })) : undefined,
+      sender: this.session ? await this.invoke('native_screen_diagnostics', { sessionId: this.session.sessionId }).catch(() => ({ unavailable: true, requiresDesktop: '0.1.5' })) : undefined,
       receivers: await Promise.all([...this.receivers].map(async ([id, receiver]) => ({ peer: this.diagnosticPeers.get(id) ?? 0, ...await screenReceiverDiagnostics(receiver.pc).catch(() => ({ unavailable: true })) }))),
     };
   }
@@ -164,10 +164,33 @@ export class NativeScreenTransport {
     private onRemoteRemoved: (peerId: string) => void,
     private onEnded: (reason: string) => void,
     private onFallbackRequested: (peerId: string) => Promise<void> = async () => undefined,
+    private driver?: {
+      invoke: typeof invoke;
+      listen: typeof onNativeCaptureEnded;
+      externalPreview?: boolean;
+      disableFallback?: boolean;
+    },
   ) {}
+
+  private invoke: typeof invoke = (command, args) => (this.driver?.invoke ?? invoke)(command, args);
 
   get active() {
     return Boolean(this.session);
+  }
+
+  get sessionId() {
+    return this.session?.sessionId;
+  }
+
+  /** Peers whose client answered a capability query, i.e. can receive this transport. */
+  async probePeers(peerIds: string[], timeoutMs?: number): Promise<Set<string>> {
+    const peers = [...new Set(peerIds.filter((peerId) => peerId !== this.signaling.localPeerId))];
+    const supported = new Set<string>();
+    for (let index = 0; index < peers.length; index += 7) {
+      const replies = await this.queryProfiles(peers.slice(index, index + 7), timeoutMs);
+      for (const peerId of replies.keys()) supported.add(peerId);
+    }
+    return supported;
   }
 
   get compatibilityQuality(): MediaQualityOptions | undefined {
@@ -248,12 +271,12 @@ export class NativeScreenTransport {
       }
     }
     const { contentHint = 'detail', ...nativeOptions } = options;
-    const session = await invoke<Session>('native_screen_start', {
+    const session = await this.invoke<Session>('native_screen_start', {
       ...nativeOptions,
       h264Profile,
     });
     if (generation !== this.generation) {
-      await invoke('native_screen_stop', {
+      await this.invoke('native_screen_stop', {
         sessionId: session.sessionId,
       }).catch(() => undefined);
       return;
@@ -263,7 +286,7 @@ export class NativeScreenTransport {
     this.activeContentHint = contentHint;
     this.log('self', 'capture-started', h264Profile);
     try {
-      const unlisten = await onNativeCaptureEnded(
+      const unlisten = await (this.driver?.listen ?? onNativeCaptureEnded)(
         ({ payload }) => {
           if (payload.sessionId !== this.session?.sessionId) return;
           this.onEnded(payload.reason);
@@ -275,7 +298,7 @@ export class NativeScreenTransport {
         return;
       }
       this.unlisten = unlisten;
-      await this.createPreview(generation);
+      if (!this.driver?.externalPreview) await this.createPreview(generation);
     } catch (error) {
       if (this.session === session) await this.stop();
       throw error;
@@ -309,7 +332,7 @@ export class NativeScreenTransport {
         }
       }
       if (session !== this.session || generation !== this.generation) return;
-      const description = await invoke<RTCSessionDescriptionInit>(
+      const description = await this.invoke<RTCSessionDescriptionInit>(
         'native_screen_peer_offer',
         {
           sessionId: session.sessionId,
@@ -338,7 +361,7 @@ export class NativeScreenTransport {
     this.closeReceiver(peerId);
     this.pendingReceiverCandidates.delete(peerId);
     if (this.session)
-      await invoke('native_screen_peer_remove', {
+      await this.invoke('native_screen_peer_remove', {
         sessionId: this.session.sessionId,
         peerId,
       }).catch(() => undefined);
@@ -402,7 +425,7 @@ export class NativeScreenTransport {
       this.log(peerId, 'answer-video', /^m=video 0 /m.test(signal.description.sdp ?? '') ? 'rejected' : 'accepted');
       const session = this.session;
       if (session && session.sessionId === signal.captureId)
-        await invoke('native_screen_peer_answer', {
+        await this.invoke('native_screen_peer_answer', {
           sessionId: session!.sessionId,
           peerId,
           description: signal.description,
@@ -414,7 +437,7 @@ export class NativeScreenTransport {
         return true;
       const session = this.session;
       if (session && session.sessionId === signal.captureId)
-        await invoke('native_screen_peer_candidate', {
+        await this.invoke('native_screen_peer_candidate', {
           sessionId: session.sessionId,
           peerId,
           candidate: signal.candidate,
@@ -528,7 +551,7 @@ export class NativeScreenTransport {
           data: { kind: 'native-screen-stop', captureId: session.sessionId },
         }),
       ),
-      invoke('native_screen_stop', { sessionId: session.sessionId }),
+      this.invoke('native_screen_stop', { sessionId: session.sessionId }),
     ]);
   }
 
@@ -558,7 +581,7 @@ export class NativeScreenTransport {
     return 'baseline';
   }
 
-  private queryProfiles(peerIds: string[]): Promise<Map<string, Set<NativeH264Profile>>> {
+  private queryProfiles(peerIds: string[], timeoutMs = 1_000): Promise<Map<string, Set<NativeH264Profile>>> {
     if (peerIds.length > 7)
       return Promise.reject(new Error('Native screen sharing supports up to 7 other people'));
     const peers = new Set(peerIds);
@@ -574,7 +597,7 @@ export class NativeScreenTransport {
         this.pendingProfileQueries.delete(nonce);
         resolve(replies);
       };
-      const timer = globalThis.setTimeout(finish, 1_000);
+      const timer = globalThis.setTimeout(finish, timeoutMs);
       this.pendingProfileQueries.set(nonce, { peers, replies, finish, timer });
       for (const peerId of peers) {
         void Promise.resolve(this.signaling.send({
@@ -709,6 +732,11 @@ export class NativeScreenTransport {
       if ((Number(video?.bytesReceived) || 0) > 0 || (Number(video?.framesDecoded) || 0) > 0)
         return;
     }
+    if (this.driver?.disableFallback) {
+      receiver.fallbackRequested = true;
+      this.onEnded('Native camera video interrupted (' + reason + ').');
+      return;
+    }
     receiver.fallbackRequested = true;
     globalThis.clearTimeout(receiver.fallbackTimer);
     globalThis.clearInterval(receiver.healthTimer);
@@ -722,10 +750,21 @@ export class NativeScreenTransport {
     });
   }
 
+  /** Stop sending to one participant and tell its receiver so it stops showing the stream. */
+  async endOutboundPeer(peerId: string) {
+    const session = this.session;
+    if (!session || !this.outboundPeers.has(peerId)) return;
+    await this.removeOutboundPeer(peerId);
+    await Promise.resolve(this.signaling.send({
+      type: 'signal', to: peerId, transport: 'native-screen', captureId: session.sessionId,
+      data: { kind: 'native-screen-stop', captureId: session.sessionId },
+    })).catch(() => undefined);
+  }
+
   private async removeOutboundPeer(peerId: string) {
     const session = this.session;
     if (!session || !this.outboundPeers.has(peerId)) return;
-    await invoke('native_screen_peer_remove', {
+    await this.invoke('native_screen_peer_remove', {
       sessionId: session.sessionId,
       peerId,
     }).catch(() => undefined);
@@ -734,7 +773,7 @@ export class NativeScreenTransport {
 
   private async createPreview(generation: number) {
     const session = this.session!;
-    const offer = await invoke<RTCSessionDescriptionInit>(
+    const offer = await this.invoke<RTCSessionDescriptionInit>(
       'native_screen_peer_offer',
       {
         sessionId: session.sessionId,
@@ -753,14 +792,14 @@ export class NativeScreenTransport {
       } else track.stop();
     };
     pc.onicecandidate = ({ candidate }) =>
-      void invoke('native_screen_peer_candidate', {
+      void this.invoke('native_screen_peer_candidate', {
         sessionId: session.sessionId,
         peerId: '__preview',
         candidate: candidate?.toJSON() ?? null,
       }).catch(() => undefined);
     await pc.setRemoteDescription(offer);
     await pc.setLocalDescription(await pc.createAnswer());
-    await invoke('native_screen_peer_answer', {
+    await this.invoke('native_screen_peer_answer', {
       sessionId: session.sessionId,
       peerId: '__preview',
       description: pc.localDescription!.toJSON(),

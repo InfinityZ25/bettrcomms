@@ -3,10 +3,10 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 const native = vi.hoisted(() => vi.fn<(method: number) => Promise<void>>());
 vi.mock('@/desktop/iosNativeBindings', () => ({
   callIOSNative: native,
-  iosNativeBinding: { metaStart: 1, metaStop: 2 },
+  iosNativeBinding: { metaStart: 1, metaStop: 2, metaConnect: 3 },
 }));
 vi.mock('@/desktop/runtime', () => ({ readDesktopBootReport: () => ({ platform: 'ios' }) }));
-import { startMetaGlassesCamera } from './metaGlassesCamera';
+import { reconnectMetaGlassesCamera, startMetaGlassesCamera } from './metaGlassesCamera';
 
 class Track extends EventTarget { stop = vi.fn(); }
 let tracks: Track[];
@@ -84,4 +84,30 @@ it('releases a failed startup so the next attempt can start cleanly', async () =
   camera.dispose();
   expect(tracks.every((track) => track.stop.mock.calls.length === 1)).toBe(true);
   expect(vi.getTimerCount()).toBe(0);
+});
+
+it('waits for fresh registration before completing reconnect', async () => {
+  const request = reconnectMetaGlassesCamera();
+  expect(native).toHaveBeenCalledWith(3);
+  emit({ kind: 'registered' });
+  await request;
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it('cleans up a cancelled reconnect', async () => {
+  const controller = new AbortController();
+  const request = reconnectMetaGlassesCamera(controller.signal);
+  const rejected = expect(request).rejects.toMatchObject({ name: 'AbortError' });
+  controller.abort();
+  await rejected;
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it('does not unregister an active glasses camera', async () => {
+  const request = startMetaGlassesCamera();
+  frame();
+  const camera = await request;
+  await expect(reconnectMetaGlassesCamera()).rejects.toThrow('Turn off glasses video');
+  expect(native).not.toHaveBeenCalledWith(3);
+  camera.dispose();
 });

@@ -13,6 +13,8 @@ type MetaEvent =
 // Call video and the Settings preview may use the same SDK session together.
 // Stopping one canvas must not disconnect the other's glasses stream.
 let activeConsumers = 0;
+const metaTracks = new WeakSet<MediaStreamTrack>();
+export const isMetaGlassesTrack = (track: MediaStreamTrack | null) => !!track && metaTracks.has(track);
 
 /** Convert native DAT frames into an ordinary call camera track on iOS. */
 export async function startMetaGlassesCamera(signal?: AbortSignal): Promise<{
@@ -29,7 +31,7 @@ export async function startMetaGlassesCamera(signal?: AbortSignal): Promise<{
   canvas.height = 640;
   const context = canvas.getContext('2d');
   if (!context) throw new Error('Could not create a glasses camera preview.');
-  const stream = canvas.captureStream(15);
+  const stream = canvas.captureStream(30);
   const track = stream.getVideoTracks()[0];
   if (!track) throw new Error('Could not create a glasses camera track.');
   let disposed = false;
@@ -129,9 +131,37 @@ export async function startMetaGlassesCamera(signal?: AbortSignal): Promise<{
     ownsNative = true;
     await callIOSNative(iosNativeBinding.metaStart);
     await ready;
+    metaTracks.add(track);
     return { track, dispose };
   } catch (error) {
     dispose();
     throw error;
   }
+}
+
+/** User-requested repair; never revoke registration as part of automatic retry. */
+export async function reconnectMetaGlassesCamera(signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted();
+  if (!hasMetaGlassesCamera()) throw new Error('Reconnecting glasses requires the iPhone app.');
+  if (activeConsumers) throw new Error('Turn off glasses video before reconnecting.');
+  await new Promise<void>((resolve, reject) => {
+    const cleanup = () => {
+      window.clearTimeout(timeout);
+      window.removeEventListener('bc-meta-camera', listener);
+      signal?.removeEventListener('abort', abort);
+    };
+    const abort = () => { cleanup(); reject(new DOMException('Reconnection cancelled.', 'AbortError')); };
+    const listener = (event: Event) => {
+      const detail = (event as CustomEvent<MetaEvent>).detail;
+      if (detail?.kind === 'registered') { cleanup(); resolve(); }
+      else if (detail?.kind === 'error') { cleanup(); reject(new Error(detail.message)); }
+    };
+    const timeout = window.setTimeout(() => {
+      cleanup(); reject(new Error('Meta reconnection timed out. Please try again.'));
+    }, 5 * 60_000);
+    window.addEventListener('bc-meta-camera', listener);
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) { abort(); return; }
+    void callIOSNative(iosNativeBinding.metaConnect).catch((error) => { cleanup(); reject(error); });
+  });
 }

@@ -26,9 +26,14 @@ trap 'rm -rf "$scratch"' EXIT
 
 # DAT 1.0.0 ships binary Swift frameworks. Pin both the tag and commit so a
 # changed upstream tag cannot silently change what the iPhone archive embeds.
-meta_sdk="$scratch/meta-wearables-dat-ios"
-git clone --quiet --depth 1 --branch 1.0.0 \
-  https://github.com/facebook/meta-wearables-dat-ios.git "$meta_sdk"
+meta_sdk="${BETTERCOMMS_META_SDK_DIR:-$scratch/meta-wearables-dat-ios}"
+if [[ -z "${BETTERCOMMS_META_SDK_DIR:-}" ]]; then
+  git clone --quiet --depth 1 --branch 1.0.0 \
+    https://github.com/facebook/meta-wearables-dat-ios.git "$meta_sdk"
+elif [[ -n "$(git -C "$meta_sdk" status --porcelain)" ]]; then
+  echo 'The cached Meta SDK must have a clean working tree.' >&2
+  exit 1
+fi
 if [[ "$(git -C "$meta_sdk" rev-parse HEAD)" != "1f38beecba83c4c8b5e343540f9cd615323ab19a" ]]; then
   echo 'Unexpected Meta Wearables DAT 1.0.0 commit.' >&2
   exit 1
@@ -69,8 +74,13 @@ mkdir -p "$app/bin"
     -o "$archive" .
 )
 
+xcrun --sdk iphoneos swiftc -target arm64-apple-ios17.2 -sdk "$sdk" \
+  -parse-as-library -module-name BetterCommsMeta -F "$meta_core" \
+  -emit-objc-header -emit-objc-header-path "$app/bin/BetterCommsMeta-Swift.h" \
+  -c "$app/native/ios/meta_session_probe.swift" -o "$app/bin/meta_session_probe.o"
+
 xcrun --sdk iphoneos clang -target arm64-apple-ios17.2 -isysroot "$sdk" \
-  -fobjc-arc -fmodules -I "$scratch/wails/pkg/application" \
+  -fobjc-arc -fmodules -I "$scratch/wails/pkg/application" -I "$app/bin" \
   -F "$meta_core" -F "$meta_camera" \
   -c "$app/native/ios/meta_camera_ios.m" -o "$app/bin/meta_camera_ios.o"
 xcrun --sdk iphoneos clang -target arm64-apple-ios17.2 -isysroot "$sdk" \
@@ -80,17 +90,22 @@ xcrun --sdk iphoneos clang -target arm64-apple-ios17.2 -isysroot "$sdk" \
   -c "$app/native/ios/ios_app_screen.m" -o "$app/bin/ios_app_screen.o"
 
 xcrun --sdk iphoneos clang -target arm64-apple-ios17.2 -isysroot "$sdk" \
+  -fobjc-arc -fmodules -c "$app/native/ios/meta_video_encoder.m" -o "$app/bin/meta_video_encoder.o"
+
+xcrun --sdk iphoneos clang -target arm64-apple-ios17.2 -isysroot "$sdk" \
   -F "$meta_core" -F "$meta_camera" \
   -framework Foundation -framework UIKit -framework WebKit \
   -framework Security -framework CoreFoundation -framework UniformTypeIdentifiers \
   -framework LocalAuthentication -framework UserNotifications -framework AVFoundation \
-  -framework ReplayKit -framework CoreImage -framework CoreMedia -framework CoreVideo \
+  -framework VideoToolbox -framework ReplayKit -framework CoreImage -framework CoreMedia -framework CoreVideo \
   -framework CoreLocation -framework CoreMotion -framework SystemConfiguration \
   -framework MWDATCore -framework MWDATCamera \
   -Wl,-rpath,@executable_path/Frameworks \
+  -L "$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/iphoneos" \
+  -L "$sdk/usr/lib/swift" -lswiftCore -lswift_Concurrency \
   -lresolv -o "$app/bin/BetterComms" \
-  "$app/build/ios/xcode/main/main.m" "$app/bin/meta_camera_ios.o" \
-  "$app/bin/ios_call_audio.o" "$app/bin/ios_app_screen.o" \
+  "$app/build/ios/xcode/main/main.m" "$app/bin/meta_camera_ios.o" "$app/bin/meta_video_encoder.o" \
+  "$app/bin/ios_call_audio.o" "$app/bin/ios_app_screen.o" "$app/bin/meta_session_probe.o" \
   -Wl,-force_load,"$archive"
 
 rm -rf "$bundle"
@@ -124,6 +139,11 @@ cp "$app/build/ios/xcode/main/Info.plist" "$bundle/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :MWDAT:MetaAppID string 0' "$bundle/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :MWDAT:ClientToken string' "$bundle/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :MWDAT:TeamID string 764FPKS8YP' "$bundle/Info.plist"
+# Local diagnostics can opt in without changing production logging defaults.
+if [[ "${BETTERCOMMS_META_DEBUG:-0}" == 1 ]]; then
+  /usr/libexec/PlistBuddy -c 'Add :MWDAT:Logging dict' "$bundle/Info.plist"
+  /usr/libexec/PlistBuddy -c 'Add :MWDAT:Logging:Level string debug' "$bundle/Info.plist"
+fi
 /usr/libexec/PlistBuddy -c 'Add :MWDAT:Analytics dict' "$bundle/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :MWDAT:Analytics:OptOut bool true' "$bundle/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :MWDAT:CrashReporting dict' "$bundle/Info.plist"

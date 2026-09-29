@@ -9,6 +9,7 @@ import (
 // methods so a c-archive's reflected package name cannot change the JS calls.
 // Keep these values in sync with apps/web/src/desktop/iosNativeBindings.ts.
 func init() {
+	application.RegisterBindingMethodID((*AuthService).IOSMetaSender, 0xBC160108)
 	application.RegisterBindingMethodID((*AuthService).IOSCallAudioStart, 0xBC160101)
 	application.RegisterBindingMethodID((*AuthService).IOSCallAudioStop, 0xBC160102)
 	application.RegisterBindingMethodID((*AuthService).IOSScreenStart, 0xBC160103)

@@ -38,6 +38,11 @@ if [[ "$application_id" != *".$bundle_id" ]]; then
 fi
 
 cp "$profile" "$bundle/embedded.mobileprovision"
+# Xcode debug builds place executable code in an app-local debug dylib.
+# Sign nested libraries before their containing frameworks and app bundle.
+while IFS= read -r -d '' library; do
+  codesign --force --sign "$identity" --timestamp=none "$library"
+done < <(find "$bundle" -type f -name '*.dylib' -print0)
 for framework in "$bundle"/Frameworks/*.framework; do
   [[ -d "$framework" ]] || continue
   codesign --force --sign "$identity" --timestamp=none "$framework"

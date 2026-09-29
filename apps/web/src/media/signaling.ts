@@ -229,7 +229,7 @@ export class RoomWebSocketSignaling extends EventTarget implements SignalingAdap
         } }));
       } else if (type === "presence") {
         this.dispatchEvent(new CustomEvent("presence", { detail: { peerId: String(message.from), payload: message.payload } }));
-      } else if (type === "offer" || type === "answer" || type === "ice-candidate" || type === "track-metadata" || (type === "signal" && (message.transport === "native-screen" || message.transport === "voice-relay"))) {
+      } else if (type === "offer" || type === "answer" || type === "ice-candidate" || type === "track-metadata" || (type === "signal" && (message.transport === "native-screen" || message.transport === "native-camera" || message.transport === "voice-relay"))) {
         this.dispatchEvent(new CustomEvent("signal", { detail: message as unknown as MediaSignal }));
       } else if (type === "error") {
         this.dispatchEvent(new CustomEvent("error", { detail: message.error }));
