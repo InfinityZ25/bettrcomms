@@ -35,9 +35,26 @@ func main() {
 	if e = runMigrations(context.Background(), pool, findMigrationsDir()); e != nil {
 		log.Fatal(e)
 	}
-	cfg := api.Config{AppURL: get("APP_URL", "http://localhost:5173"), WorkOSClientID: os.Getenv("WORKOS_CLIENT_ID"), WorkOSAPIKey: os.Getenv("WORKOS_API_KEY"), WorkOSRedirectURI: get("WORKOS_REDIRECT_URI", "http://localhost:5173/api/v1/auth/callback"), DevAuth: get("DEV_AUTH", "false") == "true", ICEURLs: split(get("ICE_URLS", "stun:stun.l.google.com:19302")), TURNURLs: split(os.Getenv("TURN_URLS")), TURNSecret: os.Getenv("TURN_SECRET"), WebDist: os.Getenv("WEB_DIST"), SFUURL: os.Getenv("SFU_URL"), SFUJoinSecret: os.Getenv("SFU_JOIN_SECRET")}
+	cfg := api.Config{AppURL: get("APP_URL", "http://localhost:5173"), WorkOSClientID: os.Getenv("WORKOS_CLIENT_ID"), WorkOSAPIKey: os.Getenv("WORKOS_API_KEY"), WorkOSRedirectURI: get("WORKOS_REDIRECT_URI", "http://localhost:5173/api/v1/auth/callback"), DevAuth: get("DEV_AUTH", "false") == "true", ICEURLs: split(get("ICE_URLS", "stun:stun.l.google.com:19302")), TURNURLs: split(os.Getenv("TURN_URLS")), TURNSecret: os.Getenv("TURN_SECRET"), WebDist: os.Getenv("WEB_DIST"), SFUURL: os.Getenv("SFU_URL"), SFUJoinSecret: os.Getenv("SFU_JOIN_SECRET"), VAPIDPublicKey: os.Getenv("VAPID_PUBLIC_KEY"), VAPIDPrivateKey: os.Getenv("VAPID_PRIVATE_KEY"), VAPIDSubject: os.Getenv("VAPID_SUBJECT")}
+	if err := api.ValidVAPIDConfig(cfg.VAPIDPublicKey, cfg.VAPIDPrivateKey, cfg.VAPIDSubject); err != nil {
+		log.Fatal(err)
+	}
 	store := &api.PostgresStore{DB: pool}
 	a := api.New(store, api.Sessions{Store: store, Secure: get("COOKIE_SECURE", "false") == "true"}, cfg)
+	if cfg.VAPIDPublicKey != "" {
+		go func() {
+			ticker := time.NewTicker(10 * time.Second)
+			defer ticker.Stop()
+			for {
+				pushCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+				if _, pushErr := store.DispatchPush(pushCtx, cfg); pushErr != nil {
+					log.Printf("push delivery failed: %v", pushErr)
+				}
+				cancel()
+				<-ticker.C
+			}
+		}()
+	}
 	if bucket := os.Getenv("AWS_S3_BUCKET"); bucket != "" {
 		if os.Getenv("AWS_REGION") == "" {
 			log.Fatal("AWS_REGION is required when AWS_S3_BUCKET is set")

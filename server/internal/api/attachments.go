@@ -21,7 +21,7 @@ const maxAttachmentBytes = 10 << 20
 
 type AttachmentStorage interface {
 	Put(context.Context, string, io.Reader, int64, string) error
-	URL(context.Context, string, string, string) (string, error)
+	URL(context.Context, string, string, string, bool) (string, error)
 	Delete(context.Context, string) error
 }
 
@@ -41,9 +41,9 @@ func (s *S3AttachmentStorage) Put(ctx context.Context, key string, body io.Reade
 	return err
 }
 
-func (s *S3AttachmentStorage) URL(ctx context.Context, key, filename, contentType string) (string, error) {
+func (s *S3AttachmentStorage) URL(ctx context.Context, key, filename, contentType string, inline bool) (string, error) {
 	disposition := "attachment"
-	if strings.HasPrefix(contentType, "image/") {
+	if inline && (strings.HasPrefix(contentType, "image/") || strings.HasPrefix(contentType, "audio/") || strings.HasPrefix(contentType, "video/")) {
 		disposition = "inline"
 	}
 	result, err := s.presigner.PresignGetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(s.bucket), Key: aws.String(key), ResponseContentDisposition: aws.String(mime.FormatMediaType(disposition, map[string]string{"filename": filename})), ResponseContentType: aws.String(contentType)}, s3.WithPresignExpires(5*time.Minute))
@@ -203,7 +203,7 @@ func (a *API) downloadAttachment(w http.ResponseWriter, r *http.Request, user Us
 		a.result(w, nil, err)
 		return
 	}
-	url, err := a.Attachments.URL(r.Context(), key, attachment.Filename, attachment.ContentType)
+	url, err := a.Attachments.URL(r.Context(), key, attachment.Filename, attachment.ContentType, r.URL.Query().Get("inline") == "1")
 	if err != nil {
 		a.fail(w, 502, "download_failed", "could not open file")
 		return

@@ -131,6 +131,7 @@ func (s *PostgresStore) SendMessage(room, user, body, replyID, nonce string, att
 }
 
 func (s *PostgresStore) writeMessage(room, user, id, body, replyID, nonce string, attachmentIDs []string) (Message, bool, error) {
+	isNew := id == ""
 	ctx := context.Background()
 	tx, err := s.DB.Begin(ctx)
 	if err != nil {
@@ -141,6 +142,22 @@ func (s *PostgresStore) writeMessage(room, user, id, body, replyID, nonce string
 	// Otherwise a late commit with a lower sequence could land behind a read cursor.
 	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::uuid::text,0))`, room); err != nil {
 		return Message{}, false, err
+	}
+	var directKey *string
+	if err = tx.QueryRow(ctx, `SELECT direct_key FROM rooms WHERE id=$1`, room).Scan(&directKey); err != nil {
+		return Message{}, false, norm(err)
+	}
+	if directKey != nil {
+		if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,1))`, *directKey); err != nil {
+			return Message{}, false, err
+		}
+		var allowed bool
+		if err = tx.QueryRow(ctx, `SELECT can_access_room($1,$2)`, room, user).Scan(&allowed); err != nil {
+			return Message{}, false, err
+		}
+		if !allowed {
+			return Message{}, false, ErrForbidden
+		}
 	}
 	// Lock membership until the write commits; a revoked member cannot race a
 	// successful permission check and add content after removal has committed.
@@ -265,6 +282,18 @@ func (s *PostgresStore) writeMessage(room, user, id, body, replyID, nonce string
 			return Message{}, false, err
 		}
 	}
+	if isNew {
+		// A delivery is queued only for subscriptions that already existed when
+		// the message was committed. A retry with the same nonce exits above.
+		_, err = tx.Exec(ctx, `INSERT INTO push_deliveries(message_id,subscription_id)
+			SELECT $1, ps.id FROM room_members rm
+			JOIN push_subscriptions ps ON ps.user_id=rm.user_id
+			WHERE rm.room_id=$2 AND rm.user_id<>$3 AND NOT ps.dnd
+			ON CONFLICT DO NOTHING`, id, room, user)
+		if err != nil {
+			return Message{}, false, err
+		}
+	}
 	if err = tx.Commit(ctx); err != nil {
 		return Message{}, false, err
 	}
@@ -369,12 +398,12 @@ func (s *PostgresStore) SearchMessages(user, room, author, query, beforeID strin
 		if !uuidPattern.MatchString(beforeID) {
 			return MessagePage{}, ErrNotFound
 		}
-		err := s.DB.QueryRow(context.Background(), `SELECT m.sequence FROM messages m JOIN room_members rm ON rm.room_id=m.room_id WHERE m.id=$1 AND rm.user_id=$2`, beforeID, user).Scan(&before)
+		err := s.DB.QueryRow(context.Background(), `SELECT m.sequence FROM messages m WHERE m.id=$1 AND can_access_room(m.room_id,$2)`, beforeID, user).Scan(&before)
 		if err != nil {
 			return MessagePage{}, norm(err)
 		}
 	}
-	rows, err := s.DB.Query(context.Background(), messageSelect+` WHERE m.deleted_at IS NULL AND m.sequence<$5 AND EXISTS(SELECT 1 FROM room_members rm WHERE rm.room_id=m.room_id AND rm.user_id=$1) AND ($2='' OR m.room_id=NULLIF($2,'')::uuid) AND ($3='' OR m.author_id=NULLIF($3,'')::uuid) AND to_tsvector('simple',m.body) @@ websearch_to_tsquery('simple',$4) ORDER BY m.sequence DESC LIMIT $6`, user, room, author, query, before, limit+1)
+	rows, err := s.DB.Query(context.Background(), messageSelect+` WHERE m.deleted_at IS NULL AND m.sequence<$5 AND can_access_room(m.room_id,$1) AND ($2='' OR m.room_id=NULLIF($2,'')::uuid) AND ($3='' OR m.author_id=NULLIF($3,'')::uuid) AND to_tsvector('simple',m.body) @@ websearch_to_tsquery('simple',$4) ORDER BY m.sequence DESC LIMIT $6`, user, room, author, query, before, limit+1)
 	if err != nil {
 		return MessagePage{}, err
 	}
@@ -382,7 +411,7 @@ func (s *PostgresStore) SearchMessages(user, room, author, query, beforeID strin
 }
 
 func (s *PostgresStore) UnreadRooms(user string) ([]RoomUnread, error) {
-	rows, err := s.DB.Query(context.Background(), `SELECT rm.room_id::text,COALESCE(rr.sequence,0),count(m.id),count(mm.message_id) FROM room_members rm LEFT JOIN room_reads rr ON rr.room_id=rm.room_id AND rr.user_id=rm.user_id LEFT JOIN messages m ON m.room_id=rm.room_id AND m.sequence>COALESCE(rr.sequence,0) AND m.author_id<>rm.user_id AND m.deleted_at IS NULL LEFT JOIN message_mentions mm ON mm.message_id=m.id AND mm.user_id=rm.user_id WHERE rm.user_id=$1 GROUP BY rm.room_id,rr.sequence`, user)
+	rows, err := s.DB.Query(context.Background(), `SELECT rm.room_id::text,COALESCE(rr.sequence,0),count(m.id),count(mm.message_id) FROM room_members rm LEFT JOIN room_reads rr ON rr.room_id=rm.room_id AND rr.user_id=rm.user_id LEFT JOIN messages m ON m.room_id=rm.room_id AND m.sequence>COALESCE(rr.sequence,0) AND m.author_id<>rm.user_id AND m.deleted_at IS NULL LEFT JOIN message_mentions mm ON mm.message_id=m.id AND mm.user_id=rm.user_id WHERE rm.user_id=$1 AND can_access_room(rm.room_id,$1) GROUP BY rm.room_id,rr.sequence`, user)
 	if err != nil {
 		return nil, err
 	}

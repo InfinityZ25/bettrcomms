@@ -140,7 +140,7 @@ export function useCallPresence(userId?: string) {
               ...currentState,
               roomsRevision: currentState.roomsRevision + 1,
             }));
-          } else if (message.type === 'friends.changed') {
+          } else if (message.type === 'friends.changed' || message.type === 'dm.requests.changed' || message.type === 'privacy.changed') {
             setState((currentState) => ({
               ...currentState,
               friendsRevision: currentState.friendsRevision + 1,

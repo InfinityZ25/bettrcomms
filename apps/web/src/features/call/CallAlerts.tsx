@@ -116,7 +116,7 @@ export default function CallAlerts({
       roomId === viewing?.id && !document.hidden && document.hasFocus();
     if (fresh.some((entry) => !watching(entry.value.room_id)))
       playSound('notification');
-    if (!away()) return;
+    if (!notifications.alerts || !away()) return;
 
     const byRoom = new Map<string, Message[]>();
     for (const { value } of fresh) {
@@ -127,7 +127,7 @@ export default function CallAlerts({
     for (const [roomId, group] of byRoom) {
       const last = group[group.length - 1]!;
       void notifyDesktop({
-        // One toast per conversation, replaced rather than stacked.
+        // One toast per conversation in this batch.
         id: `message:${roomId}`,
         title: last.author.name,
         body:

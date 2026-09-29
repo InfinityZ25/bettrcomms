@@ -1,10 +1,11 @@
 import { api } from '@/api';
+import { desktopNotificationsAvailable, requestDesktopNotificationAuthorization } from '@/desktop/notifications';
 
 export type NotificationMode = 'all' | 'mentions' | 'mute';
-type NotificationState = { rooms: Record<string, NotificationMode>; dnd: boolean; browser: boolean; ready: boolean };
+type NotificationState = { rooms: Record<string, NotificationMode>; dnd: boolean; alerts: boolean; background: boolean; error: string; ready: boolean };
 const listeners = new Set<() => void>();
 let currentUser: string | undefined;
-let state: NotificationState = { rooms: {}, dnd: false, browser: false, ready: false };
+let state: NotificationState = { rooms: {}, dnd: false, alerts: false, background: false, error: '', ready: false };
 let sessionRevision = 0;
 let retryTimer: ReturnType<typeof setTimeout> | undefined;
 let roomOverrides: Record<string, NotificationMode> = {};
@@ -13,12 +14,67 @@ function key(user: string, setting: string) { return `bettercomms:notification:$
 function stored(user: string, setting: string) {
   try { return localStorage.getItem(key(user, setting)) === 'true'; } catch { return false; }
 }
+function storedAlerts(user: string) {
+  try {
+    const saved = localStorage.getItem(key(user, 'alerts'));
+    return saved === null ? stored(user, 'browser') : saved === 'true';
+  } catch { return false; }
+}
 function persist(user: string, setting: string, enabled: boolean) {
   try { localStorage.setItem(key(user, setting), String(enabled)); } catch { /* Browser storage may be disabled. */ }
 }
 function update(patch: Partial<NotificationState>) {
   state = { ...state, ...patch };
   for (const listener of listeners) listener();
+}
+function pushSupported() {
+  return !desktopNotificationsAvailable() && typeof navigator !== 'undefined' && typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window;
+}
+function publicKeyBytes(value: string) {
+  const padded = value.replace(/-/g, '+').replace(/_/g, '/');
+  return Uint8Array.from(atob(padded), (character) => character.charCodeAt(0));
+}
+async function syncPush(dnd: boolean) {
+  if (!pushSupported() || Notification.permission !== 'granted') return;
+  const user = currentUser;
+  const revision = sessionRevision;
+  try {
+    const { public_key } = await api<{ public_key: string }>('/push/subscription');
+    await navigator.serviceWorker.register('/push-sw.js', { scope: '/' });
+    const registration = await navigator.serviceWorker.ready;
+    const key = publicKeyBytes(public_key);
+    let subscription = await registration.pushManager.getSubscription();
+    const savedKey = subscription?.options.applicationServerKey;
+    const savedBytes = savedKey ? new Uint8Array(savedKey) : null;
+    if (subscription && (!savedBytes || savedBytes.length !== key.length || !key.every((byte, index) => byte === savedBytes[index]))) {
+      try { await api('/push/subscription', { endpoint: subscription.endpoint }, 'DELETE'); } catch { /* An expired old endpoint will be pruned by the server. */ }
+      await subscription.unsubscribe();
+      subscription = null;
+    }
+    subscription ??= await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+    if (revision !== sessionRevision || user !== currentUser) return;
+    const serialized = subscription.toJSON();
+    if (!serialized.keys?.p256dh || !serialized.keys.auth) throw new Error('Incomplete push subscription');
+    await api('/push/subscription', {
+      endpoint: subscription.endpoint,
+      keys: { p256dh: serialized.keys.p256dh, auth: serialized.keys.auth },
+      dnd,
+    }, 'POST');
+    if (revision === sessionRevision) update({ background: true, error: '' });
+  } catch {
+    if (revision === sessionRevision) update({ background: false, error: 'Background alerts unavailable. Check Web Push server configuration and browser support.' });
+  }
+}
+export async function stopPushForThisBrowser() {
+  if (!pushSupported()) return;
+  try {
+    const registration = await navigator.serviceWorker.getRegistration('/push-sw.js');
+    const subscription = await registration?.pushManager.getSubscription();
+    if (!subscription) return;
+    try { await api('/push/subscription', { endpoint: subscription.endpoint }, 'DELETE'); } catch { /* The push service will reject an unsubscribed endpoint. */ }
+    await subscription.unsubscribe();
+    update({ background: false, error: '' });
+  } catch { /* Logout remains available if the browser's push service fails. */ }
 }
 export const notificationSnapshot = () => state;
 export function subscribeNotifications(listener: () => void) {
@@ -31,7 +87,10 @@ export function startNotificationSession(user: string) {
   retryTimer = undefined;
   currentUser = user;
   roomOverrides = {};
-  update({ rooms: {}, dnd: stored(user, 'dnd'), browser: stored(user, 'browser'), ready: false });
+  const savedDND = stored(user, 'dnd');
+  const savedAlerts = storedAlerts(user);
+  update({ rooms: {}, dnd: savedDND, alerts: savedAlerts, background: false, error: '', ready: false });
+  if (savedAlerts && pushSupported()) void syncPush(savedDND);
   let retryDelay = 2000;
   const load = () => {
     void api<{ rooms: Record<string, NotificationMode> }>('/messages/notification-preferences')
@@ -53,7 +112,7 @@ export function startNotificationSession(user: string) {
     retryTimer = undefined;
     currentUser = undefined;
     roomOverrides = {};
-    update({ rooms: {}, dnd: false, browser: false, ready: false });
+    update({ rooms: {}, dnd: false, alerts: false, background: false, error: '', ready: false });
   };
 }
 export async function setRoomNotificationMode(room: string, mode: NotificationMode) {
@@ -70,23 +129,35 @@ export function setDoNotDisturb(enabled: boolean) {
   if (!currentUser) return;
   persist(currentUser, 'dnd', enabled);
   update({ dnd: enabled });
+  if (state.alerts && pushSupported()) void syncPush(enabled);
 }
-export async function setBrowserNotifications(enabled: boolean): Promise<boolean> {
+export async function setSystemNotifications(enabled: boolean): Promise<boolean> {
   const user = currentUser;
   const revision = sessionRevision;
   if (!user) return false;
   if (enabled) {
-    if (!('Notification' in window)) return false;
-    const permission = await Notification.requestPermission();
-    if (permission !== 'granted') return false;
+    if (desktopNotificationsAvailable()) {
+      if (!(await requestDesktopNotificationAuthorization())) {
+        if (revision === sessionRevision) update({ error: 'Enable BetterComms notifications in your system settings.' });
+        return false;
+      }
+    } else {
+      if (!('Notification' in window)) return false;
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') return false;
+    }
   }
   if (sessionRevision !== revision || currentUser !== user) return false;
-  persist(user, 'browser', enabled);
-  update({ browser: enabled });
+  persist(user, 'alerts', enabled);
+  update({ alerts: enabled, background: false, error: '' });
+  if (!desktopNotificationsAvailable()) {
+    if (enabled) await syncPush(state.dnd);
+    else await stopPushForThisBrowser();
+  }
   return true;
 }
 export function notifyBrowser(title: string, body: string, onClick: () => void) {
-  if (!state.browser || !('Notification' in window) || Notification.permission !== 'granted') return;
+  if (!state.alerts || !('Notification' in window) || Notification.permission !== 'granted') return;
   const notification = new Notification(title, { body });
   notification.onclick = () => { window.focus(); onClick(); notification.close(); };
 }

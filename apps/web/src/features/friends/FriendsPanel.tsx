@@ -1,6 +1,6 @@
 import { errorMessage } from '@/lib/errors';
 import { useEffect, useState, type FormEvent } from 'react';
-import { Check, Plus, Search, Users, X } from 'lucide-react';
+import { Ban, Check, MessageSquare, Plus, Search, Users, X } from 'lucide-react';
 import {
   api,
   type User,
@@ -11,6 +11,7 @@ import {
 import { Mascot } from '@/components/mascot';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import PrivacyPanel from './PrivacyPanel';
 
 export default function FriendsPanel({
   user,
@@ -34,7 +35,10 @@ export default function FriendsPanel({
     [friends, setFriends] = useState<User[]>([]),
     [requests, setRequests] = useState<FriendRequest[]>([]),
     [status, setStatus] = useState(''),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [requestTarget, setRequestTarget] = useState<User | null>(null),
+    [requestBody, setRequestBody] = useState(''),
+    [privacyRevision, setPrivacyRevision] = useState(0);
   async function refresh() {
     const r = await api<{ friends: User[]; requests: FriendRequest[] }>(
       '/friends',
@@ -131,8 +135,36 @@ export default function FriendsPanel({
           >
             <Plus size={14} /> Add friend
           </Button>
+          {!friends.some((friend) => friend.id === u.id) && (
+            <Button size="sm" variant="ghost" disabled={busy} onClick={() => { setRequestTarget(u); setRequestBody(''); }}>
+              <MessageSquare size={14} /> Request DM
+            </Button>
+          )}
+          <Button size="icon" variant="ghost" disabled={busy} aria-label={`Block ${u.name}`} onClick={() =>
+            action(async () => {
+              await api(`/privacy/blocks/${u.id}`, {}, 'POST');
+              setResults((current) => current.filter((person) => person.id !== u.id));
+              setPrivacyRevision((current) => current + 1);
+            })
+          }><Ban size={14} /></Button>
         </div>
       ))}
+      {requestTarget && (
+        <form className="space-y-2 rounded-xl border p-3 text-xs" onSubmit={(event) => {
+          event.preventDefault();
+          void action(async () => {
+            await api('/dm-requests', { user_id: requestTarget.id, body: requestBody });
+            setStatus(`Message request sent to ${requestTarget.name}.`);
+            setRequestTarget(null);
+            setRequestBody('');
+            setPrivacyRevision((current) => current + 1);
+          });
+        }}>
+          <label className="block font-medium" htmlFor="dm-request-body">Request a conversation with {requestTarget.name}</label>
+          <textarea id="dm-request-body" className="min-h-20 w-full rounded-lg border bg-background p-2" value={requestBody} maxLength={500} required onChange={(event) => setRequestBody(event.target.value)} placeholder="Write a short first message" />
+          <div className="flex gap-2"><Button size="sm" disabled={busy || !requestBody.trim()} type="submit">Send request</Button><Button size="sm" variant="ghost" type="button" onClick={() => setRequestTarget(null)}>Cancel</Button></div>
+        </form>
+      )}
       <details className="text-xs text-muted-foreground">
         <summary className="cursor-pointer">Add by user ID</summary>
         <form
@@ -262,6 +294,12 @@ export default function FriendsPanel({
           >
             Message
           </Button>
+          <Button size="icon" variant="ghost" disabled={busy} aria-label={`Block ${f.name}`} onClick={() =>
+            action(async () => {
+              await api(`/privacy/blocks/${f.id}`, {}, 'POST');
+              setPrivacyRevision((current) => current + 1);
+            })
+          }><Ban size={14} /></Button>
           {room?.owner_id === user.id && (
             <Button
               size="sm"
@@ -281,6 +319,7 @@ export default function FriendsPanel({
           )}
         </div>
       ))}
+      <PrivacyPanel key={`${user.id}:${refreshRevision}:${privacyRevision}`} userId={user.id} onOpenRoom={onOpenRoom} onError={onError} />
     </div>
   );
 }
