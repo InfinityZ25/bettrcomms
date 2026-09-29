@@ -166,18 +166,22 @@ export async function setSystemNotifications(enabled: boolean): Promise<boolean>
   return true;
 }
 export async function notifyBrowser(title: string, body: string, onClick: () => void, roomId?: string) {
-  if (!state.alerts || !('Notification' in window) || Notification.permission !== 'granted') return;
+  const user = currentUser;
+  const revision = sessionRevision;
+  if (!user || !state.alerts || !('Notification' in window) || Notification.permission !== 'granted') return;
+  const stillCurrent = () => user === currentUser && revision === sessionRevision && state.alerts && Notification.permission === 'granted';
   const tag = roomId ? `message:${roomId}` : undefined;
   if (roomId && 'serviceWorker' in navigator) {
     try {
       const registration = await navigator.serviceWorker.getRegistration('/push-sw.js');
-      if (registration?.active && state.alerts) {
+      if (!stillCurrent()) return;
+      if (registration?.active) {
         await registration.showNotification(title, { body, tag, data: { roomId } });
         return;
       }
     } catch { /* Fall back to a page notification when the worker is unavailable. */ }
   }
-  if (!state.alerts) return;
+  if (!stillCurrent()) return;
   const notification = new Notification(title, { body, tag });
   notification.onclick = () => { window.focus(); onClick(); notification.close(); };
 }

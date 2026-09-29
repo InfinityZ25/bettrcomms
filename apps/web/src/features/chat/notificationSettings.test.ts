@@ -178,6 +178,27 @@ describe('notification preferences', () => {
     expect(notification).not.toHaveBeenCalled();
   });
 
+  it('does not show the previous account\'s message after a delayed worker lookup', async () => {
+    vi.stubGlobal('window', { Notification: true });
+    const notification = vi.fn(function () { return { close: vi.fn() }; });
+    Object.assign(notification, { permission: 'granted', requestPermission: vi.fn().mockResolvedValue('granted') });
+    vi.stubGlobal('Notification', notification);
+    let finishLookup!: (registration: { active: object; showNotification: ReturnType<typeof vi.fn> }) => void;
+    const registration = { active: {}, showNotification: vi.fn().mockResolvedValue(undefined) };
+    vi.stubGlobal('navigator', { serviceWorker: { getRegistration: vi.fn(() => new Promise((resolve) => { finishLookup = resolve; })) } });
+    vi.mocked(api).mockResolvedValue({ rooms: {} });
+    stop = startNotificationSession('alice');
+    expect(await setSystemNotifications(true)).toBe(true);
+    const pending = notifyBrowser('Alice', 'Private message', () => {}, 'room-1');
+    stop();
+    stop = startNotificationSession('bob');
+    expect(await setSystemNotifications(true)).toBe(true);
+    finishLookup(registration);
+    await pending;
+    expect(registration.showNotification).not.toHaveBeenCalled();
+    expect(notification).not.toHaveBeenCalled();
+  });
+
   it('keeps desktop alerts off when macOS denies authorization', async () => {
     desktop.available = true;
     desktop.authorise.mockResolvedValue(false);
