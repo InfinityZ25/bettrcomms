@@ -11,8 +11,10 @@ ALTER TABLE messages ADD COLUMN IF NOT EXISTS deleted_at timestamptz;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to_id uuid REFERENCES messages(id);
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS version bigint NOT NULL DEFAULT 1;
 ALTER TABLE messages DROP CONSTRAINT IF EXISTS messages_body_check;
+-- Migrations replay on every startup. Keep this compatible with attachment-only
+-- messages created after migration 004 has run.
 ALTER TABLE messages ADD CONSTRAINT messages_body_check CHECK
-  ((deleted_at IS NULL AND char_length(body) BETWEEN 1 AND 4000) OR (deleted_at IS NOT NULL AND body = ''));
+  ((deleted_at IS NULL AND char_length(body) BETWEEN 0 AND 4000) OR (deleted_at IS NOT NULL AND body = ''));
 CREATE UNIQUE INDEX IF NOT EXISTS messages_sequence_unique ON messages(sequence);
 CREATE INDEX IF NOT EXISTS messages_room_sequence ON messages(room_id,sequence DESC);
 CREATE INDEX IF NOT EXISTS messages_search ON messages USING gin(to_tsvector('simple',body)) WHERE deleted_at IS NULL;

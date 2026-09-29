@@ -72,13 +72,16 @@ export function setDoNotDisturb(enabled: boolean) {
   update({ dnd: enabled });
 }
 export async function setBrowserNotifications(enabled: boolean): Promise<boolean> {
-  if (!currentUser) return false;
+  const user = currentUser;
+  const revision = sessionRevision;
+  if (!user) return false;
   if (enabled) {
     if (!('Notification' in window)) return false;
     const permission = await Notification.requestPermission();
     if (permission !== 'granted') return false;
   }
-  persist(currentUser, 'browser', enabled);
+  if (sessionRevision !== revision || currentUser !== user) return false;
+  persist(user, 'browser', enabled);
   update({ browser: enabled });
   return true;
 }

@@ -4,6 +4,7 @@ import {
   conversationSnapshot,
   jumpToMessage,
   loadConversation,
+  markRead,
   mergeMessages,
   receiveMessage,
   reconcileMessaging,
@@ -32,6 +33,17 @@ const message = (id: string, sequence: number, version = 1): Message => ({
   author: { id: 'user', name: 'Person', email: 'person@example.test' },
 });
 describe('message reconciliation', () => {
+  it('moves the unread divider after a successful read', async () => {
+    vi.mocked(api).mockResolvedValueOnce({ rooms: [] });
+    stop = startMessagingSession('user');
+    vi.mocked(api)
+      .mockResolvedValueOnce({ messages: [message('one', 1)], read_sequence: 0 })
+      .mockResolvedValueOnce({ members: [] });
+    await loadConversation('room');
+    vi.mocked(api).mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({ rooms: [] });
+    await markRead('room', message('one', 1));
+    expect(conversationSnapshot('room').unreadBoundary).toBe(1);
+  });
   it('discards inactive history after reconnect before reopening a fresh page', async () => {
     vi.mocked(api).mockResolvedValueOnce({ rooms: [] });
     stop = startMessagingSession('user');

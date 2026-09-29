@@ -21,7 +21,7 @@ export function useRooms(
     setRoom(
       (current) =>
         result.rooms?.find((candidate) => candidate.id === current?.id) ??
-        [...(result.rooms ?? [])].sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at))[0] ??
+        result.rooms?.[0] ??
         null,
     );
   }, []);

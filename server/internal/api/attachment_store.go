@@ -6,11 +6,23 @@ import (
 )
 
 func (s *PostgresStore) SavePendingAttachment(room, user, key string, attachment MessageAttachment) error {
-	tag, err := s.DB.Exec(context.Background(), `INSERT INTO message_attachments(id,room_id,uploader_id,object_key,filename,content_type,size_bytes) SELECT $1,$2,$3,$4,$5,$6,$7 WHERE EXISTS(SELECT 1 FROM room_members WHERE room_id=$2 AND user_id=$3)`, attachment.ID, room, user, key, attachment.Filename, attachment.ContentType, attachment.SizeBytes)
+	tag, err := s.DB.Exec(context.Background(), `INSERT INTO message_attachments(id,room_id,uploader_id,object_key,filename,content_type,size_bytes,upload_state) SELECT $1,$2,$3,$4,$5,$6,$7,'uploading' WHERE EXISTS(SELECT 1 FROM room_members WHERE room_id=$2 AND user_id=$3)`, attachment.ID, room, user, key, attachment.Filename, attachment.ContentType, attachment.SizeBytes)
 	if err == nil && tag.RowsAffected() == 0 {
 		return ErrForbidden
 	}
 	return err
+}
+
+func (s *PostgresStore) CompletePendingAttachment(id, room string) error {
+	var currentRoom *string
+	err := s.DB.QueryRow(context.Background(), `UPDATE message_attachments SET upload_state='ready' WHERE id=$1 RETURNING room_id::text`, id).Scan(&currentRoom)
+	if err != nil {
+		return norm(err)
+	}
+	if currentRoom == nil || *currentRoom != room {
+		return ErrForbidden
+	}
+	return nil
 }
 
 func (s *PostgresStore) RemovePendingAttachment(id string) error {
@@ -21,7 +33,7 @@ func (s *PostgresStore) RemovePendingAttachment(id string) error {
 func (s *PostgresStore) AttachmentForMember(room, user, id string) (string, MessageAttachment, error) {
 	var key string
 	var attachment MessageAttachment
-	err := s.DB.QueryRow(context.Background(), `SELECT a.object_key,a.id::text,a.filename,a.content_type,a.size_bytes FROM message_attachments a JOIN room_members rm ON rm.room_id=a.room_id AND rm.user_id=$2 LEFT JOIN messages m ON m.id=a.message_id WHERE a.room_id=$1 AND a.id=$3 AND a.deleted_at IS NULL AND ((a.message_id IS NOT NULL AND m.deleted_at IS NULL) OR (a.message_id IS NULL AND a.uploader_id=$2 AND a.created_at>now()-interval '24 hours'))`, room, user, id).Scan(&key, &attachment.ID, &attachment.Filename, &attachment.ContentType, &attachment.SizeBytes)
+	err := s.DB.QueryRow(context.Background(), `SELECT a.object_key,a.id::text,a.filename,a.content_type,a.size_bytes FROM message_attachments a JOIN room_members rm ON rm.room_id=a.room_id AND rm.user_id=$2 LEFT JOIN messages m ON m.id=a.message_id WHERE a.room_id=$1 AND a.id=$3 AND a.upload_state='ready' AND a.deleted_at IS NULL AND ((a.message_id IS NOT NULL AND m.deleted_at IS NULL) OR (a.message_id IS NULL AND a.uploader_id=$2 AND a.created_at>now()-interval '24 hours'))`, room, user, id).Scan(&key, &attachment.ID, &attachment.Filename, &attachment.ContentType, &attachment.SizeBytes)
 	return key, attachment, norm(err)
 }
 
@@ -31,7 +43,7 @@ func (s *PostgresStore) CleanPendingAttachments(ctx context.Context, storage Att
 		return err
 	}
 	defer tx.Rollback(ctx)
-	rows, err := tx.Query(ctx, `SELECT id::text,object_key FROM message_attachments WHERE (message_id IS NULL AND created_at<now()-interval '24 hours') OR deleted_at IS NOT NULL ORDER BY COALESCE(cleanup_attempted_at,created_at) LIMIT 50 FOR UPDATE SKIP LOCKED`)
+	rows, err := tx.Query(ctx, `SELECT id::text,object_key FROM message_attachments WHERE (message_id IS NULL AND created_at<now()-interval '24 hours') OR (upload_state='ready' AND (room_id IS NULL OR uploader_id IS NULL OR deleted_at IS NOT NULL)) ORDER BY COALESCE(cleanup_attempted_at,created_at) LIMIT 50 FOR UPDATE SKIP LOCKED`)
 	if err != nil {
 		return err
 	}

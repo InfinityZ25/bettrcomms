@@ -303,7 +303,11 @@ export async function markRead(room: string, message: Message) {
   reading.set(room, sequence);
   try {
     await api(`/rooms/${room}/read`, { message_id: message.id }, 'PUT');
-    if (generation === currentGeneration) void refreshUnread();
+    if (generation === currentGeneration) {
+      if (conversations.has(room))
+        put(room, { unreadBoundary: Math.max(conversationSnapshot(room).unreadBoundary ?? 0, sequence) });
+      void refreshUnread();
+    }
   } finally {
     if (reading.get(room) === sequence) reading.delete(room);
   }

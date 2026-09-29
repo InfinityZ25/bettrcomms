@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -27,7 +28,7 @@ func TestMessagingIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	for _, file := range []string{"001_init.sql", "002_direct_rooms.sql", "003_messaging.sql", "004_messaging_complete.sql", "005_attachment_cleanup_attempts.sql"} {
+	for _, file := range []string{"001_init.sql", "002_direct_rooms.sql", "003_messaging.sql", "004_messaging_complete.sql", "005_attachment_cleanup_attempts.sql", "006_attachment_lifecycle.sql"} {
 		data, e := os.ReadFile("../../migrations/" + file)
 		if e != nil {
 			t.Fatal(e)
@@ -349,9 +350,43 @@ writerWaited:
 	if len(restricted.Messages) != 0 {
 		t.Fatal("revoked membership retained search access")
 	}
+	cleanupRoom, err := store.CreateRoom(alice.ID, "Attachment cleanup")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanupID, err := randomAttachmentID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanupKey := "messages/" + cleanupID
+	if err = store.SavePendingAttachment(cleanupRoom.ID, alice.ID, cleanupKey, MessageAttachment{ID: cleanupID, Filename: "cleanup.txt", ContentType: "text/plain", SizeBytes: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.CompletePendingAttachment(cleanupID, cleanupRoom.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.DeleteRoom(cleanupRoom.ID, alice.ID); err != nil {
+		t.Fatal(err)
+	}
+	var retained int
+	if err = db.QueryRow(ctx, `SELECT count(*) FROM message_attachments WHERE id=$1 AND room_id IS NULL`, cleanupID).Scan(&retained); err != nil || retained != 1 {
+		t.Fatalf("room deletion lost attachment cleanup record: count=%d err=%v", retained, err)
+	}
+	if err = store.CleanPendingAttachments(ctx, storage); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.QueryRow(ctx, `SELECT count(*) FROM message_attachments WHERE id=$1`, cleanupID).Scan(&retained); err != nil || retained != 0 {
+		t.Fatalf("attachment cleanup record remains: count=%d err=%v", retained, err)
+	}
+	if !slices.Contains(storage.deleted, cleanupKey) {
+		t.Fatal("room deletion did not delete its S3 object")
+	}
 }
 
-type fakeAttachmentStorage struct{ putCount int }
+type fakeAttachmentStorage struct {
+	putCount int
+	deleted  []string
+}
 
 func (f *fakeAttachmentStorage) Put(_ context.Context, _ string, reader io.Reader, _ int64, _ string) error {
 	_, err := io.Copy(io.Discard, reader)
@@ -361,7 +396,10 @@ func (f *fakeAttachmentStorage) Put(_ context.Context, _ string, reader io.Reade
 func (f *fakeAttachmentStorage) URL(_ context.Context, _, _, _ string) (string, error) {
 	return "https://example.test/file", nil
 }
-func (f *fakeAttachmentStorage) Delete(_ context.Context, _ string) error { return nil }
+func (f *fakeAttachmentStorage) Delete(_ context.Context, key string) error {
+	f.deleted = append(f.deleted, key)
+	return nil
+}
 
 func TestMessagingMigrationWithExistingHistory(t *testing.T) {
 	url := os.Getenv("TEST_DATABASE_URL")
@@ -424,6 +462,7 @@ func TestMessagingMigrationWithExistingHistory(t *testing.T) {
 	apply("003_messaging.sql")
 	apply("004_messaging_complete.sql")
 	apply("005_attachment_cleanup_attempts.sql")
+	apply("006_attachment_lifecycle.sql")
 	store := &PostgresStore{DB: db}
 	seen := []string{}
 	cursor := ""
@@ -471,4 +510,10 @@ func TestMessagingMigrationWithExistingHistory(t *testing.T) {
 	}
 	checkUnread(bob, 1, baseline)
 	checkUnread(carol, 1, baseline)
+	if _, err = db.Exec(ctx, `INSERT INTO messages(room_id,author_id,body) VALUES($1,$2,'')`, room, alice); err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range []string{"003_messaging.sql", "004_messaging_complete.sql", "005_attachment_cleanup_attempts.sql", "006_attachment_lifecycle.sql"} {
+		apply(file)
+	}
 }

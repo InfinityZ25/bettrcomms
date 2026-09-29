@@ -177,6 +177,10 @@ func (a *API) uploadAttachment(w http.ResponseWriter, r *http.Request, user User
 		a.fail(w, 502, "upload_failed", "could not store file")
 		return
 	}
+	if err = store.CompletePendingAttachment(id, room); err != nil {
+		a.result(w, nil, err)
+		return
+	}
 	a.json(w, 201, map[string]any{"attachment": attachment})
 }
 
