@@ -1,10 +1,40 @@
 import { useState } from 'react';
-import { Flag, Paperclip, Pencil, Reply, ShieldX, Smile, Trash2 } from 'lucide-react';
+import { Flag, Pencil, Reply, ShieldX, Smile, Trash2 } from 'lucide-react';
 import { api, type Message } from '@/api';
 import { Avatar } from '@/components/avatar';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import MessageAttachmentPreview from './MessageAttachmentPreview';
 const reactions = ['👍', '❤️', '😂', '🎉', '😮', '😢', '👀', '✅'];
+const linkPattern = /https?:\/\/[^\s<>"']+/gi;
+function linkedText(text: string, offset: number) {
+  const result: React.ReactNode[] = [];
+  let last = 0;
+  for (const match of text.matchAll(linkPattern)) {
+    const start = match.index;
+    const raw = match[0];
+    let url = raw.replace(/[.,!?;:]+$/, '');
+    const brackets: Record<string, string> = { ')': '(', ']': '[', '}': '{' };
+    while (url.length && brackets[url.at(-1)!]) {
+      const closing = url.at(-1)!;
+      if (url.split(closing).length <= url.split(brackets[closing]).length) break;
+      url = url.slice(0, -1);
+    }
+    url = url.replace(/[.,!?;:]+$/, '');
+    if (start > last) result.push(text.slice(last, start));
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error('Invalid URL');
+      result.push(<a key={offset + start} href={parsed.href} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" className="text-primary underline underline-offset-2 hover:no-underline">{url}</a>);
+    } catch {
+      result.push(url);
+    }
+    result.push(raw.slice(url.length));
+    last = start + raw.length;
+  }
+  result.push(text.slice(last));
+  return result;
+}
 export function MessageBody({ message }: { message: Message }) {
   const people = new Map(
     message.mentions?.map((person) => [person.id.toLowerCase(), person.name]),
@@ -24,7 +54,7 @@ export function MessageBody({ message }: { message: Message }) {
             @{name}
           </span>
         ) : (
-          part
+          linkedText(part, key)
         );
       })}
     </>
@@ -138,11 +168,9 @@ export default function MessageItem({
             )}
           </p>
           {!message.deleted_at && !!message.attachments?.length && (
-            <div className="mt-2 flex flex-wrap gap-1" aria-label="Attachments">
+            <div className="mt-2 grid max-w-lg gap-2" aria-label="Attachments">
               {message.attachments.map((attachment) => (
-                <Button key={attachment.id} variant="outline" size="sm" onClick={() => void openAttachment(attachment.id)}>
-                  <Paperclip size={13} /> <span className="max-w-48 truncate">{attachment.filename}</span>
-                </Button>
+                <MessageAttachmentPreview key={attachment.id} attachment={attachment} roomId={message.room_id} onError={onError} onDownload={() => void openAttachment(attachment.id)} />
               ))}
             </div>
           )}

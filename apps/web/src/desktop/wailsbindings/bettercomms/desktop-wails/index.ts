@@ -3,9 +3,11 @@
 
 import * as AuthService from "./authservice.js";
 import * as NativeMediaService from "./nativemediaservice.js";
+import * as TrayService from "./trayservice.js";
 export {
     AuthService,
-    NativeMediaService
+    NativeMediaService,
+    TrayService
 };
 
 export {

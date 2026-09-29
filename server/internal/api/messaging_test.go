@@ -28,7 +28,7 @@ func TestMessagingIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	for _, file := range []string{"001_init.sql", "002_direct_rooms.sql", "003_messaging.sql", "004_messaging_complete.sql", "005_attachment_cleanup_attempts.sql", "006_attachment_lifecycle.sql"} {
+	for _, file := range []string{"001_init.sql", "002_direct_rooms.sql", "003_messaging.sql", "004_messaging_complete.sql", "005_attachment_cleanup_attempts.sql", "006_attachment_lifecycle.sql", "007_dm_privacy.sql", "008_web_push.sql"} {
 		data, e := os.ReadFile("../../migrations/" + file)
 		if e != nil {
 			t.Fatal(e)
@@ -393,7 +393,7 @@ func (f *fakeAttachmentStorage) Put(_ context.Context, _ string, reader io.Reade
 	f.putCount++
 	return err
 }
-func (f *fakeAttachmentStorage) URL(_ context.Context, _, _, _ string) (string, error) {
+func (f *fakeAttachmentStorage) URL(_ context.Context, _, _, _ string, _ bool) (string, error) {
 	return "https://example.test/file", nil
 }
 func (f *fakeAttachmentStorage) Delete(_ context.Context, key string) error {
@@ -463,6 +463,8 @@ func TestMessagingMigrationWithExistingHistory(t *testing.T) {
 	apply("004_messaging_complete.sql")
 	apply("005_attachment_cleanup_attempts.sql")
 	apply("006_attachment_lifecycle.sql")
+	apply("007_dm_privacy.sql")
+	apply("008_web_push.sql")
 	store := &PostgresStore{DB: db}
 	seen := []string{}
 	cursor := ""
@@ -513,7 +515,7 @@ func TestMessagingMigrationWithExistingHistory(t *testing.T) {
 	if _, err = db.Exec(ctx, `INSERT INTO messages(room_id,author_id,body) VALUES($1,$2,'')`, room, alice); err != nil {
 		t.Fatal(err)
 	}
-	for _, file := range []string{"003_messaging.sql", "004_messaging_complete.sql", "005_attachment_cleanup_attempts.sql", "006_attachment_lifecycle.sql"} {
+	for _, file := range []string{"003_messaging.sql", "004_messaging_complete.sql", "005_attachment_cleanup_attempts.sql", "006_attachment_lifecycle.sql", "007_dm_privacy.sql", "008_web_push.sql"} {
 		apply(file)
 	}
 }

@@ -4,6 +4,7 @@ import type { CallParticipant, Room, User } from '@/api';
 import { Avatar } from '@/components/avatar';
 import { Button } from '@/components/ui/button';
 import { clearDesktopNotification, notifyDesktop } from '@/desktop/notifications';
+import { notificationSnapshot } from '@/features/chat/notificationSettings';
 import { loopSound, stopSound } from '@/media/sounds';
 import { roomLabel } from '@/features/rooms/RoomNavigation';
 import { useActiveCall } from './CallSessionContext';
@@ -84,7 +85,7 @@ export default function IncomingCall({
     }
     loopSound('ringtone');
     const name = roomLabel(ringing);
-    if (document.hidden || !document.hasFocus())
+    if (notificationSnapshot().alerts && (document.hidden || !document.hasFocus()))
       void notifyDesktop({
         id: `call:${ringing.id}`,
         title: `${name} is calling`,

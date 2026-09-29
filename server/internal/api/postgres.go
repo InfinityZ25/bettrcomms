@@ -57,7 +57,7 @@ func (s *PostgresStore) UserByID(id string) (User, error) {
 	return scanUser(s.DB.QueryRow(context.Background(), `SELECT `+userCols+` FROM users WHERE id=$1`, id))
 }
 func (s *PostgresStore) FindUsers(q, uid string) ([]User, error) {
-	rows, e := s.DB.Query(context.Background(), `SELECT `+userCols+` FROM users WHERE id<>$2 AND (email ILIKE '%'||$1||'%' OR name ILIKE '%'||$1||'%') ORDER BY name LIMIT 20`, q, uid)
+	rows, e := s.DB.Query(context.Background(), `SELECT `+userCols+` FROM users WHERE id<>$2 AND (email ILIKE '%'||$1||'%' OR name ILIKE '%'||$1||'%') AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE (b.blocker_id=$2 AND b.blocked_id=users.id) OR (b.blocker_id=users.id AND b.blocked_id=$2)) ORDER BY name LIMIT 20`, q, uid)
 	if e != nil {
 		return nil, e
 	}
@@ -73,7 +73,7 @@ func (s *PostgresStore) FindUsers(q, uid string) ([]User, error) {
 	return out, rows.Err()
 }
 func (s *PostgresStore) ListRooms(uid string) ([]Room, error) {
-	rows, e := s.DB.Query(context.Background(), `SELECT r.id::text,r.name,r.owner_id::text,rm.role,r.kind,r.created_at,CASE WHEN r.kind='direct' THEN (SELECT u.name FROM room_members other JOIN users u ON u.id=other.user_id WHERE other.room_id=r.id AND other.user_id<>$1 ORDER BY other.joined_at LIMIT 1) END,COALESCE((SELECT m.created_at FROM messages m WHERE m.room_id=r.id ORDER BY m.sequence DESC LIMIT 1),r.created_at) activity_at FROM rooms r JOIN room_members rm ON rm.room_id=r.id WHERE rm.user_id=$1 ORDER BY activity_at DESC,r.id`, uid)
+	rows, e := s.DB.Query(context.Background(), `SELECT r.id::text,r.name,r.owner_id::text,rm.role,r.kind,r.created_at,CASE WHEN r.kind='direct' THEN (SELECT u.name FROM room_members other JOIN users u ON u.id=other.user_id WHERE other.room_id=r.id AND other.user_id<>$1 ORDER BY other.joined_at LIMIT 1) END,COALESCE((SELECT m.created_at FROM messages m WHERE m.room_id=r.id ORDER BY m.sequence DESC LIMIT 1),r.created_at) activity_at FROM rooms r JOIN room_members rm ON rm.room_id=r.id WHERE rm.user_id=$1 AND can_access_room(r.id,$1) ORDER BY activity_at DESC,r.id`, uid)
 	if e != nil {
 		return nil, e
 	}
@@ -108,7 +108,7 @@ func (s *PostgresStore) CreateRoom(uid, name string) (Room, error) {
 }
 func (s *PostgresStore) RoomForMember(rid, uid string) (Room, error) {
 	var r Room
-	e := s.DB.QueryRow(context.Background(), `SELECT r.id::text,r.name,r.owner_id::text,rm.role,r.kind,r.created_at,CASE WHEN r.kind='direct' THEN (SELECT u.name FROM room_members other JOIN users u ON u.id=other.user_id WHERE other.room_id=r.id AND other.user_id<>$2 ORDER BY other.joined_at LIMIT 1) END FROM rooms r JOIN room_members rm ON rm.room_id=r.id WHERE r.id=$1 AND rm.user_id=$2`, rid, uid).Scan(&r.ID, &r.Name, &r.OwnerID, &r.Role, &r.Kind, &r.CreatedAt, &r.DisplayName)
+	e := s.DB.QueryRow(context.Background(), `SELECT r.id::text,r.name,r.owner_id::text,rm.role,r.kind,r.created_at,CASE WHEN r.kind='direct' THEN (SELECT u.name FROM room_members other JOIN users u ON u.id=other.user_id WHERE other.room_id=r.id AND other.user_id<>$2 ORDER BY other.joined_at LIMIT 1) END FROM rooms r JOIN room_members rm ON rm.room_id=r.id WHERE r.id=$1 AND rm.user_id=$2 AND can_access_room(r.id,$2)`, rid, uid).Scan(&r.ID, &r.Name, &r.OwnerID, &r.Role, &r.Kind, &r.CreatedAt, &r.DisplayName)
 	return r, norm(e)
 }
 func (s *PostgresStore) CreateDirectRoom(uid, fid string) (Room, error) {
@@ -117,8 +117,11 @@ func (s *PostgresStore) CreateDirectRoom(uid, fid string) (Room, error) {
 		return Room{}, e
 	}
 	defer tx.Rollback(context.Background())
+	if _, e = tx.Exec(context.Background(), `SELECT pg_advisory_xact_lock(hashtextextended($1,1))`, directPairKey(uid, fid)); e != nil {
+		return Room{}, e
+	}
 	var accepted bool
-	e = tx.QueryRow(context.Background(), `SELECT EXISTS(SELECT 1 FROM friend_requests WHERE status='accepted' AND ((sender_id=$1 AND receiver_id=$2) OR (sender_id=$2 AND receiver_id=$1)))`, uid, fid).Scan(&accepted)
+	e = tx.QueryRow(context.Background(), `SELECT (EXISTS(SELECT 1 FROM friend_requests WHERE status='accepted' AND ((sender_id=$1 AND receiver_id=$2) OR (sender_id=$2 AND receiver_id=$1))) OR EXISTS(SELECT 1 FROM dm_requests WHERE status='accepted' AND ((sender_id=$1 AND receiver_id=$2) OR (sender_id=$2 AND receiver_id=$1)))) AND NOT EXISTS(SELECT 1 FROM user_blocks WHERE (blocker_id=$1 AND blocked_id=$2) OR (blocker_id=$2 AND blocked_id=$1))`, uid, fid).Scan(&accepted)
 	if e != nil {
 		return Room{}, e
 	}
@@ -277,10 +280,22 @@ func (s *PostgresStore) ListFriends(uid string) ([]User, []FriendRequest, error)
 	return friends, reqs, rows.Err()
 }
 func (s *PostgresStore) CreateFriendRequest(a, b string) (FriendRequest, error) {
+	ctx := context.Background()
+	tx, e := s.DB.Begin(ctx)
+	if e != nil {
+		return FriendRequest{}, e
+	}
+	defer tx.Rollback(ctx)
+	if _, e = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,1))`, directPairKey(a, b)); e != nil {
+		return FriendRequest{}, e
+	}
 	var id string
 	var t time.Time
-	e := s.DB.QueryRow(context.Background(), `INSERT INTO friend_requests(sender_id,receiver_id) VALUES($1,$2) RETURNING id::text,created_at`, a, b).Scan(&id, &t)
+	e = tx.QueryRow(ctx, `INSERT INTO friend_requests(sender_id,receiver_id) SELECT $1,$2 WHERE NOT EXISTS(SELECT 1 FROM user_blocks WHERE (blocker_id=$1 AND blocked_id=$2) OR (blocker_id=$2 AND blocked_id=$1)) RETURNING id::text,created_at`, a, b).Scan(&id, &t)
 	if e != nil {
+		return FriendRequest{}, norm(e)
+	}
+	if e = tx.Commit(ctx); e != nil {
 		return FriendRequest{}, e
 	}
 	au, e := s.UserByID(a)
@@ -291,13 +306,47 @@ func (s *PostgresStore) CreateFriendRequest(a, b string) (FriendRequest, error) 
 	return FriendRequest{ID: id, Sender: au, Receiver: bu, Status: "pending", CreatedAt: t}, e
 }
 func (s *PostgresStore) AcceptFriendRequest(id, uid string) error {
-	tag, e := s.DB.Exec(context.Background(), `UPDATE friend_requests SET status='accepted',updated_at=now() WHERE id=$1 AND receiver_id=$2 AND status='pending'`, id, uid)
+	ctx := context.Background()
+	var sender string
+	e := s.DB.QueryRow(ctx, `SELECT sender_id::text FROM friend_requests WHERE id=$1 AND receiver_id=$2 AND status='pending'`, id, uid).Scan(&sender)
+	if e != nil {
+		return norm(e)
+	}
+	tx, e := s.DB.Begin(ctx)
+	if e != nil {
+		return e
+	}
+	defer tx.Rollback(ctx)
+	if _, e = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,1))`, directPairKey(sender, uid)); e != nil {
+		return e
+	}
+	tag, e := tx.Exec(ctx, `UPDATE friend_requests f SET status='accepted',updated_at=now() WHERE f.id=$1 AND f.receiver_id=$2 AND f.status='pending' AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE (b.blocker_id=f.sender_id AND b.blocked_id=f.receiver_id) OR (b.blocker_id=f.receiver_id AND b.blocked_id=f.sender_id))`, id, uid)
 	if e == nil && tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
-	return e
+	if e != nil {
+		return e
+	}
+	return tx.Commit(ctx)
 }
-func (s *PostgresStore) DeleteFriendship(a, b string) error {
-	_, e := s.DB.Exec(context.Background(), `DELETE FROM friend_requests WHERE (sender_id=$1 AND receiver_id=$2) OR (sender_id=$2 AND receiver_id=$1)`, a, b)
-	return e
+func (s *PostgresStore) DeleteFriendship(a, b string) (string, error) {
+	ctx := context.Background()
+	tx, err := s.DB.Begin(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback(ctx)
+	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,1))`, directPairKey(a, b)); err != nil {
+		return "", err
+	}
+	if _, err = tx.Exec(ctx, `DELETE FROM friend_requests WHERE (sender_id=$1 AND receiver_id=$2) OR (sender_id=$2 AND receiver_id=$1)`, a, b); err != nil {
+		return "", err
+	}
+	// A separately accepted DM request may still authorize this room.
+	var room string
+	err = tx.QueryRow(ctx, `SELECT id::text FROM rooms WHERE direct_key=$1 AND NOT can_access_room(id,$2)`, directPairKey(a, b), a).Scan(&room)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return "", err
+	}
+	return room, tx.Commit(ctx)
 }
