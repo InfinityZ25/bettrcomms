@@ -77,8 +77,9 @@ browser notifications work while the web app is running. With VAPID configured,
 the browser also registers a per-device Web Push subscription so notifications
 can arrive after the tab closes. Push sends a generic message notice without
 message content and rechecks room access, mute/mentions, and Do Not Disturb
-before delivery. An open tab handles its own alerts instead of showing a second
-push toast. The Wails app uses Windows or macOS system notifications when
+before delivery. Web Push still displays when another account or sign-in tab is
+open, so a background tab may also show an in-page alert. The Wails app uses
+Windows or macOS system notifications when
 desktop alerts are enabled. The app can optionally remain in the tray after its
 window closes, using its existing notification socket and native toasts. Quit
 from the tray menu exits the process. This does not make notifications work

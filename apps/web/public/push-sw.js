@@ -1,8 +1,5 @@
 self.addEventListener('push', (event) => {
   event.waitUntil((async () => {
-    // An open page already handles its own alerts and room preferences.
-    const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    if (clients.length) return;
     let payload = {};
     try { payload = event.data?.json() ?? {}; } catch { return; }
     if (typeof payload.room_id !== 'string') return;

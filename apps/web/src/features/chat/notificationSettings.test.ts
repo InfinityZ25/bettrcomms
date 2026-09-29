@@ -102,6 +102,37 @@ describe('notification preferences', () => {
     expect(vi.mocked(api)).toHaveBeenCalledWith('/push/subscription', { endpoint: subscription.endpoint }, 'DELETE');
   });
 
+  it('does not keep a push subscription when alerts are disabled during registration', async () => {
+    const key = new Uint8Array(65);
+    const subscription = {
+      endpoint: 'https://fcm.googleapis.com/fcm/send/race',
+      options: { applicationServerKey: key.buffer },
+      toJSON: () => ({ keys: { p256dh: 'key', auth: 'auth' } }),
+      unsubscribe: vi.fn().mockResolvedValue(true),
+    };
+    let current: typeof subscription | null = null;
+    const registration = { pushManager: {
+      getSubscription: vi.fn(async () => current),
+      subscribe: vi.fn(async () => { current = subscription; return subscription; }),
+    } };
+    vi.stubGlobal('window', { Notification: true, PushManager: true });
+    vi.stubGlobal('Notification', { permission: 'granted', requestPermission: vi.fn().mockResolvedValue('granted') });
+    vi.stubGlobal('navigator', { serviceWorker: { register: vi.fn().mockResolvedValue(registration), ready: Promise.resolve(registration), getRegistration: vi.fn().mockResolvedValue(registration) } });
+    let releaseKey!: (value: { public_key: string }) => void;
+    vi.mocked(api).mockImplementation((path, _body, method) => path === '/push/subscription' && !method
+      ? new Promise((resolve) => { releaseKey = resolve; })
+      : Promise.resolve({ rooms: {} }));
+    stop = startNotificationSession('user');
+    const enabling = setSystemNotifications(true);
+    await vi.waitFor(() => expect(releaseKey).toBeTypeOf('function'));
+    const disabling = setSystemNotifications(false);
+    releaseKey({ public_key: btoa(String.fromCharCode(...key)) });
+    await Promise.all([enabling, disabling]);
+    expect(notificationSnapshot()).toMatchObject({ alerts: false, background: false });
+    expect(vi.mocked(api).mock.calls.some(([, , method]) => method === 'POST')).toBe(false);
+    expect(subscription.unsubscribe).toHaveBeenCalledOnce();
+  });
+
   it('uses native authorization on desktop without registering Web Push', async () => {
     desktop.available = true;
     desktop.authorise.mockResolvedValue(true);

@@ -112,3 +112,30 @@ func TestRealtimeHubScopesRoomEventsAndTracksContacts(t *testing.T) {
 	default:
 	}
 }
+
+type unfriendTestStore struct {
+	testStore
+	room string
+}
+
+func (s unfriendTestStore) DeleteFriendship(string, string) (string, error) { return s.room, nil }
+
+func TestUnfriendRevokesLiveDirectRoomSubscriptions(t *testing.T) {
+	api := New(unfriendTestStore{room: "direct"}, newTestSessions(false), Config{})
+	alice := &realtimeClient{user: "alice", send: make(chan wire, 4)}
+	bob := &realtimeClient{user: "bob", send: make(chan wire, 4)}
+	api.Realtime.add(alice, []Room{{ID: "direct"}}, []User{{ID: "bob"}})
+	api.Realtime.add(bob, []Room{{ID: "direct"}}, []User{{ID: "alice"}})
+	request := httptest.NewRequest(http.MethodDelete, "/api/v1/friends/bob", nil)
+	request = request.WithContext(context.WithValue(request.Context(), userKey{}, User{ID: "alice"}))
+	response := httptest.NewRecorder()
+	api.authed(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("unfriend failed: %d %s", response.Code, response.Body.String())
+	}
+	for _, client := range []*realtimeClient{alice, bob} {
+		if _, ok := client.rooms["direct"]; ok {
+			t.Fatalf("%s kept direct room subscription", client.user)
+		}
+	}
+}

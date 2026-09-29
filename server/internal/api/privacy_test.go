@@ -43,6 +43,24 @@ func TestDMPrivacyIntegration(t *testing.T) {
 	defer db.Exec(ctx, `DELETE FROM users WHERE id=$1 OR id=$2`, alice.ID, bob.ID)
 	// Defer runs last-in-first-out: remove the room before its owner.
 	defer db.Exec(ctx, `DELETE FROM rooms WHERE direct_key=$1`, directPairKey(alice.ID, bob.ID))
+	friendRequest, err := store.CreateFriendRequest(alice.ID, bob.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.AcceptFriendRequest(friendRequest.ID, bob.ID); err != nil {
+		t.Fatal(err)
+	}
+	friendRoom, err := store.CreateDirectRoom(alice.ID, bob.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	revokedRoom, err := store.DeleteFriendship(alice.ID, bob.ID)
+	if err != nil || revokedRoom != friendRoom.ID {
+		t.Fatalf("unfriending did not identify the live room to revoke: %q %v", revokedRoom, err)
+	}
+	if _, err = store.RoomForMember(friendRoom.ID, alice.ID); err != ErrNotFound && err != ErrForbidden {
+		t.Fatalf("unfriended direct room remains accessible: %v", err)
+	}
 	if _, err = store.CreateDMRequest(alice.ID, bob.ID, "Hello Bob"); err != ErrForbidden {
 		t.Fatalf("default private policy allowed a request: %v", err)
 	}
@@ -62,6 +80,10 @@ func TestDMPrivacyIntegration(t *testing.T) {
 	}
 	if _, err = store.RoomForMember(room.ID, alice.ID); err != nil {
 		t.Fatalf("accepted DM is inaccessible: %v", err)
+	}
+	stillAllowed, err := store.DeleteFriendship(alice.ID, bob.ID)
+	if err != nil || stillAllowed != "" {
+		t.Fatalf("unfriending revoked a separately accepted DM: %q %v", stillAllowed, err)
 	}
 	var subscriptionID string
 	if err = db.QueryRow(ctx, `INSERT INTO push_subscriptions(user_id,endpoint,p256dh,auth) VALUES($1,$2,'key','auth') RETURNING id::text`, bob.ID, "https://fcm.googleapis.com/"+suffix).Scan(&subscriptionID); err != nil {
@@ -84,6 +106,15 @@ func TestDMPrivacyIntegration(t *testing.T) {
 	}
 	if err = db.QueryRow(ctx, `SELECT count(*) FROM push_deliveries WHERE message_id=$1`, quiet.ID).Scan(&deliveries); err != nil || deliveries != 0 {
 		t.Fatalf("DND queued a push: %d %v", deliveries, err)
+	}
+	if _, err = db.Exec(ctx, `UPDATE push_subscriptions SET endpoint=$2,dnd=false WHERE id=$1`, subscriptionID, "https://127.0.0.1/"+suffix); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.DispatchPush(ctx, Config{VAPIDPublicKey: "test", VAPIDPrivateKey: "test", VAPIDSubject: "test"}); err != nil {
+		t.Fatalf("push queue claim failed: %v", err)
+	}
+	if err = db.QueryRow(ctx, `SELECT count(*) FROM push_deliveries WHERE message_id=$1`, queued.ID).Scan(&deliveries); err != nil || deliveries != 0 {
+		t.Fatalf("invalid push endpoint was not removed: %d %v", deliveries, err)
 	}
 	if _, err = store.BlockUser(bob.ID, alice.ID); err != nil {
 		t.Fatal(err)

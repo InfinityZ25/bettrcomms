@@ -7,6 +7,7 @@ const listeners = new Set<() => void>();
 let currentUser: string | undefined;
 let state: NotificationState = { rooms: {}, dnd: false, alerts: false, background: false, error: '', ready: false };
 let sessionRevision = 0;
+let pushOperation: Promise<void> = Promise.resolve();
 let retryTimer: ReturnType<typeof setTimeout> | undefined;
 let roomOverrides: Record<string, NotificationMode> = {};
 
@@ -34,38 +35,45 @@ function publicKeyBytes(value: string) {
   const padded = value.replace(/-/g, '+').replace(/_/g, '/');
   return Uint8Array.from(atob(padded), (character) => character.charCodeAt(0));
 }
-async function syncPush(dnd: boolean) {
-  if (!pushSupported() || Notification.permission !== 'granted') return;
+function queuePush(operation: () => Promise<void>) {
+  const pending = pushOperation.then(operation, operation);
+  pushOperation = pending.catch(() => {});
+  return pending;
+}
+function syncPush() {
   const user = currentUser;
   const revision = sessionRevision;
-  try {
-    const { public_key } = await api<{ public_key: string }>('/push/subscription');
-    await navigator.serviceWorker.register('/push-sw.js', { scope: '/' });
-    const registration = await navigator.serviceWorker.ready;
-    const key = publicKeyBytes(public_key);
-    let subscription = await registration.pushManager.getSubscription();
-    const savedKey = subscription?.options.applicationServerKey;
-    const savedBytes = savedKey ? new Uint8Array(savedKey) : null;
-    if (subscription && (!savedBytes || savedBytes.length !== key.length || !key.every((byte, index) => byte === savedBytes[index]))) {
-      try { await api('/push/subscription', { endpoint: subscription.endpoint }, 'DELETE'); } catch { /* An expired old endpoint will be pruned by the server. */ }
-      await subscription.unsubscribe();
-      subscription = null;
+  return queuePush(async () => {
+    if (!user || user !== currentUser || revision !== sessionRevision || !state.alerts || !pushSupported() || Notification.permission !== 'granted') return;
+    try {
+      const { public_key } = await api<{ public_key: string }>('/push/subscription');
+      await navigator.serviceWorker.register('/push-sw.js', { scope: '/' });
+      const registration = await navigator.serviceWorker.ready;
+      const key = publicKeyBytes(public_key);
+      let subscription = await registration.pushManager.getSubscription();
+      const savedKey = subscription?.options.applicationServerKey;
+      const savedBytes = savedKey ? new Uint8Array(savedKey) : null;
+      if (subscription && (!savedBytes || savedBytes.length !== key.length || !key.every((byte, index) => byte === savedBytes[index]))) {
+        try { await api('/push/subscription', { endpoint: subscription.endpoint }, 'DELETE'); } catch { /* An expired old endpoint will be pruned by the server. */ }
+        await subscription.unsubscribe();
+        subscription = null;
+      }
+      subscription ??= await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+      if (revision !== sessionRevision || user !== currentUser || !state.alerts) return;
+      const serialized = subscription.toJSON();
+      if (!serialized.keys?.p256dh || !serialized.keys.auth) throw new Error('Incomplete push subscription');
+      await api('/push/subscription', {
+        endpoint: subscription.endpoint,
+        keys: { p256dh: serialized.keys.p256dh, auth: serialized.keys.auth },
+        dnd: state.dnd,
+      }, 'POST');
+      if (revision === sessionRevision && state.alerts) update({ background: true, error: '' });
+    } catch {
+      if (revision === sessionRevision && state.alerts) update({ background: false, error: 'Background alerts unavailable. Check Web Push server configuration and browser support.' });
     }
-    subscription ??= await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
-    if (revision !== sessionRevision || user !== currentUser) return;
-    const serialized = subscription.toJSON();
-    if (!serialized.keys?.p256dh || !serialized.keys.auth) throw new Error('Incomplete push subscription');
-    await api('/push/subscription', {
-      endpoint: subscription.endpoint,
-      keys: { p256dh: serialized.keys.p256dh, auth: serialized.keys.auth },
-      dnd,
-    }, 'POST');
-    if (revision === sessionRevision) update({ background: true, error: '' });
-  } catch {
-    if (revision === sessionRevision) update({ background: false, error: 'Background alerts unavailable. Check Web Push server configuration and browser support.' });
-  }
+  });
 }
-export async function stopPushForThisBrowser() {
+async function stopPushNow() {
   if (!pushSupported()) return;
   try {
     const registration = await navigator.serviceWorker.getRegistration('/push-sw.js');
@@ -76,6 +84,7 @@ export async function stopPushForThisBrowser() {
     update({ background: false, error: '' });
   } catch { /* Logout remains available if the browser's push service fails. */ }
 }
+export function stopPushForThisBrowser() { return queuePush(stopPushNow); }
 export const notificationSnapshot = () => state;
 export function subscribeNotifications(listener: () => void) {
   listeners.add(listener);
@@ -90,7 +99,7 @@ export function startNotificationSession(user: string) {
   const savedDND = stored(user, 'dnd');
   const savedAlerts = storedAlerts(user);
   update({ rooms: {}, dnd: savedDND, alerts: savedAlerts, background: false, error: '', ready: false });
-  if (savedAlerts && pushSupported()) void syncPush(savedDND);
+  if (savedAlerts && pushSupported()) void syncPush();
   let retryDelay = 2000;
   const load = () => {
     void api<{ rooms: Record<string, NotificationMode> }>('/messages/notification-preferences')
@@ -129,7 +138,7 @@ export function setDoNotDisturb(enabled: boolean) {
   if (!currentUser) return;
   persist(currentUser, 'dnd', enabled);
   update({ dnd: enabled });
-  if (state.alerts && pushSupported()) void syncPush(enabled);
+  if (state.alerts && pushSupported()) void syncPush();
 }
 export async function setSystemNotifications(enabled: boolean): Promise<boolean> {
   const user = currentUser;
@@ -151,7 +160,7 @@ export async function setSystemNotifications(enabled: boolean): Promise<boolean>
   persist(user, 'alerts', enabled);
   update({ alerts: enabled, background: false, error: '' });
   if (!desktopNotificationsAvailable()) {
-    if (enabled) await syncPush(state.dnd);
+    if (enabled) await syncPush();
     else await stopPushForThisBrowser();
   }
   return true;

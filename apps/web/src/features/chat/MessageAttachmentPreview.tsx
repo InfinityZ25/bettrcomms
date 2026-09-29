@@ -19,6 +19,7 @@ export default function MessageAttachmentPreview({ attachment, roomId, onError, 
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
   const inflight = useRef(false);
+  const expiresAt = useRef(0);
 
   async function signedURL() {
     const result = await api<{ url: string }>(`/rooms/${roomId}/attachments/${attachment.id}?link=1&inline=1`);
@@ -26,20 +27,36 @@ export default function MessageAttachmentPreview({ attachment, roomId, onError, 
     if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') throw new Error('Invalid attachment URL');
     return result.url;
   }
-  async function load() {
+  async function load(resume?: HTMLMediaElement) {
     if (inflight.current) return;
     inflight.current = true;
     setLoading(true);
     setFailed(false);
     try {
-      setUrl(await signedURL());
+      const fresh = await signedURL();
+      expiresAt.current = Date.now() + 4 * 60_000;
+      setUrl(fresh);
+      if (resume) {
+        resume.src = fresh;
+        void resume.play().catch(() => {});
+      }
     } catch (error) {
+      if (resume) setUrl('');
       setFailed(true);
       onError(errorMessage(error));
     } finally {
       inflight.current = false;
       setLoading(false);
     }
+  }
+  function mediaError(media: HTMLMediaElement) {
+    if (Date.now() >= expiresAt.current) void load(media);
+    else { setUrl(''); setFailed(true); }
+  }
+  function mediaPlay(media: HTMLMediaElement) {
+    if (Date.now() < expiresAt.current) return;
+    media.pause();
+    void load(media);
   }
   useMountEffect(() => {
     if (kind !== 'image' || !container.current || !('IntersectionObserver' in window)) return;
@@ -66,8 +83,8 @@ export default function MessageAttachmentPreview({ attachment, roomId, onError, 
         </Button>
       )}
       {kind === 'image' && url && <img src={url} alt={attachment.filename} loading="lazy" className="mt-2 max-h-80 max-w-full rounded-md object-contain" onError={() => { setUrl(''); setFailed(true); }} />}
-      {kind === 'audio' && url && <audio src={url} controls preload="none" className="mt-2 max-w-full" onError={() => { setUrl(''); setFailed(true); }} />}
-      {kind === 'video' && url && <video src={url} controls preload="none" playsInline className="mt-2 max-h-80 max-w-full rounded-md" onError={() => { setUrl(''); setFailed(true); }} />}
+      {kind === 'audio' && url && <audio src={url} controls preload="none" className="mt-2 max-w-full" onPlay={(event) => mediaPlay(event.currentTarget)} onError={(event) => mediaError(event.currentTarget)} />}
+      {kind === 'video' && url && <video src={url} controls preload="none" playsInline className="mt-2 max-h-80 max-w-full rounded-md" onPlay={(event) => mediaPlay(event.currentTarget)} onError={(event) => mediaError(event.currentTarget)} />}
     </div>
   );
 }

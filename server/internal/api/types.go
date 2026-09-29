@@ -100,5 +100,5 @@ type Store interface {
 	ListFriends(userID string) ([]User, []FriendRequest, error)
 	CreateFriendRequest(senderID, receiverID string) (FriendRequest, error)
 	AcceptFriendRequest(requestID, receiverID string) error
-	DeleteFriendship(userID, otherID string) error
+	DeleteFriendship(userID, otherID string) (string, error)
 }

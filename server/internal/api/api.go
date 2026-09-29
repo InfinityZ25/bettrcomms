@@ -305,11 +305,19 @@ func (a *API) authed(w http.ResponseWriter, r *http.Request) {
 		a.result(w, map[string]bool{"ok": true}, e)
 	case strings.HasPrefix(p, "friends/") && r.Method == "DELETE":
 		otherID := strings.TrimPrefix(p, "friends/")
-		e := a.Store.DeleteFriendship(u.ID, otherID)
+		room, e := a.Store.DeleteFriendship(u.ID, otherID)
 		if e == nil {
 			a.Realtime.publishUser(u.ID, wire{Type: "friends.changed"})
 			a.Realtime.publishUser(otherID, wire{Type: "friends.changed"})
 			a.Realtime.unsubscribeContacts(u.ID, otherID)
+			if room != "" {
+				a.Realtime.unsubscribeUser(room, u.ID)
+				a.Realtime.unsubscribeUser(room, otherID)
+				a.Hub.disconnectRoomUser(room, u.ID)
+				a.Hub.disconnectRoomUser(room, otherID)
+				a.Realtime.publishUser(u.ID, wire{Type: "rooms.changed"})
+				a.Realtime.publishUser(otherID, wire{Type: "rooms.changed"})
+			}
 		}
 		a.result(w, map[string]bool{"ok": true}, e)
 	default:

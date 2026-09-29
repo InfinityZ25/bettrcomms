@@ -13,7 +13,14 @@ function linkedText(text: string, offset: number) {
   for (const match of text.matchAll(linkPattern)) {
     const start = match.index;
     const raw = match[0];
-    const url = raw.replace(/[.,!?;:]+$/, '');
+    let url = raw.replace(/[.,!?;:]+$/, '');
+    const brackets: Record<string, string> = { ')': '(', ']': '[', '}': '{' };
+    while (url.length && brackets[url.at(-1)!]) {
+      const closing = url.at(-1)!;
+      if (url.split(closing).length <= url.split(brackets[closing]).length) break;
+      url = url.slice(0, -1);
+    }
+    url = url.replace(/[.,!?;:]+$/, '');
     if (start > last) result.push(text.slice(last, start));
     try {
       const parsed = new URL(url);

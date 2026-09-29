@@ -124,36 +124,42 @@ type pushDelivery struct {
 	MessageID, SubscriptionID, Endpoint, P256dh, Auth, RoomID, Author string
 }
 
-// DispatchPush delivers a small batch from the durable queue. The row lock
-// prevents duplicate deliveries from concurrent API processes. Each send is
-// bounded, and revoked room access is checked again immediately before send.
+// DispatchPush claims a short delivery lease before doing network I/O, so a
+// slow push service cannot hold a database connection or row lock open.
 func (s *PostgresStore) DispatchPush(ctx context.Context, config Config) (int, error) {
 	if config.VAPIDPublicKey == "" || config.VAPIDPrivateKey == "" || config.VAPIDSubject == "" {
 		return 0, nil
 	}
 	sent := 0
 	for range 20 {
-		tx, err := s.DB.Begin(ctx)
+		var d pushDelivery
+		var attempts int
+		err := s.DB.QueryRow(ctx, `WITH due AS (
+			SELECT message_id,subscription_id FROM push_deliveries WHERE next_attempt_at<=now()
+			ORDER BY next_attempt_at LIMIT 1 FOR UPDATE SKIP LOCKED
+		) UPDATE push_deliveries d SET attempts=d.attempts+1,next_attempt_at=now()+interval '30 seconds'
+		FROM due WHERE d.message_id=due.message_id AND d.subscription_id=due.subscription_id
+		RETURNING d.message_id::text,d.subscription_id::text,d.attempts`).Scan(&d.MessageID, &d.SubscriptionID, &attempts)
+		if errors.Is(err, pgx.ErrNoRows) {
+			break
+		}
 		if err != nil {
 			return sent, err
 		}
-		var d pushDelivery
 		var allowed bool
-		err = tx.QueryRow(ctx, `SELECT d.message_id::text,d.subscription_id::text,ps.endpoint,ps.p256dh,ps.auth,m.room_id::text,u.name,
+		err = s.DB.QueryRow(ctx, `SELECT ps.endpoint,ps.p256dh,ps.auth,m.room_id::text,u.name,
 			can_access_room(m.room_id,ps.user_id) AND NOT ps.dnd AND
 			COALESCE(np.mode,'all')<>'mute' AND
 			(COALESCE(np.mode,'all')<>'mentions' OR EXISTS(SELECT 1 FROM message_mentions mm WHERE mm.message_id=m.id AND mm.user_id=ps.user_id))
 			FROM push_deliveries d JOIN push_subscriptions ps ON ps.id=d.subscription_id
 			JOIN messages m ON m.id=d.message_id JOIN users u ON u.id=m.author_id
 			LEFT JOIN room_notification_preferences np ON np.room_id=m.room_id AND np.user_id=ps.user_id
-			WHERE d.next_attempt_at<=now() ORDER BY d.next_attempt_at LIMIT 1 FOR UPDATE OF d SKIP LOCKED`).Scan(
-			&d.MessageID, &d.SubscriptionID, &d.Endpoint, &d.P256dh, &d.Auth, &d.RoomID, &d.Author, &allowed)
+			WHERE d.message_id=$1 AND d.subscription_id=$2`, d.MessageID, d.SubscriptionID).Scan(
+			&d.Endpoint, &d.P256dh, &d.Auth, &d.RoomID, &d.Author, &allowed)
 		if errors.Is(err, pgx.ErrNoRows) {
-			_ = tx.Rollback(ctx)
-			break
+			continue
 		}
 		if err != nil {
-			_ = tx.Rollback(ctx)
 			return sent, err
 		}
 		status := 0
@@ -166,23 +172,20 @@ func (s *PostgresStore) DispatchPush(ctx context.Context, config Config) (int, e
 		}
 		if !allowed || !validEndpoint || status == http.StatusGone || status == http.StatusNotFound || status == http.StatusForbidden {
 			if !validEndpoint || status == http.StatusGone || status == http.StatusNotFound {
-				_, _ = tx.Exec(ctx, `DELETE FROM push_subscriptions WHERE id=$1`, d.SubscriptionID)
+				_, _ = s.DB.Exec(ctx, `DELETE FROM push_subscriptions WHERE id=$1 AND endpoint=$2 AND p256dh=$3 AND auth=$4`, d.SubscriptionID, d.Endpoint, d.P256dh, d.Auth)
 			}
-			_, err = tx.Exec(ctx, `DELETE FROM push_deliveries WHERE message_id=$1 AND subscription_id=$2`, d.MessageID, d.SubscriptionID)
+			_, err = s.DB.Exec(ctx, `DELETE FROM push_deliveries WHERE message_id=$1 AND subscription_id=$2 AND attempts=$3`, d.MessageID, d.SubscriptionID, attempts)
 		} else if err == nil && status >= 200 && status < 300 {
 			sent++
-			_, err = tx.Exec(ctx, `DELETE FROM push_deliveries WHERE message_id=$1 AND subscription_id=$2`, d.MessageID, d.SubscriptionID)
+			_, err = s.DB.Exec(ctx, `DELETE FROM push_deliveries WHERE message_id=$1 AND subscription_id=$2 AND attempts=$3`, d.MessageID, d.SubscriptionID, attempts)
 		} else {
-			_, err = tx.Exec(ctx, `UPDATE push_deliveries SET attempts=attempts+1,next_attempt_at=now()+make_interval(secs=>LEAST(3600,POWER(2,LEAST(attempts+1,10))::integer)) WHERE message_id=$1 AND subscription_id=$2 AND attempts<8`, d.MessageID, d.SubscriptionID)
-			if err == nil {
-				_, err = tx.Exec(ctx, `DELETE FROM push_deliveries WHERE message_id=$1 AND subscription_id=$2 AND attempts>=8`, d.MessageID, d.SubscriptionID)
+			if attempts >= 8 {
+				_, err = s.DB.Exec(ctx, `DELETE FROM push_deliveries WHERE message_id=$1 AND subscription_id=$2 AND attempts=$3`, d.MessageID, d.SubscriptionID, attempts)
+			} else {
+				_, err = s.DB.Exec(ctx, `UPDATE push_deliveries SET next_attempt_at=now()+make_interval(secs=>LEAST(3600,POWER(2,LEAST(attempts,10))::integer)) WHERE message_id=$1 AND subscription_id=$2 AND attempts=$3`, d.MessageID, d.SubscriptionID, attempts)
 			}
 		}
 		if err != nil {
-			_ = tx.Rollback(ctx)
-			return sent, err
-		}
-		if err = tx.Commit(ctx); err != nil {
 			return sent, err
 		}
 	}

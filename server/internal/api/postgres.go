@@ -329,7 +329,24 @@ func (s *PostgresStore) AcceptFriendRequest(id, uid string) error {
 	}
 	return tx.Commit(ctx)
 }
-func (s *PostgresStore) DeleteFriendship(a, b string) error {
-	_, e := s.DB.Exec(context.Background(), `DELETE FROM friend_requests WHERE (sender_id=$1 AND receiver_id=$2) OR (sender_id=$2 AND receiver_id=$1)`, a, b)
-	return e
+func (s *PostgresStore) DeleteFriendship(a, b string) (string, error) {
+	ctx := context.Background()
+	tx, err := s.DB.Begin(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback(ctx)
+	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,1))`, directPairKey(a, b)); err != nil {
+		return "", err
+	}
+	if _, err = tx.Exec(ctx, `DELETE FROM friend_requests WHERE (sender_id=$1 AND receiver_id=$2) OR (sender_id=$2 AND receiver_id=$1)`, a, b); err != nil {
+		return "", err
+	}
+	// A separately accepted DM request may still authorize this room.
+	var room string
+	err = tx.QueryRow(ctx, `SELECT id::text FROM rooms WHERE direct_key=$1 AND NOT can_access_room(id,$2)`, directPairKey(a, b), a).Scan(&room)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return "", err
+	}
+	return room, tx.Commit(ctx)
 }

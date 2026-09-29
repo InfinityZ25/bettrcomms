@@ -23,4 +23,11 @@ describe('message links', () => {
     expect(html).not.toContain('<a');
     expect(html).toContain('&lt;img');
   });
+
+  it('excludes unmatched closing brackets but retains balanced URL brackets', () => {
+    const html = body('(https://example.com/help) and https://example.com/wiki_(help)');
+    expect(html).toContain('href="https://example.com/help"');
+    expect(html).toContain('</a>) and');
+    expect(html).toContain('href="https://example.com/wiki_(help)"');
+  });
 });
