@@ -45,6 +45,7 @@ static void BCMetaEmit(NSDictionary *detail) {
 @property (nonatomic, assign) BOOL startPending;
 @property (nonatomic, assign) BOOL startingSession;
 @property (nonatomic, assign) BOOL permissionGrantedPending;
+@property (nonatomic, assign) BOOL backgroundStopped;
 @property (nonatomic, assign) BOOL deviceRetryScheduled;
 @property (nonatomic, assign) CFAbsoluteTime deviceWaitStarted;
 @property (nonatomic, assign) CFAbsoluteTime activationWaitUntil;
@@ -71,6 +72,9 @@ static void BCMetaEmit(NSDictionary *detail) {
         [[NSNotificationCenter defaultCenter] addObserver:instance
             selector:@selector(appActivated:)
             name:UIApplicationDidBecomeActiveNotification object:nil];
+        [[NSNotificationCenter defaultCenter] addObserver:instance
+            selector:@selector(appBackgrounded:)
+            name:UIApplicationDidEnterBackgroundNotification object:nil];
     });
     return instance;
 }
@@ -398,10 +402,26 @@ static void BCMetaEmit(NSDictionary *detail) {
         self.framePending = NO;
         self.lastFrame = 0;
     }
+    if (self.backgroundStopped) {
+        self.backgroundStopped = NO;
+        // A WKWebView event queued during suspension may never reach the page.
+        // Notify the resumed UI that the previously published track ended.
+        BCMetaEmit(@{@"kind": @"stopped"});
+    }
     if (self.startPending && !self.session) {
         self.activationWaitUntil = CFAbsoluteTimeGetCurrent() + 2.0;
         [self continueStart];
     }
+}
+
+- (void)appBackgrounded:(NSNotification *)notification {
+    // DAT can retain a glasses broadcast when iOS suspends the app mid-stream.
+    // This bridge publishes frames through WKWebView, which cannot keep sending
+    // them in the background. End an active native session deliberately until
+    // the call media sender itself runs outside the webview.
+    if (!self.session && !self.stream) return;
+    self.backgroundStopped = YES;
+    [self stop];
 }
 @end
 

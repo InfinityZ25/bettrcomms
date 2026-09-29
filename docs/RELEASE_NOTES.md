@@ -16,9 +16,12 @@ the accessory handoff settle briefly after activation and reports clearly
 that Bluetooth headset audio and the DAT camera link are separate. Repeatable
 glasses capture is still unverified. The glasses report release 129 and DAT
 component 1.0.0.0.0; the app embeds DAT SDK 1.0.0.
-The following device experiment also keeps the native glasses session alive
-when BetterComms backgrounds; whether the WebKit call continues publishing
-frames then still requires a two-device test.
+An earlier device experiment kept the native glasses session alive when
+BetterComms backgrounded. The current bridge publishes through WKWebView, so
+it now stops an active DAT session on background and reports the ended camera
+track when the app resumes. This avoids leaving the glasses with an active
+session after the webview stops publishing. Background video still needs a
+native sender outside WKWebView.
 The iPhone call now publishes its captured microphone directly instead of
 routing it through a Web Audio output track, which could be silent even while
 iOS showed the microphone privacy indicator. It also configures the native
