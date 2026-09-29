@@ -154,7 +154,7 @@ codesign --force --sign - "$bundle/Frameworks/MWDATCamera.framework"
 # The artifact is a device-target IPA for a developer to re-sign with their
 # own certificate and provisioning profile. Ad-hoc signing is not installable
 # on a physical iPhone.
-codesign --force --sign - "$bundle"
+codesign --force --sign - --entitlements "$repo/scripts/BetterComms-ios.entitlements" "$bundle"
 codesign --verify --deep --strict --verbose=2 "$bundle"
 mkdir -p "$payload/Payload"
 ditto "$bundle" "$payload/Payload/BetterComms.app"

@@ -66,3 +66,25 @@ top-level `wails://localhost` page after iOS handles app-level camera/mic
 permission. Other origins keep WebKit's normal prompt. This needs signed-device
 verification; changing Wails versions intentionally fails the patch until its
 anchors are reviewed.
+
+# Physical iPhone signing for Meta glasses
+
+The iOS archive produced by CI is ad hoc signed for distribution as an
+artifact. Before installing it on a phone, enable **Access Wi-Fi Information**
+and **Hotspot** on the `com.bettrcomms.ios` App ID in Apple Developer, then
+regenerate the iOS Development provisioning profile for that App ID. Meta's
+CameraAccess sample declares both entitlements. A profile issued before the
+capabilities were enabled cannot authorize them, even if the app declares
+them in its signature.
+
+Sign the downloaded IPA with a local Apple Development identity and the new
+profile using `scripts/sign-desktop-wails-ios.sh`. The script rejects a profile
+that does not contain both capabilities, checks its App ID, signs the embedded
+Meta frameworks and app, and verifies the result. Keep the certificate,
+private key, and provisioning profile outside Git. Install the resulting IPA
+with `ideviceinstaller upgrade <signed.ipa>`.
+
+These capabilities match Meta's sample and are needed to remove a packaging
+gap. They do not, by themselves, prove the DAT session starts. Physical-device
+acceptance still requires the Settings camera preview to show frames and a
+second participant to receive them in a call.
