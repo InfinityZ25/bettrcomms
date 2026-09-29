@@ -47,6 +47,7 @@ static void BCMetaEmit(NSDictionary *detail) {
 @property (nonatomic, assign) BOOL permissionGrantedPending;
 @property (nonatomic, assign) BOOL deviceRetryScheduled;
 @property (nonatomic, assign) CFAbsoluteTime deviceWaitStarted;
+@property (nonatomic, assign) CFAbsoluteTime activationWaitUntil;
 @property (nonatomic, assign) NSUInteger deviceWaitGeneration;
 @property (nonatomic, assign) NSUInteger sessionCreateRetries;
 @property (nonatomic, assign) BOOL framePending;
@@ -157,7 +158,7 @@ static void BCMetaEmit(NSDictionary *detail) {
         BCMetaEmit(@{@"kind": @"waitingForDevice"});
     }
     if (now - self.deviceWaitStarted >= 60) {
-        [self reportError:@"Meta AI authorized BetterComms, but the glasses did not reconnect. Open the arms and check their connection in Meta AI."];
+        [self reportError:@"Meta AI authorized BetterComms, but its glasses camera link did not become available. Headset audio can still work. Check the glasses connection and developer component in Meta AI."];
         return;
     }
     if (self.deviceRetryScheduled) return;
@@ -253,6 +254,16 @@ static void BCMetaEmit(NSDictionary *detail) {
         NSLog(@"BetterComms Meta: camera permission granted; waiting for app activation");
         return;
     }
+    // Becoming active precedes Meta's accessory handoff. In device logs the
+    // previous build tried to open the camera session within 100 ms of this
+    // notification, while Meta AI still owned the data channel.
+    if (CFAbsoluteTimeGetCurrent() < self.activationWaitUntil ||
+        !self.deviceSelector.activeDevice.length) {
+        self.permissionGrantedPending = YES;
+        self.startingSession = NO;
+        [self waitForDevice];
+        return;
+    }
     self.permissionGrantedPending = NO;
     [self beginSession];
 }
@@ -291,7 +302,7 @@ static void BCMetaEmit(NSDictionary *detail) {
                     self.startingSession = NO;
                     [self waitForDevice];
                 } else {
-                    [self reportError:@"Meta could not connect to the glasses camera. Check that the glasses show connected in Meta AI, then try again."];
+                    [self reportError:@"Meta could not open the glasses camera link. Headset audio may still work. Check the connection and developer component in Meta AI, then try again."];
                     [self stop];
                 }
                 return;
@@ -362,6 +373,7 @@ static void BCMetaEmit(NSDictionary *detail) {
     self.permissionGrantedPending = NO;
     self.deviceRetryScheduled = NO;
     self.deviceWaitStarted = 0;
+    self.activationWaitUntil = 0;
     self.deviceWaitGeneration++;
     self.sessionCreateRetries = 0;
     [self.deviceListener cancel];
@@ -386,7 +398,10 @@ static void BCMetaEmit(NSDictionary *detail) {
         self.framePending = NO;
         self.lastFrame = 0;
     }
-    if (self.startPending && !self.session) [self continueStart];
+    if (self.startPending && !self.session) {
+        self.activationWaitUntil = CFAbsoluteTimeGetCurrent() + 2.0;
+        [self continueStart];
+    }
 }
 @end
 
