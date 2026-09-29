@@ -603,12 +603,12 @@ export function useCallSession({
       });
 
       try {
-        await media.captureUserMedia({ camera: false, ...captureOptions() });
         try {
           await startIOSCallAudio();
         } catch (error) {
           onError(`iPhone background audio unavailable: ${errorMessage(error)}`);
         }
+        await media.captureUserMedia({ camera: false, ...captureOptions() });
         await connection.connect();
         setJoined(true);
         const input = callMicrophone.getSnapshot();

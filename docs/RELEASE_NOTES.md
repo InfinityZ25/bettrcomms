@@ -13,7 +13,8 @@ when BetterComms backgrounds; whether the WebKit call continues publishing
 frames then still requires a two-device test.
 The iPhone call now publishes its captured microphone directly instead of
 routing it through a Web Audio output track, which could be silent even while
-iOS showed the microphone privacy indicator. Remote audibility requires a
+iOS showed the microphone privacy indicator. It also configures the native
+voice-call audio session before opening the WebKit microphone. Remote audibility requires a
 two-device check on the next signed build.
 Meta AI can still report its own registration error; streaming from Gen 1 and Gen 2
 glasses awaits a successful physical-device acceptance test.
