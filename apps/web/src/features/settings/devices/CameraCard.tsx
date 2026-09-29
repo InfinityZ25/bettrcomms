@@ -42,7 +42,7 @@ export default function CameraCard({
     <DeviceCard>
       <DeviceSelect label="Camera" value={value} options={options} onChange={onChange} />
       {value === META_GLASSES_CAMERA_ID && (
-        <p className="text-xs text-muted-foreground">Pair your glasses in Meta AI and enable Developer Mode. Their video quality is set by the glasses.</p>
+        <p className="text-xs text-muted-foreground">Pair your glasses in Meta AI, enable Developer Mode, and tap Install for the glasses if shown. Their video quality is set by the glasses.</p>
       )}
       {value !== META_GLASSES_CAMERA_ID && <div className="camera-quality" aria-label="Camera quality">
         <label>

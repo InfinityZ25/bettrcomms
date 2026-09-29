@@ -44,7 +44,7 @@ export async function startMetaGlassesCamera(): Promise<{
   const waitForFrame = (milliseconds: number) => {
     window.clearTimeout(timeout);
     timeout = window.setTimeout(() => {
-      rejectFirst(new Error('Glasses camera did not send video. Check Meta AI and try again.'));
+      rejectFirst(new Error('Glasses camera did not send video. In Meta AI, check Developer Mode and install the glasses developer component if shown.'));
     }, milliseconds);
   };
   waitForFrame(30_000);
