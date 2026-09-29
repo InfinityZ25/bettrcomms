@@ -8,12 +8,14 @@ import (
 )
 
 type rateEntry struct {
-	start time.Time
-	count int
+	start  time.Time
+	count  int
+	window time.Duration
 }
 type rateLimiter struct {
-	mu      sync.Mutex
-	entries map[string]rateEntry
+	mu        sync.Mutex
+	entries   map[string]rateEntry
+	lastSweep time.Time
 }
 
 func newRateLimiter() *rateLimiter { return &rateLimiter{entries: map[string]rateEntry{}} }
@@ -21,9 +23,17 @@ func (l *rateLimiter) allow(key string, limit int, window time.Duration) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := time.Now()
+	if len(l.entries) > 1024 && now.Sub(l.lastSweep) > time.Minute {
+		for key, value := range l.entries {
+			if now.Sub(value.start) >= value.window {
+				delete(l.entries, key)
+			}
+		}
+		l.lastSweep = now
+	}
 	e := l.entries[key]
 	if e.start.IsZero() || now.Sub(e.start) >= window {
-		e = rateEntry{start: now}
+		e = rateEntry{start: now, window: window}
 	}
 	e.count++
 	l.entries[key] = e

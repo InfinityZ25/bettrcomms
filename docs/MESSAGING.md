@@ -1,4 +1,4 @@
-# Messaging basics
+# Messaging
 
 Direct conversations and room chat share the same message controls. Open a
 direct conversation from Messages; open room chat with **Room messages** in
@@ -24,6 +24,14 @@ the lobby or **Chat** in the call toolbar. Opening chat does not join or leave a
   edit or delete someone else's messages.
 - Reply quotes link to the original message and follow its edits/deletion.
   Eight emoji reactions are available; clicking your reaction removes it.
+- Messages render HTTP(S) URLs as external links. Images load only when near
+  the visible history; audio and video load on request, with download separate.
+- Direct messages require an accepted friendship or message request. Receiving
+  requests is off by default and can be enabled in Friends → Message privacy.
+  A request carries one text message; accepting opens a direct conversation
+  with that message. Blocking removes friendship and requests and revokes the
+  existing direct conversation for both people. Unblocking does not restore it.
+  Shared room membership is unaffected by a personal block.
 
 ## Implementation and limits
 
@@ -40,9 +48,48 @@ are retained, with at most twelve inactive conversations; a long active history
 grows only as the user requests older pages. Unread refreshes coalesce bursts.
 Requests and UI observers/listeners are released on close or account change.
 
-This increment does not introduce attachments, nested reply threads, edit
-revision archives or send idempotency keys. It does not change native media or
-clear the existing desktop capture/auth acceptance gates.
+Migration `004_messaging_complete.sql` adds send idempotency keys, attachment
+metadata, reports, moderation audit records, and room notification preferences.
+The composer retries a send with the same key so an uncertain response does not
+make a duplicate message. The active conversation fetches missed new messages
+by sequence after reconnect. Edits and reactions on older, unloaded messages
+are visible when that part of history is loaded; this is not yet a durable
+event-by-event replay for every historical mutation.
+
+Choose up to four files of 10 MB each from the composer or drop/paste them.
+Images, audio, video, plain text, PDF, and ZIP/Office files are accepted after
+server-side type detection; executable and active web formats are rejected.
+Uploads remain private in S3 and are readable only to current conversation
+members through five-minute signed URLs. An attachment waiting more than 24
+hours for a message and attachments from deleted messages are removed by a
+periodic cleanup. The file picker remains visible without S3 configured but
+reports the missing configuration when used. Type checks do not replace malware
+scanning, which remains a production gate.
+
+Draft text persists per account and conversation on this device until sent,
+including across browser restarts. Uploaded attachment references expire from
+the draft after 24 hours. A local File object must be chosen again after a
+reload if its upload did not finish. Typing is ephemeral over the existing
+WebSocket. A divider marks the first unread loaded message. Right-click a
+conversation to select all notifications, mentions only, or mute. Do Not
+Disturb and system notification opt-in are device-local in Settings;
+browser notifications work while the web app is running. With VAPID configured,
+the browser also registers a per-device Web Push subscription so notifications
+can arrive after the tab closes. Push sends a generic message notice without
+message content and rechecks room access, mute/mentions, and Do Not Disturb
+before delivery. Web Push still displays when another account or sign-in tab is
+open; page and push alerts use the same per-room tag to avoid duplicate toasts.
+The Wails app uses
+Windows or macOS system notifications when
+desktop alerts are enabled. The app can optionally remain in the tray after its
+window closes, using its existing notification socket and native toasts. Quit
+from the tray menu exits the process. This does not make notifications work
+after quitting the native app.
+Room members can report another member's message; room owners can dismiss a
+report or remove its message, with an audit record.
+
+This work does not add nested reply threads or edit revision archives. It does
+not change native media or clear the desktop capture/auth acceptance gates.
 
 ## Local development
 
@@ -57,6 +104,22 @@ npm run dev -- --host 127.0.0.1
 
 Use the actual local Docker port if it differs from 54329. Never put WorkOS
 server credentials in frontend environment variables.
+
+For a native notification check, enable **Desktop notifications** in Settings
+on Windows or macOS. Enable **Keep running in the tray**, close the window,
+then send a message from another account. The operating system should show a
+notification; clicking it should restore BetterComms and open that conversation.
+macOS must grant BetterComms notification permission. Repeat with a direct
+call, and verify that disabling Desktop notifications stops both kinds of
+system notice. This is a device acceptance check; the Windows build cannot
+establish macOS behavior.
+
+For browser notifications after closing the tab, run `go run ./cmd/vapid` in
+`server/` and put its public/private pair plus a `mailto:` VAPID subject in
+the server's private `.env`. Restart the API. Never put the private key in a
+`VITE_` variable or Git. Browsers require a secure context; loopback HTTP is
+accepted for development. The S3 credentials are still needed for attachment
+previews.
 
 Validation covers real PostgreSQL pagination, permissions, unread cursors,
 search, edits/deletion, replies/reactions, plus two isolated browser users with

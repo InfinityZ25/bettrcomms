@@ -1,6 +1,7 @@
-import type { FormEvent, RefObject, Dispatch, SetStateAction } from 'react';
-import { AtSign, Check, Send, X } from 'lucide-react';
+import { useRef, type FormEvent, type RefObject, type Dispatch, type SetStateAction } from 'react';
+import { AtSign, Check, Paperclip, Send, X } from 'lucide-react';
 import type { Message, User } from '@/api';
+import type { PendingAttachment } from './drafts';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 export default function MessageComposer({
@@ -17,6 +18,10 @@ export default function MessageComposer({
   onCancel,
   inputRef,
   label,
+  attachments,
+  onFiles,
+  onRemoveFile,
+  onTypingStop,
 }: {
   draft: string;
   onDraft: (value: string) => void;
@@ -31,11 +36,22 @@ export default function MessageComposer({
   onCancel: () => void;
   inputRef: RefObject<HTMLTextAreaElement | null>;
   label: string;
+  attachments: PendingAttachment[];
+  onFiles: (files: FileList | null) => void;
+  onRemoveFile: (index: number) => void;
+  onTypingStop: () => void;
 }) {
+  const fileInput = useRef<HTMLInputElement>(null);
   return (
     <form
       className="relative m-3 rounded-2xl border bg-muted/60 p-2 focus-within:ring-2 focus-within:ring-ring/40"
       onSubmit={onSend}
+      onDragOver={(event) => { if (!editing) event.preventDefault(); }}
+      onDrop={(event) => {
+        if (editing) return;
+        event.preventDefault();
+        if (!busy) onFiles(event.dataTransfer.files);
+      }}
     >
       {(editing || reply) && (
         <div className="mb-2 flex items-center gap-2 border-b pb-2 text-xs">
@@ -81,7 +97,23 @@ export default function MessageComposer({
           ))}
         </div>
       )}
+      {attachments.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-1" aria-label="Files to attach">
+          {attachments.map((attachment, index) => (
+            <span key={attachment.id || attachment.localId} className="flex max-w-full items-center gap-1 rounded-lg border bg-background px-2 py-1 text-xs">
+              <span className="truncate">{attachment.filename}</span>
+              <button type="button" aria-label={`Remove ${attachment.filename}`} disabled={busy} onClick={() => onRemoveFile(index)}><X size={13} /></button>
+            </span>
+          ))}
+        </div>
+      )}
       <div className="flex items-end gap-1">
+        {!editing && (
+          <>
+            <input ref={fileInput} type="file" multiple className="sr-only" aria-label="Choose attachments" onChange={(event) => { onFiles(event.target.files); event.target.value = ''; }} />
+            <Button variant="ghost" size="icon" type="button" disabled={busy || attachments.length >= 4} aria-label="Attach files" onClick={() => fileInput.current?.click()}><Paperclip size={17} /></Button>
+          </>
+        )}
         <textarea
           ref={inputRef}
           rows={2}
@@ -91,6 +123,13 @@ export default function MessageComposer({
           placeholder="Write a message… Type @ to mention"
           value={draft}
           disabled={busy}
+          onBlur={onTypingStop}
+          onPaste={(event) => {
+            if (!editing && event.clipboardData.files.length) {
+              event.preventDefault();
+              onFiles(event.clipboardData.files);
+            }
+          }}
           onChange={(event) => {
             onDraft(event.target.value);
             onSuggestion(0);
@@ -127,7 +166,7 @@ export default function MessageComposer({
           variant="ghost"
           size="icon"
           type="submit"
-          disabled={!draft.trim() || busy}
+          disabled={(!draft.trim() && (editing || attachments.length === 0)) || busy}
           aria-label={editing ? 'Save message' : 'Send message'}
         >
           {editing ? <Check size={17} /> : <Send size={17} />}

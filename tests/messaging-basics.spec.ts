@@ -86,6 +86,12 @@ test('unread mentions, older history, search and message actions work across two
       seeded.push(result.message);
     }
     await value(
+      await guestContext.request.post(`/api/v1/rooms/${guestRoomId}/messages`, {
+        headers,
+        data: { body: 'Keep this conversation selected while searching history' },
+      }),
+    );
+    await value(
       await outsiderContext.request.post(
         `/api/v1/rooms/${privateId}/messages`,
         { headers, data: { body: 'secret needle never visible' } },

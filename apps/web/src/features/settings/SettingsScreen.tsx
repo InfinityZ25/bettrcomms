@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { ModeToggle } from '@/components/mode-toggle';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { SettingsSlider } from './SettingsControls';
 import MediaSettings from './MediaSettings';
+import TrayPreference from './TrayPreference';
 import { SettingBlock, SettingRow } from './SettingRow';
 import { SettingsSection } from './SettingsSection';
 import { setOwnFace, useOwnFace } from './blobatarIdentity';
@@ -20,7 +21,9 @@ import {
   type SoundName,
 } from '@/media/sounds';
 import type { User } from '@/api';
+import { notificationSnapshot, setSystemNotifications, setDoNotDisturb, subscribeNotifications } from '@/features/chat/notificationSettings';
 import './SettingsScreen.css';
+import { getDesktopRuntime } from '@/desktop/runtime';
 
 export type SettingsPage = 'audio' | 'voice' | 'recording' | 'stream' | 'connection' | 'appearance';
 
@@ -35,6 +38,7 @@ export default function SettingsScreen({ page, user, noise, onNoiseChange, balan
   onLayoutChange: (value: string) => void;
 }) {
   const face = useOwnFace();
+  const messageNotifications = useSyncExternalStore(subscribeNotifications, notificationSnapshot);
   const [sounds, setSounds] = useState(soundsEnabled);
   const [volume, setVolume] = useState(soundVolume);
   const [each, setEach] = useState(() =>
@@ -43,6 +47,7 @@ export default function SettingsScreen({ page, user, noise, onNoiseChange, balan
       boolean
     >,
   );
+  const desktop = getDesktopRuntime() === 'wails';
   if (page === 'audio') return (
     <SettingsSection id="settings-audio" title="Call audio">
       <SettingRow as="div" title="Noise suppression" description="Keep background sounds out of the conversation." control={<Switch aria-label="Noise suppression" checked={noise} onCheckedChange={onNoiseChange} />} />
@@ -97,6 +102,27 @@ export default function SettingsScreen({ page, user, noise, onNoiseChange, balan
   if (page === 'appearance') return (
     <SettingsSection id="settings-appearance" title="Look & feel">
       <SettingRow as="div" title="Theme" description="Light, dark, or match your system." control={<ModeToggle />} />
+      {user && (
+        <>
+          <SettingRow as="div" title="Do not disturb" description="Pause message sounds and notifications on this device." control={<Switch aria-label="Do not disturb" checked={messageNotifications.dnd} onCheckedChange={setDoNotDisturb} />} />
+          <SettingRow
+            as="div"
+            title={desktop ? 'Desktop notifications' : 'Browser notifications'}
+            description={messageNotifications.error || (desktop
+              ? 'Show message and call alerts while BetterComms is running. Keep it in the tray to receive alerts after closing the window.'
+              : messageNotifications.background
+                ? 'Alerts also arrive after you close this browser tab.'
+                : 'Show message alerts while away. With Web Push configured, they also arrive after the tab closes.')}
+            control={<Switch
+              aria-label={desktop ? 'Desktop notifications' : 'Browser notifications'}
+              checked={messageNotifications.alerts}
+              disabled={!desktop && (typeof window === 'undefined' || !('Notification' in window))}
+              onCheckedChange={(enabled) => { void setSystemNotifications(enabled); }}
+            />}
+          />
+        </>
+      )}
+      {getDesktopRuntime() === 'wails' && <TrayPreference />}
       {user && (
         <SettingRow
           as="div"

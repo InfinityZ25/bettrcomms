@@ -81,7 +81,7 @@ func documentContentPolicy(report BootReport, development bool) (string, error) 
 	return base + "; default-src 'self'; script-src 'self' blob: 'wasm-unsafe-eval' 'sha256-" +
 		base64.StdEncoding.EncodeToString(digest[:]) + "'; worker-src 'self' blob:; " +
 		"style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https:; " +
-		"media-src 'self' blob: mediastream:; connect-src 'self' blob: http://127.0.0.1:* ws://127.0.0.1:*", nil
+		"media-src 'self' blob: mediastream: https:; connect-src 'self' blob: http://127.0.0.1:* ws://127.0.0.1:*", nil
 }
 
 // escapeForScript replaces <, > and & with their JSON unicode escapes. The

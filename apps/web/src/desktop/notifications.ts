@@ -4,13 +4,13 @@ import { getDesktopRuntime } from './runtime';
  * Native notifications, where the host has them.
  *
  * Only the Wails host does: it registers Wails' notifications service, which
- * puts a real Windows toast in the Action Center. The browser build sends
+ * puts a native notification in Windows or macOS. The browser build sends
  * nothing — the page is the notification there, and a web notification would
  * need a permission prompt to tell somebody about a window they are looking
  * at. The desktop host uses its Wails notification service.
  */
 export interface DesktopNotification {
-  /** Stable per subject, so a second message replaces the first one's toast. */
+  /** Stable per subject; macOS can replace a prior notice with this ID. */
   id: string;
   title: string;
   body: string;
@@ -35,12 +35,19 @@ const service = () =>
 
 let authorised: Promise<boolean> | null = null;
 
-/** Asked once. Windows always says yes; macOS is the platform that may not. */
+/** Windows always says yes; macOS may require explicit user approval. */
 function authorise() {
   authorised ??= service()
     .then((api) => api.RequestNotificationAuthorization())
     .catch(() => false);
-  return authorised;
+  return authorised.then((allowed) => {
+    if (!allowed) authorised = null;
+    return allowed;
+  });
+}
+
+export function requestDesktopNotificationAuthorization(): Promise<boolean> {
+  return desktopNotificationsAvailable() ? authorise() : Promise.resolve(false);
 }
 
 /**
@@ -59,9 +66,7 @@ export async function notifyDesktop(
 
       A thread id used to go with these, which Wails maps to a Windows toast
       <header> — and a header's title is shown to the reader, so every
-      notification was captioned with a room's UUID. Grouping is not worth
-      that; the id alone already replaces one conversation's toast with its
-      own successor.
+      notification was captioned with a room's UUID. We omit it here.
     */
     await api.SendNotification({
       id: notification.id,
@@ -108,10 +113,10 @@ export function onDesktopNotificationClick(
       off = Events.On('desktop:notification-response', (event) => {
         const sent = event.data as unknown;
         const payload = (Array.isArray(sent) ? sent[0] : sent) as
-          | { id?: string; data?: Record<string, unknown> }
+          | { id?: string; userInfo?: Record<string, unknown> }
           | undefined;
         if (!payload || typeof payload !== 'object') return;
-        handler({ id: payload.id ?? '', data: payload.data ?? {} });
+        handler({ id: payload.id ?? '', data: payload.userInfo ?? {} });
       });
     })
     .catch(() => {});
