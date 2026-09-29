@@ -89,6 +89,7 @@ const HEALTH_MIN_PACKETS = 100;
 // ICE connectivity alone does not mean DTLS/SRTP is ready to carry video.
 const CONNECTION_TIMEOUT_MS = 20_000;
 const FIRST_MEDIA_TIMEOUT_MS = 5_000;
+const FALLBACK_RETRY_INTERVAL_MS = 1_000;
 
 type HealthSample = { lost: number; received: number; frozenMs: number; progress: number };
 type Session = NativeScreenStartOptions & { sessionId: string };
@@ -114,6 +115,11 @@ type PendingProfileQuery = {
   replies: Map<string, Set<NativeH264Profile>>;
   finish: () => void;
   timer: ReturnType<typeof setTimeout>;
+};
+type PendingFallbackSignal = {
+  captureId: string;
+  deadline: number;
+  timer?: ReturnType<typeof setTimeout>;
 };
 const isRelay = (candidate: RTCIceCandidateInit) =>
   isRelayCandidate(candidate) ||
@@ -155,6 +161,7 @@ export class NativeScreenTransport {
   private pendingProfileQueries = new Map<string, PendingProfileQuery>();
   private peerProfiles = new Map<string, Set<NativeH264Profile>>();
   private peerRuntimes = new Map<string, 'browser' | 'desktop'>();
+  private pendingFallbackSignals = new Map<string, PendingFallbackSignal>();
 
   constructor(
     private signaling: SignalingAdapter,
@@ -363,6 +370,7 @@ export class NativeScreenTransport {
   }
 
   async removePeer(peerId: string): Promise<void> {
+    this.cancelFallbackSignal(peerId);
     this.closeReceiver(peerId);
     this.pendingReceiverCandidates.delete(peerId);
     if (this.session)
@@ -414,8 +422,10 @@ export class NativeScreenTransport {
         }
         return true;
       }
-      if ((signal.data as { kind?: string }).kind === 'native-screen-stop')
+      if ((signal.data as { kind?: string }).kind === 'native-screen-stop') {
+        this.cancelFallbackSignal(peerId, signal.captureId);
         this.closeReceiver(peerId, signal.captureId);
+      }
       if ((signal.data as { kind?: string }).kind === 'native-screen-fallback-request') {
         const session = this.session;
         if (session?.sessionId !== signal.captureId) return true;
@@ -479,6 +489,7 @@ export class NativeScreenTransport {
       if (!nativeH264ProfileSupported(offeredProfile)) {
         throw new Error(`This native screen share requires H.264 ${offeredProfile} profile. Ask the sender to restart in baseline compatibility mode.`);
       }
+      this.cancelFallbackSignal(peerId);
       this.closeReceiver(peerId);
       if (this.receivers.size >= 16)
         throw new Error('Too many native screen receivers');
@@ -565,6 +576,7 @@ export class NativeScreenTransport {
     this.disposed = true;
     void this.stop();
     for (const peerId of [...this.receivers.keys()]) this.closeReceiver(peerId);
+    for (const peerId of [...this.pendingFallbackSignals.keys()]) this.cancelFallbackSignal(peerId);
     this.pendingReceiverCandidates.clear();
     this.finishProfileQueries();
   }
@@ -636,7 +648,7 @@ export class NativeScreenTransport {
       if (pc.connectionState === 'connected') this.receiverConnected(peerId, captureId);
       if (pc.connectionState === 'failed') {
         void this.requestReceiverFallback(peerId, captureId, 'connection-failed')
-          .finally(() => this.closeReceiver(peerId, captureId));
+          .finally(() => this.closeReceiver(peerId, captureId, true));
       }
     };
     pc.oniceconnectionstatechange = () => this.log(peerId, 'ice', pc.iceConnectionState);
@@ -668,15 +680,16 @@ export class NativeScreenTransport {
     }, FIRST_MEDIA_TIMEOUT_MS);
   }
 
-  private closeReceiver(peerId: string, captureId?: string) {
+  private closeReceiver(peerId: string, captureId?: string, preserveFallbackSignal = false) {
     const receiver = this.receivers.get(peerId);
     if (!receiver || (captureId && receiver.captureId !== captureId)) return;
+    if (!preserveFallbackSignal) this.cancelFallbackSignal(peerId, captureId);
     this.log(peerId, 'receiver-closed', receiver.pc.connectionState);
     globalThis.clearTimeout(receiver.fallbackTimer);
     globalThis.clearInterval(receiver.healthTimer);
-    receiver.pc.close();
     this.receivers.delete(peerId);
     this.pendingReceiverCandidates.delete(peerId);
+    receiver.pc.close();
     this.onRemoteRemoved(peerId);
   }
 
@@ -684,6 +697,7 @@ export class NativeScreenTransport {
   finishReceiverFallback(peerId: string) {
     const receiver = this.receivers.get(peerId);
     if (!receiver?.fallbackRequested) return;
+    this.cancelFallbackSignal(peerId, receiver.captureId);
     this.log(peerId, 'fallback-receiver-active');
     globalThis.clearTimeout(receiver.fallbackTimer);
     globalThis.clearInterval(receiver.healthTimer);
@@ -749,20 +763,48 @@ export class NativeScreenTransport {
     globalThis.clearTimeout(receiver.fallbackTimer);
     globalThis.clearInterval(receiver.healthTimer);
     this.log(peerId, 'fallback-requested', reason);
+    const pending = { captureId, deadline: Date.now() + CONNECTION_TIMEOUT_MS };
+    this.cancelFallbackSignal(peerId);
+    this.pendingFallbackSignals.set(peerId, pending);
+    try {
+      await this.sendFallbackSignal(peerId, pending);
+    } finally {
+      // Free the failed camera receiver but keep a bounded notification retry
+      // if signaling is reconnecting. Call disposal and peer replacement cancel it.
+      if (this.driver?.closeReceiverOnFallback) this.closeReceiver(peerId, captureId, true);
+    }
+  }
+
+  private cancelFallbackSignal(peerId: string, captureId?: string) {
+    const pending = this.pendingFallbackSignals.get(peerId);
+    if (!pending || (captureId && pending.captureId !== captureId)) return;
+    globalThis.clearTimeout(pending.timer);
+    this.pendingFallbackSignals.delete(peerId);
+  }
+
+  private async sendFallbackSignal(peerId: string, pending: PendingFallbackSignal): Promise<void> {
+    if (this.disposed || this.pendingFallbackSignals.get(peerId) !== pending) return;
     try {
       await this.signaling.send({
         type: 'signal',
         to: peerId,
         transport: 'native-screen',
-        captureId,
-        data: { kind: 'native-screen-fallback-request', captureId },
+        captureId: pending.captureId,
+        data: { kind: 'native-screen-fallback-request', captureId: pending.captureId },
       });
+      if (this.pendingFallbackSignals.get(peerId) === pending) this.cancelFallbackSignal(peerId);
     } catch {
       this.log(peerId, 'fallback-signal-failed');
-    } finally {
-      // Camera fallback restores the ordinary call track, so release the failed
-      // receiver even if its connection still reports connected or signaling fails.
-      if (this.driver?.closeReceiverOnFallback) this.closeReceiver(peerId, captureId);
+      if (this.disposed || this.pendingFallbackSignals.get(peerId) !== pending) return;
+      if (Date.now() >= pending.deadline) {
+        this.cancelFallbackSignal(peerId);
+        this.closeReceiver(peerId, pending.captureId);
+        this.onEnded('Native video fallback could not reach the sender. Rejoin the call to restore video.');
+        return;
+      }
+      pending.timer = globalThis.setTimeout(() => {
+        void this.sendFallbackSignal(peerId, pending);
+      }, FALLBACK_RETRY_INTERVAL_MS);
     }
   }
 

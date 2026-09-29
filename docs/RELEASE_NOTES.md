@@ -135,6 +135,8 @@ Native camera receivers now also request fallback when no video can be decoded,
 decoded frames stop advancing, or sustained loss prevents usable playback while
 the connection remains connected. The sender restores that viewer's ordinary
 camera, and the failed receiver releases its connection and watchdog timers.
+Fallback notifications retry for up to 20 seconds if signaling is reconnecting;
+leaving the call, removing the peer, or replacing its capture cancels the retry.
 Disposing the camera transport removes its signaling error listener. The iOS
 package no longer declares the unused background-processing mode, and session
 persistence guidance now describes the operating-system credential store

@@ -52,12 +52,21 @@ export async function reconnectMetaGlassesCamera() {}`,
   }));
 }
 
-async function join(page: Page, roomId: string, legacyReceiver = false) {
+async function join(page: Page, roomId: string, legacyReceiver = false, fallbackFailures = 0) {
   await page.goto('/');
-  await page.evaluate(async ({ roomId, legacyReceiver }) => {
+  await page.evaluate(async ({ roomId, legacyReceiver, fallbackFailures }) => {
     const { MediaEngine, RoomWebSocketSignaling } = await import('/src/media/index.ts');
     const id = crypto.randomUUID();
     const signaling = new RoomWebSocketSignaling(id, `/api/v1/rooms/${roomId}/ws?peer_id=${id}`);
+    const send = signaling.send.bind(signaling);
+    Object.assign(window, { __fallbackAttempts: 0 });
+    signaling.send = async signal => {
+      if (signal.type === 'signal' && signal.transport === 'native-camera' && signal.data.kind === 'native-screen-fallback-request') {
+        (window as unknown as { __fallbackAttempts: number }).__fallbackAttempts++;
+        if (fallbackFailures-- > 0) throw new Error('Signaling temporarily unavailable');
+      }
+      await send(signal);
+    };
     const engine = new MediaEngine({ signaling, ice: { mode: 'direct-preferred', iceServers: [] } });
     signaling.addEventListener('peers', event => event.detail.peerIds.forEach(peer => engine.addPeer(peer)));
     signaling.addEventListener('peer-joined', event => engine.addPeer(event.detail.peerId));
@@ -68,7 +77,7 @@ async function join(page: Page, roomId: string, legacyReceiver = false) {
     });
     Object.assign(window, { __engine: engine });
     await signaling.connect();
-  }, { roomId, legacyReceiver });
+  }, { roomId, legacyReceiver, fallbackFailures });
 }
 
 async function startGlasses(page: Page, silentNative = false) {
@@ -168,7 +177,7 @@ test('glasses video upgrades to the native stream and falls back when it drops',
   }
 });
 
-for (const failure of ['never sends frames', 'stops sending frames'] as const) {
+for (const failure of ['never sends frames', 'stops sending frames', 'stops sending frames during a signaling outage'] as const) {
   test(`glasses video falls back when a connected native sender ${failure}`, async ({ browser }) => {
     test.setTimeout(60_000);
     const phone = await browser.newContext({ baseURL });
@@ -179,12 +188,13 @@ for (const failure of ['never sends frames', 'stops sending frames'] as const) {
       await fakeNativeSender(phonePage);
       const friendPage = await friend.newPage();
       await join(phonePage, roomId);
-      await join(friendPage, roomId);
+      const outage = failure.includes('signaling outage');
+      await join(friendPage, roomId, false, outage ? 3 : 0);
       await expect.poll(() => phonePage.evaluate(() =>
         (window as unknown as { __engine: Internals }).__engine.peers.size)).toBe(1);
       await startGlasses(phonePage, failure === 'never sends frames');
       await expect.poll(() => phoneSendsCallCamera(phonePage)).toEqual([false]);
-      if (failure === 'stops sending frames') {
+      if (failure !== 'never sends frames') {
         await expect.poll(() => friendCamera(friendPage)).toEqual({ native: 1, cameras: 1 });
         // Stop only media, keeping ICE/DTLS connected. The receiver must report
         // the stall instead of waiting for the sender's connection-state poll.
@@ -198,6 +208,8 @@ for (const failure of ['never sends frames', 'stops sending frames'] as const) {
       }
       await expect.poll(() => phoneSendsCallCamera(phonePage), { timeout: 20_000 }).toEqual([true]);
       await expect.poll(() => friendCamera(friendPage)).toEqual({ native: 0, cameras: 1 });
+      if (outage) expect(await friendPage.evaluate(() =>
+        (window as unknown as { __fallbackAttempts: number }).__fallbackAttempts)).toBe(4);
       const decoded = () => friendPage.evaluate(async () => {
         const engine = (window as unknown as { __engine: { peers: Map<string, { pc: RTCPeerConnection }> } }).__engine;
         let frames = 0;

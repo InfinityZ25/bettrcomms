@@ -20,8 +20,11 @@ participant starts with the ordinary canvas camera and upgrades only after
 answering the native capability query and completing a separate native-camera
 connection. Failed connections, missing or stalled decoded frames, and
 sustained loss restore that participant's ordinary camera. Receiver failures
-release their native connection and watchdogs. Local preview and fallback
-still use bounded JPEG delivery and `canvas.captureStream()`, and the ReplayKit
+release their native connection and watchdogs. Fallback requests survive
+temporary signaling outages through a notification retry bounded
+to 20 seconds; call disposal, peer removal, or capture replacement cancels it.
+Local preview and fallback still use bounded JPEG delivery and
+`canvas.captureStream()`, and the ReplayKit
 in-app screen source also publishes through a canvas. These webview paths
 cannot promise media after iOS suspends WKWebView.
 

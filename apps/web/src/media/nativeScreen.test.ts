@@ -504,9 +504,71 @@ describe('native screen signaling lifecycle', () => {
     await vi.advanceTimersByTimeAsync(20_000);
     expect(FakePeerConnection.instances[0].close).toHaveBeenCalledOnce();
     expect(removed).toHaveBeenCalledWith('phone');
+    expect(vi.getTimerCount()).toBe(1);
+    transport.dispose();
     expect(vi.getTimerCount()).toBe(0);
     vi.useRealTimers();
   });
+
+  it('retries the camera fallback notification after signaling recovers, even after the track ends', async () => {
+    vi.useFakeTimers();
+    const { transport, signaling } = setup(false, true);
+    await transport.handle({ type: 'offer', from: 'phone', to: 'self', transport: 'native-screen',
+      captureId: 'camera', description: { type: 'offer', sdp: 'v=0\r\n' } });
+    const receiver = FakePeerConnection.instances[0];
+    const track = Object.assign(new EventTarget(), { kind: 'video', id: 'native-camera' });
+    receiver.ontrack?.call(receiver as unknown as RTCPeerConnection, { track } as unknown as RTCTrackEvent);
+    receiver.close.mockImplementation(() => track.dispatchEvent(new Event('ended')));
+    vi.mocked(signaling.send).mockRejectedValueOnce(new Error('Socket reconnecting'));
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(receiver.close).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(signaling.send).toHaveBeenLastCalledWith(expect.objectContaining({
+      captureId: 'camera', data: { kind: 'native-screen-fallback-request', captureId: 'camera' },
+    }));
+    expect(vi.mocked(signaling.send).mock.calls).toHaveLength(3);
+    expect(vi.getTimerCount()).toBe(0);
+    vi.useRealTimers();
+  });
+
+  it('bounds fallback notification retries when signaling never recovers', async () => {
+    vi.useFakeTimers();
+    const { transport, signaling, ended } = setup(false, true);
+    await transport.handle({ type: 'offer', from: 'phone', to: 'self', transport: 'native-screen',
+      captureId: 'camera', description: { type: 'offer', sdp: 'v=0\r\n' } });
+    vi.mocked(signaling.send).mockRejectedValue(new Error('Socket closed'));
+    await vi.advanceTimersByTimeAsync(41_000);
+    expect(ended).toHaveBeenCalledOnce();
+    expect(ended).toHaveBeenCalledWith(expect.stringContaining('Rejoin the call'));
+    expect(vi.getTimerCount()).toBe(0);
+    const attempts = vi.mocked(signaling.send).mock.calls.length;
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(vi.mocked(signaling.send).mock.calls).toHaveLength(attempts);
+    vi.useRealTimers();
+  });
+
+  for (const action of ['remove peer', 'replace capture']) {
+    it(`cancels old camera fallback notification retries on ${action}`, async () => {
+      vi.useFakeTimers();
+      const { transport, signaling } = setup(false, true);
+      const offer = { type: 'offer' as const, from: 'phone', to: 'self', transport: 'native-screen' as const,
+        captureId: 'camera', description: { type: 'offer' as const, sdp: 'v=0\r\n' } };
+      await transport.handle(offer);
+      vi.mocked(signaling.send).mockRejectedValueOnce(new Error('Socket reconnecting'));
+      await vi.advanceTimersByTimeAsync(20_000);
+      const attempts = () => vi.mocked(signaling.send).mock.calls.filter(([signal]) =>
+        signal.type === 'signal' && signal.transport === 'native-screen' && signal.captureId === 'camera').length;
+      const before = attempts();
+      if (action === 'remove peer') await transport.removePeer('phone');
+      else await transport.handle({ ...offer, captureId: 'new-camera' });
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(attempts()).toBe(before);
+      transport.dispose();
+      expect(vi.getTimerCount()).toBe(0);
+      vi.useRealTimers();
+    });
+  }
 
   it('publishes a requested compatibility fallback and removes the failed native sender peer', async () => {
     const { transport, fallback } = setup();
