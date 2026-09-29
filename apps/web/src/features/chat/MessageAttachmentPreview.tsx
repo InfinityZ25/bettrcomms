@@ -99,8 +99,8 @@ export default function MessageAttachmentPreview({ attachment, roomId, onError, 
         </Button>
       )}
       {kind === 'image' && url && <img src={url} alt={attachment.filename} loading="lazy" className="mt-2 max-h-80 max-w-full rounded-md object-contain" onError={() => { setUrl(''); setFailed(true); }} />}
-      {kind === 'audio' && url && <audio src={url} controls preload="none" className="mt-2 max-w-full" onPlay={(event) => mediaPlay(event.currentTarget)} onPlaying={() => { refreshAttempted.current = false; }} onLoadedMetadata={(event) => mediaLoaded(event.currentTarget)} onError={(event) => mediaError(event.currentTarget)} />}
-      {kind === 'video' && url && <video src={url} controls preload="none" playsInline className="mt-2 max-h-80 max-w-full rounded-md" onPlay={(event) => mediaPlay(event.currentTarget)} onPlaying={() => { refreshAttempted.current = false; }} onLoadedMetadata={(event) => mediaLoaded(event.currentTarget)} onError={(event) => mediaError(event.currentTarget)} />}
+      {kind === 'audio' && url && <audio key={url} src={url} controls preload={resumeAt.current === null ? 'none' : 'metadata'} className="mt-2 max-w-full" onPlay={(event) => mediaPlay(event.currentTarget)} onPlaying={() => { refreshAttempted.current = false; }} onLoadedMetadata={(event) => mediaLoaded(event.currentTarget)} onError={(event) => mediaError(event.currentTarget)} />}
+      {kind === 'video' && url && <video key={url} src={url} controls preload={resumeAt.current === null ? 'none' : 'metadata'} playsInline className="mt-2 max-h-80 max-w-full rounded-md" onPlay={(event) => mediaPlay(event.currentTarget)} onPlaying={() => { refreshAttempted.current = false; }} onLoadedMetadata={(event) => mediaLoaded(event.currentTarget)} onError={(event) => mediaError(event.currentTarget)} />}
     </div>
   );
 }
