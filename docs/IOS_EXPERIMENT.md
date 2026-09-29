@@ -22,10 +22,43 @@ root. GitHub Actions can build the same ad hoc IPA without local Xcode via
 
 This package is a build experiment, not a release claim. The desktop host's
 authentication, API routing, and media service lifecycle have not passed
-packaged iPhone acceptance. An iOS app shell alone does not add screen sharing:
-the reported iPhone Safari and Chrome browsers do not expose
-`getDisplayMedia`. Capturing the iPhone display would need a separate native
-ReplayKit broadcast implementation and device testing.
+packaged iPhone acceptance. iPhone Safari and Chrome do not expose the browser
+`getDisplayMedia` picker. The native iPhone app now offers **Share BetterComms
+screen** using ReplayKit's in-app capture and a bounded video bridge into the
+existing WebRTC screen track. This shares the foreground app only, without
+system audio. Sharing other apps or the entire phone requires a ReplayKit
+broadcast extension and an independent sender that survives app suspension.
+The in-app path still needs signed-device sender, viewer, stop, and background
+acceptance; it must not be advertised as working until those checks pass.
+
+The experimental Ray-Ban Meta camera path uses Meta Wearables Device Access
+Toolkit 1.0.0 in the iOS host. It is available in the in-call camera picker and
+camera settings preview on this native build only. Pair Gen 1 or Gen 2 glasses
+in the Meta AI app and enable Developer Mode there; the first selection may redirect to Meta AI for
+registration or glasses-camera consent. DAT capture feeds VideoToolbox H.264
+encoding and a native WebRTC sender, targeting 720×1280 at 30 fps. Local preview
+and the ordinary call camera use bounded JPEG frames and a WebKit canvas track.
+Every participant initially receives that ordinary camera; clients that answer
+the native capability query upgrade once their native connection completes.
+Missing or stalled decoded video, sustained loss, or a dropped connection restore
+the ordinary camera and release the failed native receiver. Older desktop builds
+keep the ordinary camera without needing the native receiver.
+
+Physical Gen 2 preview and call streaming have been exercised, and phone encoder
+logs measured approximately 30 fps at 720×1280. End-to-end native-stream frame
+rate and quality still require measurement with a second physical participant;
+Gen 1, repeated reconnection, app switching, and teardown remain acceptance work.
+Standalone preview stops on background. An active native sender retains the DAT
+session when the app backgrounds, but background and locked-phone glasses video
+are unverified; negotiation and fallback still depend on the webview. See
+[media ownership](NATIVE_MEDIA_BOUNDARY.md) for those boundaries.
+
+During an iPhone call, the host also activates a native play-and-record audio
+session with iOS's audio background mode, then deactivates it on leave, error,
+or shutdown. This is the required platform setup for continued two-way audio;
+it does not prove that the WKWebView WebRTC graph stays active after the app
+backgrounds. Test a signed device with the screen locked and with another app
+foregrounded before claiming background calling works.
 
 The iOS build uses Wails' UIKit browser opener for WorkOS sign-in and reports
 native window chrome to the shared frontend, so desktop minimize/maximize/close
@@ -43,3 +76,25 @@ top-level `wails://localhost` page after iOS handles app-level camera/mic
 permission. Other origins keep WebKit's normal prompt. This needs signed-device
 verification; changing Wails versions intentionally fails the patch until its
 anchors are reviewed.
+
+# Physical iPhone signing for Meta glasses
+
+The iOS archive produced by CI is ad hoc signed for distribution as an
+artifact. Before installing it on a phone, enable **Access Wi-Fi Information**
+and **Hotspot** on the `com.bettrcomms.ios` App ID in Apple Developer, then
+regenerate the iOS Development provisioning profile for that App ID. Meta's
+CameraAccess sample declares both entitlements. A profile issued before the
+capabilities were enabled cannot authorize them, even if the app declares
+them in its signature.
+
+Sign the downloaded IPA with a local Apple Development identity and the new
+profile using `scripts/sign-desktop-wails-ios.sh`. The script rejects a profile
+that does not contain both capabilities, checks its App ID, signs the embedded
+Meta frameworks and app, and verifies the result. Keep the certificate,
+private key, and provisioning profile outside Git. Install the resulting IPA
+with `ideviceinstaller upgrade <signed.ipa>`.
+
+These capabilities match Meta's sample and are needed to remove a packaging
+gap. They do not, by themselves, prove the DAT session starts. Physical-device
+acceptance still requires the Settings camera preview to show frames and a
+second participant to receive them in a call.

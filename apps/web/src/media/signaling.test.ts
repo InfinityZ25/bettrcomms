@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { RoomWebSocketSignaling } from './signaling';
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
-it('delivers native screen stop messages with their capture identity', async () => {
+it.each(['native-screen', 'native-camera'])('delivers %s stop messages with their capture identity', async (transport) => {
   let socket: FakeSocket;
   class FakeSocket {
     static OPEN = 1;
@@ -37,7 +37,7 @@ it('delivers native screen stop messages with their capture identity', async () 
     type: 'signal',
     from: 'peer',
     to: 'local',
-    transport: 'native-screen',
+    transport,
     captureId: 'capture',
     data: { kind: 'native-screen-stop', captureId: 'capture' },
   };

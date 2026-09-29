@@ -89,8 +89,9 @@ const HEALTH_MIN_PACKETS = 100;
 // ICE connectivity alone does not mean DTLS/SRTP is ready to carry video.
 const CONNECTION_TIMEOUT_MS = 20_000;
 const FIRST_MEDIA_TIMEOUT_MS = 5_000;
+const FALLBACK_RETRY_INTERVAL_MS = 1_000;
 
-type HealthSample = { lost: number; received: number; frozenMs: number };
+type HealthSample = { lost: number; received: number; frozenMs: number; progress: number };
 type Session = NativeScreenStartOptions & { sessionId: string };
 type Receiver = {
   captureId: string;
@@ -101,6 +102,7 @@ type Receiver = {
   healthTimer?: ReturnType<typeof setInterval>;
   health?: HealthSample;
   badWindows: number;
+  stalledWindows: number;
 };
 type ProfileMessage = {
   kind: 'native-screen-profile-query' | 'native-screen-profile-reply';
@@ -113,6 +115,11 @@ type PendingProfileQuery = {
   replies: Map<string, Set<NativeH264Profile>>;
   finish: () => void;
   timer: ReturnType<typeof setTimeout>;
+};
+type PendingFallbackSignal = {
+  captureId: string;
+  deadline: number;
+  timer?: ReturnType<typeof setTimeout>;
 };
 const isRelay = (candidate: RTCIceCandidateInit) =>
   isRelayCandidate(candidate) ||
@@ -135,7 +142,7 @@ export class NativeScreenTransport {
       iceConfiguration: { stun: this.nativeIceServers().some(server => server.urls.some(url => /^stuns?:/i.test(url))), turn: this.nativeIceServers().some(server => server.urls.some(url => /^turns?:/i.test(url))) },
       directOnly: this.directOnly, activeProfile: this.activeProfile, sending: Boolean(this.session),
       outboundPeers: this.outboundPeers.size, capabilities: videoCapabilities(), events: [...this.diagnosticEvents], samples: [...this.samples],
-      sender: this.session ? await invoke('native_screen_diagnostics', { sessionId: this.session.sessionId }).catch(() => ({ unavailable: true, requiresDesktop: '0.1.5' })) : undefined,
+      sender: this.session ? await this.invoke('native_screen_diagnostics', { sessionId: this.session.sessionId }).catch(() => ({ unavailable: true, requiresDesktop: '0.1.5' })) : undefined,
       receivers: await Promise.all([...this.receivers].map(async ([id, receiver]) => ({ peer: this.diagnosticPeers.get(id) ?? 0, ...await screenReceiverDiagnostics(receiver.pc).catch(() => ({ unavailable: true })) }))),
     };
   }
@@ -154,6 +161,7 @@ export class NativeScreenTransport {
   private pendingProfileQueries = new Map<string, PendingProfileQuery>();
   private peerProfiles = new Map<string, Set<NativeH264Profile>>();
   private peerRuntimes = new Map<string, 'browser' | 'desktop'>();
+  private pendingFallbackSignals = new Map<string, PendingFallbackSignal>();
 
   constructor(
     private signaling: SignalingAdapter,
@@ -164,10 +172,37 @@ export class NativeScreenTransport {
     private onRemoteRemoved: (peerId: string) => void,
     private onEnded: (reason: string) => void,
     private onFallbackRequested: (peerId: string) => Promise<void> = async () => undefined,
+    private driver?: {
+      invoke: typeof invoke;
+      listen: typeof onNativeCaptureEnded;
+      externalPreview?: boolean;
+      closeReceiverOnFallback?: boolean;
+    },
   ) {}
+
+  private invoke: typeof invoke = (command, args) => (this.driver?.invoke ?? invoke)(command, args);
 
   get active() {
     return Boolean(this.session);
+  }
+
+  get sessionId() {
+    return this.session?.sessionId;
+  }
+
+  hasOutboundPeer(peerId: string) {
+    return this.outboundPeers.has(peerId);
+  }
+
+  /** Peers whose client answered a capability query, i.e. can receive this transport. */
+  async probePeers(peerIds: string[], timeoutMs?: number): Promise<Set<string>> {
+    const peers = [...new Set(peerIds.filter((peerId) => peerId !== this.signaling.localPeerId))];
+    const supported = new Set<string>();
+    for (let index = 0; index < peers.length; index += 7) {
+      const replies = await this.queryProfiles(peers.slice(index, index + 7), timeoutMs);
+      for (const peerId of replies.keys()) supported.add(peerId);
+    }
+    return supported;
   }
 
   get compatibilityQuality(): MediaQualityOptions | undefined {
@@ -248,12 +283,12 @@ export class NativeScreenTransport {
       }
     }
     const { contentHint = 'detail', ...nativeOptions } = options;
-    const session = await invoke<Session>('native_screen_start', {
+    const session = await this.invoke<Session>('native_screen_start', {
       ...nativeOptions,
       h264Profile,
     });
     if (generation !== this.generation) {
-      await invoke('native_screen_stop', {
+      await this.invoke('native_screen_stop', {
         sessionId: session.sessionId,
       }).catch(() => undefined);
       return;
@@ -263,7 +298,7 @@ export class NativeScreenTransport {
     this.activeContentHint = contentHint;
     this.log('self', 'capture-started', h264Profile);
     try {
-      const unlisten = await onNativeCaptureEnded(
+      const unlisten = await (this.driver?.listen ?? onNativeCaptureEnded)(
         ({ payload }) => {
           if (payload.sessionId !== this.session?.sessionId) return;
           this.onEnded(payload.reason);
@@ -275,7 +310,7 @@ export class NativeScreenTransport {
         return;
       }
       this.unlisten = unlisten;
-      await this.createPreview(generation);
+      if (!this.driver?.externalPreview) await this.createPreview(generation);
     } catch (error) {
       if (this.session === session) await this.stop();
       throw error;
@@ -309,7 +344,7 @@ export class NativeScreenTransport {
         }
       }
       if (session !== this.session || generation !== this.generation) return;
-      const description = await invoke<RTCSessionDescriptionInit>(
+      const description = await this.invoke<RTCSessionDescriptionInit>(
         'native_screen_peer_offer',
         {
           sessionId: session.sessionId,
@@ -335,10 +370,11 @@ export class NativeScreenTransport {
   }
 
   async removePeer(peerId: string): Promise<void> {
+    this.cancelFallbackSignal(peerId);
     this.closeReceiver(peerId);
     this.pendingReceiverCandidates.delete(peerId);
     if (this.session)
-      await invoke('native_screen_peer_remove', {
+      await this.invoke('native_screen_peer_remove', {
         sessionId: this.session.sessionId,
         peerId,
       }).catch(() => undefined);
@@ -386,8 +422,10 @@ export class NativeScreenTransport {
         }
         return true;
       }
-      if ((signal.data as { kind?: string }).kind === 'native-screen-stop')
+      if ((signal.data as { kind?: string }).kind === 'native-screen-stop') {
+        this.cancelFallbackSignal(peerId, signal.captureId);
         this.closeReceiver(peerId, signal.captureId);
+      }
       if ((signal.data as { kind?: string }).kind === 'native-screen-fallback-request') {
         const session = this.session;
         if (session?.sessionId !== signal.captureId) return true;
@@ -402,7 +440,7 @@ export class NativeScreenTransport {
       this.log(peerId, 'answer-video', /^m=video 0 /m.test(signal.description.sdp ?? '') ? 'rejected' : 'accepted');
       const session = this.session;
       if (session && session.sessionId === signal.captureId)
-        await invoke('native_screen_peer_answer', {
+        await this.invoke('native_screen_peer_answer', {
           sessionId: session!.sessionId,
           peerId,
           description: signal.description,
@@ -414,7 +452,7 @@ export class NativeScreenTransport {
         return true;
       const session = this.session;
       if (session && session.sessionId === signal.captureId)
-        await invoke('native_screen_peer_candidate', {
+        await this.invoke('native_screen_peer_candidate', {
           sessionId: session.sessionId,
           peerId,
           candidate: signal.candidate,
@@ -451,6 +489,7 @@ export class NativeScreenTransport {
       if (!nativeH264ProfileSupported(offeredProfile)) {
         throw new Error(`This native screen share requires H.264 ${offeredProfile} profile. Ask the sender to restart in baseline compatibility mode.`);
       }
+      this.cancelFallbackSignal(peerId);
       this.closeReceiver(peerId);
       if (this.receivers.size >= 16)
         throw new Error('Too many native screen receivers');
@@ -460,6 +499,7 @@ export class NativeScreenTransport {
         captureId: signal.captureId!,
         fallbackRequested: false,
         badWindows: 0,
+        stalledWindows: 0,
       });
       await pc.setRemoteDescription(
         this.allowedDescription(signal.description),
@@ -528,7 +568,7 @@ export class NativeScreenTransport {
           data: { kind: 'native-screen-stop', captureId: session.sessionId },
         }),
       ),
-      invoke('native_screen_stop', { sessionId: session.sessionId }),
+      this.invoke('native_screen_stop', { sessionId: session.sessionId }),
     ]);
   }
 
@@ -536,6 +576,7 @@ export class NativeScreenTransport {
     this.disposed = true;
     void this.stop();
     for (const peerId of [...this.receivers.keys()]) this.closeReceiver(peerId);
+    for (const peerId of [...this.pendingFallbackSignals.keys()]) this.cancelFallbackSignal(peerId);
     this.pendingReceiverCandidates.clear();
     this.finishProfileQueries();
   }
@@ -558,7 +599,7 @@ export class NativeScreenTransport {
     return 'baseline';
   }
 
-  private queryProfiles(peerIds: string[]): Promise<Map<string, Set<NativeH264Profile>>> {
+  private queryProfiles(peerIds: string[], timeoutMs = 1_000): Promise<Map<string, Set<NativeH264Profile>>> {
     if (peerIds.length > 7)
       return Promise.reject(new Error('Native screen sharing supports up to 7 other people'));
     const peers = new Set(peerIds);
@@ -574,7 +615,7 @@ export class NativeScreenTransport {
         this.pendingProfileQueries.delete(nonce);
         resolve(replies);
       };
-      const timer = globalThis.setTimeout(finish, 1_000);
+      const timer = globalThis.setTimeout(finish, timeoutMs);
       this.pendingProfileQueries.set(nonce, { peers, replies, finish, timer });
       for (const peerId of peers) {
         void Promise.resolve(this.signaling.send({
@@ -607,7 +648,7 @@ export class NativeScreenTransport {
       if (pc.connectionState === 'connected') this.receiverConnected(peerId, captureId);
       if (pc.connectionState === 'failed') {
         void this.requestReceiverFallback(peerId, captureId, 'connection-failed')
-          .finally(() => this.closeReceiver(peerId, captureId));
+          .finally(() => this.closeReceiver(peerId, captureId, true));
       }
     };
     pc.oniceconnectionstatechange = () => this.log(peerId, 'ice', pc.iceConnectionState);
@@ -639,15 +680,16 @@ export class NativeScreenTransport {
     }, FIRST_MEDIA_TIMEOUT_MS);
   }
 
-  private closeReceiver(peerId: string, captureId?: string) {
+  private closeReceiver(peerId: string, captureId?: string, preserveFallbackSignal = false) {
     const receiver = this.receivers.get(peerId);
     if (!receiver || (captureId && receiver.captureId !== captureId)) return;
+    if (!preserveFallbackSignal) this.cancelFallbackSignal(peerId, captureId);
     this.log(peerId, 'receiver-closed', receiver.pc.connectionState);
     globalThis.clearTimeout(receiver.fallbackTimer);
     globalThis.clearInterval(receiver.healthTimer);
-    receiver.pc.close();
     this.receivers.delete(peerId);
     this.pendingReceiverCandidates.delete(peerId);
+    receiver.pc.close();
     this.onRemoteRemoved(peerId);
   }
 
@@ -655,6 +697,7 @@ export class NativeScreenTransport {
   finishReceiverFallback(peerId: string) {
     const receiver = this.receivers.get(peerId);
     if (!receiver?.fallbackRequested) return;
+    this.cancelFallbackSignal(peerId, receiver.captureId);
     this.log(peerId, 'fallback-receiver-active');
     globalThis.clearTimeout(receiver.fallbackTimer);
     globalThis.clearInterval(receiver.healthTimer);
@@ -681,10 +724,17 @@ export class NativeScreenTransport {
       lost: Number(video.packetsLost) || 0,
       received: Number(video.packetsReceived) || 0,
       frozenMs: (Number(video.totalFreezesDuration) || 0) * 1_000,
+      // Prefer decoded frames: RTP bytes can keep arriving without usable video.
+      progress: typeof video.framesDecoded === 'number' ? video.framesDecoded : Number(video.bytesReceived) || 0,
     };
     const previous = receiver.health;
     receiver.health = sample;
     if (!previous) return;
+    receiver.stalledWindows = sample.progress > previous.progress ? 0 : receiver.stalledWindows + 1;
+    if (receiver.stalledWindows >= HEALTH_BAD_WINDOWS) {
+      await this.requestReceiverFallback(peerId, captureId, 'video-stalled');
+      return;
+    }
     const lost = Math.max(0, sample.lost - previous.lost);
     const received = Math.max(0, sample.received - previous.received);
     // A silent stream is the no-media timer's job, not this one's.
@@ -706,26 +756,73 @@ export class NativeScreenTransport {
       if (!report || this.receivers.get(peerId) !== receiver) return;
       const video = [...report.values()].find(row =>
         row.type === 'inbound-rtp' && (row.kind ?? row.mediaType) === 'video');
-      if ((Number(video?.bytesReceived) || 0) > 0 || (Number(video?.framesDecoded) || 0) > 0)
+      if ((typeof video?.framesDecoded === 'number' ? video.framesDecoded : Number(video?.bytesReceived) || 0) > 0)
         return;
     }
     receiver.fallbackRequested = true;
     globalThis.clearTimeout(receiver.fallbackTimer);
     globalThis.clearInterval(receiver.healthTimer);
     this.log(peerId, 'fallback-requested', reason);
-    await this.signaling.send({
-      type: 'signal',
-      to: peerId,
-      transport: 'native-screen',
-      captureId,
-      data: { kind: 'native-screen-fallback-request', captureId },
-    });
+    const pending = { captureId, deadline: Date.now() + CONNECTION_TIMEOUT_MS };
+    this.cancelFallbackSignal(peerId);
+    this.pendingFallbackSignals.set(peerId, pending);
+    try {
+      await this.sendFallbackSignal(peerId, pending);
+    } finally {
+      // Free the failed camera receiver but keep a bounded notification retry
+      // if signaling is reconnecting. Call disposal and peer replacement cancel it.
+      if (this.driver?.closeReceiverOnFallback) this.closeReceiver(peerId, captureId, true);
+    }
+  }
+
+  private cancelFallbackSignal(peerId: string, captureId?: string) {
+    const pending = this.pendingFallbackSignals.get(peerId);
+    if (!pending || (captureId && pending.captureId !== captureId)) return;
+    globalThis.clearTimeout(pending.timer);
+    this.pendingFallbackSignals.delete(peerId);
+  }
+
+  private async sendFallbackSignal(peerId: string, pending: PendingFallbackSignal): Promise<void> {
+    if (this.disposed || this.pendingFallbackSignals.get(peerId) !== pending) return;
+    try {
+      await this.signaling.send({
+        type: 'signal',
+        to: peerId,
+        transport: 'native-screen',
+        captureId: pending.captureId,
+        data: { kind: 'native-screen-fallback-request', captureId: pending.captureId },
+      });
+      if (this.pendingFallbackSignals.get(peerId) === pending) this.cancelFallbackSignal(peerId);
+    } catch {
+      this.log(peerId, 'fallback-signal-failed');
+      if (this.disposed || this.pendingFallbackSignals.get(peerId) !== pending) return;
+      if (Date.now() >= pending.deadline) {
+        this.cancelFallbackSignal(peerId);
+        this.closeReceiver(peerId, pending.captureId);
+        this.onEnded('Native video fallback could not reach the sender. Rejoin the call to restore video.');
+        return;
+      }
+      pending.timer = globalThis.setTimeout(() => {
+        void this.sendFallbackSignal(peerId, pending);
+      }, FALLBACK_RETRY_INTERVAL_MS);
+    }
+  }
+
+  /** Stop sending to one participant and tell its receiver so it stops showing the stream. */
+  async endOutboundPeer(peerId: string) {
+    const session = this.session;
+    if (!session || !this.outboundPeers.has(peerId)) return;
+    await this.removeOutboundPeer(peerId);
+    await Promise.resolve(this.signaling.send({
+      type: 'signal', to: peerId, transport: 'native-screen', captureId: session.sessionId,
+      data: { kind: 'native-screen-stop', captureId: session.sessionId },
+    })).catch(() => undefined);
   }
 
   private async removeOutboundPeer(peerId: string) {
     const session = this.session;
     if (!session || !this.outboundPeers.has(peerId)) return;
-    await invoke('native_screen_peer_remove', {
+    await this.invoke('native_screen_peer_remove', {
       sessionId: session.sessionId,
       peerId,
     }).catch(() => undefined);
@@ -734,7 +831,7 @@ export class NativeScreenTransport {
 
   private async createPreview(generation: number) {
     const session = this.session!;
-    const offer = await invoke<RTCSessionDescriptionInit>(
+    const offer = await this.invoke<RTCSessionDescriptionInit>(
       'native_screen_peer_offer',
       {
         sessionId: session.sessionId,
@@ -753,14 +850,14 @@ export class NativeScreenTransport {
       } else track.stop();
     };
     pc.onicecandidate = ({ candidate }) =>
-      void invoke('native_screen_peer_candidate', {
+      void this.invoke('native_screen_peer_candidate', {
         sessionId: session.sessionId,
         peerId: '__preview',
         candidate: candidate?.toJSON() ?? null,
       }).catch(() => undefined);
     await pc.setRemoteDescription(offer);
     await pc.setLocalDescription(await pc.createAnswer());
-    await invoke('native_screen_peer_answer', {
+    await this.invoke('native_screen_peer_answer', {
       sessionId: session.sessionId,
       peerId: '__preview',
       description: pc.localDescription!.toJSON(),

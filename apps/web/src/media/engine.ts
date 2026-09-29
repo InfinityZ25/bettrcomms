@@ -1,3 +1,5 @@
+import { NativeCameraTransport } from './nativeCamera';
+import { isMetaGlassesTrack } from './metaGlassesCamera';
 import { AudioLeveler, type AudioLevelerOptions } from './audio';
 import { VisualCopilot } from './visualCopilot';
 import { VoiceRelay } from './voiceRelay';
@@ -23,6 +25,8 @@ import { createDeepfilterDenoiser } from './deepfilterDenoise';
 import { createDeepfilterWasmDenoiser } from './deepfilterWasmDenoise';
 import { createMicrophoneEffects } from './microphoneEffects';
 import { hasNativeMediaHost } from '../desktop/nativeMedia';
+import { readDesktopBootReport } from '../desktop/runtime';
+import { startIOSAppScreen } from './iosAppScreen';
 import { createNativeSystemAudio, type NativeSystemAudioTrack } from './nativeSystemAudio';
 import type { DenoisedTrack } from './denoise';
 import type { MicrophoneProcessingSettings } from './types';
@@ -86,6 +90,9 @@ export class MediaEngine extends EventTarget {
   private readonly nativeRemote = new Map<string, RemoteTrack>();
   private readonly signalQueues = new Map<string, Promise<void>>();
   private readonly nativeScreen: NativeScreenTransport;
+  private readonly nativeCamera: NativeCameraTransport;
+  private readonly nativeCameraRemote = new Map<string, RemoteTrack>();
+  private nativeCameraGeneration = 0;
   private nativeAudio?: NativeSystemAudioTrack;
   private nativeAudioAbort?: AbortController;
   private nativeShareGeneration = 0;
@@ -131,6 +138,14 @@ export class MediaEngine extends EventTarget {
         },
       });
     }
+    this.nativeCamera = new NativeCameraTransport(this.signaling, this.ice.iceServers ?? [],
+      this.ice.mode === 'direct-only', (peerId, track) => {
+        const remote = { peerId, source: 'camera' as const, track, stream: new MediaStream([track]) };
+        this.nativeCameraRemote.set(peerId, remote);
+        this.emit('remote-track', remote);
+      }, (peerId) => {
+        if (this.nativeCameraRemote.delete(peerId)) this.emit('remote-track-removed', { peerId, source: 'camera' });
+      }, reason => this.emit('error', { operation: 'native-camera', error: new Error(reason) }));
     this.nativeScreen = new NativeScreenTransport(
       this.signaling,
       this.ice.iceServers ?? [],
@@ -170,6 +185,7 @@ export class MediaEngine extends EventTarget {
 
   async captureUserMedia(options: CaptureOptions = {}): Promise<void> {
     this.ensureActive();
+    const iosNative = readDesktopBootReport()?.platform === 'ios';
     const requestedDenoiser = options.denoiser ?? 'standard';
     const denoiser =
       (requestedDenoiser === 'nvidia' || requestedDenoiser === 'deepfilter') &&
@@ -204,7 +220,9 @@ export class MediaEngine extends EventTarget {
                 ? options.microphone.channelCount
                 : { ideal: 1 },
             noiseSuppression:
-              denoiser === 'rnnoise' ||
+              iosNative
+                ? (options.noiseSuppression ?? true)
+                : denoiser === 'rnnoise' ||
               denoiser === 'speex' ||
               denoiser === 'deepfilter-wasm' ||
               denoiser === 'nvidia' ||
@@ -226,7 +244,12 @@ export class MediaEngine extends EventTarget {
       const video = stream.getVideoTracks()[0];
       const microphone = stream.getAudioTracks()[0];
       if (video) await this.replaceLocalTrack('camera', video);
-      if (
+      if (microphone && iosNative) {
+        // WKWebView can capture a microphone but suspend its Web Audio
+        // MediaStreamDestination track. Publish the device track directly on
+        // iPhone so a call never depends on that processing graph for speech.
+        await this.replaceLocalTrack('microphone', microphone, () => microphone.stop());
+      } else if (
         microphone &&
         (denoiser === 'rnnoise' ||
           denoiser === 'speex' ||
@@ -406,6 +429,9 @@ export class MediaEngine extends EventTarget {
     isCurrent: () => boolean = () => true,
   ): Promise<void> {
     this.ensureActive();
+    if (typeof navigator.mediaDevices?.getDisplayMedia !== 'function') {
+      throw new Error('Screen sharing is unavailable in this browser. On iPhone, use the BetterComms app to share its screen.');
+    }
     const captureOptions: DisplayMediaStreamOptions & { windowAudio: 'window' | 'exclude' } = {
       // Follow the configured stream quality rather than a fixed ceiling, so a
       // high-refresh display is not silently halved before encoding starts.
@@ -457,6 +483,18 @@ export class MediaEngine extends EventTarget {
       for (const track of stream.getTracks()) {
         if (![...this.localTracks.values()].includes(track)) track.stop();
       }
+      throw error;
+    }
+  }
+
+  async captureIOSAppScreen(): Promise<void> {
+    this.ensureActive();
+    const capture = await startIOSAppScreen();
+    try {
+      this.ensureActive();
+      await this.replaceLocalTrack('screen', capture.track, capture.dispose);
+    } catch (error) {
+      capture.dispose();
       throw error;
     }
   }
@@ -516,8 +554,9 @@ export class MediaEngine extends EventTarget {
   async setLocalTrack(
     source: MediaSourceKind,
     track: MediaStreamTrack | null,
+    cleanup?: () => void,
   ): Promise<void> {
-    return this.replaceLocalTrack(source, track);
+    return this.replaceLocalTrack(source, track, cleanup);
   }
 
   private async replaceLocalTrack(
@@ -535,7 +574,15 @@ export class MediaEngine extends EventTarget {
       track.enabled = this.microphoneEnabled ?? previous?.enabled ?? track.enabled;
       this.pendingMicrophones.add(track);
     }
+    const nativeCamera = source === 'camera' && isMetaGlassesTrack(track);
     try {
+      if (source === 'camera') {
+        ++this.nativeCameraGeneration;
+        await this.nativeCamera.stop();
+      }
+      // Every participant gets the ordinary call camera first. The native
+      // glasses stream replaces it per participant only once that client has
+      // proven it can receive it (see upgradeToNativeCamera).
       await Promise.all(
         [...this.peers.values()].map(async (peer) => {
           const sender = peer.senders.get(source);
@@ -581,6 +628,7 @@ export class MediaEngine extends EventTarget {
       this.localTracks.delete(source);
       this.trackCleanup.delete(source);
     }
+    if (nativeCamera && track) void this.startNativeCamera(track);
     try {
       await Promise.all(
         [...this.peers.keys()].map((peerId) => this.sendMetadata(peerId)),
@@ -616,10 +664,12 @@ export class MediaEngine extends EventTarget {
       ? ([this.peers.get(peerId)].filter(Boolean) as Peer[])
       : [...this.peers.values()];
     return peers.flatMap((peer) => [...peer.remote.values()].filter(
-      (track) => track.source !== 'microphone' || !this.relayTracks.has(track.peerId),
+      (track) => (track.source !== 'microphone' || !this.relayTracks.has(track.peerId)) &&
+        (track.source !== 'camera' || !this.nativeCameraRemote.has(track.peerId)),
     )).concat(
       [...this.nativeRemote.values()].filter((track) =>
         (!peerId || track.peerId === peerId) && !this.peers.get(track.peerId)?.remote.has('screen')),
+      [...this.nativeCameraRemote.values()].filter((track) => !peerId || track.peerId === peerId),
       [...this.relayTracks.values()].filter((track) => !peerId || track.peerId === peerId),
     );
   }
@@ -689,6 +739,8 @@ export class MediaEngine extends EventTarget {
     };
     this.updateVoiceRoute(peerId);
     if (this.nativeScreen.active) void this.nativeScreen.addPeer(peerId);
+    const camera = this.localTracks.get('camera');
+    if (this.nativeCamera.active && camera) void this.upgradeToNativeCamera(peerId, camera, this.nativeCameraGeneration);
     // Do not depend solely on negotiationneeded for the first offer. Some
     // WebRTC implementations can coalesce that event while both callers join.
     if (!peer.polite)
@@ -709,6 +761,7 @@ export class MediaEngine extends EventTarget {
     this.directReady.delete(peerId);
     this.directProbe.delete(peerId);
     void this.nativeScreen.removePeer(peerId);
+    void this.nativeCamera.removePeer(peerId);
     const peer = this.peers.get(peerId);
     if (!peer) return;
     peer.pc.close();
@@ -720,12 +773,68 @@ export class MediaEngine extends EventTarget {
       this.emit('remote-track-removed', { peerId, source });
   }
 
+  private async startNativeCamera(track: MediaStreamTrack) {
+    const generation = this.nativeCameraGeneration;
+    try {
+      await this.nativeCamera.start();
+    } catch (error) {
+      // The ordinary call camera is already flowing to everyone.
+      this.emit('error', { operation: 'native-camera', error });
+      return;
+    }
+    if (generation !== this.nativeCameraGeneration || this.localTracks.get('camera') !== track) {
+      if (generation === this.nativeCameraGeneration) await this.nativeCamera.stop();
+      return;
+    }
+    await Promise.all([...this.peers.keys()].map((peerId) =>
+      this.upgradeToNativeCamera(peerId, track, generation)));
+  }
+
+  /** Swap one participant from the ordinary camera to the native stream once it connects. */
+  private async upgradeToNativeCamera(peerId: string, track: MediaStreamTrack, generation: number) {
+    const connected = await this.nativeCamera.connectPeer(peerId).catch(() => false);
+    const peer = this.peers.get(peerId);
+    if (!connected || !peer || this.disposed || generation !== this.nativeCameraGeneration ||
+      this.localTracks.get('camera') !== track) return;
+    const sender = peer.senders.get('camera');
+    if (!sender) return;
+    await sender.replaceTrack(null);
+    peer.pc.removeTrack(sender);
+    peer.senders.delete('camera');
+    peer.streams.delete('camera');
+    await this.nativeCamera.waitForPeerLoss(peerId);
+    // A lost native link falls back to the ordinary camera for that participant.
+    const current = this.peers.get(peerId);
+    if (current !== peer || this.disposed || generation !== this.nativeCameraGeneration ||
+      this.localTracks.get('camera') !== track || peer.senders.has('camera')) return;
+    const stream = new MediaStream([track]);
+    peer.streams.set('camera', stream);
+    const restored = peer.pc.addTrack(track, stream);
+    peer.senders.set('camera', restored);
+    await this.applyQuality(restored);
+  }
+
+  async getCameraDiagnostics() { return this.nativeCamera.getDiagnostics(); }
+
   async getScreenDiagnostics() { return this.nativeScreen.getDiagnostics(); }
 
   async handleSignal(signal: MediaSignal): Promise<void> {
     this.ensureActive();
     // Keep ordinary WebRTC signaling on its original synchronous path. An
     // unconditional await here lets a later candidate overtake its offer.
+    if ('transport' in signal && signal.transport === 'native-camera') {
+      if (!signal.from || !this.peers.has(signal.from)) {
+        this.nativeCamera.trace(`drop-unknown-peer ${signal.type}`);
+        return;
+      }
+      const key = `camera:${signal.from}:${signal.captureId}`;
+      const pending = (this.signalQueues.get(key) ?? Promise.resolve()).catch(() => undefined).then(() => {
+        if (!this.disposed) return this.nativeCamera.handle(signal);
+      }).then(() => undefined);
+      this.signalQueues.set(key, pending);
+      try { await pending; } finally { if (this.signalQueues.get(key) === pending) this.signalQueues.delete(key); }
+      return;
+    }
     if ('transport' in signal && signal.transport === 'native-screen') {
       const key = `native:${signal.from}:${signal.captureId}`;
       const previous = this.signalQueues.get(key) ?? Promise.resolve();
@@ -1028,6 +1137,7 @@ export class MediaEngine extends EventTarget {
     ++this.nativeShareGeneration;
     void this.stopNativeSystemAudio();
     this.nativeScreen.dispose();
+    this.nativeCamera.dispose();
     for (const peerId of [...this.peers.keys()]) this.removePeer(peerId);
     for (const track of this.localTracks.values()) track.stop();
     for (const cleanup of this.trackCleanup.values()) cleanup();

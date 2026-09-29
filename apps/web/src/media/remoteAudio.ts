@@ -1,6 +1,7 @@
 import { AudioLeveler } from './audio';
 import { followOutputDevice } from './output';
 import { createOutputGain, readOutputVolume } from './volumeSettings';
+import { readDesktopBootReport } from '@/desktop/runtime';
 
 type PlaybackState = {
   context: AudioContext;
@@ -25,8 +26,10 @@ export function setCallPlaybackDeafened(value: boolean): void {
 }
 
 export function getCallPlaybackStatus() {
-  return { state: playback?.context.state ?? 'inactive', tracks: playback?.references ?? 0, customOutputSelected: Boolean(localStorage.getItem('bc-output')) };
+  return { state: playback?.context.state ?? (fallbackOutputs.size ? 'running' : 'inactive'), tracks: playback?.references ?? fallbackOutputs.size, customOutputSelected: Boolean(localStorage.getItem('bc-output')) };
 }
+
+const isIOSHost = () => readDesktopBootReport()?.platform === 'ios';
 
 function report(name: 'bc-audio-blocked' | 'bc-output-error', detail?: string) {
   window.dispatchEvent(
@@ -73,6 +76,9 @@ function getPlayback(): PlaybackState {
 
 /** Call synchronously from the Join click so autoplay permission survives later awaits. */
 export function prepareCallPlayback(): void {
+  // WKWebView may suspend Web Audio's rendering graph when the app backgrounds.
+  // iPhone calls play remote streams through media elements instead.
+  if (isIOSHost()) return;
   try {
     resume(getPlayback().context);
   } catch (error) {
@@ -112,6 +118,7 @@ export function attachRemoteAudio({
   peerId: string;
   balanceVoice: boolean;
 }): () => void {
+  if (isIOSHost()) return attachElementFallback(track, peerId);
   let current: PlaybackState;
   try {
     current = getPlayback();
@@ -133,6 +140,7 @@ export function attachRemoteAudio({
   decoder.muted = true;
   decoder.autoplay = true;
   decoder.hidden = true;
+  decoder.dataset.callRemoteAudio = 'true';
   decoder.setAttribute('playsinline', '');
   decoder.srcObject = stream;
   document.body.append(decoder);
@@ -215,6 +223,7 @@ export function attachRemoteAudio({
 function attachElementFallback(track: MediaStreamTrack, peerId: string): () => void {
   const element = document.createElement('audio');
   element.autoplay = true;
+  element.dataset.callRemoteAudio = 'true';
   element.setAttribute('playsinline', '');
   element.srcObject = new MediaStream([track]);
   element.muted = callDeafened;

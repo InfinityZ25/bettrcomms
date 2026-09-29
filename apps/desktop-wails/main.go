@@ -167,12 +167,12 @@ func run() error {
 			// Camera tiles and remote video belong inside the call UI. WKWebView
 			// otherwise opens video playback in iOS's full-screen player.
 			EnableInlineMediaPlayback: true,
-			DisableBounce:            true,
+			DisableBounce:             true,
 		},
 		Assets: application.AssetOptions{
 			Handler: handler,
 		},
-		Services: services(&AuthService{signIn: signIn}, media, toasts, tray),
+		Services: services(&AuthService{signIn: signIn, gate: gate}, media, toasts, tray),
 		Windows: application.WindowsOptions{
 			AdditionalBrowserArgs: []string{
 				"--autoplay-policy=no-user-gesture-required",
@@ -255,7 +255,7 @@ func authReturn(proxy *desktop.APIProxy) desktop.Capability {
 	}
 	stored := "The session is not persisted on this platform, so it ends with the process."
 	if proxy.PersistsSession() {
-		stored = "The session is kept in the operating system's credential store, encrypted under this Windows account, so it survives closing the application and is erased on sign-out."
+		stored = "The session is protected by the operating system's credential store, survives closing the application, and is erased on sign-out."
 	}
 	return desktop.Capability{
 		State: desktop.Experimental,
@@ -295,6 +295,7 @@ func services(
 // this process.
 type AuthService struct {
 	signIn *desktop.BrowserSignIn
+	gate   *desktop.PageGate
 }
 
 // BrowserSignInBegin opens the system browser on the confirmation page and
@@ -318,7 +319,9 @@ func (a *AuthService) BrowserSignInCancel() {
 // outlives the window.
 func (a *AuthService) ServiceShutdown() error {
 	a.signIn.Cancel()
-	return nil
+	_ = iosAppScreenStop()
+	_ = metaCameraStop()
+	return iosCallAudioStop()
 }
 
 func nativeWindowsWindowOptions() application.WindowsWindow {

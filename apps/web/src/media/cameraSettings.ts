@@ -70,6 +70,34 @@ export function cameraCaptureConstraints(
   };
 }
 
+/** WebKit can reject a supported camera when its preferred quality is too high.
+ * Retry only constraint failures; permission and device errors must stay visible. */
+export async function captureCameraWithFallback<T>(
+  capture: (video: boolean | MediaTrackConstraints) => Promise<T>,
+  deviceId: string,
+  settings: CameraSettings = readCameraSettings(),
+): Promise<T> {
+  const device = deviceId ? { deviceId: { exact: deviceId } } : {};
+  const attempts: Array<boolean | MediaTrackConstraints> = [
+    cameraCaptureConstraints(deviceId, settings),
+    { ...device, width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 15 } },
+    deviceId ? device : true,
+  ];
+  for (let index = 0; index < attempts.length; index += 1) {
+    try {
+      return await capture(attempts[index]);
+    } catch (error) {
+      const name = error instanceof Error ? error.name : '';
+      const message = error instanceof Error ? error.message : String(error);
+      if (index === attempts.length - 1 ||
+          (name !== 'OverconstrainedError' && !/invalid constraint/i.test(message))) {
+        throw error;
+      }
+    }
+  }
+  throw new Error('Could not open the camera.');
+}
+
 export function requestedCameraLabel(settings: CameraSettings): string {
   const resolution = cameraResolutions.find(
     ({ value }) => value === settings.resolution,

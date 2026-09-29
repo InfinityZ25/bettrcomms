@@ -42,7 +42,7 @@ class FakePeerConnection {
   getStats = vi.fn(async () => FakePeerConnection.stats as unknown as RTCStatsReport);
 }
 
-function setup(directOnly = false) {
+function setup(directOnly = false, camera = false) {
   const sent: MediaSignal[] = [];
   const signaling: SignalingAdapter = {
     localPeerId: 'self',
@@ -64,8 +64,9 @@ function setup(directOnly = false) {
     removed,
     ended,
     fallback,
+    camera ? { invoke: mocks.invoke, listen: mocks.listen, externalPreview: true, closeReceiverOnFallback: true } : undefined,
   );
-  return { transport, sent, preview, remote, removed, fallback };
+  return { transport, signaling, sent, preview, remote, removed, ended, fallback };
 }
 
 beforeEach(() => {
@@ -376,15 +377,16 @@ describe('native screen signaling lifecycle', () => {
 
   it('keeps a native receiver that has begun receiving RTP', async () => {
     vi.useFakeTimers();
-    FakePeerConnection.stats = new Map([['video', {
-      id: 'video', type: 'inbound-rtp', kind: 'video',
-      bytesReceived: 4096, framesDecoded: 2,
-    }]]);
     const { transport, sent } = setup();
     await transport.handle({
       type: 'offer', from: 'peer-b', to: 'self', transport: 'native-screen',
       captureId: 'remote-capture', description: { type: 'offer', sdp: 'v=0\r\n' },
     });
+    let frames = 0;
+    FakePeerConnection.instances[0].getStats.mockImplementation(async () => new Map([['video', {
+      id: 'video', type: 'inbound-rtp', kind: 'video',
+      bytesReceived: ++frames * 4096, framesDecoded: frames,
+    }]]) as unknown as RTCStatsReport);
     await vi.advanceTimersByTimeAsync(8_000);
     const receiver = FakePeerConnection.instances[0];
     receiver.connectionState = 'connected';
@@ -461,6 +463,112 @@ describe('native screen signaling lifecycle', () => {
       && signal.data.kind === 'native-screen-fallback-request')).toBe(false);
     vi.useRealTimers();
   });
+
+  for (const failure of ['no decoded frames', 'stalled decoded frames', 'sustained loss']) {
+    it(`requests camera fallback and releases the receiver on ${failure}`, async () => {
+      vi.useFakeTimers();
+      const { transport, sent, removed, ended } = setup(false, true);
+      await transport.handle({
+        type: 'offer', from: 'phone', to: 'self', transport: 'native-screen',
+        captureId: 'camera', description: { type: 'offer', sdp: 'v=0\r\n' },
+      });
+      const receiver = FakePeerConnection.instances[0];
+      let reads = 0;
+      receiver.getStats.mockImplementation(async () => new Map([['video', {
+        type: 'inbound-rtp', kind: 'video', bytesReceived: ++reads * 4096,
+        framesDecoded: failure === 'no decoded frames' ? 0 : failure === 'stalled decoded frames' ? 1 : reads,
+        packetsReceived: reads * 910, packetsLost: failure === 'sustained loss' ? reads * 90 : 0,
+      }]]) as unknown as RTCStatsReport);
+      receiver.connectionState = 'connected';
+      receiver.onconnectionstatechange?.call(receiver as unknown as RTCPeerConnection, new Event('connectionstatechange'));
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(sent.filter(signal => signal.type === 'signal')).toEqual([expect.objectContaining({
+        captureId: 'camera', data: { kind: 'native-screen-fallback-request', captureId: 'camera' },
+      })]);
+      expect(receiver.close).toHaveBeenCalledOnce();
+      expect(removed).toHaveBeenCalledWith('phone');
+      expect(ended).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+      vi.useRealTimers();
+    });
+  }
+
+  it('releases a failed camera receiver even when fallback signaling fails', async () => {
+    vi.useFakeTimers();
+    const { transport, signaling, removed } = setup(false, true);
+    await transport.handle({
+      type: 'offer', from: 'phone', to: 'self', transport: 'native-screen',
+      captureId: 'camera', description: { type: 'offer', sdp: 'v=0\r\n' },
+    });
+    vi.mocked(signaling.send).mockRejectedValue(new Error('Socket closed'));
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(FakePeerConnection.instances[0].close).toHaveBeenCalledOnce();
+    expect(removed).toHaveBeenCalledWith('phone');
+    expect(vi.getTimerCount()).toBe(1);
+    transport.dispose();
+    expect(vi.getTimerCount()).toBe(0);
+    vi.useRealTimers();
+  });
+
+  it('retries the camera fallback notification after signaling recovers, even after the track ends', async () => {
+    vi.useFakeTimers();
+    const { transport, signaling } = setup(false, true);
+    await transport.handle({ type: 'offer', from: 'phone', to: 'self', transport: 'native-screen',
+      captureId: 'camera', description: { type: 'offer', sdp: 'v=0\r\n' } });
+    const receiver = FakePeerConnection.instances[0];
+    const track = Object.assign(new EventTarget(), { kind: 'video', id: 'native-camera' });
+    receiver.ontrack?.call(receiver as unknown as RTCPeerConnection, { track } as unknown as RTCTrackEvent);
+    receiver.close.mockImplementation(() => track.dispatchEvent(new Event('ended')));
+    vi.mocked(signaling.send).mockRejectedValueOnce(new Error('Socket reconnecting'));
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(receiver.close).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(signaling.send).toHaveBeenLastCalledWith(expect.objectContaining({
+      captureId: 'camera', data: { kind: 'native-screen-fallback-request', captureId: 'camera' },
+    }));
+    expect(vi.mocked(signaling.send).mock.calls).toHaveLength(3);
+    expect(vi.getTimerCount()).toBe(0);
+    vi.useRealTimers();
+  });
+
+  it('bounds fallback notification retries when signaling never recovers', async () => {
+    vi.useFakeTimers();
+    const { transport, signaling, ended } = setup(false, true);
+    await transport.handle({ type: 'offer', from: 'phone', to: 'self', transport: 'native-screen',
+      captureId: 'camera', description: { type: 'offer', sdp: 'v=0\r\n' } });
+    vi.mocked(signaling.send).mockRejectedValue(new Error('Socket closed'));
+    await vi.advanceTimersByTimeAsync(41_000);
+    expect(ended).toHaveBeenCalledOnce();
+    expect(ended).toHaveBeenCalledWith(expect.stringContaining('Rejoin the call'));
+    expect(vi.getTimerCount()).toBe(0);
+    const attempts = vi.mocked(signaling.send).mock.calls.length;
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(vi.mocked(signaling.send).mock.calls).toHaveLength(attempts);
+    vi.useRealTimers();
+  });
+
+  for (const action of ['remove peer', 'replace capture']) {
+    it(`cancels old camera fallback notification retries on ${action}`, async () => {
+      vi.useFakeTimers();
+      const { transport, signaling } = setup(false, true);
+      const offer = { type: 'offer' as const, from: 'phone', to: 'self', transport: 'native-screen' as const,
+        captureId: 'camera', description: { type: 'offer' as const, sdp: 'v=0\r\n' } };
+      await transport.handle(offer);
+      vi.mocked(signaling.send).mockRejectedValueOnce(new Error('Socket reconnecting'));
+      await vi.advanceTimersByTimeAsync(20_000);
+      const attempts = () => vi.mocked(signaling.send).mock.calls.filter(([signal]) =>
+        signal.type === 'signal' && signal.transport === 'native-screen' && signal.captureId === 'camera').length;
+      const before = attempts();
+      if (action === 'remove peer') await transport.removePeer('phone');
+      else await transport.handle({ ...offer, captureId: 'new-camera' });
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(attempts()).toBe(before);
+      transport.dispose();
+      expect(vi.getTimerCount()).toBe(0);
+      vi.useRealTimers();
+    });
+  }
 
   it('publishes a requested compatibility fallback and removes the failed native sender peer', async () => {
     const { transport, fallback } = setup();
@@ -713,4 +821,49 @@ it('bounds retained diagnostics and replaces peer identifiers with local aliases
   expect(report.events).toHaveLength(200);
   expect(report.events.every(event => event.peer === 1 && event.event === 'signal-failed')).toBe(true);
   expect(JSON.stringify(report)).not.toMatch(/private-peer|private-capture|private-sdp|example.test/);
+});
+
+it('uses an injected native camera sender without creating a webview preview peer', async () => {
+  const invoke = vi.fn().mockResolvedValue({ sessionId: 'camera-session', fps: 30, bitrateMbps: 3 });
+  const unlisten = vi.fn();
+  const transport = new NativeScreenTransport({ localPeerId: 'self', send: vi.fn() }, [], false,
+    vi.fn(), vi.fn(), vi.fn(), vi.fn(), undefined, {
+      invoke, listen: vi.fn().mockResolvedValue(unlisten), externalPreview: true, closeReceiverOnFallback: true,
+    });
+  await transport.start({ sourceId: 'meta-camera', encoder: 'libx264', width: 720, height: 1280,
+    fps: 30, bitrateMbps: 3, cursor: false, h264Profile: 'baseline' }, []);
+  expect(transport.active).toBe(true);
+  expect(FakePeerConnection.instances).toHaveLength(0);
+  expect(mocks.invoke).not.toHaveBeenCalled();
+  await transport.stop();
+  expect(invoke).toHaveBeenCalledWith('native_screen_stop', { sessionId: 'camera-session' });
+  expect(unlisten).toHaveBeenCalledOnce();
+  expect(transport.active).toBe(false);
+});
+
+it('probes only participants whose client answers the capability query', async () => {
+  const send = vi.fn();
+  const transport = new NativeScreenTransport({ localPeerId: 'self', send }, [], false,
+    vi.fn(), vi.fn(), vi.fn(), vi.fn());
+  const probe = transport.probePeers(['new-client', 'old-client', 'self'], 50);
+  expect(send.mock.calls.map(([signal]) => signal.to)).toEqual(['new-client', 'old-client']);
+  const nonce = send.mock.calls[0][0].data.nonce;
+  await transport.handle({ type: 'signal', from: 'new-client', transport: 'native-screen', captureId: nonce,
+    data: { kind: 'native-screen-profile-reply', nonce, profiles: ['baseline'], runtime: 'browser' } } as never);
+  // The old client never replies; the probe still settles at its timeout.
+  await expect(probe).resolves.toEqual(new Set(['new-client']));
+});
+
+it('does not report a native camera interruption while video is arriving', async () => {
+  const onEnded = vi.fn();
+  const transport = new NativeScreenTransport({ localPeerId: 'self', send: vi.fn() }, [], false,
+    vi.fn(), vi.fn(), onEnded, vi.fn(), undefined, {
+      invoke: vi.fn(), listen: vi.fn(), externalPreview: true, closeReceiverOnFallback: true,
+    });
+  const receivers = (transport as unknown as { receivers: Map<string, unknown> }).receivers;
+  receivers.set('phone', { captureId: 'camera', fallbackRequested: false, badWindows: 0,
+    pc: { getStats: async () => new Map([['v', { type: 'inbound-rtp', kind: 'video', bytesReceived: 4096 }]]) } });
+  await (transport as unknown as { requestReceiverFallback(peer: string, capture: string, reason: string): Promise<void> })
+    .requestReceiverFallback('phone', 'camera', 'no-media-timeout');
+  expect(onEnded).not.toHaveBeenCalled();
 });

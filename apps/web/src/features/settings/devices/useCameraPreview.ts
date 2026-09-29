@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  cameraCaptureConstraints,
+  captureCameraWithFallback,
   readCameraSettings,
   requestedCameraLabel,
   writeCameraSettings,
   type CameraSettings,
 } from '@/media/cameraSettings';
 import { deviceError, ensureDesktopPermission } from './deviceHelpers';
+import { META_GLASSES_CAMERA_ID, reconnectMetaGlassesCamera, startMetaGlassesCamera } from '@/media/metaGlassesCamera';
 
 const actualLabel = (settings: MediaTrackSettings) =>
   settings.width && settings.height
@@ -34,16 +35,24 @@ export function useCameraPreview({
   const [capabilities, setCapabilities] = useState<MediaTrackCapabilities | null>(null);
   const [actual, setActual] = useState<MediaTrackSettings | null>(null);
   const [previewing, setPreviewing] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const pending = useRef<AbortController | null>(null);
   const video = useRef<HTMLVideoElement>(null);
   const stream = useRef<MediaStream | null>(null);
+  const nativeCleanup = useRef<(() => void) | null>(null);
   const request = useRef(0);
 
   const stop = useCallback(() => {
     request.current += 1;
+    pending.current?.abort();
+    pending.current = null;
+    nativeCleanup.current?.();
+    nativeCleanup.current = null;
     stream.current?.getTracks().forEach((track) => track.stop());
     stream.current = null;
     if (video.current) video.current.srcObject = null;
     setPreviewing(false);
+    setConnecting(false);
   }, []);
 
   useEffect(() => stop, [stop]);
@@ -58,23 +67,45 @@ export function useCameraPreview({
   const start = useCallback(
     async (settings: CameraSettings = quality) => {
       stop();
-      onStatus(`Starting ${requestedCameraLabel(settings)} preview…`);
+      onStatus(camera === META_GLASSES_CAMERA_ID
+        ? 'Connecting to Ray-Ban Meta glasses…'
+        : `Starting ${requestedCameraLabel(settings)} preview…`);
       const current = ++request.current;
+      const controller = new AbortController();
+      pending.current = controller;
+      setConnecting(true);
       const stale = () => !alive.current || current !== request.current;
       try {
-        await ensureDesktopPermission('camera');
-        if (stale()) return;
-        const media = await navigator.mediaDevices.getUserMedia({
-          video: cameraCaptureConstraints(camera, settings),
-          audio: false,
-        });
+        let media: MediaStream;
+        let cleanup: (() => void) | null = null;
+        if (camera === META_GLASSES_CAMERA_ID) {
+          const glasses = await startMetaGlassesCamera(controller.signal);
+          if (stale()) { glasses.dispose(); return; }
+          cleanup = glasses.dispose;
+          media = new MediaStream([glasses.track]);
+        } else {
+          await ensureDesktopPermission('camera');
+          if (stale()) return;
+          media = await captureCameraWithFallback(
+            (video) => navigator.mediaDevices.getUserMedia({ video, audio: false }),
+            camera,
+            settings,
+          );
+        }
         if (stale()) {
+          cleanup?.();
           media.getTracks().forEach((track) => track.stop());
           return;
         }
+        nativeCleanup.current = cleanup;
         stream.current = media;
         const track = media.getVideoTracks()[0];
         if (!track) throw new Error('The camera preview did not produce video.');
+        track.addEventListener('ended', () => {
+          if (stream.current !== media) return;
+          stop();
+          if (alive.current) onStatus('Camera preview stopped. Select it again to reconnect.');
+        }, { once: true });
         setActual(track.getSettings());
         setCapabilities(
           typeof track.getCapabilities === 'function' ? track.getCapabilities() : null,
@@ -84,18 +115,24 @@ export function useCameraPreview({
           await video.current.play();
         }
         if (stale()) {
+          cleanup?.();
           media.getTracks().forEach((track) => track.stop());
           return;
         }
         setPreviewing(true);
-        onStatus(
-          `Requested ${requestedCameraLabel(settings)}. Actual ${actualLabel(track.getSettings())}. Camera preview is local and is not being recorded.`,
-        );
+        onStatus(camera === META_GLASSES_CAMERA_ID
+          ? 'Ray-Ban Meta preview is local and is not being recorded.'
+          : `Requested ${requestedCameraLabel(settings)}. Actual ${actualLabel(track.getSettings())}. Camera preview is local and is not being recorded.`);
         await refresh();
       } catch (error) {
         if (current === request.current) {
           stop();
           if (alive.current) onStatus(deviceError(error, 'camera'));
+        }
+      } finally {
+        if (pending.current === controller) {
+          pending.current = null;
+          if (alive.current) setConnecting(false);
         }
       }
     },
@@ -103,7 +140,7 @@ export function useCameraPreview({
   );
 
   const toggle = async () => {
-    if (!previewing) return start();
+    if (!previewing && !pending.current) return start();
     stop();
     onStatus('Preview stopped.');
   };
@@ -116,5 +153,24 @@ export function useCameraPreview({
     if (previewing) void start(next);
   };
 
-  return { quality, updateQuality, capabilities, actual, previewing, video, toggle, forget };
+  const [reconnecting, setReconnecting] = useState(false);
+  const reconnect = async () => {
+    if (reconnecting) return;
+    stop();
+    setReconnecting(true);
+    const controller = new AbortController();
+    pending.current = controller;
+    onStatus('Reconnecting through Meta AI. Approve the new connection, then return here.');
+    try {
+      await reconnectMetaGlassesCamera(controller.signal);
+      if (alive.current) onStatus('Meta connection renewed. Try Preview camera.');
+    } catch (error) {
+      if (alive.current) onStatus(deviceError(error, 'camera'));
+    } finally {
+      if (pending.current === controller) pending.current = null;
+      if (alive.current) setReconnecting(false);
+    }
+  };
+
+  return { reconnect, reconnecting, quality, updateQuality, capabilities, actual, previewing, connecting, video, toggle, forget };
 }

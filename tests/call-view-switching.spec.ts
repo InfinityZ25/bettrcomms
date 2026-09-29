@@ -10,10 +10,10 @@ async function json<T>(response: APIResponse): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-async function login(context: BrowserContext) {
+async function login(context: BrowserContext, name = 'Views Ada') {
   const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const body = await json<User | { user: User }>(await context.request.post('/api/v1/auth/dev', {
-    headers: { Origin: origin }, data: { name: 'Views Ada', email: `views-${suffix}@example.test` },
+    headers: { Origin: origin }, data: { name, email: `views-${suffix}@example.test` },
   }));
   return 'user' in body ? body.user : body;
 }
@@ -120,5 +120,54 @@ test('browsing another room leaves the call in the room it started in', async ({
     await expect(page.getByRole('button', { name: 'Unmute microphone' })).toBeVisible();
   } finally {
     await context.close();
+  }
+});
+
+test('remote voice playback stays mounted while browsing Messages', async ({ browser }) => {
+  test.setTimeout(160_000);
+  const ownerContext = await browser.newContext({ baseURL });
+  const guestContext = await browser.newContext({ baseURL });
+  try {
+    const owner = await login(ownerContext);
+    const guest = await login(guestContext, 'Views Grace');
+    const request = await json<{ request: { id: string } }>(await ownerContext.request.post('/api/v1/friends/requests', {
+      headers: { Origin: origin }, data: { user_id: guest.id },
+    }));
+    await json(await guestContext.request.post(`/api/v1/friends/requests/${request.request.id}/accept`, {
+      headers: { Origin: origin }, data: {},
+    }));
+    const room = await createRoom(ownerContext, 'Voice navigation');
+    await json(await ownerContext.request.post(`/api/v1/rooms/${room.id}/members`, {
+      headers: { Origin: origin }, data: { user_id: guest.id },
+    }));
+    await json(await ownerContext.request.post('/api/v1/rooms/direct', {
+      headers: { Origin: origin }, data: { user_id: guest.id },
+    }));
+    const ownerPage = await ownerContext.newPage();
+    const guestPage = await guestContext.newPage();
+    await Promise.all([ownerPage.goto('/'), guestPage.goto('/')]);
+    await Promise.all([
+      ownerPage.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Calls' }).click(),
+      guestPage.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Calls' }).click(),
+    ]);
+    await Promise.all([
+      ownerPage.getByRole('button', { name: room.name }).click(),
+      guestPage.getByRole('button', { name: room.name }).click(),
+    ]);
+    await ownerPage.getByRole('button', { name: 'Join call' }).click();
+    await guestPage.getByRole('button', { name: 'Join call' }).click();
+
+    const remoteAudio = ownerPage.locator('audio[data-call-remote-audio]');
+    await expect(remoteAudio).toHaveCount(1);
+    const element = await remoteAudio.elementHandle();
+    await ownerPage.getByRole('navigation', { name: 'Sections' })
+      .getByRole('button', { name: 'Messages' }).click();
+    await ownerPage.getByRole('button', { name: 'Views Grace' }).click();
+    await expect(ownerPage.getByRole('region', { name: 'Conversation with Views Grace' })).toBeVisible();
+    await expect(remoteAudio).toHaveCount(1);
+    expect(await element?.evaluate((audio) => audio.isConnected)).toBe(true);
+    await expect(ownerPage.locator('[data-app-shell]')).toHaveAttribute('data-in-call', 'true');
+  } finally {
+    await Promise.allSettled([ownerContext.close(), guestContext.close()]);
   }
 });

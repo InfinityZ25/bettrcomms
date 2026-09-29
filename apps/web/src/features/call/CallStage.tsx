@@ -10,7 +10,6 @@ import CallToolbar, { RecordingFlag } from './CallToolbar';
 import ConnectionDetails from './ConnectionDetails';
 import StageArea from './StageArea';
 import { CameraTile, ScreenShareTile } from './CameraTile';
-import { RemoteAudio } from './PeerAudio';
 import { CopilotPanel } from './VisualCopilot';
 import { useCallLayout } from './useCallLayout';
 import { useActiveCall } from './CallSessionContext';
@@ -57,8 +56,8 @@ export default function CallStage({
   chatOpen?: boolean;
   /**
    * Take the stage off screen without unmounting it. Home occupies the same
-   * space when nothing is open, and this screen holds the audio elements a
-   * call plays through: hiding it is safe where unmounting it would not be.
+   * space when nothing is open. Voice playback lives above this screen in the
+   * call provider, so hiding the stage cannot silence an active conversation.
    */
   hidden?: boolean;
 }) {
@@ -121,6 +120,9 @@ export default function CallStage({
 
   const selection = useStageSelection(shares, availableStageItems);
   const { focusedStageItem, watchedScreens, watchedShareIds, focusedStageKey } = selection;
+  useEffect(() => {
+    call.setAudibleShareIds(watchedShareIds);
+  }, [watchedShareIds, call.setAudibleShareIds]);
   const gallery = useGalleryPreferences((value) => {
     if (value === 'all') selection.setFocusedStageKey(null);
   });
@@ -285,21 +287,6 @@ export default function CallStage({
             <span data-active={docking.target === 'right'}>Right</span>
           </div>
         )}
-        {remote
-          .filter(
-            (track) =>
-              track.track.kind === 'audio' &&
-              (track.source !== 'system' || watchedShareIds.includes(track.peerId)),
-          )
-          .map((track) => (
-            <RemoteAudio
-              key={track.peerId + track.source + track.track.id}
-              track={track.track}
-              peerId={track.peerId}
-              source={track.source}
-              balanced={balanced}
-            />
-          ))}
         {call.audioBlocked && (
           <Button variant="secondary" onClick={call.unblockAudio}>
             <Volume2 size={17} /> Enable call audio

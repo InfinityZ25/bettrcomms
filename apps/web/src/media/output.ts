@@ -1,9 +1,13 @@
+import { readDesktopBootReport } from '../desktop/runtime';
 import { createOutputGain } from './volumeSettings';
 
 /** Route only playback. Capture and recorded source tracks never pass through here. */
 export async function applyOutputDevice(
   target: HTMLMediaElement | AudioContext,
 ): Promise<void> {
+  // The native iPhone AVAudioSession owns speaker/Bluetooth routing. WebKit's
+  // sink selection can reject even the default sink when another track joins.
+  if (readDesktopBootReport()?.platform === 'ios') return;
   const deviceId = localStorage.getItem('bc-output') ?? '';
   const sink = target as unknown as {
     setSinkId?: (id: string) => Promise<void>;

@@ -12,6 +12,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { readStored } from '@/lib/storage';
+import { hasMetaGlassesCamera, META_GLASSES_CAMERA_ID } from '@/media/metaGlassesCamera';
 
 type Camera = { id: string; label: string };
 
@@ -106,6 +107,11 @@ export default function CameraSourceMenu({
               {camera.label}
             </DropdownMenuRadioItem>
           ))}
+          {hasMetaGlassesCamera() && (
+            <DropdownMenuRadioItem value={META_GLASSES_CAMERA_ID} disabled={switching}>
+              Ray-Ban Meta glasses
+            </DropdownMenuRadioItem>
+          )}
         </DropdownMenuRadioGroup>
         {status && <p className="px-3 py-2 text-xs text-muted-foreground" role="status">{status}</p>}
         {!status && cameras.length === 0 && (

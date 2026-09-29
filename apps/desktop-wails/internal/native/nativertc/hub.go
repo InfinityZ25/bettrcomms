@@ -181,6 +181,14 @@ func (h *Hub) PeerCount() int {
 	return len(h.peers)
 }
 
+// PeerConnected reports whether one viewer's connection has completed.
+func (h *Hub) PeerConnected(peerID string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	peer := h.peers[peerID]
+	return peer != nil && peer.connection.ConnectionState() == webrtc.PeerConnectionStateConnected
+}
+
 // TakeIDRRequest reports and clears a pending keyframe request.
 //
 // The encoder subprocess has no PLI channel, so a viewer's request is answered
@@ -190,11 +198,12 @@ func (h *Hub) TakeIDRRequest() bool { return h.idrRequested.Swap(false) }
 
 // Stats is what the capture has produced so far.
 type Stats struct {
-	AccessUnits   uint64 `json:"accessUnits"`
-	Keyframes     uint64 `json:"keyframes"`
-	EncodedBytes  uint64 `json:"encodedBytes"`
-	DroppedFrames uint64 `json:"droppedFrames"`
-	Peers         int    `json:"peers"`
+	AccessUnits    uint64 `json:"accessUnits"`
+	Keyframes      uint64 `json:"keyframes"`
+	EncodedBytes   uint64 `json:"encodedBytes"`
+	DroppedFrames  uint64 `json:"droppedFrames"`
+	Peers          int    `json:"peers"`
+	ConnectedPeers int    `json:"connectedPeers"`
 	// SPSProfileIDC and friends describe the stream the encoder actually
 	// produced, which is what proves it honoured the profile it was given.
 	SPSProfileIDC      string `json:"spsProfileIdc,omitempty"`
@@ -211,6 +220,13 @@ func (h *Hub) Stats() Stats {
 		DroppedFrames: h.droppedFrames.Load(),
 		Peers:         h.PeerCount(),
 	}
+	h.mu.Lock()
+	for _, peer := range h.peers {
+		if peer != nil && peer.connection.ConnectionState() == webrtc.PeerConnectionStateConnected {
+			stats.ConnectedPeers++
+		}
+	}
+	h.mu.Unlock()
 	h.setsMu.Lock()
 	descriptor, ok := h.parameterSets.spsDescriptor()
 	h.setsMu.Unlock()

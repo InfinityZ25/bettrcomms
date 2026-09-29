@@ -35,18 +35,19 @@ export default function FriendsDialog({
       onOpenChange={onOpenChange}
       title="Better with friends"
       description="Share your user ID with a friend so they can send you a request."
-      className="max-h-[calc(100dvh-2rem)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden"
+      className="friends-dialog max-h-[calc(100dvh-2rem)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden"
     >
       <div className="flex min-h-0 flex-col gap-5 overflow-y-auto overscroll-contain pr-1">
         {user ? (
           <>
-            <label className="block text-xs font-medium text-foreground/80">
+            <label className="block min-w-0 text-xs font-medium text-foreground/80">
               Your user ID
               <div className="mt-2 flex items-center gap-2">
-                <input className="text-xs" readOnly value={user.id} />
+                <input className="min-w-0 flex-1 text-xs" readOnly value={user.id} />
                 <Button
                   variant="secondary"
                   size="icon"
+                  className="shrink-0"
                   aria-label="Copy user ID"
                   onClick={() => {
                     void navigator.clipboard.writeText(user.id);
