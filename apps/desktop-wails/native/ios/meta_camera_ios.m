@@ -62,6 +62,8 @@ static void BCMetaEmit(NSDictionary *detail) {
 - (void)connect;
 - (void)continueStart;
 - (void)beginSessionWhenActive;
+- (void)waitUntilSessionReady:(MWDATDeviceSession *)session;
+- (void)session:(MWDATDeviceSession *)session finishedStartingWithError:(NSError *)error;
 - (void)requestCameraPermissionForSession:(MWDATDeviceSession *)session;
 - (void)beginCameraWhenActive:(MWDATDeviceSession *)session;
 - (void)addCameraToSession:(MWDATDeviceSession *)session;
@@ -269,35 +271,61 @@ static void BCMetaEmit(NSDictionary *detail) {
     self.session = session;
     NSLog(@"BetterComms Meta: device session created (selectedMatches=%d)",
           [session.deviceIdentifier isEqualToString:selectedDevice]);
-    [session startAndWaitUntilReadyWithCompletionHandler:^(NSError *startError) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            if (self.session != session) return;
-            if (startError) {
-                BOOL retryable = BCMetaSessionErrorCanRetry(startError,
-                    [NSBundle bundleForClass:[MWDATWearables class]]);
-                os_log_error(OS_LOG_DEFAULT,
-                    "BetterComms Meta: session startup failed domain=%{public}@ code=%ld retryable=%d attempt=%lu",
-                    startError.domain, (long)startError.code, retryable,
-                    (unsigned long)self.sessionCreateRetries + 1);
-                [session stop];
-                self.retiringSession = session;
-                self.session = nil;
-                if (retryable) {
-                    self.sessionCreateRetries++;
-                    self.nextSessionAttemptAt = CFAbsoluteTimeGetCurrent() + 3.0;
-                    self.startingSession = NO;
-                    [self waitForDevice];
-                } else {
-                    [self reportError:startError.localizedDescription ?: @"Meta could not open the glasses camera link."];
-                    [self stop];
-                }
-                return;
-            }
-            NSLog(@"BetterComms Meta: device session ready; checking camera permission");
-            self.deviceWaitStarted = 0;
-            [self requestCameraPermissionForSession:session];
-        });
-    }];
+    // Start directly so synchronous DAT errors retain their original domain
+    // instead of the ObjC helper replacing them with a generic stopped error.
+    NSError *startError = nil;
+    [session start:&startError];
+    if (startError) [self session:session finishedStartingWithError:startError];
+    else [self waitUntilSessionReady:session];
+}
+
+- (void)waitUntilSessionReady:(MWDATDeviceSession *)session {
+    if (!self.startPending || self.session != session) return;
+    if (session.state == MWDATDeviceSessionStateStarted) {
+        [self session:session finishedStartingWithError:nil];
+        return;
+    }
+    if (session.state == MWDATDeviceSessionStateStopped) {
+        NSError *error = [NSError errorWithDomain:@"MWDATDeviceSession" code:1
+            userInfo:@{NSLocalizedDescriptionKey: @"Device session stopped before becoming ready"}];
+        [self session:session finishedStartingWithError:error];
+        return;
+    }
+    if (CFAbsoluteTimeGetCurrent() - self.deviceWaitStarted >= 60) {
+        [self reportError:@"The glasses camera connection timed out. Please try again."];
+        [self stop];
+        return;
+    }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4),
+        dispatch_get_main_queue(), ^{ [self waitUntilSessionReady:session]; });
+}
+
+- (void)session:(MWDATDeviceSession *)session finishedStartingWithError:(NSError *)startError {
+    if (self.session != session) return;
+    if (startError) {
+        BOOL retryable = BCMetaSessionErrorCanRetry(startError,
+            [NSBundle bundleForClass:[MWDATWearables class]]);
+        os_log_error(OS_LOG_DEFAULT,
+            "BetterComms Meta: session startup failed domain=%{public}@ code=%ld retryable=%d attempt=%lu",
+            startError.domain, (long)startError.code, retryable,
+            (unsigned long)self.sessionCreateRetries + 1);
+        [session stop];
+        self.retiringSession = session;
+        self.session = nil;
+        if (retryable) {
+            self.sessionCreateRetries++;
+            self.nextSessionAttemptAt = CFAbsoluteTimeGetCurrent() + 3.0;
+            self.startingSession = NO;
+            [self waitForDevice];
+        } else {
+            [self reportError:startError.localizedDescription ?: @"Meta could not open the glasses camera link."];
+            [self stop];
+        }
+        return;
+    }
+    NSLog(@"BetterComms Meta: device session ready; checking camera permission");
+    self.deviceWaitStarted = 0;
+    [self requestCameraPermissionForSession:session];
 }
 
 - (void)requestCameraPermissionForSession:(MWDATDeviceSession *)session {

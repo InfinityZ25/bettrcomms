@@ -24,6 +24,8 @@ int main(void) {
             NSCAssert(BCMetaSessionErrorCanRetry(SessionError(message), bundle),
                       @"Transient session errors must retry in either language");
         }
+        NSCAssert(BCMetaSessionErrorCanRetry([NSError errorWithDomain:@"MWDATDeviceSession" code:1 userInfo:nil], bundle), @"Observed Objective-C readiness failure must retry");
+        NSCAssert(!BCMetaSessionErrorCanRetry([NSError errorWithDomain:@"MWDATDeviceSession" code:2 userInfo:nil], bundle), @"Unknown wrapper errors must not retry");
         bundle.messages = @{@"dat_error_session_device_disconnected": @"Device disconnected",
                             @"dat_error_session_ended_by_device": @"Session ended by device"};
         NSCAssert(BCMetaSessionErrorCanRetry(SessionError(@"Device disconnected"), bundle), @"Reconnect");
