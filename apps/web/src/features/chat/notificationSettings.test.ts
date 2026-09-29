@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api } from '@/api';
 import {
   notificationSnapshot,
+  notifyBrowser,
   setSystemNotifications,
   setDoNotDisturb,
   setRoomNotificationMode,
@@ -148,6 +149,18 @@ describe('notification preferences', () => {
     expect(saved.get('bettercomms:notification:user:alerts')).toBe('true');
     expect(desktop.authorise).toHaveBeenCalledOnce();
     expect(vi.mocked(api).mock.calls.some(([path]) => path === '/push/subscription')).toBe(false);
+  });
+
+  it('tags browser alerts by room so page and push alerts replace each other', async () => {
+    vi.stubGlobal('window', { Notification: true });
+    const notification = vi.fn(function () { return { close: vi.fn() }; });
+    Object.assign(notification, { permission: 'granted', requestPermission: vi.fn().mockResolvedValue('granted') });
+    vi.stubGlobal('Notification', notification);
+    vi.mocked(api).mockResolvedValue({ rooms: {} });
+    stop = startNotificationSession('user');
+    expect(await setSystemNotifications(true)).toBe(true);
+    notifyBrowser('Alice', 'Hello', () => {}, 'message:room-1');
+    expect(notification).toHaveBeenCalledWith('Alice', { body: 'Hello', tag: 'message:room-1' });
   });
 
   it('keeps desktop alerts off when macOS denies authorization', async () => {

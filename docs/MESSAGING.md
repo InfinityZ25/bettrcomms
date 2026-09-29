@@ -78,7 +78,8 @@ the browser also registers a per-device Web Push subscription so notifications
 can arrive after the tab closes. Push sends a generic message notice without
 message content and rechecks room access, mute/mentions, and Do Not Disturb
 before delivery. Web Push still displays when another account or sign-in tab is
-open, so a background tab may also show an in-page alert. The Wails app uses
+open; page and push alerts use the same per-room tag to avoid duplicate toasts.
+The Wails app uses
 Windows or macOS system notifications when
 desktop alerts are enabled. The app can optionally remain in the tray after its
 window closes, using its existing notification socket and native toasts. Quit

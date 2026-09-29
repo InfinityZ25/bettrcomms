@@ -165,8 +165,8 @@ export async function setSystemNotifications(enabled: boolean): Promise<boolean>
   }
   return true;
 }
-export function notifyBrowser(title: string, body: string, onClick: () => void) {
+export function notifyBrowser(title: string, body: string, onClick: () => void, tag?: string) {
   if (!state.alerts || !('Notification' in window) || Notification.permission !== 'granted') return;
-  const notification = new Notification(title, { body });
+  const notification = new Notification(title, { body, tag });
   notification.onclick = () => { window.focus(); onClick(); notification.close(); };
 }

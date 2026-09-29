@@ -20,6 +20,8 @@ export default function MessageAttachmentPreview({ attachment, roomId, onError, 
   const [failed, setFailed] = useState(false);
   const inflight = useRef(false);
   const expiresAt = useRef(0);
+  const refreshAttempted = useRef(false);
+  const resumeAt = useRef<number | null>(null);
 
   async function signedURL() {
     const result = await api<{ url: string }>(`/rooms/${roomId}/attachments/${attachment.id}?link=1&inline=1`);
@@ -29,18 +31,17 @@ export default function MessageAttachmentPreview({ attachment, roomId, onError, 
   }
   async function load(resume?: HTMLMediaElement) {
     if (inflight.current) return;
+    if (!resume) refreshAttempted.current = false;
     inflight.current = true;
     setLoading(true);
     setFailed(false);
     try {
       const fresh = await signedURL();
-      expiresAt.current = Date.now() + 4 * 60_000;
+      expiresAt.current = Date.now() + 4 * 60_000 + 50_000;
+      if (resume) resumeAt.current = resume.currentTime;
       setUrl(fresh);
-      if (resume) {
-        resume.src = fresh;
-        void resume.play().catch(() => {});
-      }
     } catch (error) {
+      resumeAt.current = null;
       if (resume) setUrl('');
       setFailed(true);
       onError(errorMessage(error));
@@ -50,13 +51,28 @@ export default function MessageAttachmentPreview({ attachment, roomId, onError, 
     }
   }
   function mediaError(media: HTMLMediaElement) {
-    if (Date.now() >= expiresAt.current) void load(media);
-    else { setUrl(''); setFailed(true); }
+    if (inflight.current) return;
+    if (Date.now() >= expiresAt.current && !refreshAttempted.current) {
+      refreshAttempted.current = true;
+      void load(media);
+    } else {
+      resumeAt.current = null;
+      setUrl('');
+      setFailed(true);
+    }
   }
   function mediaPlay(media: HTMLMediaElement) {
-    if (Date.now() < expiresAt.current) return;
+    if (Date.now() < expiresAt.current || refreshAttempted.current) return;
     media.pause();
+    refreshAttempted.current = true;
     void load(media);
+  }
+  function mediaLoaded(media: HTMLMediaElement) {
+    if (resumeAt.current === null) return;
+    const position = resumeAt.current;
+    resumeAt.current = null;
+    try { media.currentTime = position; } catch { /* Some streams do not support seeking. */ }
+    void media.play().catch(() => {});
   }
   useMountEffect(() => {
     if (kind !== 'image' || !container.current || !('IntersectionObserver' in window)) return;
@@ -83,8 +99,8 @@ export default function MessageAttachmentPreview({ attachment, roomId, onError, 
         </Button>
       )}
       {kind === 'image' && url && <img src={url} alt={attachment.filename} loading="lazy" className="mt-2 max-h-80 max-w-full rounded-md object-contain" onError={() => { setUrl(''); setFailed(true); }} />}
-      {kind === 'audio' && url && <audio src={url} controls preload="none" className="mt-2 max-w-full" onPlay={(event) => mediaPlay(event.currentTarget)} onError={(event) => mediaError(event.currentTarget)} />}
-      {kind === 'video' && url && <video src={url} controls preload="none" playsInline className="mt-2 max-h-80 max-w-full rounded-md" onPlay={(event) => mediaPlay(event.currentTarget)} onError={(event) => mediaError(event.currentTarget)} />}
+      {kind === 'audio' && url && <audio src={url} controls preload="none" className="mt-2 max-w-full" onPlay={(event) => mediaPlay(event.currentTarget)} onPlaying={() => { refreshAttempted.current = false; }} onLoadedMetadata={(event) => mediaLoaded(event.currentTarget)} onError={(event) => mediaError(event.currentTarget)} />}
+      {kind === 'video' && url && <video src={url} controls preload="none" playsInline className="mt-2 max-h-80 max-w-full rounded-md" onPlay={(event) => mediaPlay(event.currentTarget)} onPlaying={() => { refreshAttempted.current = false; }} onLoadedMetadata={(event) => mediaLoaded(event.currentTarget)} onError={(event) => mediaError(event.currentTarget)} />}
     </div>
   );
 }

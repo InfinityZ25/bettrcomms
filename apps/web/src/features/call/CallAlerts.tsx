@@ -136,7 +136,7 @@ export default function CallAlerts({
             : last.body,
         data: { roomId },
       }).then((sent) => {
-        if (!sent) notifyBrowser(last.author.name, group.length > 1 ? `${last.body}\n+${group.length - 1} more` : last.body, () => onOpenRoom(roomId));
+        if (!sent) notifyBrowser(last.author.name, group.length > 1 ? `${last.body}\n+${group.length - 1} more` : last.body, () => onOpenRoom(roomId), `message:${roomId}`);
       });
     }
   }, [messages, viewing?.id, user?.id, notifications, onOpenRoom]);
