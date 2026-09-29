@@ -90,7 +90,7 @@ const HEALTH_MIN_PACKETS = 100;
 const CONNECTION_TIMEOUT_MS = 20_000;
 const FIRST_MEDIA_TIMEOUT_MS = 5_000;
 
-type HealthSample = { lost: number; received: number; frozenMs: number };
+type HealthSample = { lost: number; received: number; frozenMs: number; progress: number };
 type Session = NativeScreenStartOptions & { sessionId: string };
 type Receiver = {
   captureId: string;
@@ -101,6 +101,7 @@ type Receiver = {
   healthTimer?: ReturnType<typeof setInterval>;
   health?: HealthSample;
   badWindows: number;
+  stalledWindows: number;
 };
 type ProfileMessage = {
   kind: 'native-screen-profile-query' | 'native-screen-profile-reply';
@@ -168,7 +169,7 @@ export class NativeScreenTransport {
       invoke: typeof invoke;
       listen: typeof onNativeCaptureEnded;
       externalPreview?: boolean;
-      disableFallback?: boolean;
+      closeReceiverOnFallback?: boolean;
     },
   ) {}
 
@@ -180,6 +181,10 @@ export class NativeScreenTransport {
 
   get sessionId() {
     return this.session?.sessionId;
+  }
+
+  hasOutboundPeer(peerId: string) {
+    return this.outboundPeers.has(peerId);
   }
 
   /** Peers whose client answered a capability query, i.e. can receive this transport. */
@@ -483,6 +488,7 @@ export class NativeScreenTransport {
         captureId: signal.captureId!,
         fallbackRequested: false,
         badWindows: 0,
+        stalledWindows: 0,
       });
       await pc.setRemoteDescription(
         this.allowedDescription(signal.description),
@@ -704,10 +710,17 @@ export class NativeScreenTransport {
       lost: Number(video.packetsLost) || 0,
       received: Number(video.packetsReceived) || 0,
       frozenMs: (Number(video.totalFreezesDuration) || 0) * 1_000,
+      // Prefer decoded frames: RTP bytes can keep arriving without usable video.
+      progress: typeof video.framesDecoded === 'number' ? video.framesDecoded : Number(video.bytesReceived) || 0,
     };
     const previous = receiver.health;
     receiver.health = sample;
     if (!previous) return;
+    receiver.stalledWindows = sample.progress > previous.progress ? 0 : receiver.stalledWindows + 1;
+    if (receiver.stalledWindows >= HEALTH_BAD_WINDOWS) {
+      await this.requestReceiverFallback(peerId, captureId, 'video-stalled');
+      return;
+    }
     const lost = Math.max(0, sample.lost - previous.lost);
     const received = Math.max(0, sample.received - previous.received);
     // A silent stream is the no-media timer's job, not this one's.
@@ -729,25 +742,28 @@ export class NativeScreenTransport {
       if (!report || this.receivers.get(peerId) !== receiver) return;
       const video = [...report.values()].find(row =>
         row.type === 'inbound-rtp' && (row.kind ?? row.mediaType) === 'video');
-      if ((Number(video?.bytesReceived) || 0) > 0 || (Number(video?.framesDecoded) || 0) > 0)
+      if ((typeof video?.framesDecoded === 'number' ? video.framesDecoded : Number(video?.bytesReceived) || 0) > 0)
         return;
-    }
-    if (this.driver?.disableFallback) {
-      receiver.fallbackRequested = true;
-      this.onEnded('Native camera video interrupted (' + reason + ').');
-      return;
     }
     receiver.fallbackRequested = true;
     globalThis.clearTimeout(receiver.fallbackTimer);
     globalThis.clearInterval(receiver.healthTimer);
     this.log(peerId, 'fallback-requested', reason);
-    await this.signaling.send({
-      type: 'signal',
-      to: peerId,
-      transport: 'native-screen',
-      captureId,
-      data: { kind: 'native-screen-fallback-request', captureId },
-    });
+    try {
+      await this.signaling.send({
+        type: 'signal',
+        to: peerId,
+        transport: 'native-screen',
+        captureId,
+        data: { kind: 'native-screen-fallback-request', captureId },
+      });
+    } catch {
+      this.log(peerId, 'fallback-signal-failed');
+    } finally {
+      // Camera fallback restores the ordinary call track, so release the failed
+      // receiver even if its connection still reports connected or signaling fails.
+      if (this.driver?.closeReceiverOnFallback) this.closeReceiver(peerId, captureId);
+    }
   }
 
   /** Stop sending to one participant and tell its receiver so it stops showing the stream. */

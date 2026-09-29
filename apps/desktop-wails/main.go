@@ -255,7 +255,7 @@ func authReturn(proxy *desktop.APIProxy) desktop.Capability {
 	}
 	stored := "The session is not persisted on this platform, so it ends with the process."
 	if proxy.PersistsSession() {
-		stored = "The session is kept in the operating system's credential store, encrypted under this Windows account, so it survives closing the application and is erased on sign-out."
+		stored = "The session is protected by the operating system's credential store, survives closing the application, and is erased on sign-out."
 	}
 	return desktop.Capability{
 		State: desktop.Experimental,

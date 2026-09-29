@@ -6,17 +6,18 @@ import type { MediaSignal, SignalingAdapter } from './types';
 /** Separate camera transport: never shares screen capture IDs, tracks, or stops. */
 export class NativeCameraTransport {
   private transport: NativeScreenTransport;
-  constructor(signaling: SignalingAdapter, iceServers: RTCIceServer[], directOnly: boolean,
+  private readonly onSignalingError = (event: Event) => {
+    const code = (event as CustomEvent<{ code?: string }>).detail?.code;
+    this.trace(`signaling-error ${code ?? 'unknown'}`);
+  };
+  constructor(private readonly signaling: SignalingAdapter, iceServers: RTCIceServer[], directOnly: boolean,
     onRemote: (peerId: string, track: MediaStreamTrack) => void,
     onRemoved: (peerId: string) => void, onError: (reason: string) => void) {
     // Signal types only: never SDP, candidates, or peer identifiers.
     this.trace = hasMetaGlassesCamera()
       ? (event) => void callIOSMetaSender('native_camera_trace', { event }).catch(() => undefined)
       : () => undefined;
-    (signaling as Partial<EventTarget>).addEventListener?.('error', (event) => {
-      const code = (event as CustomEvent<{ code?: string }>).detail?.code;
-      this.trace(`signaling-error ${code ?? 'unknown'}`);
-    });
+    (signaling as Partial<EventTarget>).addEventListener?.('error', this.onSignalingError);
     this.transport = new NativeScreenTransport({
       localPeerId: signaling.localPeerId,
       send: async (signal) => {
@@ -25,10 +26,13 @@ export class NativeCameraTransport {
         catch (error) { this.trace(`send-failed ${signal.type}`); throw error; }
       },
     }, iceServers, directOnly, () => {}, onRemote, onRemoved, onError,
-    async () => { onError('The native camera connection could not sustain video.'); }, {
+    async (peerId) => {
+      this.trace('peer-media-failed');
+      await this.transport.endOutboundPeer(peerId);
+    }, {
       invoke: callIOSMetaSender,
       externalPreview: true,
-      disableFallback: true,
+      closeReceiverOnFallback: true,
       listen: async (_listener) => {
         const handler = (event: Event) => {
           const detail = (event as CustomEvent<{kind: string; message?: string}>).detail;
@@ -65,7 +69,7 @@ export class NativeCameraTransport {
     const deadline = Date.now() + CONNECT_TIMEOUT_MS;
     while (Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 500));
-      if (this.transport.sessionId !== sessionId) return false;
+      if (this.transport.sessionId !== sessionId || !this.transport.hasOutboundPeer(peerId)) return false;
       const state = await callIOSMetaSender<{ connected?: boolean }>('native_screen_peer_connected',
         { sessionId, peerId }).catch(() => undefined);
       if (state?.connected) {
@@ -84,7 +88,9 @@ export class NativeCameraTransport {
     let misses = 0;
     while (sessionId && this.transport.sessionId === sessionId) {
       await new Promise((resolve) => setTimeout(resolve, 2_000));
-      if (this.transport.sessionId !== sessionId) return;
+      // Receiver-reported media failure removes the native peer immediately,
+      // even if ICE was still connected. Let the engine restore its call camera.
+      if (this.transport.sessionId !== sessionId || !this.transport.hasOutboundPeer(peerId)) return;
       const state = await callIOSMetaSender<{ connected?: boolean }>('native_screen_peer_connected',
         { sessionId, peerId }).catch(() => undefined);
       misses = state?.connected ? 0 : misses + 1;
@@ -103,7 +109,10 @@ export class NativeCameraTransport {
   }
   removePeer(id: string) { return this.transport.removePeer(id); }
   stop() { return this.transport.stop(); }
-  dispose() { this.transport.dispose(); }
+  dispose() {
+    (this.signaling as Partial<EventTarget>).removeEventListener?.('error', this.onSignalingError);
+    this.transport.dispose();
+  }
   getDiagnostics() { return this.transport.getDiagnostics(); }
 }
 

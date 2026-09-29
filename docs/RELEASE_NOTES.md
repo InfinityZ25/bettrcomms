@@ -130,3 +130,12 @@ example desktop apps packaged before this change — therefore keep the
 lower-quality ordinary camera instead of showing no video. Receivers no longer
 report a native camera interruption while video is arriving. Background and
 locked-phone glasses video are still unverified.
+
+Native camera receivers now also request fallback when no video can be decoded,
+decoded frames stop advancing, or sustained loss prevents usable playback while
+the connection remains connected. The sender restores that viewer's ordinary
+camera, and the failed receiver releases its connection and watchdog timers.
+Disposing the camera transport removes its signaling error listener. The iOS
+package no longer declares the unused background-processing mode, and session
+persistence guidance now describes the operating-system credential store
+without incorrectly naming a Windows account on Apple platforms.

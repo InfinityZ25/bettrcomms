@@ -71,8 +71,8 @@ async function join(page: Page, roomId: string, legacyReceiver = false) {
   }, { roomId, legacyReceiver });
 }
 
-async function startGlasses(page: Page) {
-  await page.evaluate(async () => {
+async function startGlasses(page: Page, silentNative = false) {
+  await page.evaluate(async (silentNative) => {
     const canvas = document.createElement('canvas');
     canvas.width = 720;
     canvas.height = 1280;
@@ -87,7 +87,8 @@ async function startGlasses(page: Page) {
         if (command === 'native_screen_peer_offer') {
           const pc = new RTCPeerConnection();
           connections.set(args.peerId, pc);
-          pc.addTrack(source);
+          if (silentNative) pc.addTransceiver('video', { direction: 'sendonly' });
+          else pc.addTrack(source);
           await pc.setLocalDescription(await pc.createOffer());
           await new Promise<void>(resolve => {
             if (pc.iceGatheringState === 'complete') resolve();
@@ -98,6 +99,7 @@ async function startGlasses(page: Page) {
         if (command === 'native_screen_peer_answer') await connections.get(args.peerId)?.setRemoteDescription(args.description!);
         if (command === 'native_screen_peer_candidate' && args.candidate) await connections.get(args.peerId)?.addIceCandidate(args.candidate);
         if (command === 'native_screen_peer_connected') return { connected: connections.get(args.peerId)?.connectionState === 'connected' };
+        if (command === 'native_screen_peer_remove') connections.get(args.peerId)?.close();
         return null;
       },
     });
@@ -105,7 +107,7 @@ async function startGlasses(page: Page) {
     track.__meta = true;
     type Engine = { setLocalTrack(source: string, track: MediaStreamTrack): Promise<void> };
     await (window as unknown as { __engine: Engine }).__engine.setLocalTrack('camera', track);
-  });
+  }, silentNative);
 }
 
 type Internals = { peers: Map<string, { senders: Map<string, unknown> }>; nativeCameraRemote: Map<string, unknown>;
@@ -165,3 +167,51 @@ test('glasses video upgrades to the native stream and falls back when it drops',
     await friend.close();
   }
 });
+
+for (const failure of ['never sends frames', 'stops sending frames'] as const) {
+  test(`glasses video falls back when a connected native sender ${failure}`, async ({ browser }) => {
+    test.setTimeout(60_000);
+    const phone = await browser.newContext({ baseURL });
+    const friend = await browser.newContext({ baseURL });
+    try {
+      const roomId = await sharedRoom(phone, friend);
+      const phonePage = await phone.newPage();
+      await fakeNativeSender(phonePage);
+      const friendPage = await friend.newPage();
+      await join(phonePage, roomId);
+      await join(friendPage, roomId);
+      await expect.poll(() => phonePage.evaluate(() =>
+        (window as unknown as { __engine: Internals }).__engine.peers.size)).toBe(1);
+      await startGlasses(phonePage, failure === 'never sends frames');
+      await expect.poll(() => phoneSendsCallCamera(phonePage)).toEqual([false]);
+      if (failure === 'stops sending frames') {
+        await expect.poll(() => friendCamera(friendPage)).toEqual({ native: 1, cameras: 1 });
+        // Stop only media, keeping ICE/DTLS connected. The receiver must report
+        // the stall instead of waiting for the sender's connection-state poll.
+        const states = await phonePage.evaluate(async () => {
+          const connections = (window as unknown as { __nativeConnections: Map<string, RTCPeerConnection> }).__nativeConnections;
+          for (const pc of connections.values())
+            await Promise.all(pc.getSenders().map(sender => sender.replaceTrack(null)));
+          return [...connections.values()].map(pc => pc.connectionState);
+        });
+        expect(states).toEqual(['connected']);
+      }
+      await expect.poll(() => phoneSendsCallCamera(phonePage), { timeout: 20_000 }).toEqual([true]);
+      await expect.poll(() => friendCamera(friendPage)).toEqual({ native: 0, cameras: 1 });
+      const decoded = () => friendPage.evaluate(async () => {
+        const engine = (window as unknown as { __engine: { peers: Map<string, { pc: RTCPeerConnection }> } }).__engine;
+        let frames = 0;
+        for (const peer of engine.peers.values()) {
+          const stats = await peer.pc.getStats();
+          stats.forEach(row => { if (row.type === 'inbound-rtp' && row.kind === 'video') frames += row.framesDecoded ?? 0; });
+        }
+        return frames;
+      });
+      const baseline = await decoded();
+      await expect.poll(decoded).toBeGreaterThan(baseline);
+    } finally {
+      await phone.close();
+      await friend.close();
+    }
+  });
+}

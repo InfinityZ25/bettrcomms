@@ -12,13 +12,23 @@ Changing the UI or navigating to Messages must not release an active call.
 | Microphone and camera | `getUserMedia` | Native device capture and audio session, with independently switchable tracks | iPhone audio session is native, but microphone and phone camera tracks still originate in WebKit. |
 | Incoming call audio | Browser media playback | Native audio session and a persistent playback owner | iPhone uses media elements under a native audio session; call playback stays mounted across in-app navigation. Background audibility has been tested on one iPhone. |
 | Screen and optional system audio | `getDisplayMedia` where supported | Native capture and encoding, independent of webview visibility | Windows has a native capture/transport path. macOS uses webview capture. iPhone ReplayKit captures only the foreground BetterComms screen, then sends JPEG frames through the webview; it stops on background. |
-| Meta glasses camera | Unavailable unless the browser exposes a standard camera | Meta DAT session and media transport on iPhone | DAT camera capture is native, but frames cross JavaScript/canvas before WebRTC publishing. Repeatable physical-device streaming is not yet established. |
+| Meta glasses camera | Unavailable unless the browser exposes a standard camera | Meta DAT session and media transport on iPhone | DAT captures natively; VideoToolbox H.264 and the native WebRTC hub send call video to capable clients. JPEG/canvas provides local preview and the ordinary call fallback. Gen 2 streaming has been exercised, but repeatability and remote native-stream quality remain acceptance work. |
 | Call signaling | Authorized WebSocket and WebRTC negotiation | Same authenticated room signaling; native sender must use scoped credentials and release them on leave | Ordinary media peer connections still live in the webview on iPhone. |
 
-The current iPhone bridges turn native frames into `canvas.captureStream()`
-tracks. That is useful for an in-app preview, but it cannot promise video or
-screen sharing after iOS suspends WKWebView. Adding a background mode alone
-does not move capture, encoding, or sending out of the webview.
+The iPhone glasses call path now encodes and sends outside WKWebView. Each
+participant starts with the ordinary canvas camera and upgrades only after
+answering the native capability query and completing a separate native-camera
+connection. Failed connections, missing or stalled decoded frames, and
+sustained loss restore that participant's ordinary camera. Receiver failures
+release their native connection and watchdogs. Local preview and fallback
+still use bounded JPEG delivery and `canvas.captureStream()`, and the ReplayKit
+in-app screen source also publishes through a canvas. These webview paths
+cannot promise media after iOS suspends WKWebView.
+
+Glasses capture and sending stay native during an active call, but background
+and locked-phone video remain unverified. Room signaling, capability negotiation,
+and fallback decisions still run in the webview. Adding a background mode alone
+does not establish continued delivery or recovery during suspension.
 
 The next iPhone screen-sharing implementation needs a ReplayKit Broadcast
 Upload Extension for other apps and the system broadcast indicator. Its sample
@@ -31,8 +41,8 @@ app must stop the broadcast and release buffers, encoders, sockets, tracks,
 and any system-audio capture together. The in-app ReplayKit source should stay
 labeled as BetterComms-only until this path is accepted on a physical phone.
 
-The same native sender boundary should carry phone camera and Meta DAT frames
-if background video is supported by the OS and SDK. The interface exposed to
+The native sender boundary already carries Meta DAT call frames and should
+also carry phone camera frames if background video is supported by the OS and SDK. The interface exposed to
 React should be commands and state (`start`, `stop`, source, permission,
 failure), never per-frame base64 media. Keep each participant's microphone,
 camera, screen, and system audio independent, including recording tracks and

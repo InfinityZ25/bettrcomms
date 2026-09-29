@@ -35,13 +35,23 @@ The experimental Ray-Ban Meta camera path uses Meta Wearables Device Access
 Toolkit 1.0.0 in the iOS host. It is available in the in-call camera picker and
 camera settings preview on this native build only. Pair Gen 1 or Gen 2 glasses
 in the Meta AI app and enable Developer Mode there; the first selection may redirect to Meta AI for
-registration or glasses-camera consent. The native host sends bounded JPEG
-frames to the packaged page, which publishes them as a canvas camera track.
-This is a foreground-only proof of the media bridge. It needs physical glasses
-acceptance for registration, permission callback, WebKit canvas publication,
-remote viewing, switching, and teardown before calling it working. The app
-does not claim background glasses video, because DAT raw frames and WKWebView
-publishing stop when the iPhone backgrounds.
+registration or glasses-camera consent. DAT capture feeds VideoToolbox H.264
+encoding and a native WebRTC sender, targeting 720×1280 at 30 fps. Local preview
+and the ordinary call camera use bounded JPEG frames and a WebKit canvas track.
+Every participant initially receives that ordinary camera; clients that answer
+the native capability query upgrade once their native connection completes.
+Missing or stalled decoded video, sustained loss, or a dropped connection restore
+the ordinary camera and release the failed native receiver. Older desktop builds
+keep the ordinary camera without needing the native receiver.
+
+Physical Gen 2 preview and call streaming have been exercised, and phone encoder
+logs measured approximately 30 fps at 720×1280. End-to-end native-stream frame
+rate and quality still require measurement with a second physical participant;
+Gen 1, repeated reconnection, app switching, and teardown remain acceptance work.
+Standalone preview stops on background. An active native sender retains the DAT
+session when the app backgrounds, but background and locked-phone glasses video
+are unverified; negotiation and fallback still depend on the webview. See
+[media ownership](NATIVE_MEDIA_BOUNDARY.md) for those boundaries.
 
 During an iPhone call, the host also activates a native play-and-record audio
 session with iOS's audio background mode, then deactivates it on leave, error,
