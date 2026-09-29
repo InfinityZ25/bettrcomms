@@ -1,3 +1,5 @@
+import { NativeCameraTransport } from './nativeCamera';
+import { isMetaGlassesTrack } from './metaGlassesCamera';
 import { AudioLeveler, type AudioLevelerOptions } from './audio';
 import { VisualCopilot } from './visualCopilot';
 import { VoiceRelay } from './voiceRelay';
@@ -86,6 +88,8 @@ export class MediaEngine extends EventTarget {
   private readonly nativeRemote = new Map<string, RemoteTrack>();
   private readonly signalQueues = new Map<string, Promise<void>>();
   private readonly nativeScreen: NativeScreenTransport;
+  private readonly nativeCamera: NativeCameraTransport;
+  private readonly nativeCameraRemote = new Map<string, RemoteTrack>();
   private nativeAudio?: NativeSystemAudioTrack;
   private nativeAudioAbort?: AbortController;
   private nativeShareGeneration = 0;
@@ -131,6 +135,14 @@ export class MediaEngine extends EventTarget {
         },
       });
     }
+    this.nativeCamera = new NativeCameraTransport(this.signaling, this.ice.iceServers ?? [],
+      this.ice.mode === 'direct-only', (peerId, track) => {
+        const remote = { peerId, source: 'camera' as const, track, stream: new MediaStream([track]) };
+        this.nativeCameraRemote.set(peerId, remote);
+        this.emit('remote-track', remote);
+      }, (peerId) => {
+        if (this.nativeCameraRemote.delete(peerId)) this.emit('remote-track-removed', { peerId, source: 'camera' });
+      }, reason => this.emit('error', { operation: 'native-camera', error: new Error(reason) }));
     this.nativeScreen = new NativeScreenTransport(
       this.signaling,
       this.ice.iceServers ?? [],
@@ -535,10 +547,24 @@ export class MediaEngine extends EventTarget {
       track.enabled = this.microphoneEnabled ?? previous?.enabled ?? track.enabled;
       this.pendingMicrophones.add(track);
     }
+    const nativeCamera = source === 'camera' && isMetaGlassesTrack(track);
     try {
+      if (source === 'camera') {
+        await this.nativeCamera.stop();
+        if (nativeCamera) await this.nativeCamera.start([...this.peers.keys()]);
+      }
       await Promise.all(
         [...this.peers.values()].map(async (peer) => {
           const sender = peer.senders.get(source);
+          if (nativeCamera) {
+            if (sender) {
+              await sender.replaceTrack(null);
+              peer.pc.removeTrack(sender);
+              peer.senders.delete(source);
+              peer.streams.delete(source);
+            }
+            return;
+          }
           if (sender) {
             await sender.replaceTrack(track);
             if (!track) {
@@ -557,6 +583,7 @@ export class MediaEngine extends EventTarget {
       );
       this.ensureActive();
     } catch (error) {
+      if (nativeCamera) await this.nativeCamera.stop();
       if (track) this.pendingMicrophones.delete(track);
       if (this.disposed) track?.stop();
       cleanup?.();
@@ -616,10 +643,12 @@ export class MediaEngine extends EventTarget {
       ? ([this.peers.get(peerId)].filter(Boolean) as Peer[])
       : [...this.peers.values()];
     return peers.flatMap((peer) => [...peer.remote.values()].filter(
-      (track) => track.source !== 'microphone' || !this.relayTracks.has(track.peerId),
+      (track) => (track.source !== 'microphone' || !this.relayTracks.has(track.peerId)) &&
+        (track.source !== 'camera' || !this.nativeCameraRemote.has(track.peerId)),
     )).concat(
       [...this.nativeRemote.values()].filter((track) =>
         (!peerId || track.peerId === peerId) && !this.peers.get(track.peerId)?.remote.has('screen')),
+      [...this.nativeCameraRemote.values()].filter((track) => !peerId || track.peerId === peerId),
       [...this.relayTracks.values()].filter((track) => !peerId || track.peerId === peerId),
     );
   }
@@ -653,6 +682,7 @@ export class MediaEngine extends EventTarget {
     this.copilot.attach(peerId, pc);
     for (const [source, track] of this.localTracks) {
       if (source === 'screen' && this.nativeScreen.active) continue;
+      if (source === 'camera' && this.nativeCamera.active) continue;
       const stream = new MediaStream([track]);
       peer.streams.set(source, stream);
       const sender = pc.addTrack(track, stream);
@@ -689,6 +719,7 @@ export class MediaEngine extends EventTarget {
     };
     this.updateVoiceRoute(peerId);
     if (this.nativeScreen.active) void this.nativeScreen.addPeer(peerId);
+    if (this.nativeCamera.active) void this.nativeCamera.addPeer(peerId).catch(error => this.emit('error', { operation: 'native-camera-peer', error }));
     // Do not depend solely on negotiationneeded for the first offer. Some
     // WebRTC implementations can coalesce that event while both callers join.
     if (!peer.polite)
@@ -709,6 +740,7 @@ export class MediaEngine extends EventTarget {
     this.directReady.delete(peerId);
     this.directProbe.delete(peerId);
     void this.nativeScreen.removePeer(peerId);
+    void this.nativeCamera.removePeer(peerId);
     const peer = this.peers.get(peerId);
     if (!peer) return;
     peer.pc.close();
@@ -720,12 +752,24 @@ export class MediaEngine extends EventTarget {
       this.emit('remote-track-removed', { peerId, source });
   }
 
+  async getCameraDiagnostics() { return this.nativeCamera.getDiagnostics(); }
+
   async getScreenDiagnostics() { return this.nativeScreen.getDiagnostics(); }
 
   async handleSignal(signal: MediaSignal): Promise<void> {
     this.ensureActive();
     // Keep ordinary WebRTC signaling on its original synchronous path. An
     // unconditional await here lets a later candidate overtake its offer.
+    if ('transport' in signal && signal.transport === 'native-camera') {
+      if (!signal.from || !this.peers.has(signal.from)) return;
+      const key = `camera:${signal.from}:${signal.captureId}`;
+      const pending = (this.signalQueues.get(key) ?? Promise.resolve()).catch(() => undefined).then(() => {
+        if (!this.disposed) return this.nativeCamera.handle(signal);
+      }).then(() => undefined);
+      this.signalQueues.set(key, pending);
+      try { await pending; } finally { if (this.signalQueues.get(key) === pending) this.signalQueues.delete(key); }
+      return;
+    }
     if ('transport' in signal && signal.transport === 'native-screen') {
       const key = `native:${signal.from}:${signal.captureId}`;
       const previous = this.signalQueues.get(key) ?? Promise.resolve();
@@ -1028,6 +1072,7 @@ export class MediaEngine extends EventTarget {
     ++this.nativeShareGeneration;
     void this.stopNativeSystemAudio();
     this.nativeScreen.dispose();
+    this.nativeCamera.dispose();
     for (const peerId of [...this.peers.keys()]) this.removePeer(peerId);
     for (const track of this.localTracks.values()) track.stop();
     for (const cleanup of this.trackCleanup.values()) cleanup();

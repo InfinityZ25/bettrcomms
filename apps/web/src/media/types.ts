@@ -14,7 +14,7 @@ export type SessionDescriptionSignal = {
   to: string;
   from?: string;
   description: RTCSessionDescriptionInit;
-  transport?: 'native-screen';
+  transport?: 'native-screen' | 'native-camera';
   captureId?: string;
 };
 
@@ -23,7 +23,7 @@ export type IceCandidateSignal = {
   to: string;
   from?: string;
   candidate: RTCIceCandidateInit | null;
-  transport?: 'native-screen';
+  transport?: 'native-screen' | 'native-camera';
   captureId?: string;
 };
 
@@ -47,6 +47,7 @@ export type MediaSignal =
   | SessionDescriptionSignal
   | IceCandidateSignal
   | TrackMetadataSignal
+  | (Omit<NativeScreenControlSignal, 'transport'> & { transport: 'native-camera' })
   | NativeScreenControlSignal
   | VoiceRelaySignal;
 

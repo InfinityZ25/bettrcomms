@@ -714,3 +714,21 @@ it('bounds retained diagnostics and replaces peer identifiers with local aliases
   expect(report.events.every(event => event.peer === 1 && event.event === 'signal-failed')).toBe(true);
   expect(JSON.stringify(report)).not.toMatch(/private-peer|private-capture|private-sdp|example.test/);
 });
+
+it('uses an injected native camera sender without creating a webview preview peer', async () => {
+  const invoke = vi.fn().mockResolvedValue({ sessionId: 'camera-session', fps: 30, bitrateMbps: 3 });
+  const unlisten = vi.fn();
+  const transport = new NativeScreenTransport({ localPeerId: 'self', send: vi.fn() }, [], false,
+    vi.fn(), vi.fn(), vi.fn(), vi.fn(), undefined, {
+      invoke, listen: vi.fn().mockResolvedValue(unlisten), externalPreview: true, disableFallback: true,
+    });
+  await transport.start({ sourceId: 'meta-camera', encoder: 'libx264', width: 720, height: 1280,
+    fps: 30, bitrateMbps: 3, cursor: false, h264Profile: 'baseline' }, []);
+  expect(transport.active).toBe(true);
+  expect(FakePeerConnection.instances).toHaveLength(0);
+  expect(mocks.invoke).not.toHaveBeenCalled();
+  await transport.stop();
+  expect(invoke).toHaveBeenCalledWith('native_screen_stop', { sessionId: 'camera-session' });
+  expect(unlisten).toHaveBeenCalledOnce();
+  expect(transport.active).toBe(false);
+});

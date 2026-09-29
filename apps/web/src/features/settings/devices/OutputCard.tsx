@@ -1,3 +1,4 @@
+import { readDesktopBootReport } from '@/desktop/runtime';
 import { useState } from 'react';
 import { LinkButton } from '@/components/ui/link-button';
 import { readOutputVolume, setOutputVolume } from '@/media/volumeSettings';
@@ -23,15 +24,15 @@ export default function OutputCard({
   status: string;
   onTest: () => void;
 }) {
+  const nativeIOS = readDesktopBootReport()?.platform === 'ios';
   const [volume, setVolume] = useState(readOutputVolume);
   return (
     <DeviceCard>
-      <DeviceSelect
-        label="Output device"
-        value={value}
-        options={options}
-        onChange={onChange}
-      />
+      {nativeIOS ? (
+        <p className="text-sm text-muted-foreground">Choose your speaker or Bluetooth headset in iPhone Control Center. BetterComms follows the system audio output.</p>
+      ) : (
+        <DeviceSelect label="Output device" value={value} options={options} onChange={onChange} />
+      )}
       <VolumeSlider
         label="Output volume"
         value={volume}
