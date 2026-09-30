@@ -1,4 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
+import { swipe } from './mobile-touch';
 import { expect, test, type BrowserContext } from '@playwright/test';
 
 const baseURL = process.env.E2E_BASE_URL ?? 'http://127.0.0.1:5173';
@@ -168,6 +169,19 @@ test('mobile conversation navigation, actions and keyboard preserve usable scree
       .getByRole('button', { name: 'Back to messages', exact: true })
       .click();
     const list = page.getByRole('main', { name: 'Messages', exact: true });
+    await expect(list).toBeVisible();
+    await list
+      .getByRole('button', { name: 'Phone Friend', exact: true })
+      .click();
+    await expect(composer).toHaveValue('Keep this draft when I go back');
+    await swipe(page, [8, safeTop + 90], [150, safeTop + 95]);
+    await expect(list).toBeVisible();
+    await swipe(page, [398, safeTop + 90], [255, safeTop + 95]);
+    await expect(conversation).toBeVisible();
+    await expect(composer).toHaveValue('Keep this draft when I go back');
+    await conversation
+      .getByRole('button', { name: 'Back to messages', exact: true })
+      .click();
     await expect(list).toBeVisible();
     expect(
       (
