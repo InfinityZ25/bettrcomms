@@ -15,6 +15,8 @@ Viewer PLI/FIR requests and queue overflow now request a fresh encoder frame
 without restarting the glasses session. Recovery requests are coalesced to
 at most one per half second. Each viewer's queue stays bounded; overflow
 requests recovery without treating deliberate keyframe pacing as stale video.
+A queue delayed over 250 ms for two seconds requests an IDR, keeps sending its
+existing reference chain, then replaces the backlog when the fresh IDR arrives.
 Rejected encoder bitrate updates retain the running camera session and retry
 after a cooldown instead of stopping capture.
 These controls run from native camera frames, independently of web timers.

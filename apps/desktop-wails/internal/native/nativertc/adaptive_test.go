@@ -80,6 +80,46 @@ func TestHealthyViewerReportsDoNotReplayAnotherViewersLoss(t *testing.T) {
 		t.Fatalf("new loss report did not back off: %d", got)
 	}
 }
+
+func TestQueueLagRequiresSustainedDelay(t *testing.T) {
+	var lag queueLag
+	now := time.Unix(100, 0)
+	if lag.sustained(400*time.Millisecond, now) || lag.sustained(300*time.Millisecond, now.Add(time.Second)) {
+		t.Fatal("brief keyframe pacing requested recovery")
+	}
+	if lag.sustained(100*time.Millisecond, now.Add(1500*time.Millisecond)) {
+		t.Fatal("caught-up queue requested recovery")
+	}
+	if lag.sustained(400*time.Millisecond, now.Add(2*time.Second)) {
+		t.Fatal("old lag history was retained")
+	}
+	if !lag.sustained(400*time.Millisecond, now.Add(4*time.Second)) {
+		t.Fatal("persistent lag did not request recovery")
+	}
+}
+
+func TestQueueRecoveryKeepsDeltasUntilReplacementKeyframe(t *testing.T) {
+	h := &Hub{adaptive: newBitrateController(1_000_000, 3_000_000, 8_000_000)}
+	p := &peer{frames: make(chan *encodedFrame, peerQueueFrames)}
+	p.catchUp.Store(true)
+	delta := &encodedFrame{rtpTime: 100}
+	h.enqueueFrame(p, delta)
+	if p.droppedFrames.Load() != 0 || len(p.frames) != 1 || !p.catchUp.Load() {
+		t.Fatal("recovery froze the stream before a replacement keyframe")
+	}
+	idr := &encodedFrame{rtpTime: 200, keyframe: true}
+	h.enqueueFrame(p, idr)
+	if p.catchUp.Load() || !p.resync.Load() || p.droppedFrames.Load() != 1 || h.droppedFrames.Load() != 1 {
+		t.Fatal("queued reference chain was not replaced")
+	}
+	if len(p.frames) != 1 || <-p.frames != idr {
+		t.Fatal("recovery did not jump to the fresh keyframe")
+	}
+	h.enqueueFrame(p, delta)
+	if len(p.frames) != 1 || <-p.frames != delta {
+		t.Fatal("post-recovery deltas were lost")
+	}
+}
 func TestAdaptiveRateUsesTheMostConstrainedViewerAndRemovesIt(t *testing.T) {
 	c := newBitrateController(1_000_000, 3_000_000, 8_000_000)
 	c.add("fast")

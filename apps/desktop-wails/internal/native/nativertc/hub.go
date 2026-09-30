@@ -57,8 +57,9 @@ type encodedFrame struct {
 	data []byte
 	// rtpTime is session-relative 90 kHz capture time, wrapping exactly like
 	// an RTP timestamp.
-	rtpTime  uint32
-	keyframe bool
+	rtpTime   uint32
+	keyframe  bool
+	arrivedAt time.Time
 }
 
 // peerSignaling tracks the answer/candidate handshake for one viewer.
@@ -71,6 +72,8 @@ type peerSignaling struct {
 type peer struct {
 	connection *webrtc.PeerConnection
 	frames     chan *encodedFrame
+	queueMu    sync.Mutex
+	catchUp    atomic.Bool
 	// resync is set when this viewer's queue overflowed, so its writer restarts
 	// cleanly at the next keyframe rather than emitting frames whose references
 	// were dropped.
@@ -461,6 +464,7 @@ func (h *Hub) writeFrames(ctx context.Context, attached *peer, track *webrtc.Tra
 	)
 	paced := newPacer(h.pacingRate(time.Now()))
 	var waitingForKeyframe bool
+	var lag queueLag
 
 	for {
 		select {
@@ -473,6 +477,11 @@ func (h *Hub) writeFrames(ctx context.Context, attached *peer, track *webrtc.Tra
 			// The bounded queue detects backlog by overflow. A wall-clock age
 			// cutoff would mistake our own deliberate keyframe pacing for
 			// congestion and discard the following reference chain.
+			now := time.Now()
+			if h.adaptive != nil && lag.sustained(now.Sub(frame.arrivedAt), now) && attached.catchUp.CompareAndSwap(false, true) {
+				h.adaptive.congested(now)
+				h.idrRequested.Store(true)
+			}
 			paced.setRate(h.pacingRate(time.Now()))
 			// After an overflow the reference chain is broken. Resume at the
 			// next keyframe rather than sending frames whose references were
@@ -652,7 +661,7 @@ func (h *Hub) WriteAccessUnit(annexB []byte, arrivedAt time.Time) error {
 		h.keyframes.Add(1)
 	}
 
-	frame := &encodedFrame{data: prepared, rtpTime: rtpTime, keyframe: keyframe}
+	frame := &encodedFrame{data: prepared, rtpTime: rtpTime, keyframe: keyframe, arrivedAt: arrivedAt}
 
 	h.mu.Lock()
 	targets := make([]*peer, 0, len(h.peers))
@@ -664,17 +673,40 @@ func (h *Hub) WriteAccessUnit(annexB []byte, arrivedAt time.Time) error {
 	h.mu.Unlock()
 
 	for _, target := range targets {
-		select {
-		case target.frames <- frame:
-		default:
-			target.droppedFrames.Add(1)
-			h.droppedFrames.Add(1)
-			target.resync.Store(true)
-			if h.adaptive != nil {
-				h.adaptive.congested(time.Now())
-			}
-			h.idrRequested.Store(true)
-		}
+		h.enqueueFrame(target, frame)
 	}
 	return nil
+}
+
+func (h *Hub) enqueueFrame(target *peer, frame *encodedFrame) {
+	// Serialize producers only; the network writer never holds this lock.
+	target.queueMu.Lock()
+	defer target.queueMu.Unlock()
+	if h.adaptive != nil && frame.keyframe && target.catchUp.Swap(false) {
+		// Replace the backlog only once its replacement IDR exists. Sending
+		// the old reference chain while waiting avoids an artificial freeze.
+	drain:
+		for range peerQueueFrames {
+			select {
+			case <-target.frames:
+				target.droppedFrames.Add(1)
+				h.droppedFrames.Add(1)
+			default:
+				break drain
+			}
+		}
+		target.resync.Store(true)
+	}
+	select {
+	case target.frames <- frame:
+	default:
+		target.droppedFrames.Add(1)
+		h.droppedFrames.Add(1)
+		target.resync.Store(true)
+		if h.adaptive != nil {
+			target.catchUp.Store(true)
+			h.adaptive.congested(time.Now())
+		}
+		h.idrRequested.Store(true)
+	}
 }

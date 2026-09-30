@@ -9,6 +9,26 @@ import (
 
 const feedbackLifetime = 5 * time.Second
 
+// A keyframe may take hundreds of milliseconds to pace at the lowest rate.
+// Recover only sustained queue lag, while continuing the existing reference
+// chain until a fresh keyframe is available to replace the queued backlog.
+type queueLag struct{ since time.Time }
+
+func (l *queueLag) sustained(age time.Duration, now time.Time) bool {
+	if age <= 250*time.Millisecond {
+		l.since = time.Time{}
+		return false
+	}
+	if l.since.IsZero() {
+		l.since = now
+	}
+	if now.Sub(l.since) < 2*time.Second {
+		return false
+	}
+	l.since = now
+	return true
+}
+
 // WithAdaptiveBitrate enables conservative loss/REMB-driven rate control.
 // It is not a transport-wide bandwidth estimator. The codec is still negotiated
 // for the maximum rate. EncoderControl must be applied by the native encoder.
