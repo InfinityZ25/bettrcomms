@@ -4,7 +4,8 @@
 
 Includes all 0.1.18 mobile and adaptive glasses video changes, plus fixes from
 late review of the combined release. Narrowing a Windows call window keeps
-its active native camera overlay running; leaving the call still closes it.
+its active native camera overlay running; More can show or hide it, and leaving
+the call still closes it.
 An untouched direct-call chat default follows the current screen size until
 the user explicitly opens or closes chat, then preserves their choice.
 

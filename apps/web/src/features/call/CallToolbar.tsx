@@ -71,7 +71,7 @@ export default function CallToolbar({
   watchedScreenCount,
   onClearFocus,
   docking,
-  overlayCameras,
+  cameraOverlay,
   focused,
   fullscreen,
   onInvite,
@@ -90,7 +90,7 @@ export default function CallToolbar({
   watchedScreenCount: number;
   onClearFocus: () => void;
   docking: Docking;
-  overlayCameras: Parameters<typeof CameraOverlay>[0]['cameras'];
+  cameraOverlay: Parameters<typeof CameraOverlay>[0]['overlay'];
   focused: boolean;
   fullscreen: boolean;
   /** Absent in a direct room, which is a pair and not a place to add people. */
@@ -194,7 +194,7 @@ export default function CallToolbar({
           )}
         </>
       )}
-      <CameraOverlay cameras={overlayCameras} />
+      <CameraOverlay overlay={cameraOverlay} />
       {onChat && (
         <Button
           variant="ghost"

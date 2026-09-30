@@ -21,7 +21,7 @@ function readSettings(): Settings {
   } catch { return defaults; }
 }
 
-export default function CameraOverlay({ cameras }: { cameras: OverlayCamera[] }) {
+export function useCameraOverlay(cameras: OverlayCamera[], active: boolean) {
   const [supported, setSupported] = useState(false);
   const [enabled, setEnabled] = useState(false);
   const [settings, setSettings] = useState(readSettings);
@@ -31,7 +31,7 @@ export default function CameraOverlay({ cameras }: { cameras: OverlayCamera[] })
   latest.current = { cameras, settings, includeSelf };
   useEffect(() => { let active = true; void isWindowsDesktop().then(value => { if (active) setSupported(value); }); return () => { active = false; }; }, []);
   useEffect(() => {
-    if (!enabled || !supported) return;
+    if (!enabled || !supported || !active) return;
     let stopped = false;
     let session: Session | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -74,13 +74,23 @@ export default function CameraOverlay({ cameras }: { cameras: OverlayCamera[] })
     const unload = () => { stopped = true; clearTimeout(timer); close(); canvas.dispose(); };
     window.addEventListener('pagehide', unload);
     return () => { unload(); window.removeEventListener('pagehide', unload); };
-  }, [enabled, supported]);
-  if (!hasNativeMediaHost() || !supported) return null;
+  }, [enabled, supported, active]);
+  useEffect(() => { if (!active) setEnabled(false); }, [active]);
   const change = (patch: Partial<Settings>) => {
     const next = { ...settings, ...patch };
     setSettings(next);
     writeStored('bc-camera-overlay', JSON.stringify(next));
   };
+  return {
+    supported: supported && hasNativeMediaHost(), enabled, settings, includeSelf,
+    status, change, setIncludeSelf,
+    toggle: () => { setStatus(''); setEnabled(value => !value); },
+  };
+}
+
+export default function CameraOverlay({ overlay }: { overlay: ReturnType<typeof useCameraOverlay> }) {
+  const { supported, enabled, settings, includeSelf, status, change, setIncludeSelf, toggle } = overlay;
+  if (!supported) return null;
   return <details className="camera-overlay-controls">
     <summary><PictureInPicture2 size={16} /> Camera overlay{enabled ? ' · On' : ''}</summary>
     <div className="camera-overlay-panel">
@@ -94,7 +104,7 @@ export default function CameraOverlay({ cameras }: { cameras: OverlayCamera[] })
       </select></label>
       <label>Let clicks pass to the game<input type="checkbox" checked={settings.clickThrough} onChange={event => change({ clickThrough: event.target.checked })} /></label>
       <label>Include my camera<input type="checkbox" checked={includeSelf} onChange={event => setIncludeSelf(event.target.checked)} /></label>
-      <button className={enabled ? '' : 'overlay-primary'} onClick={() => { setStatus(''); setEnabled(!enabled); }}>{enabled ? 'Hide camera overlay' : 'Show camera overlay'}</button>
+      <button className={enabled ? '' : 'overlay-primary'} onClick={toggle}>{enabled ? 'Hide camera overlay' : 'Show camera overlay'}</button>
       <p>View only · no extra microphone or camera capture. Closes when you leave the call.</p>
       {status && <p role="status">{status}</p>}
     </div>

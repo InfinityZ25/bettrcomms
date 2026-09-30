@@ -392,15 +392,8 @@ for (const initialWidth of [375, 1280]) {
       });
       const page = await phone.newPage();
       await page.goto('/');
-      await page.setViewportSize({ width: 375, height: 667 });
-      await page
-        .getByRole('navigation', { name: 'Sections' })
-        .getByRole('button', { name: 'Messages', exact: true })
-        .click();
-      await page
-        .getByRole('dialog', { name: 'Conversations' })
-        .getByRole('button', { name: other.name, exact: true })
-        .click();
+      await page.getByRole('button', { name: 'Messages', exact: true }).click();
+      await page.getByRole('button', { name: other.name, exact: true }).click();
       await page
         .getByRole('region', {
           name: `Conversation with ${other.name}`,
@@ -415,7 +408,8 @@ for (const initialWidth of [375, 1280]) {
         name: `Conversation with ${other.name}`,
         exact: true,
       });
-      await expect(conversation).toBeHidden();
+      if (initialWidth === 1280) await expect(conversation).toBeVisible();
+      else await expect(conversation).toBeHidden();
       await page.setViewportSize({ width: 1280, height: 900 });
       await expect(conversation).toBeVisible();
       await page.setViewportSize({ width: 375, height: 667 });
@@ -425,6 +419,11 @@ for (const initialWidth of [375, 1280]) {
         page.getByRole('menuitem', { name: 'Fullscreen', exact: true }),
       ).toHaveCount(0);
       await page.getByRole('menuitem', { name: 'Chat', exact: true }).click();
+      await expect(conversation).toBeVisible();
+      // An explicit open survives widening and returning to the phone layout.
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await expect(conversation).toBeVisible();
+      await page.setViewportSize({ width: 375, height: 667 });
       await expect(conversation).toBeVisible();
       await page
         .getByRole('button', { name: 'Back to call', exact: true })

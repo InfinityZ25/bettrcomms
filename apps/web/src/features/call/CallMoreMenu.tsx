@@ -6,6 +6,7 @@ import {
   MessageSquare,
   Minimize2,
   PanelsTopLeft,
+  PictureInPicture2,
   Plus,
   Square,
 } from 'lucide-react';
@@ -39,6 +40,8 @@ export default function CallMoreMenu({
   busy,
   recording,
   onToggleRecord,
+  cameraOverlayEnabled,
+  onToggleCameraOverlay,
   onSelectCamera,
   focusedMedia,
   watchedScreenCount,
@@ -65,6 +68,8 @@ export default function CallMoreMenu({
   docking: ReturnType<typeof useCallLayout>;
   recording: boolean;
   onToggleRecord: () => void;
+  cameraOverlayEnabled?: boolean;
+  onToggleCameraOverlay?: () => void;
   galleryLayout: GalleryLayout;
   onGalleryLayout: (layout: GalleryLayout) => void;
   galleryFit: 'cover' | 'contain';
@@ -90,6 +95,11 @@ export default function CallMoreMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" side="top" className="w-60">
         <CameraSourceMenu busy={busy} onSelect={onSelectCamera} submenu />
+        {onToggleCameraOverlay && (
+          <DropdownMenuItem onClick={onToggleCameraOverlay}>
+            <PictureInPicture2 /> {cameraOverlayEnabled ? 'Hide camera overlay' : 'Show camera overlay'}
+          </DropdownMenuItem>
+        )}
         {hasStageContent && focusedMedia && (
           <DropdownMenuItem onClick={onClearFocus}>
             <LayoutGrid />{' '}

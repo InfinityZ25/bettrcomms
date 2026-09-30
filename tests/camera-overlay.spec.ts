@@ -117,12 +117,19 @@ export async function closeCameraOverlay() { window.__overlay.closed++; }`,
     .poll(async () => (await counters()).frames)
     .toBeGreaterThan(before + 2);
   expect(await counters()).toMatchObject({ opened: 1, closed: 0 });
+  await page.getByRole('button', { name: 'More call options' }).click();
+  await page.getByRole('menuitem', { name: 'Hide camera overlay', exact: true }).click();
+  await expect.poll(async () => (await counters()).closed).toBe(1);
+  await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
+  await page.getByRole('button', { name: 'More call options' }).click();
+  await page.getByRole('menuitem', { name: 'Show camera overlay', exact: true }).click();
+  await expect.poll(async () => (await counters()).opened).toBe(2);
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.locator('.call-footer').hover();
   await expect(
     page.getByRole('button', { name: 'Hide camera overlay' }),
   ).toBeVisible();
-  expect(await counters()).toMatchObject({ opened: 1, closed: 0 });
+  expect(await counters()).toMatchObject({ opened: 2, closed: 1 });
   await page.getByRole('button', { name: 'Leave call' }).click();
-  await expect.poll(async () => (await counters()).closed).toBe(1);
+  await expect.poll(async () => (await counters()).closed).toBe(2);
 });
