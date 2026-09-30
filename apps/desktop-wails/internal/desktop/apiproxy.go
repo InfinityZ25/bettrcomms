@@ -64,6 +64,7 @@ type APIProxy struct {
 	// last one closes. The proxy runs in the host process, so it sees a call's
 	// signaling end even while the page's WebView is suspended.
 	callSockets  atomic.Int64
+	callOpens    atomic.Uint64
 	callMu       sync.Mutex
 	onCallClosed func()
 }
@@ -81,6 +82,10 @@ func (p *APIProxy) OnCallSignalingClosed(fn func()) {
 
 // CallSignalingOpen reports whether any call signaling WebSocket is open.
 func (p *APIProxy) CallSignalingOpen() bool { return p.callSockets.Load() > 0 }
+
+// CallSignalingOpens counts call signaling WebSockets ever opened. A watcher
+// compares two readings to tell whether signaling came back in between.
+func (p *APIProxy) CallSignalingOpens() uint64 { return p.callOpens.Load() }
 
 // NewAPIProxy starts a loopback proxy in front of origin, which must already
 // have passed ResolveAPIOrigin. It returns once the listener is accepting.
@@ -201,6 +206,7 @@ func (p *APIProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if callSignaling.MatchString(r.URL.Path) && strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
 		// A proxied WebSocket's ServeHTTP returns only when the connection
 		// ends, so the deferred decrement marks the socket closing.
+		p.callOpens.Add(1)
 		p.callSockets.Add(1)
 		defer func() {
 			if p.callSockets.Add(-1) != 0 {

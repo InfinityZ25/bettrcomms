@@ -8,6 +8,14 @@ run in the extension rather than the webview. Development installation requires
 separate host and extension profiles with their shared App Group enabled.
 Screen system audio is not included; the call microphone remains independent.
 
+The app and extension authenticate each other with single-use keys, so another
+app cannot receive the screen by binding the loopback handoff port. A broadcast
+ends when the call page is reloaded, when the page returns and finds it stopped
+from the iOS indicator, and when the call's signaling socket (carried by the
+host's API proxy) stays closed for 30 seconds while the page is suspended.
+Builds without the API proxy (a development build talking to the API directly)
+do not have that last safeguard.
+
 Signed-device testing confirmed screen sharing continues after switching to
 another app, with the iOS broadcast indicator visible. Ray-Ban video also
 continued after app switching following native decoder/encoder recovery fixes.

@@ -24,6 +24,8 @@ jobs:
       - name: Test Wails host
         working-directory: apps/desktop-wails
         run: go test ./... && go vet ./...
+      - name: Test native video encoder recovery policy
+        run: bash scripts/test-video-encoder-recovery.sh
       - name: Package and verify macOS app
         run: |
           bash scripts/package-desktop-wails-macos.sh

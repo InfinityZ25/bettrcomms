@@ -49,28 +49,63 @@ var screenBroadcast struct {
 // while the page reconnects, so a blip must not end a share.
 const callSignalingGrace = 30 * time.Second
 
-// iosBroadcastSignalingClosed ends the broadcast when the call's signaling has
-// stayed closed through the grace period. The page cannot do this itself while
-// iOS has it suspended, and the extension would otherwise keep sending the
-// whole screen to peers of a call this phone has left.
-func iosBroadcastSignalingClosed(open func() bool) {
-	screenBroadcast.Lock()
-	b := screenBroadcast.current
-	screenBroadcast.Unlock()
-	if b == nil {
+// The call's signaling socket is carried by this process's API proxy, which
+// keeps running while iOS suspends the page. The page cannot end a broadcast
+// while suspended, and the extension would otherwise keep sending the whole
+// screen to peers of a call this phone has left.
+var callSignaling struct {
+	sync.Mutex
+	open  func() bool
+	opens func() uint64
+	timer *time.Timer
+}
+
+func iosBroadcastWatchSignaling(open func() bool, opens func() uint64) {
+	callSignaling.Lock()
+	callSignaling.open, callSignaling.opens = open, opens
+	callSignaling.Unlock()
+}
+
+// iosBroadcastSignalingClosed runs whenever the last signaling socket closes.
+func iosBroadcastSignalingClosed() { armSignalingCheck() }
+
+// armSignalingCheck (re)starts the one grace timer. When it fires it ends
+// whichever broadcast is current then, unless a signaling socket opened
+// since it was armed: a reconnect that drops again re-arms it for a full
+// grace period rather than being cut short by an older timer.
+func armSignalingCheck() {
+	callSignaling.Lock()
+	defer callSignaling.Unlock()
+	if callSignaling.open == nil {
 		return
 	}
-	time.AfterFunc(callSignalingGrace, func() {
-		if open() {
+	if callSignaling.timer != nil {
+		callSignaling.timer.Stop()
+	}
+	open, opens := callSignaling.open, callSignaling.opens
+	armed := opens()
+	callSignaling.timer = time.AfterFunc(callSignalingGrace, func() {
+		if open() || opens() != armed {
 			return
 		}
 		screenBroadcast.Lock()
-		current := screenBroadcast.current == b
+		b := screenBroadcast.current
 		screenBroadcast.Unlock()
-		if current {
+		if b != nil {
 			b.close()
 		}
 	})
+}
+
+// A share can start while signaling is already down (the page is mid
+// reconnect); nothing would close again to arm the check for it.
+func checkSignalingAfterStart() {
+	callSignaling.Lock()
+	open := callSignaling.open
+	callSignaling.Unlock()
+	if open != nil && !open() {
+		armSignalingCheck()
+	}
 }
 
 //export bc_broadcast_picker_cancel
@@ -325,5 +360,6 @@ func startIOSBroadcast(raw json.RawMessage) (any, error) {
 	}
 	success = true
 	go func() { <-client.Done(); b.close() }()
+	checkSignalingAfterStart()
 	return result, nil
 }

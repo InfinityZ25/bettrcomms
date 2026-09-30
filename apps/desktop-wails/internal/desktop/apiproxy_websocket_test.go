@@ -131,6 +131,10 @@ func TestProxyReportsWhenTheLastCallSignalingSocketCloses(t *testing.T) {
 	first, second := dial("/api/v1/rooms/7/ws"), dial("/api/v1/rooms/7/ws")
 	relay := dial("/api/v1/rooms/7/voice-relay")
 	waitFor(t, func() bool { return proxy.CallSignalingOpen() })
+	// Only signaling sockets count, and each one that opens is counted once.
+	if opens := proxy.CallSignalingOpens(); opens != 2 {
+		t.Fatalf("counted %d signaling opens, want 2", opens)
+	}
 
 	first.Close(websocket.StatusNormalClosure, "")
 	relay.Close(websocket.StatusNormalClosure, "")
