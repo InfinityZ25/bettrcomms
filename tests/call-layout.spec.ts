@@ -212,6 +212,8 @@ test('camera dock resizes, snaps, focuses, and preserves the active share', asyn
     expect(await page.evaluate(() => localStorage.getItem('bc-camera-row-size'))).toBeNull();
     await page.getByRole('button', { name: 'More call options' }).click();
     await page.getByRole('menuitemradio', { name: 'Everyone + screens', exact: true }).click();
+    // Radio menu items retain the menu so another layout can be selected.
+    await page.keyboard.press('Escape');
     await page.getByRole('button', { name: 'Focus Your screen', exact: true }).click();
     await expect(stage).toHaveAttribute('data-has-share', 'true');
     await page.getByRole('button', { name: 'More call options' }).click();
