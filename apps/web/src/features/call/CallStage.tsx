@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Volume2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { talkBindingLabel } from '@/media/pushToTalk';
@@ -29,6 +29,12 @@ import './CallWorkspace.css';
 import './CallPhone.css';
 import CallMoreMenu from './CallMoreMenu';
 import { useIsMobile } from '@/hooks/use-mobile';
+
+// Keep the desktop status elements as direct footer children: its grid and
+// fullscreen rules depend on that structure. Phones need their own status row.
+function CallStatusRow({ phone, children }: { phone: boolean; children: ReactNode }) {
+  return phone ? <div className="phone-call-status">{children}</div> : <>{children}</>;
+}
 
 export type { CallPresence, NativeShareActions } from './callTypes';
 
@@ -318,7 +324,7 @@ export default function CallStage({
         />
       </div>
       <div className="call-footer">
-        <div className={phone ? 'phone-call-status' : 'contents'}>
+        <CallStatusRow phone={phone}>
           {talkSettings.enabled && (
             <span
               className="push-to-talk-status"
@@ -354,7 +360,7 @@ export default function CallStage({
             names={names}
             onDetails={() => setShowStats(!showStats)}
           />
-        </div>
+        </CallStatusRow>
         <CallControls
           joined={joined}
           busy={busy}
