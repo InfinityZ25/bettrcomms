@@ -26,9 +26,9 @@ export function useMessageViewport(
       await jumpToMessage(roomId, id);
       setHighlight(id);
       requestAnimationFrame(() => {
-        viewport.current
-          ?.querySelector(`[data-message-id="${id}"]`)
-          ?.scrollIntoView({ block: 'center' });
+        const node = viewport.current;
+        const item = node?.querySelector(`[data-message-id="${id}"]`);
+        if (node && item) node.scrollTop += item.getBoundingClientRect().top - node.getBoundingClientRect().top - (node.clientHeight - item.getBoundingClientRect().height) / 2;
         navigating.current = false;
       });
     } catch (error) {
@@ -68,10 +68,16 @@ export function useMessageViewport(
       frame = requestAnimationFrame(() => {
         if (stopped) return;
         if (nearBottom.current && !navigating.current)
-          end.current?.scrollIntoView({ block: 'end' });
+          if (viewport.current) viewport.current.scrollTop = viewport.current.scrollHeight;
         read();
       });
     };
+    const resize = new ResizeObserver(() => {
+      if (nearBottom.current && !navigating.current && viewport.current)
+        viewport.current.scrollTop = viewport.current.scrollHeight;
+      update();
+    });
+    if (viewport.current) resize.observe(viewport.current);
     const unsubscribe = subscribeConversation(roomId, update);
     const observer = new IntersectionObserver(
       ([entry]) => {
@@ -91,6 +97,7 @@ export function useMessageViewport(
       stopped = true;
       cancelAnimationFrame(frame);
       observer.disconnect();
+      resize.disconnect();
       unsubscribe();
       window.removeEventListener('focus', read);
       document.removeEventListener('visibilitychange', read);

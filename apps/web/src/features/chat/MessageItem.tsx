@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Flag, Pencil, Reply, ShieldX, Smile, Trash2 } from 'lucide-react';
+import { Flag, MoreHorizontal, Pencil, Reply, ShieldX, Smile, Trash2 } from 'lucide-react';
 import { api, type Message } from '@/api';
 import { Avatar } from '@/components/avatar';
 import { Button } from '@/components/ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import MessageAttachmentPreview from './MessageAttachmentPreview';
 const reactions = ['👍', '❤️', '😂', '🎉', '😮', '😢', '👀', '✅'];
@@ -116,19 +117,8 @@ export default function MessageItem({
     <article
       data-message-id={message.id}
       tabIndex={0}
-      onPointerDown={(event) => {
-        if (event.pointerType !== 'touch' && event.pointerType !== 'pen')
-          return;
-        if (
-          (event.target as Element).closest(
-            'button, a, input, textarea, select, [contenteditable]',
-          )
-        )
-          return;
-        event.currentTarget.focus({ preventScroll: true });
-      }}
       className={cn(
-        'group mb-2 rounded-xl p-2 outline-none focus-visible:ring-1 focus-visible:ring-ring transition-colors hover:bg-muted/50 [@media(hover:none)]:focus-within:bg-muted/50',
+        'message-item group relative mb-2 rounded-xl p-2 phone:mb-1 phone:py-3 outline-none focus-visible:ring-1 focus-visible:ring-ring transition-colors hover:bg-muted/50 [@media(hover:none)]:focus-within:bg-muted/50',
         highlighted && 'bg-primary/10 ring-1 ring-primary/50',
       )}
     >
@@ -139,12 +129,12 @@ export default function MessageItem({
           src={message.author.avatar_url}
         />
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-baseline gap-2">
-            <strong className="text-xs">{message.author.name}</strong>
+          <div className="flex flex-wrap items-baseline gap-2 phone:pr-11">
+            <strong className="min-w-0 truncate text-xs phone:text-sm">{message.author.name}</strong>
             <time
               dateTime={message.created_at}
               title={new Date(message.created_at).toLocaleString()}
-              className="text-[0.65rem] text-muted-foreground"
+              className="text-[0.65rem] text-muted-foreground phone:text-xs"
             >
               {new Date(message.created_at).toLocaleTimeString([], {
                 hour: '2-digit',
@@ -152,7 +142,7 @@ export default function MessageItem({
               })}
             </time>
             {message.edited_at && !message.deleted_at && (
-              <span className="text-[0.65rem] text-muted-foreground">
+              <span className="text-[0.65rem] text-muted-foreground phone:text-xs">
                 edited
               </span>
             )}
@@ -170,7 +160,7 @@ export default function MessageItem({
                 : message.reply.body.replace(/<@[0-9a-f-]{36}>/gi, '@member')}
             </button>
           )}
-          <p className="mt-1 whitespace-pre-wrap text-sm leading-6 [overflow-wrap:anywhere]">
+          <p className="mt-1 whitespace-pre-wrap text-sm leading-6 phone:text-base [overflow-wrap:anywhere]">
             {message.deleted_at ? (
               <span className="italic text-muted-foreground">
                 Message deleted
@@ -196,7 +186,7 @@ export default function MessageItem({
                     aria-label={`React ${reaction.emoji}, ${reaction.users.length}`}
                     aria-pressed={reaction.users.includes(userId)}
                     className={cn(
-                      'rounded-full border px-2 py-0.5 text-xs',
+                      'rounded-full border px-2 py-0.5 text-xs phone:min-h-11 phone:px-3',
                       reaction.users.includes(userId)
                         ? 'border-primary bg-primary/15'
                         : 'border-border bg-muted',
@@ -213,7 +203,7 @@ export default function MessageItem({
                   </button>
                 ))}
               </div>
-              <div className="mt-1 flex flex-wrap gap-0.5 opacity-70 group-hover:opacity-100 focus-within:opacity-100 [@media(hover:none)]:hidden [@media(hover:none)]:group-focus-within:flex [@media(hover:none)]:opacity-100">
+              <div className="phone:hidden"><div className="mt-1 flex flex-wrap gap-0.5 opacity-70 group-hover:opacity-100 focus-within:opacity-100 [@media(hover:none)]:hidden [@media(hover:none)]:group-focus-within:flex [@media(hover:none)]:opacity-100">
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -262,6 +252,21 @@ export default function MessageItem({
                 {canModerate && message.author.id !== userId && (
                   <Button variant="ghost" size="icon-sm" aria-label="Remove message as moderator" disabled={busy} onClick={() => { setModerating(true); setReporting(false); }}><ShieldX size={14} /></Button>
                 )}
+              </div>
+              </div>
+              <div className="absolute top-1 right-0 hidden phone:block">
+                <DropdownMenu>
+                  <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="size-11 text-muted-foreground" aria-label={`Message options for ${message.author.name}`} disabled={busy} />}><MoreHorizontal size={18} /></DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="min-w-52 [&_[data-slot=dropdown-menu-item]]:min-h-11">
+                    <DropdownMenuItem onClick={() => onReply(message)}><Reply /> Reply</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setReacting(true)}><Smile /> Add reaction</DropdownMenuItem>
+                    {message.author.id === userId ? <>
+                      <DropdownMenuItem onClick={() => onEdit(message)}><Pencil /> Edit message</DropdownMenuItem>
+                      <DropdownMenuItem variant="destructive" onClick={() => setConfirmDelete(true)}><Trash2 /> Delete message</DropdownMenuItem>
+                    </> : <DropdownMenuItem onClick={() => { setReporting(true); setModerating(false); }}><Flag /> Report message</DropdownMenuItem>}
+                    {canModerate && message.author.id !== userId && <DropdownMenuItem variant="destructive" onClick={() => { setModerating(true); setReporting(false); }}><ShieldX /> Remove message as moderator</DropdownMenuItem>}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
               {reacting && (
                 <div
