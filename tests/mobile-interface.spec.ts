@@ -178,14 +178,20 @@ test('mobile conversation navigation, actions and keyboard preserve usable scree
       ).violations,
     ).toEqual([]);
     await list
-      .getByRole('textbox', { name: 'Filter conversations' })
+      .getByRole('searchbox', { name: 'Filter conversations' })
       .fill('does not exist');
     await expect(
       list.getByRole('heading', { name: 'No matches' }),
     ).toBeVisible();
     await list
-      .getByRole('textbox', { name: 'Filter conversations' })
+      .getByRole('searchbox', { name: 'Filter conversations' })
       .fill('Phone');
+    await list
+      .getByRole('searchbox', { name: 'Filter conversations' })
+      .press('Enter');
+    await expect(
+      list.getByRole('searchbox', { name: 'Filter conversations' }),
+    ).not.toBeFocused();
     await list
       .getByRole('button', { name: 'Phone Friend', exact: true })
       .click();

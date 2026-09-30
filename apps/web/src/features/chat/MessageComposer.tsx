@@ -125,6 +125,7 @@ export default function MessageComposer({
         <textarea
           ref={inputRef}
           rows={1}
+          enterKeyHint={phone ? 'send' : undefined}
           maxLength={4000}
           className="min-w-0 flex-1 resize-none border-0! bg-transparent! px-2! py-2! text-sm shadow-none! outline-none phone:text-base"
           aria-label={`Message ${label}`}
