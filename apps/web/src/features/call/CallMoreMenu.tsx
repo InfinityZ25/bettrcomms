@@ -1,5 +1,6 @@
 import {
   Circle,
+  LayoutGrid,
   Ellipsis,
   Maximize2,
   MessageSquare,
@@ -8,6 +9,9 @@ import {
   Plus,
   Square,
 } from 'lucide-react';
+import CameraSourceMenu from './CameraSourceMenu';
+import { canUseFullscreen } from './fullscreenSupport';
+import type { useCallLayout } from './useCallLayout';
 import type { GalleryLayout } from './stageItems';
 import { Button } from '@/components/ui/button';
 import {
@@ -35,6 +39,11 @@ export default function CallMoreMenu({
   busy,
   recording,
   onToggleRecord,
+  onSelectCamera,
+  focusedMedia,
+  watchedScreenCount,
+  onClearFocus,
+  docking,
   galleryLayout,
   onGalleryLayout,
   galleryFit,
@@ -49,6 +58,11 @@ export default function CallMoreMenu({
   onFullscreen,
 }: {
   busy: boolean;
+  onSelectCamera: (deviceId: string) => Promise<void>;
+  focusedMedia: boolean;
+  watchedScreenCount: number;
+  onClearFocus: () => void;
+  docking: ReturnType<typeof useCallLayout>;
   recording: boolean;
   onToggleRecord: () => void;
   galleryLayout: GalleryLayout;
@@ -66,7 +80,7 @@ export default function CallMoreMenu({
 }) {
   // iPhone WebKit has no element fullscreen; offering it there does nothing.
   const canFullscreen =
-    typeof document !== 'undefined' && document.fullscreenEnabled !== false;
+    typeof document !== 'undefined' && canUseFullscreen(document);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -75,6 +89,15 @@ export default function CallMoreMenu({
         <Ellipsis size={19} />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" side="top" className="w-60">
+        <CameraSourceMenu busy={busy} onSelect={onSelectCamera} submenu />
+        {hasStageContent && focusedMedia && (
+          <DropdownMenuItem onClick={onClearFocus}>
+            <LayoutGrid />{' '}
+            {watchedScreenCount > 1
+              ? `Show ${watchedScreenCount} screens`
+              : 'Back to all media'}
+          </DropdownMenuItem>
+        )}
         {onChat && (
           <DropdownMenuItem onClick={onChat}>
             <MessageSquare /> {chatOpen ? 'Hide chat' : 'Chat'}
@@ -119,6 +142,31 @@ export default function CallMoreMenu({
           <DropdownMenuRadioItem value="focus">Focus camera</DropdownMenuRadioItem>
           <DropdownMenuRadioItem value="all">Everyone + screens</DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
+        {hasStageContent && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>Cameras</DropdownMenuLabel>
+            </DropdownMenuGroup>
+            <DropdownMenuRadioGroup
+              value={docking.dock}
+              onValueChange={(value) =>
+                docking.setDock(value as 'top' | 'left' | 'right')
+              }
+            >
+              <DropdownMenuRadioItem value="top">Top row</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="left">
+                Left side
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="right">
+                Right side
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+            <DropdownMenuItem onClick={docking.reset}>
+              Reset layout
+            </DropdownMenuItem>
+          </>
+        )}
         {!hasStageContent && (
           <>
             <DropdownMenuSeparator />

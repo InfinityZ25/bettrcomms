@@ -115,9 +115,20 @@ export default function MessageItem({
   return (
     <article
       data-message-id={message.id}
-      tabIndex={-1}
+      tabIndex={0}
+      onPointerDown={(event) => {
+        if (event.pointerType !== 'touch' && event.pointerType !== 'pen')
+          return;
+        if (
+          (event.target as Element).closest(
+            'button, a, input, textarea, select, [contenteditable]',
+          )
+        )
+          return;
+        event.currentTarget.focus({ preventScroll: true });
+      }}
       className={cn(
-        'group mb-2 rounded-xl p-2 outline-none transition-colors hover:bg-muted/50 [@media(hover:none)]:focus-within:bg-muted/50',
+        'group mb-2 rounded-xl p-2 outline-none focus-visible:ring-1 focus-visible:ring-ring transition-colors hover:bg-muted/50 [@media(hover:none)]:focus-within:bg-muted/50',
         highlighted && 'bg-primary/10 ring-1 ring-primary/50',
       )}
     >
@@ -320,7 +331,11 @@ export default function MessageItem({
                   <div className="flex gap-2"><Button size="sm" type="submit" disabled={busy || reason.trim().length < 3}>{reporting ? 'Send report' : 'Remove message'}</Button><Button size="sm" variant="ghost" type="button" onClick={() => { setReporting(false); setModerating(false); }}>Cancel</Button></div>
                 </form>
               )}
-              {reported && <span className="text-xs text-muted-foreground">Report sent</span>}
+              {reported && (
+                <span className="text-xs text-muted-foreground">
+                  Report sent
+                </span>
+              )}
             </>
           )}
         </div>

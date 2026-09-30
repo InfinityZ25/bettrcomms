@@ -92,7 +92,9 @@ export default function CallControls({
       >
         {cameraOn ? <Video size={19} /> : <VideoOff size={19} />}
       </Button>
-      {joined && <CameraSourceMenu busy={busy} onSelect={onSelectCamera} />}
+      {joined && !more && (
+        <CameraSourceMenu busy={busy} onSelect={onSelectCamera} />
+      )}
       {joined ? (
         <>
           <Button

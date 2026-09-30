@@ -41,6 +41,7 @@ import SpacesRail from '@/features/shell/SpacesRail';
 import HomeScreen from '@/features/shell/HomeScreen';
 import WorkspaceScreen from '@/features/shell/WorkspaceScreen';
 import { readScreen, useScreenRoute } from '@/features/shell/useScreenRoute';
+import { PHONE_QUERY } from '@/hooks/use-mobile';
 import { useAsyncAction } from '@/hooks/useAsyncAction';
 import { cn } from '@/lib/utils';
 import { AnimatePresence, motion } from 'motion/react';
@@ -103,7 +104,9 @@ export default function App() {
     default: pressing Call used to take the entire chat away, with no way back
     to it except the sidebar.
   */
-  const [chatColumn, setChatColumn] = useState(true);
+  const [chatColumn, setChatColumn] = useState(
+    () => !window.matchMedia(PHONE_QUERY).matches,
+  );
   const [channelChat, setChannelChat] = useState(false);
   const [messageTarget, setMessageTarget] = useState<{
     room: string;
@@ -385,6 +388,7 @@ export default function App() {
                       user={user}
                       live={presence.messages}
                       variant="panel"
+                      onClose={() => setChatColumn(false)}
                       targetId={
                         messageTarget?.room === room.id
                           ? messageTarget.id

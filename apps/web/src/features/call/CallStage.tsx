@@ -205,7 +205,9 @@ export default function CallStage({
       onPointerDown={immersive.onPointerDown}
       onKeyDown={() => immersive.reveal()}
     >
-      {call.engine && <CopilotPanel copilot={call.engine.copilot} names={names} />}
+      {call.engine && (
+        <CopilotPanel copilot={call.engine.copilot} names={names} />
+      )}
       <RecordingFlag
         recording={call.recording}
         remoteRecording={call.remoteRecording}
@@ -316,37 +318,43 @@ export default function CallStage({
         />
       </div>
       <div className="call-footer">
-        {talkSettings.enabled && (
-          <span className="push-to-talk-status" role="status" title={microphone.globalMessage}>
-            {microphone.globalStatus === 'unavailable' ||
-            microphone.globalStatus === 'connecting'
-              ? microphone.globalMessage
-              : deafened
-                ? 'Deafened'
-                : manualMuted
-                  ? 'Microphone muted'
-                  : !transmitting
-                    ? `Hold ${talkBindingLabel(talkSettings.binding)} to talk${microphone.globalStatus === 'active' ? ' · Global' : ''}`
-                    : 'Push-to-talk · Transmitting'}
-          </span>
-        )}
-        {call.signalingDown && (
-          <span
-            className="signaling-reconnecting"
-            role="status"
-            title="The signaling server is unreachable. Calls already connected keep running peer to peer; joining, sharing and camera changes resume when it returns."
-          >
-            Reconnecting to server · call continues
-          </span>
-        )}
-        <ConnectionStatus
-          joined={joined}
-          peerCount={Object.keys(peers).length}
-          signaling={call.signaling}
-          stats={call.stats}
-          names={names}
-          onDetails={() => setShowStats(!showStats)}
-        />
+        <div className={phone ? 'phone-call-status' : 'contents'}>
+          {talkSettings.enabled && (
+            <span
+              className="push-to-talk-status"
+              role="status"
+              title={microphone.globalMessage}
+            >
+              {microphone.globalStatus === 'unavailable' ||
+              microphone.globalStatus === 'connecting'
+                ? microphone.globalMessage
+                : deafened
+                  ? 'Deafened'
+                  : manualMuted
+                    ? 'Microphone muted'
+                    : !transmitting
+                      ? `Hold ${talkBindingLabel(talkSettings.binding)} to talk${microphone.globalStatus === 'active' ? ' · Global' : ''}`
+                      : 'Push-to-talk · Transmitting'}
+            </span>
+          )}
+          {call.signalingDown && (
+            <span
+              className="signaling-reconnecting"
+              role="status"
+              title="The signaling server is unreachable. Calls already connected keep running peer to peer; joining, sharing and camera changes resume when it returns."
+            >
+              Reconnecting to server · call continues
+            </span>
+          )}
+          <ConnectionStatus
+            joined={joined}
+            peerCount={Object.keys(peers).length}
+            signaling={call.signaling}
+            stats={call.stats}
+            names={names}
+            onDetails={() => setShowStats(!showStats)}
+          />
+        </div>
         <CallControls
           joined={joined}
           busy={busy}
@@ -369,6 +377,11 @@ export default function CallStage({
             phone ? (
               <CallMoreMenu
                 busy={busy}
+                onSelectCamera={call.selectCamera}
+                focusedMedia={Boolean(focusedStageItem)}
+                watchedScreenCount={watchedScreens.length}
+                onClearFocus={() => selection.setFocusedStageKey(null)}
+                docking={docking}
                 recording={call.recording}
                 onToggleRecord={call.toggleRecord}
                 galleryLayout={gallery.galleryLayout}
@@ -387,48 +400,52 @@ export default function CallStage({
             ) : undefined
           }
         />
-        {!phone && <CallToolbar
-          galleryLayout={gallery.galleryLayout}
-          onGalleryLayout={gallery.setGalleryLayout}
-          galleryFit={gallery.galleryFit}
-          onToggleGalleryFit={gallery.toggleGalleryFit}
-          hasStageContent={hasStageContent}
-          showAllMedia={gallery.galleryLayout === 'all' && Boolean(focusedStageItem)}
-          watchedScreenCount={focusedStageItem ? watchedScreens.length : 0}
-          onClearFocus={() => selection.setFocusedStageKey(null)}
-          docking={docking}
-          overlayCameras={[
-            ...(locals.get('camera')
-              ? [
-                  {
-                    id: 'self',
-                    name: 'You',
-                    track: locals.get('camera')!,
-                    speaking: speaking.has('self'),
-                    muted,
-                    deafened,
-                  },
-                ]
-              : []),
-            ...remote
-              .filter((track) => track.source === 'camera')
-              .map((track) => ({
-                id: track.peerId,
-                name: names[track.peerId] ?? 'Friend',
-                track: track.track,
-                speaking: speaking.has(track.peerId),
-                muted: remotePresence[track.peerId]?.muted,
-                deafened: remotePresence[track.peerId]?.deafened,
-              })),
-          ]}
-          focused={focused}
-          fullscreen={immersive.fullscreen}
-          onInvite={onInvite && (() => immersive.leavingFullscreen(onInvite))}
-          onChat={onChat && (() => immersive.leavingFullscreen(onChat))}
-          chatOpen={chatOpen}
-          onFocus={onFocus}
-          onFullscreen={immersive.toggleFullscreen}
-        />}
+        {!phone && (
+          <CallToolbar
+            galleryLayout={gallery.galleryLayout}
+            onGalleryLayout={gallery.setGalleryLayout}
+            galleryFit={gallery.galleryFit}
+            onToggleGalleryFit={gallery.toggleGalleryFit}
+            hasStageContent={hasStageContent}
+            showAllMedia={
+              gallery.galleryLayout === 'all' && Boolean(focusedStageItem)
+            }
+            watchedScreenCount={focusedStageItem ? watchedScreens.length : 0}
+            onClearFocus={() => selection.setFocusedStageKey(null)}
+            docking={docking}
+            overlayCameras={[
+              ...(locals.get('camera')
+                ? [
+                    {
+                      id: 'self',
+                      name: 'You',
+                      track: locals.get('camera')!,
+                      speaking: speaking.has('self'),
+                      muted,
+                      deafened,
+                    },
+                  ]
+                : []),
+              ...remote
+                .filter((track) => track.source === 'camera')
+                .map((track) => ({
+                  id: track.peerId,
+                  name: names[track.peerId] ?? 'Friend',
+                  track: track.track,
+                  speaking: speaking.has(track.peerId),
+                  muted: remotePresence[track.peerId]?.muted,
+                  deafened: remotePresence[track.peerId]?.deafened,
+                })),
+            ]}
+            focused={focused}
+            fullscreen={immersive.fullscreen}
+            onInvite={onInvite && (() => immersive.leavingFullscreen(onInvite))}
+            onChat={onChat && (() => immersive.leavingFullscreen(onChat))}
+            chatOpen={chatOpen}
+            onFocus={onFocus}
+            onFullscreen={immersive.toggleFullscreen}
+          />
+        )}
       </div>
       {showStats && (
         <ConnectionDetails

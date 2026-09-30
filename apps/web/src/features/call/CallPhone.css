@@ -29,6 +29,7 @@
     display: flex;
     flex: 0 0 auto;
     flex-wrap: nowrap;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: 6px;
@@ -37,6 +38,23 @@
     opacity: 1;
     transform: none;
     pointer-events: auto;
+  }
+
+  .phone-call-status {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    min-width: 0;
+  }
+  .phone-call-status .push-to-talk-status,
+  .phone-call-status .signaling-reconnecting {
+    flex: 1 1 160px;
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .call-workspace .call-controls {
@@ -48,14 +66,15 @@
   /* Thumb-sized: Apple's minimum is 44 points. */
   .call-workspace .call-controls > button,
   .call-workspace .call-controls > [data-slot='dropdown-menu-trigger'] {
+    flex: 0 0 44px;
     width: 44px;
     height: 44px;
     border-radius: 999px !important;
   }
 
   .connection-trigger {
-    min-width: 40px;
-    min-height: 40px;
+    min-width: 44px;
+    min-height: 44px;
   }
 
   .camera-focus-button {

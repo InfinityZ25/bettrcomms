@@ -1,5 +1,17 @@
 # BetterComms preview release notes
 
+## Unreleased — phone layout review fixes
+
+Phone calls keep six 44 px primary controls in one row, with camera source
+selection in More and connection/push-to-talk/reconnect status in a separate
+row. Direct-call chat starts closed on a phone and has a Back to call button.
+Touching a message explicitly focuses it to reveal its actions; keyboard users
+can also focus the message. More includes clear screen focus, camera-dock
+positions and Reset layout without stopping watched media. Fullscreen is only
+offered when the browser positively exposes it, and calls guard missing APIs.
+These changes still require a packaged iPhone check; synthetic browser media
+and layout tests do not establish device behavior.
+
 ## Unreleased — phone layout
 
 Phone-sized windows no longer render the desktop layout squeezed. Portrait
