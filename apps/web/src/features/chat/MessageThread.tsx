@@ -5,7 +5,7 @@ import {
   useSyncExternalStore,
   type FormEvent,
 } from 'react';
-import { ArrowDown, Search } from 'lucide-react';
+import { ArrowDown, ChevronLeft, Search } from 'lucide-react';
 import type { Message, User } from '@/api';
 import { api, uploadMessageAttachment } from '@/api';
 import MessageItem from './MessageItem';
@@ -34,6 +34,7 @@ export default function MessageThread({
   onError,
   targetId,
   canModerate = false,
+  onClose,
 }: {
   roomId: string;
   user: User;
@@ -41,6 +42,8 @@ export default function MessageThread({
   onError: (message: string) => void;
   targetId?: string;
   canModerate?: boolean;
+  /** Offered on phones, where the thread covers the button that opened it. */
+  onClose?: () => void;
 }) {
   const chat = useSyncExternalStore(
     (listener) => subscribeConversation(roomId, listener),
@@ -214,7 +217,18 @@ export default function MessageThread({
       aria-label="Conversation messages"
     >
       <div className="flex items-center justify-between gap-2 border-b px-3 py-2 text-xs">
-        <span className="truncate">{label}</span>
+        {onClose && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="-ml-1 hidden shrink-0 phone:inline-flex"
+            aria-label="Close room messages"
+            onClick={onClose}
+          >
+            <ChevronLeft size={20} />
+          </Button>
+        )}
+        <span className="min-w-0 flex-1 truncate">{label}</span>
         <Button
           variant="ghost"
           size="icon-sm"

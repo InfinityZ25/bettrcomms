@@ -18,12 +18,12 @@ jobs:
       run:
         shell: pwsh
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
           cache: npm
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: "1.26"
           cache-dependency-path: apps/desktop-wails/go.sum
@@ -42,7 +42,7 @@ jobs:
         run: |
           $version = (Get-Content apps/desktop-wails/package.json -Raw | ConvertFrom-Json).version
           ./scripts/test-wails-installer.ps1 -Installer "apps/desktop-wails/bin/bettercomms-wails-$version-windows-x64-setup.exe"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: bettercomms-wails-windows-x64
           path: apps/desktop-wails/bin/*-setup.exe
@@ -61,12 +61,12 @@ jobs:
           - os: macos-15-intel
             arch: x64
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
           cache: npm
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: "1.26"
           cache-dependency-path: apps/desktop-wails/go.sum
@@ -78,7 +78,7 @@ jobs:
           go test ./...
       - name: Package macOS app
         run: bash scripts/package-desktop-wails-macos.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: bettercomms-wails-macos-${{ matrix.arch }}
           path: apps/desktop-wails/bin/*-macos-${{ matrix.arch }}.dmg
@@ -89,12 +89,12 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
           cache: npm
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: "1.26"
           cache-dependency-path: apps/desktop-wails/go.sum
@@ -103,7 +103,7 @@ jobs:
         run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.18
       - name: Package experimental iPhone app
         run: bash scripts/package-desktop-wails-ios.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: bettercomms-wails-ios-arm64
           path: apps/desktop-wails/bin/*-ios-arm64-adhoc.ipa
@@ -117,13 +117,13 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Check tag matches Wails package version
         shell: bash
         run: |
           version=$(node -p "require('./apps/desktop-wails/package.json').version")
           test "${GITHUB_REF_NAME}" = "wails-v${version}"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: bettercomms-wails-*
           path: release-assets

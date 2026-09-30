@@ -1,4 +1,4 @@
-import { Phone } from 'lucide-react';
+import { ChevronLeft, Phone } from 'lucide-react';
 import { type Message, type Room, type User } from '@/api';
 import { Avatar } from '@/components/avatar';
 import { Button } from '@/components/ui/button';
@@ -22,6 +22,7 @@ export default function DirectConversation({
   variant = 'screen',
   docked = false,
   onCall,
+  onClose,
   targetId,
   onError,
 }: {
@@ -35,6 +36,7 @@ export default function DirectConversation({
   docked?: boolean;
   /** Open the call for this conversation. */
   onCall: () => void;
+  onClose?: () => void;
   onError: (message: string) => void;
   targetId?: string;
 }) {
@@ -54,6 +56,17 @@ export default function DirectConversation({
       aria-label={`Conversation with ${name}`}
     >
       <header className="flex items-center gap-2.5 px-4 py-2.5">
+        {onClose && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="hidden shrink-0 phone:inline-flex"
+            aria-label="Back to call"
+            onClick={onClose}
+          >
+            <ChevronLeft size={20} />
+          </Button>
+        )}
         <Avatar name={name} id={room.id} />
         <div className="min-w-0 flex-1">
           <strong className="block truncate text-sm font-semibold">

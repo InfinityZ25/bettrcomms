@@ -1,5 +1,31 @@
 # BetterComms preview release notes
 
+## Unreleased — phone layout review fixes
+
+Phone calls keep six 44 px primary controls in one row, with camera source
+selection in More and connection/push-to-talk/reconnect status in a separate
+row. Direct-call chat starts closed on a phone and has a Back to call button.
+Touching a message explicitly focuses it to reveal its actions; keyboard users
+can also focus the message. More includes clear screen focus, camera-dock
+positions and Reset layout without stopping watched media. Fullscreen is only
+offered when the browser positively exposes it, and calls guard missing APIs.
+These changes still require a packaged iPhone check; synthetic browser media
+and layout tests do not establish device behavior.
+
+## Unreleased — phone layout
+
+Phone-sized windows no longer render the desktop layout squeezed. Portrait
+phones navigate from a bottom tab bar, and Messages and Calls open the
+conversation drawer; content meets the screen edges instead of an inset card.
+A phone held sideways uses the drawer too. In a call, cameras share the
+available height (side by side in landscape) above a single row of 44 px
+controls, and recording, layout, chat, invite, focus and fullscreen are in a
+More menu. Room chat fills the screen with its own back button and sits above
+the call controls. On touch screens a message's actions appear when it is
+tapped. Checked with synthetic media in Chromium at iPhone 15 and iPhone SE
+sizes, portrait and landscape; the packaged iPhone app has not been
+re-accepted on a device.
+
 ## 0.1.17 — current Wails application release
 
 Windows x64, macOS Apple Silicon/Intel DMGs, and an experimental re-signable

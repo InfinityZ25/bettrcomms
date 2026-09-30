@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Video } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -10,6 +10,9 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
 } from '@/components/ui/dropdown-menu';
 import { readStored } from '@/lib/storage';
 import { hasMetaGlassesCamera, META_GLASSES_CAMERA_ID } from '@/media/metaGlassesCamera';
@@ -20,8 +23,10 @@ type Camera = { id: string; label: string };
 export default function CameraSourceMenu({
   busy,
   onSelect,
+  submenu = false,
 }: {
   busy: boolean;
+  submenu?: boolean;
   onSelect: (deviceId: string) => Promise<void>;
 }) {
   const [cameras, setCameras] = useState<Camera[]>([]);
@@ -73,14 +78,69 @@ export default function CameraSourceMenu({
     }
   };
 
+  const changeOpen = (next: boolean) => {
+    setOpen(next);
+    if (next) {
+      setSelected(readStored('bc-camera') ?? '');
+      void refresh();
+    }
+  };
+  const choices = (
+    <>
+      <DropdownMenuGroup>
+        <DropdownMenuLabel>Camera source</DropdownMenuLabel>
+      </DropdownMenuGroup>
+      <DropdownMenuSeparator />
+      <DropdownMenuRadioGroup
+        value={selected}
+        onValueChange={(value) => void select(value)}
+      >
+        <DropdownMenuRadioItem value="" disabled={switching}>
+          System default
+        </DropdownMenuRadioItem>
+        {cameras.map((camera) => (
+          <DropdownMenuRadioItem
+            key={camera.id}
+            value={camera.id}
+            disabled={switching}
+          >
+            {camera.label}
+          </DropdownMenuRadioItem>
+        ))}
+        {hasMetaGlassesCamera() && (
+          <DropdownMenuRadioItem
+            value={META_GLASSES_CAMERA_ID}
+            disabled={switching}
+          >
+            Ray-Ban Meta glasses
+          </DropdownMenuRadioItem>
+        )}
+      </DropdownMenuRadioGroup>
+      {status && (
+        <p className="px-3 py-2 text-xs text-muted-foreground" role="status">
+          {status}
+        </p>
+      )}
+      {!status && cameras.length === 0 && (
+        <p className="px-3 py-2 text-xs text-muted-foreground">
+          Turn on your camera to show available sources.
+        </p>
+      )}
+    </>
+  );
+  if (submenu)
+    return (
+      <DropdownMenuSub open={open} onOpenChange={changeOpen}>
+        <DropdownMenuSubTrigger disabled={busy || switching}>
+          <Video /> Camera source
+        </DropdownMenuSubTrigger>
+        <DropdownMenuSubContent className="w-56">
+          {choices}
+        </DropdownMenuSubContent>
+      </DropdownMenuSub>
+    );
   return (
-    <DropdownMenu open={open} onOpenChange={(next) => {
-      setOpen(next);
-      if (next) {
-        setSelected(readStored('bc-camera') ?? '');
-        void refresh();
-      }
-    }}>
+    <DropdownMenu open={open} onOpenChange={changeOpen}>
       <DropdownMenuTrigger
         render={
           <Button
@@ -96,29 +156,7 @@ export default function CameraSourceMenu({
         <ChevronDown size={16} />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="center" className="w-56">
-        <DropdownMenuGroup>
-          <DropdownMenuLabel>Camera source</DropdownMenuLabel>
-        </DropdownMenuGroup>
-        <DropdownMenuSeparator />
-        <DropdownMenuRadioGroup value={selected} onValueChange={(value) => void select(value)}>
-          <DropdownMenuRadioItem value="" disabled={switching}>System default</DropdownMenuRadioItem>
-          {cameras.map((camera) => (
-            <DropdownMenuRadioItem key={camera.id} value={camera.id} disabled={switching}>
-              {camera.label}
-            </DropdownMenuRadioItem>
-          ))}
-          {hasMetaGlassesCamera() && (
-            <DropdownMenuRadioItem value={META_GLASSES_CAMERA_ID} disabled={switching}>
-              Ray-Ban Meta glasses
-            </DropdownMenuRadioItem>
-          )}
-        </DropdownMenuRadioGroup>
-        {status && <p className="px-3 py-2 text-xs text-muted-foreground" role="status">{status}</p>}
-        {!status && cameras.length === 0 && (
-          <p className="px-3 py-2 text-xs text-muted-foreground">
-            Turn on your camera to show available sources.
-          </p>
-        )}
+        {choices}
       </DropdownMenuContent>
     </DropdownMenu>
   );

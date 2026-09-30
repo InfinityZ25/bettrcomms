@@ -162,8 +162,9 @@ export default function RoomSidebar({
 
   return (
     <>
-      <motion.div
-        className="hidden h-full shrink-0 overflow-hidden min-[821px]:block [--room-sidebar-width:186px] min-[1251px]:[--room-sidebar-width:210px] min-[1400px]:[--room-sidebar-width:248px]"
+      {/* A phone, portrait or on its side, gets the drawer below instead. */}
+      {!isMobile && <motion.div
+        className="h-full shrink-0 overflow-hidden [--room-sidebar-width:186px] min-[1251px]:[--room-sidebar-width:210px] min-[1400px]:[--room-sidebar-width:248px]"
         initial={false}
         animate={{
           width: visible ? 'var(--room-sidebar-width)' : 0,
@@ -180,13 +181,13 @@ export default function RoomSidebar({
         >
           {sidebarContent}
         </Sidebar>
-      </motion.div>
+      </motion.div>}
       <Sheet open={openMobile && !hidden && screen !== 'share'} onOpenChange={setOpenMobile}>
         <SheetContent
           side="right"
           showCloseButton={false}
-          className="min-[821px]:hidden bg-sidebar p-0 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"
-          style={{ width: '66.667vw', maxWidth: 'none' }}
+          className="bg-sidebar p-0 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"
+          style={{ width: 'min(85vw, 24rem)', maxWidth: 'none' }}
         >
           <SheetHeader className="sr-only">
             <SheetTitle>Conversations</SheetTitle>

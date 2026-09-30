@@ -41,6 +41,7 @@ import SpacesRail from '@/features/shell/SpacesRail';
 import HomeScreen from '@/features/shell/HomeScreen';
 import WorkspaceScreen from '@/features/shell/WorkspaceScreen';
 import { readScreen, useScreenRoute } from '@/features/shell/useScreenRoute';
+import { PHONE_QUERY } from '@/hooks/use-mobile';
 import { useAsyncAction } from '@/hooks/useAsyncAction';
 import { cn } from '@/lib/utils';
 import { AnimatePresence, motion } from 'motion/react';
@@ -103,7 +104,9 @@ export default function App() {
     default: pressing Call used to take the entire chat away, with no way back
     to it except the sidebar.
   */
-  const [chatColumn, setChatColumn] = useState(true);
+  const [chatColumn, setChatColumn] = useState(
+    () => !window.matchMedia(PHONE_QUERY).matches,
+  );
   const [channelChat, setChannelChat] = useState(false);
   const [messageTarget, setMessageTarget] = useState<{
     room: string;
@@ -314,7 +317,7 @@ export default function App() {
             )}
             <section
               className={cn(
-                'relative flex min-w-0 flex-1 flex-col overflow-auto px-3 pt-5 pb-3 [scroll-padding-bottom:1.5rem] min-[481px]:px-5 min-[821px]:pb-0 min-[1251px]:px-8',
+                'call-section relative flex min-w-0 flex-1 flex-col overflow-auto px-3 pt-5 pb-3 [scroll-padding-bottom:1.5rem] min-[481px]:px-5 min-[821px]:pb-0 min-[1251px]:px-8',
                 chatBeside && 'min-[1100px]:flex-row min-[1100px]:gap-3',
                 callJoined ? 'pt-5' : 'min-[821px]:pt-8',
                 callFocused &&
@@ -378,13 +381,14 @@ export default function App() {
             with less than it can lay a camera row out in.
           */}
               {chatBeside && room && (
-                <div className="absolute inset-y-0 right-0 z-20 flex w-[min(21rem,calc(100%-2.5rem))] py-1 pr-1 min-[1100px]:static min-[1100px]:w-80 min-[1100px]:shrink-0 min-[1100px]:p-0">
+                <div className="absolute inset-y-0 right-0 z-20 flex w-[min(21rem,calc(100%-2.5rem))] py-1 pr-1 min-[1100px]:static min-[1100px]:w-80 min-[1100px]:shrink-0 min-[1100px]:p-0 phone:z-40 phone:w-full phone:bg-background phone:p-0">
                   {inDirectRoom ? (
                     <DirectConversation
                       room={room}
                       user={user}
                       live={presence.messages}
                       variant="panel"
+                      onClose={() => setChatColumn(false)}
                       targetId={
                         messageTarget?.room === room.id
                           ? messageTarget.id
@@ -396,7 +400,7 @@ export default function App() {
                   ) : (
                     user && (
                       <section
-                        className="flex min-h-0 min-w-0 flex-1 flex-col rounded-2xl border bg-background"
+                        className="flex min-h-0 min-w-0 flex-1 flex-col rounded-2xl border bg-background phone:rounded-none phone:border-0"
                         aria-label="Room chat"
                       >
                         <MessageThread
@@ -405,6 +409,7 @@ export default function App() {
                           user={user}
                           label={room.name}
                           canModerate={room.kind !== 'direct' && room.owner_id === user.id}
+                          onClose={() => setChannelChat(false)}
                           targetId={
                             messageTarget?.room === room.id
                               ? messageTarget.id
