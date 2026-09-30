@@ -86,8 +86,7 @@ export default function SpacesRail({
     (isMobile && mobileDestination
       ? mobileDestination === candidate
       : section === candidate);
-  // On a phone the list a section shows is a drawer, so choosing the section
-  // is choosing to look at that list.
+  // On a phone each section opens its full-screen list.
   const openSection = (candidate: Section) => {
     onSection(candidate);
   };
@@ -127,14 +126,16 @@ export default function SpacesRail({
 
       <RailButton
         label="Messages"
-        current={inSection('messages')}
+        current={inSection('messages') || (isMobile && friendsOpen)}
         onClick={() => openSection('messages')}
       >
         <MessageSquare size={21} />
       </RailButton>
-      <RailButton label="Friends" onClick={onFriends} current={friendsOpen}>
-        <Users size={21} />
-      </RailButton>
+      {!isMobile && (
+        <RailButton label="Friends" onClick={onFriends} current={friendsOpen}>
+          <Users size={21} />
+        </RailButton>
+      )}
       <RailButton
         label="Calls"
         current={inSection('calls')}

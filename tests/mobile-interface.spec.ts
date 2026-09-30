@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { swipe } from './mobile-touch';
+import { openMobileFriends, swipe } from './mobile-touch';
 import { expect, test, type BrowserContext } from '@playwright/test';
 
 const baseURL = process.env.E2E_BASE_URL ?? 'http://127.0.0.1:5173';
@@ -239,10 +239,7 @@ test('mobile conversation navigation, actions and keyboard preserve usable scree
         expect(button.width).toBeGreaterThanOrEqual(44);
       }
     }
-    await page
-      .getByRole('navigation', { name: 'Sections' })
-      .getByRole('button', { name: 'Friends', exact: true })
-      .click();
+    await openMobileFriends(page);
     const friends = page.getByRole('dialog', { name: 'Better with friends' });
     await expect(friends).toBeVisible();
     const close = (await friends

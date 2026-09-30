@@ -1,3 +1,4 @@
+import { openMobileFriends } from './mobile-touch';
 import {
   expect,
   test,
@@ -50,6 +51,8 @@ test('mobile sections open full-screen lists without interrupting an active call
     const tabs = page.getByRole('navigation', { name: 'Sections' });
     for (const size of [{width:390,height:650}, {width:800,height:650}, {width:852,height:393}]) {
       await page.setViewportSize(size);
+      await expect(tabs.getByRole('button', { name: 'Friends', exact: true })).toBeHidden();
+      if (size.width <= 820) await expect(tabs.getByRole('button')).toHaveCount(4);
       await tabs.getByRole('button', { name: 'Calls', exact: true }).click();
       const list = page.getByRole('main', { name: 'Calls', exact: true });
       await expect(list).toBeVisible();
@@ -62,6 +65,9 @@ test('mobile sections open full-screen lists without interrupting an active call
       await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
     }
     await page.screenshot({ path: '.local/mobile-ui-review/mobile-call.png' });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await expect(tabs.getByRole('button', { name: 'Friends', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
   } finally { await context.close(); }
 });
 
@@ -81,10 +87,7 @@ test('friends dialog stays within a short phone viewport and scrolls to its acti
     );
     const page = await context.newPage();
     await page.goto('/');
-    await page
-      .getByRole('navigation', { name: 'Sections' })
-      .getByRole('button', { name: 'Friends', exact: true })
-      .click();
+    await openMobileFriends(page);
     const dialog = page.getByRole('dialog', { name: 'Better with friends' });
     await expect(dialog).toBeVisible();
     const box = await dialog.boundingBox();

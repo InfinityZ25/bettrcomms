@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { swipe } from './mobile-touch';
+import { openMobileFriends, swipe } from './mobile-touch';
 
 test('edge swipes restore mobile screens and sheets while keeping a call connected', async ({
   browser,
@@ -85,10 +85,7 @@ test('edge swipes restore mobile screens and sheets while keeping a call connect
     await expect(settings).toBeVisible();
     await swipe(page, [8, 120], [150, 125]);
     await expect(settings).toBeHidden();
-    await page
-      .getByRole('navigation', { name: 'Sections' })
-      .getByRole('button', { name: 'Friends', exact: true })
-      .click();
+    await openMobileFriends(page);
     const friends = page.getByRole('dialog', { name: 'Better with friends' });
     await expect(friends).toBeVisible();
     await swipe(page, [8, 120], [150, 125]);
