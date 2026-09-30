@@ -131,6 +131,9 @@ func (p *pacer) consume(ctx context.Context, bits float64) error {
 	// writer would never make progress.
 	bits = math.Min(bits, p.burstBits)
 	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		now := p.now()
 		refill := now.Sub(p.last).Seconds() * p.rateBitsPerSecond
 		if refill < 0 {
@@ -185,4 +188,19 @@ func withoutRelayCandidates(sdp string) string {
 		filtered += separator
 	}
 	return filtered
+}
+
+// setRate changes pacing without refilling a bucket with a new-rate burst.
+// It is called only by the writer goroutine that owns this pacer.
+func (p *pacer) setRate(rate float64) {
+	rate = math.Max(rate, 1_000)
+	if rate == p.rateBitsPerSecond {
+		return
+	}
+	now := p.now()
+	p.tokens = math.Min(p.tokens+math.Max(0, now.Sub(p.last).Seconds())*p.rateBitsPerSecond, p.burstBits)
+	p.last = now
+	p.rateBitsPerSecond = rate
+	p.burstBits = math.Max(rate*PaceBurst.Seconds(), 4*float64(RTPMTU+RTPWireOverhead)*8)
+	p.tokens = math.Min(p.tokens, p.burstBits)
 }

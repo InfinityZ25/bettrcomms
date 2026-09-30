@@ -1,5 +1,29 @@
 # BetterComms preview release notes
 
+## Unreleased — adaptive glasses video and recovery
+
+The native iPhone glasses sender retains its 720×1280 at 30 fps capture target.
+H.264 starts at 3 Mbps, grows conservatively toward 8 Mbps after sustained
+low-loss receiver reports, and backs off on loss or a receiver bitrate limit.
+This is loss/REMB-driven adaptation, not a transport-wide bandwidth estimator.
+Stale or missing reports prevent increases. Each mesh viewer gets its own
+connection; the most constrained viewer limits the shared encoder rate.
+Encoder output has a one-second cap at 1.25 times its target, and RTP pacing
+follows rate changes without refilling its burst bucket.
+
+Viewer PLI/FIR requests and queue overflow now request a fresh encoder frame
+without restarting the glasses session. Recovery requests are coalesced to
+at most one per half second. Video older than 250 ms in an adaptive sender's
+queue is dropped with keyframe recovery instead of accumulating delay.
+These controls run from native camera frames, independently of web timers.
+Diagnostics include the encoder's current target bitrate.
+
+Five supplied outdoor receiver recordings measured 720×1280, 22–26 average
+fps, and 2.6–3.1 Mbps, with timestamp gaps as long as 4.9 seconds. These file
+measurements do not isolate capture, network, receiver, or recording failures.
+The new path still needs a signed iPhone and remote receiver check, including
+variable uplink conditions and multiple viewers, before promising stable 30 fps.
+
 ## 0.1.17 — current Wails application release
 
 Windows x64, macOS Apple Silicon/Intel DMGs, and an experimental re-signable

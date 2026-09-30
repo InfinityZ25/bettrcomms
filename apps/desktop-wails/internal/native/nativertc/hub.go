@@ -57,8 +57,9 @@ type encodedFrame struct {
 	data []byte
 	// rtpTime is session-relative 90 kHz capture time, wrapping exactly like
 	// an RTP timestamp.
-	rtpTime  uint32
-	keyframe bool
+	arrivedAt time.Time
+	rtpTime   uint32
+	keyframe  bool
 }
 
 // peerSignaling tracks the answer/candidate handshake for one viewer.
@@ -81,6 +82,7 @@ type peer struct {
 	cancel        context.CancelFunc
 	done          chan struct{}
 	slot          uint8
+	ssrc          uint32
 }
 
 // Hub owns one capture's WebRTC senders.
@@ -90,6 +92,9 @@ type Hub struct {
 	codec     webrtc.RTPCodecCapability
 
 	paceBitsPerSecond float64
+	adaptive          *bitrateController
+	controlMu         sync.Mutex
+	nextKeyframe      time.Time
 
 	mu    sync.Mutex
 	peers map[string]*peer
@@ -134,7 +139,7 @@ func h264Codec(profile h264.Profile, width, height, fps, bitrateMbps uint32) (we
 }
 
 // NewHub creates the sender for one capture.
-func NewHub(sessionID string, profile h264.Profile, width, height, fps, bitrateMbps uint32) (*Hub, error) {
+func NewHub(sessionID string, profile h264.Profile, width, height, fps, bitrateMbps uint32, options ...HubOption) (*Hub, error) {
 	if err := validateIdentifier("session ID", sessionID); err != nil {
 		return nil, err
 	}
@@ -146,29 +151,29 @@ func NewHub(sessionID string, profile h264.Profile, width, height, fps, bitrateM
 		return nil, err
 	}
 
+	h := &Hub{
+		sessionID: sessionID, codec: codec,
+		paceBitsPerSecond: float64(bitrateMbps) * 1_000_000 * PaceHeadroom,
+		peers:             map[string]*peer{}, clock: newCaptureClock(fps),
+	}
+	for _, option := range options {
+		if err := option(h); err != nil {
+			return nil, err
+		}
+	}
+	if h.adaptive != nil {
+		h.codec.RTCPFeedback = append(h.codec.RTCPFeedback, webrtc.RTCPFeedback{Type: "goog-remb"})
+	}
 	media := &webrtc.MediaEngine{}
-	// Interceptors are registered first so their own feedback registration
-	// stays away from this codec, and the offer advertises exactly the
-	// feedback above.
 	registry := &interceptor.Registry{}
 	if err := webrtc.RegisterDefaultInterceptors(media, registry); err != nil {
 		return nil, publicError(err)
 	}
-	if err := media.RegisterCodec(webrtc.RTPCodecParameters{
-		RTPCodecCapability: codec,
-		PayloadType:        102,
-	}, webrtc.RTPCodecTypeVideo); err != nil {
+	if err := media.RegisterCodec(webrtc.RTPCodecParameters{RTPCodecCapability: h.codec, PayloadType: 102}, webrtc.RTPCodecTypeVideo); err != nil {
 		return nil, publicError(err)
 	}
-
-	return &Hub{
-		sessionID:         sessionID,
-		api:               webrtc.NewAPI(webrtc.WithMediaEngine(media), webrtc.WithInterceptorRegistry(registry)),
-		codec:             codec,
-		paceBitsPerSecond: float64(bitrateMbps) * 1_000_000 * PaceHeadroom,
-		peers:             map[string]*peer{},
-		clock:             newCaptureClock(fps),
-	}, nil
+	h.api = webrtc.NewAPI(webrtc.WithMediaEngine(media), webrtc.WithInterceptorRegistry(registry))
+	return h, nil
 }
 
 // SessionID is the capture this hub belongs to.
@@ -191,9 +196,8 @@ func (h *Hub) PeerConnected(peerID string) bool {
 
 // TakeIDRRequest reports and clears a pending keyframe request.
 //
-// The encoder subprocess has no PLI channel, so a viewer's request is answered
-// by restarting capture. Taking the flag rather than reading it keeps one
-// request from causing repeated restarts.
+// Native encoders consume this to force a recovery frame without restarting
+// the capture session.
 func (h *Hub) TakeIDRRequest() bool { return h.idrRequested.Swap(false) }
 
 // Stats is what the capture has produced so far.
@@ -206,6 +210,7 @@ type Stats struct {
 	ConnectedPeers int    `json:"connectedPeers"`
 	// SPSProfileIDC and friends describe the stream the encoder actually
 	// produced, which is what proves it honoured the profile it was given.
+	TargetBitrate      int    `json:"targetBitrate,omitempty"`
 	SPSProfileIDC      string `json:"spsProfileIdc,omitempty"`
 	SPSConstraintFlags string `json:"spsConstraintFlags,omitempty"`
 	SPSLevelIDC        string `json:"spsLevelIdc,omitempty"`
@@ -219,6 +224,11 @@ func (h *Hub) Stats() Stats {
 		EncodedBytes:  h.encodedBytes.Load(),
 		DroppedFrames: h.droppedFrames.Load(),
 		Peers:         h.PeerCount(),
+	}
+	if h.adaptive != nil {
+		h.adaptive.Lock()
+		stats.TargetBitrate = h.adaptive.current
+		h.adaptive.Unlock()
 	}
 	h.mu.Lock()
 	for _, peer := range h.peers {
@@ -378,15 +388,21 @@ func (h *Hub) CreatePeer(ctx context.Context, peerID string, iceServers []IceSer
 	h.peers[peerID] = attached
 	h.mu.Unlock()
 
-	go h.readRTCP(peerCtx, sender)
+	parameters := sender.GetParameters()
+	if len(parameters.Encodings) > 0 {
+		attached.ssrc = uint32(parameters.Encodings[0].SSRC)
+	}
+	if h.adaptive != nil && peerID != PreviewPeerID {
+		h.adaptive.add(peerID)
+	}
+	go h.readRTCP(peerCtx, sender, attached, peerID)
 	go h.writeFrames(peerCtx, attached, track)
 
 	return Offer{PeerID: peerID, SDP: sdp}, nil
 }
 
-// readRTCP watches for keyframe requests. The encoder subprocess cannot be sent
-// a PLI, so a request is recorded and answered by restarting capture.
-func (h *Hub) readRTCP(ctx context.Context, sender *webrtc.RTPSender) {
+// readRTCP consumes native encoder recovery requests and optional rate feedback.
+func (h *Hub) readRTCP(ctx context.Context, sender *webrtc.RTPSender, attached *peer, peerID string) {
 	buffer := make([]byte, 1500)
 	for {
 		if ctx.Err() != nil {
@@ -400,10 +416,31 @@ func (h *Hub) readRTCP(ctx context.Context, sender *webrtc.RTPSender) {
 		if err != nil {
 			continue
 		}
-		for _, packet := range packets {
-			switch packet.(type) {
-			case *rtcp.PictureLossIndication, *rtcp.FullIntraRequest:
-				h.idrRequested.Store(true)
+		h.handleFeedback(peerID, attached.ssrc, packets, time.Now())
+	}
+}
+
+// handleFeedback associates rate reports with this sender's video SSRC.
+func (h *Hub) handleFeedback(peerID string, ssrc uint32, packets []rtcp.Packet, now time.Time) {
+	for _, packet := range packets {
+		switch packet := packet.(type) {
+		case *rtcp.PictureLossIndication, *rtcp.FullIntraRequest:
+			h.idrRequested.Store(true)
+		case *rtcp.ReceiverReport:
+			if h.adaptive != nil {
+				for _, report := range packet.Reports {
+					if ssrc != 0 && report.SSRC == ssrc {
+						h.adaptive.report(peerID, report.FractionLost, now)
+					}
+				}
+			}
+		case *rtcp.ReceiverEstimatedMaximumBitrate:
+			if h.adaptive != nil {
+				for _, reportedSSRC := range packet.SSRCs {
+					if ssrc != 0 && reportedSSRC == ssrc {
+						h.adaptive.estimate(peerID, packet.Bitrate, now)
+					}
+				}
 			}
 		}
 	}
@@ -423,7 +460,7 @@ func (h *Hub) writeFrames(ctx context.Context, attached *peer, track *webrtc.Tra
 		rtp.NewRandomSequencer(),
 		RTPClockRate,
 	)
-	paced := newPacer(h.paceBitsPerSecond)
+	paced := newPacer(h.pacingRate(time.Now()))
 	var waitingForKeyframe bool
 
 	for {
@@ -434,6 +471,15 @@ func (h *Hub) writeFrames(ctx context.Context, attached *peer, track *webrtc.Tra
 			if !ok {
 				return
 			}
+			if h.adaptive != nil && time.Since(frame.arrivedAt) > 250*time.Millisecond {
+				waitingForKeyframe = true
+				h.adaptive.congested(time.Now())
+				h.idrRequested.Store(true)
+				attached.droppedFrames.Add(1)
+				h.droppedFrames.Add(1)
+				continue
+			}
+			paced.setRate(h.pacingRate(time.Now()))
 			// After an overflow the reference chain is broken. Resume at the
 			// next keyframe rather than sending frames whose references were
 			// dropped, which a decoder renders as smearing.
@@ -537,6 +583,9 @@ func (h *Hub) RemovePeer(peerID string) error {
 	attached, ok := h.peers[peerID]
 	delete(h.peers, peerID)
 	h.mu.Unlock()
+	if h.adaptive != nil {
+		h.adaptive.remove(peerID)
+	}
 	if !ok || attached == nil {
 		return nil
 	}
@@ -609,7 +658,7 @@ func (h *Hub) WriteAccessUnit(annexB []byte, arrivedAt time.Time) error {
 		h.keyframes.Add(1)
 	}
 
-	frame := &encodedFrame{data: prepared, rtpTime: rtpTime, keyframe: keyframe}
+	frame := &encodedFrame{data: prepared, rtpTime: rtpTime, keyframe: keyframe, arrivedAt: arrivedAt}
 
 	h.mu.Lock()
 	targets := make([]*peer, 0, len(h.peers))
@@ -627,6 +676,10 @@ func (h *Hub) WriteAccessUnit(annexB []byte, arrivedAt time.Time) error {
 			target.droppedFrames.Add(1)
 			h.droppedFrames.Add(1)
 			target.resync.Store(true)
+			if h.adaptive != nil {
+				h.adaptive.congested(time.Now())
+			}
+			h.idrRequested.Store(true)
 		}
 	}
 	return nil
