@@ -88,6 +88,7 @@ export class MediaEngine extends EventTarget {
   private microphoneEnabled?: boolean;
   private readonly pendingMicrophones = new Set<MediaStreamTrack>();
   private readonly nativeRemote = new Map<string, RemoteTrack>();
+  private readonly nativeSystemRemote = new Map<string, RemoteTrack>();
   private readonly signalQueues = new Map<string, Promise<void>>();
   private readonly nativeScreen: NativeScreenTransport;
   private readonly nativeCamera: NativeCameraTransport;
@@ -152,13 +153,14 @@ export class MediaEngine extends EventTarget {
       this.ice.mode === 'direct-only',
       (track) => this.setNativePreview(track),
       (peerId, track) => {
-        const remote = { peerId, source: 'screen' as const, track, stream: new MediaStream([track]) };
-        this.nativeRemote.set(peerId, remote);
+        const source = track.kind === 'audio' ? 'system' as const : 'screen' as const;
+        const remote = { peerId, source, track, stream: new MediaStream([track]) };
+        (source === 'system' ? this.nativeSystemRemote : this.nativeRemote).set(peerId, remote);
         this.emit('remote-track', remote);
       },
       (peerId) => {
-        if (!this.nativeRemote.delete(peerId)) return;
-        this.emit('remote-track-removed', { peerId, source: 'screen' });
+        if (this.nativeRemote.delete(peerId)) this.emit('remote-track-removed', { peerId, source: 'screen' });
+        if (this.nativeSystemRemote.delete(peerId)) this.emit('remote-track-removed', { peerId, source: 'system' });
       },
       (reason) => this.emit('error', { operation: 'native-screen-ended', error: new Error(reason) }),
       (peerId) => this.enableNativeScreenFallback(peerId),
@@ -490,8 +492,8 @@ export class MediaEngine extends EventTarget {
 
   async captureIOSAppScreen(): Promise<void> {
     await this.captureNativeScreen({ sourceId: 'ios-broadcast', encoder: 'libx264',
-      width: 720, height: 1280, fps: 30, bitrateMbps: 3,
-      h264Profile: 'baseline', contentHint: 'detail', cursor: false, systemAudio: false });
+      width: 1080, height: 1920, fps: 30, bitrateMbps: 6,
+      h264Profile: 'baseline', contentHint: 'detail', cursor: false, systemAudio: true });
   }
 
   async captureNativeScreen(options: NativeScreenStartOptions): Promise<void> {
@@ -502,7 +504,7 @@ export class MediaEngine extends EventTarget {
     try {
       await this.nativeScreen.start(options, [...this.peers.keys()]);
       if (generation !== this.nativeShareGeneration || this.disposed || !this.nativeScreen.active) return;
-      if (options.systemAudio) {
+      if (options.systemAudio && !hasIOSBroadcast()) {
         const audio = await createNativeSystemAudio(abort.signal, undefined, options.systemAudioSourceId, options.excludeCallAudio);
         if (generation !== this.nativeShareGeneration || this.disposed) { audio.dispose(); return; }
         this.nativeAudio = audio;
@@ -664,6 +666,8 @@ export class MediaEngine extends EventTarget {
     )).concat(
       [...this.nativeRemote.values()].filter((track) =>
         (!peerId || track.peerId === peerId) && !this.peers.get(track.peerId)?.remote.has('screen')),
+      [...this.nativeSystemRemote.values()].filter((track) =>
+        (!peerId || track.peerId === peerId) && !this.peers.get(track.peerId)?.remote.has('system')),
       [...this.nativeCameraRemote.values()].filter((track) => !peerId || track.peerId === peerId),
       [...this.relayTracks.values()].filter((track) => !peerId || track.peerId === peerId),
     );

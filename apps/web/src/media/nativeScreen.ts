@@ -109,6 +109,7 @@ type ProfileMessage = {
   nonce: string;
   profiles?: NativeH264Profile[];
   runtime?: 'browser' | 'desktop';
+  appAudio?: boolean;
 };
 type PendingProfileQuery = {
   peers: Set<string>;
@@ -161,6 +162,7 @@ export class NativeScreenTransport {
   private pendingProfileQueries = new Map<string, PendingProfileQuery>();
   private peerProfiles = new Map<string, Set<NativeH264Profile>>();
   private peerRuntimes = new Map<string, 'browser' | 'desktop'>();
+  private peerAppAudio = new Set<string>();
   private pendingFallbackSignals = new Map<string, PendingFallbackSignal>();
 
   constructor(
@@ -353,6 +355,7 @@ export class NativeScreenTransport {
           peerId,
           iceServers: this.nativeIceServers(),
           directOnly: this.directOnly,
+          appAudio: this.peerAppAudio.has(peerId),
         },
       );
       if (session !== this.session || generation !== this.generation) return;
@@ -383,6 +386,7 @@ export class NativeScreenTransport {
     this.outboundPeers.delete(peerId);
     this.peerProfiles.delete(peerId);
     this.peerRuntimes.delete(peerId);
+    this.peerAppAudio.delete(peerId);
   }
 
   async handle(signal: MediaSignal): Promise<boolean> {
@@ -407,6 +411,7 @@ export class NativeScreenTransport {
             nonce: data.nonce,
             profiles,
             runtime: hasNativeMediaHost() ? 'desktop' : 'browser',
+            appAudio: true,
           },
         } as unknown as MediaSignal);
         return true;
@@ -418,6 +423,8 @@ export class NativeScreenTransport {
           const profiles = new Set(advertised.filter((profile): profile is NativeH264Profile => ['baseline', 'main', 'high'].includes(profile)));
           pending.replies.set(peerId, profiles);
           this.peerProfiles.set(peerId, profiles);
+          if (data.appAudio === true) this.peerAppAudio.add(peerId);
+          else this.peerAppAudio.delete(peerId);
           if (data.runtime === 'browser' || data.runtime === 'desktop')
             this.peerRuntimes.set(peerId, data.runtime);
           if (pending.replies.size === pending.peers.size) pending.finish();
@@ -552,6 +559,7 @@ export class NativeScreenTransport {
     this.activeContentHint = 'detail';
     this.peerProfiles.clear();
     this.peerRuntimes.clear();
+    this.peerAppAudio.clear();
     this.unlisten?.();
     this.unlisten = undefined;
     this.preview?.close();
@@ -849,6 +857,7 @@ export class NativeScreenTransport {
     const pc = new RTCPeerConnection();
     this.preview = pc;
     pc.ontrack = ({ track }) => {
+      if (track.kind !== 'video') { track.stop(); return; }
       if (generation === this.generation && session === this.session) {
         registerNativeScreenTrack(track, session.sessionId);
         this.onPreview(track);

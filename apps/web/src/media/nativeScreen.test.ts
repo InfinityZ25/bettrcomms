@@ -890,3 +890,36 @@ it('cancels a host start that is still waiting when sharing stops', async () => 
   expect(transport.active).toBe(false);
   expect(invoke).toHaveBeenCalledWith('native_screen_stop', { sessionId: 'late' });
 });
+
+it('only offers app audio to a receiver that explicitly supports independent audio tracks', async () => {
+  for (const supported of [true, false]) {
+    const { transport, sent } = setup();
+    await transport.start({ sourceId: 'ios-broadcast', encoder: 'libx264', width: 1080,
+      height: 1920, fps: 30, bitrateMbps: 6, cursor: false, h264Profile: 'baseline' });
+    const adding = transport.addPeer('audio-viewer');
+    await Promise.resolve();
+    const query = sent.find(signal => signal.type === 'signal' &&
+      (signal.data as { kind?: string }).kind === 'native-screen-profile-query')!;
+    const nonce = 'captureId' in query ? query.captureId : undefined;
+    await transport.handle({ type: 'signal', to: 'self', from: 'audio-viewer', transport: 'native-screen',
+      captureId: nonce, data: { kind: 'native-screen-profile-reply', nonce,
+        profiles: ['baseline'], runtime: 'browser', ...(supported ? { appAudio: true } : {}) } } as MediaSignal);
+    await adding;
+    expect(mocks.invoke).toHaveBeenCalledWith('native_screen_peer_offer', expect.objectContaining({
+      peerId: 'audio-viewer', appAudio: supported,
+    }));
+    await transport.stop();
+  }
+});
+
+it('never sends an audio track to the video-only native preview renderer', async () => {
+  const { transport, preview } = setup();
+  await transport.start({ sourceId: 'ios-broadcast', encoder: 'libx264', width: 1080,
+    height: 1920, fps: 30, bitrateMbps: 6, cursor: false, h264Profile: 'baseline' });
+  const audio = { kind: 'audio', stop: vi.fn() };
+  const pc = FakePeerConnection.instances.at(-1)! as unknown as RTCPeerConnection;
+  pc.ontrack!.call(pc, { track: audio } as unknown as RTCTrackEvent);
+  expect(preview).not.toHaveBeenCalledWith(audio);
+  expect(audio.stop).toHaveBeenCalledOnce();
+  await transport.stop();
+});

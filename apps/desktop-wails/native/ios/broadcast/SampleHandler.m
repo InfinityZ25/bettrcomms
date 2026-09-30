@@ -3,17 +3,22 @@
 #import <CoreImage/CoreImage.h>
 #import <stdatomic.h>
 #import "../video_encoder_recovery.h"
+#import "BroadcastAudio.h"
+#import "broadcast_timing.h"
 
 extern void bc_broadcast_connect(const char *path);
 extern void bc_broadcast_stop(void);
-extern void bc_broadcast_video(void *data, int size);
+extern void bc_broadcast_video(void *data, int size, long long pts);
+extern int bc_broadcast_audio_enabled(void);
 extern int bc_broadcast_encoder_control(int *force);
 
 @interface SampleHandler : RPBroadcastSampleHandler {
     VTCompressionSessionRef _encoder;
     NSInteger _width, _height, _bitrate;
     BOOL _stopped;
-    double _lastFrame;
+    BCBroadcastTiming _timing;
+    BCBroadcastAudio *_audio;
+    BOOL _audioFailed;
     BCVideoEncoderRecovery _recovery;
     atomic_int _encodeError;
     atomic_bool _encoded;
@@ -37,6 +42,7 @@ static void encoded(void *ref, void *source, OSStatus status, VTEncodeInfoFlags 
 - (void)broadcastStartedWithSetupInfo:(NSDictionary<NSString *,NSObject *> *)setupInfo {
     currentHandler=self;
     atomic_init(&_encodeError,0); atomic_init(&_encoded,false);
+    _audio=[BCBroadcastAudio new];
     // The extension's own ID is the host's plus ".broadcast"; its App Group
     // is that ID with a "group." prefix (see broadcast_host.m).
     NSString *identifier=[@"group." stringByAppendingString:NSBundle.mainBundle.bundleIdentifier];
@@ -85,26 +91,36 @@ static void encoded(void *ref, void *source, OSStatus status, VTEncodeInfoFlags 
         if (!n || n>length-at) return;
         [annex appendBytes:prefix length:4]; [annex appendBytes:bytes+at length:n]; at+=n;
     }
-    if (at==length) { bc_broadcast_video(annex.mutableBytes,(int)annex.length); atomic_store(&_encoded,true); }
+    if (at==length) { bc_broadcast_video(annex.mutableBytes,(int)annex.length,(long long)llround(CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(sample))*1e9)); atomic_store(&_encoded,true); }
 }
 - (void)processSampleBuffer:(CMSampleBufferRef)sample withType:(RPSampleBufferType)type {
     // The existing call owns its microphone. Never broadcast that microphone
     // a second time or silently mix it into screen video.
-    if (type!=RPSampleBufferTypeVideo) return;
+    if (type==RPSampleBufferTypeAudioMic) return;
     @synchronized(self) {
         if (_stopped) return;
+        @autoreleasepool {
+        if (type==RPSampleBufferTypeAudioApp) {
+            if (!bc_broadcast_audio_enabled()) return;
+            if (![_audio process:sample] && !_audioFailed) {
+                _audioFailed=YES;
+                NSLog(@"[BetterCommsBroadcast] App audio conversion failed; capture format unavailable.");
+            }
+            return;
+        }
+        if (type!=RPSampleBufferTypeVideo) return;
         double now=NSProcessInfo.processInfo.systemUptime;
         OSStatus status=atomic_exchange(&_encodeError,0);
         if (status) {
             if (!BCVideoEncoderCanRecover(status)) { [self endWithMessage:@"Screen video encoding failed."]; return; }
             BCVideoEncoderScheduleRetry(&_recovery,now);
         } else if (atomic_exchange(&_encoded,false) && !_recovery.resetRequired) BCVideoEncoderRecovered(&_recovery);
-        if (now<_recovery.retryAt || now-_lastFrame<1.0/30.0) return;
+        if (now<_recovery.retryAt) return;
         int force=0; int bitrate=bc_broadcast_encoder_control(&force);
-        if (bitrate<=0) return;
+        if (bitrate<=0 || !BCBroadcastAcceptFrame(&_timing,CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(sample)))) return;
         CVPixelBufferRef pixel=CMSampleBufferGetImageBuffer(sample); if (!pixel) return;
         double w=CVPixelBufferGetWidth(pixel),h=CVPixelBufferGetHeight(pixel);
-        double scale=MIN(1.0,1280.0/MAX(w,h));
+        double scale=MIN(1.0,1920.0/MAX(w,h));
         NSInteger width=MAX(2,((NSInteger)(w*scale)/2)*2),height=MAX(2,((NSInteger)(h*scale)/2)*2);
         if (_encoder && (_recovery.resetRequired || width!=_width || height!=_height)) {
             // Drain first so a late error from this encoder cannot land on the next.
@@ -118,8 +134,10 @@ static void encoded(void *ref, void *source, OSStatus status, VTEncodeInfoFlags 
             if (!status) status=VTSessionSetProperties(_encoder,(__bridge CFDictionaryRef)@{
                 (id)kVTCompressionPropertyKey_RealTime:@YES,
                 (id)kVTCompressionPropertyKey_AllowFrameReordering:@NO,
-                (id)kVTCompressionPropertyKey_ProfileLevel:(id)kVTProfileLevel_H264_Baseline_3_1,
+                (id)kVTCompressionPropertyKey_ProfileLevel:(id)kVTProfileLevel_H264_Baseline_AutoLevel,
+                (id)kVTCompressionPropertyKey_MaxFrameDelayCount:@1,
                 (id)kVTCompressionPropertyKey_MaxKeyFrameInterval:@30,
+                (id)kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration:@1,
                 (id)kVTCompressionPropertyKey_ExpectedFrameRate:@30});
             if (!status) status=VTCompressionSessionPrepareToEncodeFrames(_encoder);
             _bitrate=0; force=1;
@@ -132,17 +150,18 @@ static void encoded(void *ref, void *source, OSStatus status, VTEncodeInfoFlags 
         }
         if (!status) status=VTCompressionSessionEncodeFrame(_encoder,pixel,CMSampleBufferGetPresentationTimeStamp(sample),kCMTimeInvalid,
             (__bridge CFDictionaryRef)(force ? @{(id)kVTEncodeFrameOptionKey_ForceKeyFrame:@YES} : nil),NULL,NULL);
-        _lastFrame=now;
         if (status) atomic_store(&_encodeError,status);
+        }
     }
 }
-- (void)broadcastPaused { /* ReplayKit supplies no frames while paused. */ }
+- (void)broadcastPaused { @synchronized(self) { [_audio reset]; _timing.started=false; } }
 - (void)broadcastResumed { @synchronized(self) { _recovery.retryAt=0; _recovery.resetRequired=true; } }
 - (void)broadcastFinished {
     @synchronized(self) {
         if (_stopped) return;
         _stopped=YES;
         bc_broadcast_stop();
+        [_audio reset]; _audio=nil;
         if (_encoder) { VTCompressionSessionCompleteFrames(_encoder,kCMTimeInvalid); VTCompressionSessionInvalidate(_encoder); CFRelease(_encoder); _encoder=NULL; }
     }
 }

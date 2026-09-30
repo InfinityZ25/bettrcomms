@@ -69,7 +69,32 @@ The experimental iPhone build now includes a ReplayKit Broadcast Upload
 Extension for whole-phone screen sharing. Capture, H.264 encoding and sending
 run in the extension rather than the webview. Development installation requires
 separate host and extension profiles with their shared App Group enabled.
-Screen system audio is not included; the call microphone remains independent.
+ReplayKit app audio is now sent as a separate stereo Opus track when audio
+sharing is enabled; the call microphone remains independent. The extension
+ignores ReplayKit microphone samples. Receivers advertise app-audio support,
+so older installed clients keep video without misclassifying the audio track;
+refresh the updated web app to receive both. Recordings retain separate screen
+and system-audio sources rather than mixing audio into the screen-only MP4.
+
+Screen capture now targets a 1920-pixel long edge at 30 FPS (preserving the
+phone's aspect ratio), starts at 6 Mbps and adapts between 1.5 and 12 Mbps.
+Frame selection uses ReplayKit capture timestamps, not callback arrival time,
+so batches of frames do not get discarded merely because they arrive together.
+The RTP timeline preserves real capture gaps. VideoToolbox's frame delay is
+bounded, and a stale reference chain over 150 ms is discarded and recovered
+with a keyframe instead of playing an ever older backlog. The audio writer has
+its own 100 ms queue and is independent of video pacing.
+
+The iOS package builds a checksum-pinned libopus 1.5.2 and bundles its license;
+there is no audio-runtime download on the phone. Validation includes native
+frame-pacing tests, conversion and Opus decoding of 44.1/48 kHz test tones,
+Go WebRTC negotiation/packet delivery and race checks, and a two-client browser
+test with real API/signaling, non-silent app audio and stop cleanup. Those checks
+do not establish real-phone latency, ReplayKit audio availability in every app,
+protected-media capture, or sustained 1920-pixel/30 FPS delivery. Device
+acceptance remains required. Native preview and video compatibility fallback
+remain video-only; an old client or a receiver using that fallback does not
+receive the extension's app audio.
 
 The app and extension authenticate each other with single-use keys, so another
 app cannot receive the screen by binding the loopback handoff port. A broadcast

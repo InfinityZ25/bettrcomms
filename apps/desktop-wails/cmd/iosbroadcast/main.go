@@ -30,6 +30,7 @@ var state struct {
 	cancel  context.CancelFunc
 	conn    net.Conn
 	session string
+	audio   bool
 }
 
 func main() {}
@@ -97,9 +98,11 @@ func fmtPort(port int) string { b, _ := json.Marshal(port); return string(b) }
 
 func command(ctx context.Context, name string, raw json.RawMessage) (any, error) {
 	var a struct {
+		SystemAudio bool                  `json:"systemAudio"`
 		SessionID   string                `json:"sessionId"`
 		PeerID      string                `json:"peerId"`
 		IceServers  []nativertc.IceServer `json:"iceServers"`
+		AppAudio    bool                  `json:"appAudio"`
 		DirectOnly  bool                  `json:"directOnly"`
 		Description struct {
 			SDP string `json:"sdp"`
@@ -122,10 +125,15 @@ func command(ctx context.Context, name string, raw json.RawMessage) (any, error)
 			return nil, errors.New("Screen broadcast already started")
 		}
 		var err error
-		h, err = nativertc.NewHub(id, h264.Baseline, 720, 1280, 30, 8, nativertc.WithAdaptiveBitrate(1_000_000, 3_000_000, 6_000_000))
+		options := []nativertc.HubOption{nativertc.WithAdaptiveBitrate(1_500_000, 6_000_000, 12_000_000), nativertc.WithMaxQueueAge(150 * time.Millisecond)}
+		if a.SystemAudio {
+			options = append(options, nativertc.WithBroadcastAudio())
+		}
+		h, err = nativertc.NewHub(id, h264.Baseline, 1920, 1080, 30, 12, options...)
+		state.audio = a.SystemAudio && err == nil
 		state.hub = h
 		state.Unlock()
-		return map[string]any{"sessionId": id, "fps": 30, "bitrateMbps": 3}, err
+		return map[string]any{"sessionId": id, "fps": 30, "bitrateMbps": 6}, err
 	}
 	state.Unlock()
 	if h == nil || a.SessionID != id {
@@ -133,7 +141,7 @@ func command(ctx context.Context, name string, raw json.RawMessage) (any, error)
 	}
 	switch name {
 	case "native_screen_peer_offer":
-		offer, err := h.CreatePeer(ctx, a.PeerID, a.IceServers, a.DirectOnly)
+		offer, err := h.CreatePeerWithAudio(ctx, a.PeerID, a.IceServers, a.DirectOnly, a.AppAudio)
 		return map[string]string{"type": "offer", "sdp": offer.SDP}, err
 	case "native_screen_peer_answer":
 		return nil, h.ApplyAnswer(a.PeerID, a.Description.SDP)
@@ -158,6 +166,7 @@ func bc_broadcast_stop() {
 	state.Lock()
 	h, cancel, conn := state.hub, state.cancel, state.conn
 	state.hub = nil
+	state.audio = false
 	state.cancel = nil
 	state.conn = nil
 	if cancel != nil {
@@ -173,7 +182,7 @@ func bc_broadcast_stop() {
 }
 
 //export bc_broadcast_video
-func bc_broadcast_video(data unsafe.Pointer, size C.int) {
+func bc_broadcast_video(data unsafe.Pointer, size C.int, pts C.longlong) {
 	if size <= 0 || size > 2*1024*1024 {
 		return
 	}
@@ -181,7 +190,7 @@ func bc_broadcast_video(data unsafe.Pointer, size C.int) {
 	h := state.hub
 	state.Unlock()
 	if h != nil {
-		_ = h.WriteAccessUnit(C.GoBytes(data, size), time.Now())
+		_ = h.WriteTimedAccessUnit(C.GoBytes(data, size), time.Duration(pts))
 	}
 }
 
@@ -199,4 +208,28 @@ func bc_broadcast_encoder_control(force *C.int) C.int {
 		*force = 1
 	}
 	return C.int(c.Bitrate)
+}
+
+//export bc_broadcast_audio
+func bc_broadcast_audio(data unsafe.Pointer, size C.int, pts C.longlong) {
+	if size <= 0 || size > 1275 {
+		return
+	}
+	state.Lock()
+	h := state.hub
+	state.Unlock()
+	if h != nil {
+		_ = h.WriteOpus(C.GoBytes(data, size), time.Duration(pts))
+	}
+}
+
+//export bc_broadcast_audio_enabled
+func bc_broadcast_audio_enabled() C.int {
+	state.Lock()
+	enabled := state.audio
+	state.Unlock()
+	if enabled {
+		return 1
+	}
+	return 0
 }

@@ -177,6 +177,8 @@ codesign --force --sign - "$bundle/Frameworks/MWDATCamera.framework"
 # The artifact is a device-target IPA for a developer to re-sign with their
 # own certificate and provisioning profile. Ad-hoc signing is not installable
 # on a physical iPhone.
+opus="$repo/.local/build-deps/opus-ios-1.5.2"
+bash "$repo/scripts/build-ios-opus.sh" "$opus"
 broadcast="$bundle/PlugIns/BetterCommsBroadcast.appex"
 mkdir -p "$broadcast"
 (
@@ -191,9 +193,11 @@ xcrun --sdk iphoneos clang -target arm64-apple-ios17.2 -isysroot "$sdk" \
   -fobjc-arc -fmodules -fapplication-extension \
   -framework Foundation -framework UIKit -framework ReplayKit -framework VideoToolbox \
   -framework CoreMedia -framework CoreVideo -framework Security -framework CoreFoundation \
-  -framework SystemConfiguration -lresolv -Wl,-e,_NSExtensionMain \
-  "$app/native/ios/broadcast/SampleHandler.m" -Wl,-force_load,"$app/bin/Broadcast-ios.a" \
+  -framework AVFoundation -framework AudioToolbox -framework SystemConfiguration -lresolv -Wl,-e,_NSExtensionMain \
+  "$app/native/ios/broadcast/SampleHandler.m" "$app/native/ios/broadcast/BroadcastAudio.m" \
+  -I"$opus/include" "$opus/lib/libopus.a" -Wl,-force_load,"$app/bin/Broadcast-ios.a" \
   -o "$broadcast/BetterCommsBroadcast"
+cp "$opus/COPYING" "$broadcast/Opus-LICENSE.txt"
 python3 - "$bundle/Info.plist" "$broadcast/Info.plist" <<'PY'
 import plistlib, sys
 with open(sys.argv[1], 'rb') as file:

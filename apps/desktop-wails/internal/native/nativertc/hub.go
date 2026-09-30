@@ -70,10 +70,13 @@ type peerSignaling struct {
 }
 
 type peer struct {
-	connection *webrtc.PeerConnection
-	frames     chan *encodedFrame
-	queueMu    sync.Mutex
-	catchUp    atomic.Bool
+	connection  *webrtc.PeerConnection
+	frames      chan *encodedFrame
+	audio       chan *encodedAudio
+	audioDone   chan struct{}
+	audioActive bool
+	queueMu     sync.Mutex
+	catchUp     atomic.Bool
 	// resync is set when this viewer's queue overflowed, so its writer restarts
 	// cleanly at the next keyframe rather than emitting frames whose references
 	// were dropped.
@@ -113,8 +116,14 @@ type Hub struct {
 	setsMu        sync.Mutex
 	parameterSets parameterSets
 
-	clockMu sync.Mutex
-	clock   *captureClock
+	clockMu        sync.Mutex
+	clock          *captureClock
+	audioEnabled   bool
+	maxQueueAge    time.Duration
+	captureOrigin  time.Duration
+	captureStarted bool
+	audioPackets   atomic.Uint64
+	audioDropped   atomic.Uint64
 }
 
 // h264Codec builds the codec capability, whose fmtp announces exactly the
@@ -174,6 +183,11 @@ func NewHub(sessionID string, profile h264.Profile, width, height, fps, bitrateM
 	if err := media.RegisterCodec(webrtc.RTPCodecParameters{RTPCodecCapability: h.codec, PayloadType: 102}, webrtc.RTPCodecTypeVideo); err != nil {
 		return nil, publicError(err)
 	}
+	if h.audioEnabled {
+		if err := media.RegisterCodec(webrtc.RTPCodecParameters{RTPCodecCapability: broadcastAudioCodec, PayloadType: 111}, webrtc.RTPCodecTypeAudio); err != nil {
+			return nil, publicError(err)
+		}
+	}
 	h.api = webrtc.NewAPI(webrtc.WithMediaEngine(media), webrtc.WithInterceptorRegistry(registry))
 	return h, nil
 }
@@ -210,6 +224,8 @@ type Stats struct {
 	DroppedFrames  uint64 `json:"droppedFrames"`
 	Peers          int    `json:"peers"`
 	ConnectedPeers int    `json:"connectedPeers"`
+	AudioPackets   uint64 `json:"audioPackets,omitempty"`
+	AudioDropped   uint64 `json:"audioDropped,omitempty"`
 	// SPSProfileIDC and friends describe the stream the encoder actually
 	// produced, which is what proves it honoured the profile it was given.
 	TargetBitrate      int    `json:"targetBitrate,omitempty"`
@@ -226,6 +242,8 @@ func (h *Hub) Stats() Stats {
 		EncodedBytes:  h.encodedBytes.Load(),
 		DroppedFrames: h.droppedFrames.Load(),
 		Peers:         h.PeerCount(),
+		AudioPackets:  h.audioPackets.Load(),
+		AudioDropped:  h.audioDropped.Load(),
 	}
 	if h.adaptive != nil {
 		h.adaptive.Lock()
@@ -285,6 +303,12 @@ func prepareICEServers(servers []IceServer, directOnly bool) []webrtc.ICEServer 
 var beforeAttach func(*Hub)
 
 func (h *Hub) CreatePeer(ctx context.Context, peerID string, iceServers []IceServer, directOnly bool) (Offer, error) {
+	return h.CreatePeerWithAudio(ctx, peerID, iceServers, directOnly, true)
+}
+
+// CreatePeerWithAudio keeps legacy viewers video-only. They did not advertise
+// app-audio support and would otherwise replace their screen with an audio track.
+func (h *Hub) CreatePeerWithAudio(ctx context.Context, peerID string, iceServers []IceServer, directOnly, appAudio bool) (Offer, error) {
 	if err := validateIdentifier("peer ID", peerID); err != nil {
 		return Offer{}, err
 	}
@@ -344,6 +368,19 @@ func (h *Hub) CreatePeer(ctx context.Context, peerID string, iceServers []IceSer
 		return Offer{}, publicError(err)
 	}
 
+	var audioTrack *webrtc.TrackLocalStaticRTP
+	var audioSender *webrtc.RTPSender
+	if h.audioEnabled && appAudio && peerID != PreviewPeerID {
+		audioTrack, err = webrtc.NewTrackLocalStaticRTP(broadcastAudioCodec, "native-screen-audio-"+h.sessionID, "native-screen-"+h.sessionID)
+		if err == nil {
+			audioSender, err = connection.AddTrack(audioTrack)
+		}
+		if err != nil {
+			_ = connection.Close()
+			release()
+			return Offer{}, publicError(err)
+		}
+	}
 	offer, err := connection.CreateOffer(nil)
 	if err != nil {
 		_ = connection.Close()
@@ -380,13 +417,16 @@ func (h *Hub) CreatePeer(ctx context.Context, peerID string, iceServers []IceSer
 
 	peerCtx, cancel := context.WithCancel(context.Background())
 	attached := &peer{
-		connection: connection,
-		frames:     make(chan *encodedFrame, peerQueueFrames),
-		directOnly: directOnly,
-		signaling:  &peerSignaling{},
-		cancel:     cancel,
-		done:       make(chan struct{}),
-		slot:       slot,
+		connection:  connection,
+		frames:      make(chan *encodedFrame, peerQueueFrames),
+		directOnly:  directOnly,
+		signaling:   &peerSignaling{},
+		cancel:      cancel,
+		done:        make(chan struct{}),
+		slot:        slot,
+		audio:       make(chan *encodedAudio, 5),
+		audioDone:   make(chan struct{}),
+		audioActive: audioTrack != nil,
 	}
 
 	if beforeAttach != nil {
@@ -415,6 +455,12 @@ func (h *Hub) CreatePeer(ctx context.Context, peerID string, iceServers []IceSer
 	}
 	go h.readRTCP(peerCtx, sender, attached, peerID)
 	go h.writeFrames(peerCtx, attached, track)
+	if audioTrack != nil {
+		go drainAudioRTCP(peerCtx, audioSender)
+		go h.writeAudio(peerCtx, attached, audioTrack)
+	} else {
+		close(attached.audioDone)
+	}
 
 	return Offer{PeerID: peerID, SDP: sdp}, nil
 }
@@ -494,6 +540,18 @@ func (h *Hub) writeFrames(ctx context.Context, attached *peer, track *webrtc.Tra
 			// cutoff would mistake our own deliberate keyframe pacing for
 			// congestion and discard the following reference chain.
 			now := time.Now()
+			if h.maxQueueAge > 0 && now.Sub(frame.arrivedAt) > h.maxQueueAge && !frame.keyframe {
+				attached.catchUp.Store(true)
+				h.idrRequested.Store(true)
+				if h.adaptive != nil {
+					h.adaptive.congested(now)
+				}
+				// Discard only the stale reference chain, then resume on an IDR.
+				waitingForKeyframe = true
+				attached.droppedFrames.Add(1)
+				h.droppedFrames.Add(1)
+				continue
+			}
 			if h.adaptive != nil && lag.sustained(now.Sub(frame.arrivedAt), now) && attached.catchUp.CompareAndSwap(false, true) {
 				h.adaptive.congested(now)
 				h.idrRequested.Store(true)
@@ -609,8 +667,10 @@ func (h *Hub) RemovePeer(peerID string) error {
 		return nil
 	}
 	attached.cancel()
+	_ = attached.connection.Close()
 	<-attached.done
-	return attached.connection.Close()
+	<-attached.audioDone
+	return nil
 }
 
 // Close detaches every viewer and stops accepting new ones.
@@ -628,8 +688,9 @@ func (h *Hub) Close() {
 
 	for _, value := range attached {
 		value.cancel()
-		<-value.done
 		_ = value.connection.Close()
+		<-value.done
+		<-value.audioDone
 	}
 }
 
@@ -649,6 +710,15 @@ func (h *Hub) peer(peerID string) (*peer, error) {
 // is deliberate: blocking here would let one congested viewer stall the encoder
 // pipe, which stalls capture for everybody including the local preview.
 func (h *Hub) WriteAccessUnit(annexB []byte, arrivedAt time.Time) error {
+	return h.writeAccessUnit(annexB, arrivedAt, nil)
+}
+
+// WriteTimedAccessUnit preserves ReplayKit capture timing even when encoding
+// callbacks arrive in a burst. Arrival time remains the queue-age clock.
+func (h *Hub) WriteTimedAccessUnit(annexB []byte, pts time.Duration) error {
+	return h.writeAccessUnit(annexB, time.Now(), &pts)
+}
+func (h *Hub) writeAccessUnit(annexB []byte, arrivedAt time.Time, pts *time.Duration) error {
 	if h.closed.Load() {
 		return errors.New("native screen WebRTC hub is closed")
 	}
@@ -667,7 +737,12 @@ func (h *Hub) WriteAccessUnit(annexB []byte, arrivedAt time.Time) error {
 	}
 
 	h.clockMu.Lock()
-	rtpTime := h.clock.advance(arrivedAt)
+	var rtpTime uint32
+	if pts != nil {
+		rtpTime = h.captureTimestampLocked(*pts, RTPClockRate)
+	} else {
+		rtpTime = h.clock.advance(arrivedAt)
+	}
 	h.clockMu.Unlock()
 
 	keyframe := annexBHasIDR(prepared)
@@ -698,7 +773,7 @@ func (h *Hub) enqueueFrame(target *peer, frame *encodedFrame) {
 	// Serialize producers only; the network writer never holds this lock.
 	target.queueMu.Lock()
 	defer target.queueMu.Unlock()
-	if h.adaptive != nil && frame.keyframe && target.catchUp.Swap(false) {
+	if (h.adaptive != nil || h.maxQueueAge > 0) && frame.keyframe && target.catchUp.Swap(false) {
 		// Replace the backlog only once its replacement IDR exists. Sending
 		// the old reference chain while waiting avoids an artificial freeze.
 	drain:
