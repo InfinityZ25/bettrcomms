@@ -477,9 +477,14 @@ test('the iPhone app keeps notices clear of call controls and uses full-screen s
     // so the check measures the full 320px width.
     await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: { top: 20 } });
     for (const name of ['Mute microphone', 'More call options', 'Leave call']) {
-      const control = (await page.getByRole('button', { name, exact: true }).boundingBox())!;
-      expect(control.x).toBeGreaterThanOrEqual(0);
-      expect(control.x + control.width).toBeLessThanOrEqual(320);
+      // Rotation updates safe areas and the visual viewport on separate
+      // frames. Check the settled geometry rather than the preceding layout.
+      const button = page.getByRole('button', { name, exact: true });
+      await expect.poll(async () => (await button.boundingBox())!.x).toBeGreaterThanOrEqual(0);
+      await expect.poll(async () => {
+        const control = (await button.boundingBox())!;
+        return control.x + control.width;
+      }).toBeLessThanOrEqual(320);
     }
   } finally {
     await context.close();
