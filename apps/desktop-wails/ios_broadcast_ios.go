@@ -44,6 +44,35 @@ var screenBroadcast struct {
 	current *iosBroadcast
 }
 
+// callSignalingGrace is how long a broadcast survives with no call signaling.
+// Calls deliberately keep running peer to peer through a short server outage
+// while the page reconnects, so a blip must not end a share.
+const callSignalingGrace = 30 * time.Second
+
+// iosBroadcastSignalingClosed ends the broadcast when the call's signaling has
+// stayed closed through the grace period. The page cannot do this itself while
+// iOS has it suspended, and the extension would otherwise keep sending the
+// whole screen to peers of a call this phone has left.
+func iosBroadcastSignalingClosed(open func() bool) {
+	screenBroadcast.Lock()
+	b := screenBroadcast.current
+	screenBroadcast.Unlock()
+	if b == nil {
+		return
+	}
+	time.AfterFunc(callSignalingGrace, func() {
+		if open() {
+			return
+		}
+		screenBroadcast.Lock()
+		current := screenBroadcast.current == b
+		screenBroadcast.Unlock()
+		if current {
+			b.close()
+		}
+	})
+}
+
 //export bc_broadcast_picker_cancel
 func bc_broadcast_picker_cancel(session *C.char) {
 	id := C.GoString(session)

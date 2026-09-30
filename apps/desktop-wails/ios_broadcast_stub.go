@@ -10,3 +10,5 @@ import (
 func iosBroadcastCommand(string, json.RawMessage) (any, error) {
 	return nil, errors.New("Screen broadcast requires the iPhone app")
 }
+
+func iosBroadcastSignalingClosed(func() bool) {}
