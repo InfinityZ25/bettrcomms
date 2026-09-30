@@ -6,7 +6,7 @@ package main
 #include <stdlib.h>
 char *bc_broadcast_group_path(void);
 void bc_broadcast_picker_show(const char *session);
-void bc_broadcast_picker_hide(void);
+void bc_broadcast_picker_hide(const char *session);
 void bc_broadcast_host_ended(const char *session);
 */
 import "C"
@@ -174,7 +174,9 @@ func startIOSBroadcast(raw json.RawMessage) (any, error) {
 		if !success {
 			b.close()
 		}
-		C.bc_broadcast_picker_hide()
+		hide := C.CString(b.id)
+		C.bc_broadcast_picker_hide(hide)
+		C.free(unsafe.Pointer(hide))
 	}()
 	value := C.CString(b.id)
 	C.bc_broadcast_picker_show(value)

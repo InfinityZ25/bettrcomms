@@ -281,6 +281,9 @@ func prepareICEServers(servers []IceServer, directOnly bool) []webrtc.ICEServer 
 // The offer is produced after ICE gathering completes, so the page relays one
 // complete description rather than trickling from this side. TURN credentials
 // stay inside the peer connection and are never returned or logged.
+// beforeAttach lets tests close the hub while a peer is being created.
+var beforeAttach func(*Hub)
+
 func (h *Hub) CreatePeer(ctx context.Context, peerID string, iceServers []IceServer, directOnly bool) (Offer, error) {
 	if err := validateIdentifier("peer ID", peerID); err != nil {
 		return Offer{}, err
@@ -386,7 +389,20 @@ func (h *Hub) CreatePeer(ctx context.Context, peerID string, iceServers []IceSer
 		slot:       slot,
 	}
 
+	if beforeAttach != nil {
+		beforeAttach(h)
+	}
+	// Close may have run while ICE was gathering. It marks the hub closed
+	// before taking the lock to collect peers, so checking under the same lock
+	// means a peer is either collected by Close or released here, never left
+	// running after the hub is gone.
 	h.mu.Lock()
+	if h.closed.Load() {
+		h.mu.Unlock()
+		cancel()
+		_ = connection.Close()
+		return Offer{}, errors.New("native screen WebRTC hub is closed")
+	}
 	h.peers[peerID] = attached
 	h.mu.Unlock()
 
