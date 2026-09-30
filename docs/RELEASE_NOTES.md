@@ -3,8 +3,11 @@
 ## Unreleased — mobile navigation and conversations
 
 Messages and Calls now open full-screen mobile lists with filtering, readable
-rows and explicit back navigation. Home opens the home screen, and Recordings
-is available in the account menu alongside Settings. Navigation preserves the
+rows and explicit back navigation. Phone navigation has four destinations:
+Home, Messages, Calls and You. Friends is available through + in Messages,
+including when the phone is held sideways; the desktop Friends rail remains.
+Home opens the home screen, and Recordings is available in the account menu
+alongside Settings. Navigation preserves the
 active call, whose compact controls sit above the page rather than covering
 the message composer.
 

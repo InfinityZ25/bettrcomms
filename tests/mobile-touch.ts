@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 
 // Use touch events rather than mouse drags: both native WKWebView and mobile
 // browsers deliver these events. Production layout and API remain real.
@@ -69,4 +69,18 @@ export async function swipe(
     },
     { from, to, selector },
   );
+}
+
+// Friends is an action under Messages, not a separate phone destination.
+export async function openMobileFriends(page: Page) {
+  const sections = page.getByRole('navigation', { name: 'Sections' });
+  await expect(
+    sections.getByRole('button', { name: 'Friends', exact: true }),
+  ).toBeHidden();
+  await sections.getByRole('button', { name: 'Messages', exact: true }).click();
+  await page
+    .getByRole('main', { name: 'Messages', exact: true })
+    .locator('header')
+    .getByRole('button', { name: 'Find friends', exact: true })
+    .click();
 }

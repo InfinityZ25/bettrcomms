@@ -1,3 +1,4 @@
+import { openMobileFriends } from './mobile-touch';
 import { expect, test } from '@playwright/test';
 
 test('phone sheets keep their full bounds visible after production CSS optimization', async ({
@@ -36,10 +37,7 @@ test('phone sheets keep their full bounds visible after production CSS optimizat
         await cdp.send('Emulation.setSafeAreaInsetsOverride', {
           insets: top ? { top, bottom } : { left: 59, right: 59, bottom },
         });
-      await page
-        .getByRole('navigation', { name: 'Sections' })
-        .getByRole('button', { name: 'Friends', exact: true })
-        .click();
+      await openMobileFriends(page);
       const friends = page.getByRole('dialog', { name: 'Better with friends' });
       await expect(friends).toBeVisible();
       await expect
