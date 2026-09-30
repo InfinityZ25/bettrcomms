@@ -42,7 +42,8 @@ export function SettingsDialog({ open, onOpenChange, user, noise, onNoiseChange,
           'settings-dialog h-[min(760px,calc(100dvh-2rem))] overflow-hidden p-0 sm:max-w-[min(1040px,calc(100vw-2rem))]',
           // A phone gets a full-screen sheet, like iOS Settings, not a card
           // floating with a margin on a screen that has none to spare.
-          'phone:inset-0 phone:h-dvh phone:max-w-none phone:translate-x-0 phone:translate-y-0 phone:rounded-none phone:pt-[env(safe-area-inset-top)] phone:pb-[env(safe-area-inset-bottom)] phone:ring-0 phone:sm:max-w-none phone:[&>[data-slot=dialog-close]]:top-[calc(env(safe-area-inset-top)+1rem)]',
+          // All four safe areas: held sideways, the notch sits at a side edge.
+          'phone:inset-0 phone:h-dvh phone:max-w-none phone:translate-x-0 phone:translate-y-0 phone:rounded-none phone:pt-[env(safe-area-inset-top)] phone:pr-[env(safe-area-inset-right)] phone:pb-[env(safe-area-inset-bottom)] phone:pl-[env(safe-area-inset-left)] phone:ring-0 phone:sm:max-w-none phone:[&>[data-slot=dialog-close]]:top-[calc(env(safe-area-inset-top)+1rem)] phone:[&>[data-slot=dialog-close]]:right-[calc(env(safe-area-inset-right)+1rem)]',
         )}
         showCloseButton
       >

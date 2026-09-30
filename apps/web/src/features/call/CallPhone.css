@@ -52,6 +52,9 @@
   /* Only the connection icon: one row with the controls. */
   .call-workspace > .call-footer:has(> .phone-call-status[data-text='false']) {
     flex-direction: row;
+    /* Six controls and the icon need 344px. Narrower than that (a 320px
+       phone), the controls wrap below the icon rather than being clipped. */
+    flex-wrap: wrap;
   }
   .phone-call-status[data-text='false'] {
     width: auto;

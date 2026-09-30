@@ -27,7 +27,7 @@ export default function ErrorToast({
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: offset * 0.66, scale: 0.97 }}
       transition={spring}
-      className="fixed inset-x-4 bottom-6 z-[60] mx-auto flex w-fit max-w-xl items-center gap-3 rounded-xl border bg-card px-4 py-3 text-sm text-card-foreground shadow-2xl phone:top-[calc(env(safe-area-inset-top)+0.5rem)] phone:bottom-auto phone:w-auto phone:gap-2 phone:py-2 phone:pr-1.5 phone:pl-3"
+      className="fixed inset-x-4 bottom-6 z-[60] mx-auto flex w-fit max-w-xl items-center gap-3 rounded-xl border bg-card px-4 py-3 text-sm text-card-foreground shadow-2xl phone:top-[calc(env(safe-area-inset-top)+0.5rem)] phone:right-[max(1rem,env(safe-area-inset-right))] phone:bottom-auto phone:left-[max(1rem,env(safe-area-inset-left))] phone:w-auto phone:gap-2 phone:py-2 phone:pr-1.5 phone:pl-3"
       role="alert"
     >
       <CircleHelp size={18} className="shrink-0" />

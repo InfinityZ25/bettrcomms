@@ -504,12 +504,30 @@ test('the iPhone app keeps notices clear of call controls and uses full-screen s
     await page.keyboard.press('Escape');
     await expect(settings).toBeHidden();
 
-    // A phone held sideways gets the same phone styles, not the desktop ones.
+    // A phone held sideways gets the same phone styles, not the desktop ones,
+    // and keeps clear of the notch now at a side edge.
     await page.setViewportSize({ width: 874, height: 402 });
+    const cdp = await context.newCDPSession(page);
+    await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: { left: 59, right: 59, bottom: 21 } });
     await page.getByRole('button', { name: /account options/ }).click();
     await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
     await expect(settings).toBeVisible();
     await expect.poll(async () => Math.round((await settings.boundingBox())!.width)).toBe(874);
+    const close = (await settings.getByRole('button', { name: 'Close' }).boundingBox())!;
+    expect(close.x + close.width).toBeLessThanOrEqual(874 - 59);
+    const firstControl = (await settings.getByRole('combobox').or(settings.getByRole('button', { name: /Audio|Devices/ })).first().boundingBox())!;
+    expect(firstControl.x).toBeGreaterThanOrEqual(59);
+    await page.keyboard.press('Escape');
+    await expect(settings).toBeHidden();
+
+    // The narrowest supported phone, with no text status: the controls wrap
+    // below the connection icon rather than being clipped off the edge.
+    await page.setViewportSize({ width: 320, height: 640 });
+    for (const name of ['Mute microphone', 'More call options', 'Leave call']) {
+      const control = (await page.getByRole('button', { name, exact: true }).boundingBox())!;
+      expect(control.x).toBeGreaterThanOrEqual(0);
+      expect(control.x + control.width).toBeLessThanOrEqual(320);
+    }
   } finally {
     await context.close();
   }
