@@ -14,7 +14,7 @@ import { CallMicrophone } from '@/media/pushToTalk';
 import { allowDesktopCapture } from '@/media/permissions';
 import { cameraCaptureConstraints, captureCameraWithFallback, readCameraSettings } from '@/media/cameraSettings';
 import { META_GLASSES_CAMERA_ID, startMetaGlassesCamera } from '@/media/metaGlassesCamera';
-import { hasIOSAppScreen } from '@/media/iosAppScreen';
+import { hasIOSBroadcast } from '@/media/iosBroadcast';
 import { microphoneCaptureOptions } from '@/media/processingSettings';
 import { readRecordingQuality } from '@/media/recordingQuality';
 import { saveRecording } from '@/media/recordingLibrary';
@@ -650,7 +650,7 @@ export function useCallSession({
       });
       return;
     }
-    if (hasIOSAppScreen()) {
+    if (hasIOSBroadcast()) {
       await perform(async () => {
         await engine.current?.captureIOSAppScreen();
       });

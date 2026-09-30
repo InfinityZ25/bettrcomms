@@ -16,7 +16,10 @@ import (
 	"net/http/cookiejar"
 	"net/http/httputil"
 	"net/url"
+	"regexp"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -56,7 +59,33 @@ type APIProxy struct {
 	// sessions persists the session cookie in the operating system's credential
 	// store, so signing in survives closing the application.
 	sessions *SessionStore
+
+	// Call signaling sockets open through this proxy, and who to tell when the
+	// last one closes. The proxy runs in the host process, so it sees a call's
+	// signaling end even while the page's WebView is suspended.
+	callSockets  atomic.Int64
+	callOpens    atomic.Uint64
+	callMu       sync.Mutex
+	onCallClosed func()
 }
+
+// callSignaling matches a room's call signaling WebSocket.
+var callSignaling = regexp.MustCompile(`^/api/v1/rooms/[^/]+/ws$`)
+
+// OnCallSignalingClosed registers fn to run whenever the last call signaling
+// WebSocket through this proxy closes. fn runs on its own goroutine.
+func (p *APIProxy) OnCallSignalingClosed(fn func()) {
+	p.callMu.Lock()
+	p.onCallClosed = fn
+	p.callMu.Unlock()
+}
+
+// CallSignalingOpen reports whether any call signaling WebSocket is open.
+func (p *APIProxy) CallSignalingOpen() bool { return p.callSockets.Load() > 0 }
+
+// CallSignalingOpens counts call signaling WebSockets ever opened. A watcher
+// compares two readings to tell whether signaling came back in between.
+func (p *APIProxy) CallSignalingOpens() uint64 { return p.callOpens.Load() }
 
 // NewAPIProxy starts a loopback proxy in front of origin, which must already
 // have passed ResolveAPIOrigin. It returns once the listener is accepting.
@@ -173,6 +202,23 @@ func (p *APIProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"error": "the desktop API proxy forwards only /api requests",
 		})
 		return
+	}
+	if callSignaling.MatchString(r.URL.Path) && strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+		// A proxied WebSocket's ServeHTTP returns only when the connection
+		// ends, so the deferred decrement marks the socket closing.
+		p.callOpens.Add(1)
+		p.callSockets.Add(1)
+		defer func() {
+			if p.callSockets.Add(-1) != 0 {
+				return
+			}
+			p.callMu.Lock()
+			fn := p.onCallClosed
+			p.callMu.Unlock()
+			if fn != nil {
+				go fn()
+			}
+		}()
 	}
 	p.proxy.ServeHTTP(w, r)
 }

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 4 ]]; then
-  echo "Usage: $0 <ad-hoc.ipa> <development.mobileprovision> <codesign identity> <signed.ipa>" >&2
+if [[ $# -lt 4 || $# -gt 5 ]]; then
+  echo "Usage: $0 <ad-hoc.ipa> <development.mobileprovision> <codesign identity> <signed.ipa> [broadcast.mobileprovision]" >&2
   exit 2
 fi
 
@@ -38,6 +38,43 @@ if [[ "$application_id" != *".$bundle_id" ]]; then
 fi
 
 cp "$profile" "$bundle/embedded.mobileprovision"
+broadcast="$bundle/PlugIns/BetterCommsBroadcast.appex"
+if [[ -d "$broadcast" ]]; then
+  if [[ -z "${5:-}" ]]; then
+    echo 'This archive includes screen broadcasting. Supply its development profile as the fifth argument.' >&2
+    exit 1
+  fi
+  security cms -D -i "$5" > "$scratch/broadcast-profile.plist"
+  python3 - "$bundle_id" "$broadcast/Info.plist" "$scratch/profile.plist" "$scratch/broadcast-profile.plist" <<'PY'
+import plistlib, sys
+bundle_id, extension_plist = sys.argv[1:3]
+profiles = []
+for path in sys.argv[3:]:
+    with open(path, 'rb') as file:
+        profiles.append(plistlib.load(file))
+host, extension = profiles
+# The extension and its App Group are derived from the host's bundle ID.
+extension_id = bundle_id + '.broadcast'
+group = 'group.' + extension_id
+with open(extension_plist, 'rb') as file:
+    if plistlib.load(file)['CFBundleIdentifier'] != extension_id:
+        sys.exit(f'The archive\'s broadcast extension is not {extension_id}; repackage it.')
+for profile in profiles:
+    if group not in profile['Entitlements'].get('com.apple.security.application-groups', []):
+        sys.exit(f'Both profiles must grant the App Group {group}.')
+if host['TeamIdentifier'] != extension['TeamIdentifier']:
+    sys.exit('Host and broadcast profiles must belong to the same team.')
+prefix = host['Entitlements']['application-identifier'].rsplit(bundle_id, 1)[0]
+if extension['Entitlements']['application-identifier'] != prefix + extension_id:
+    sys.exit(f'The extension profile must be for {extension_id}.')
+if not set(host.get('ProvisionedDevices', [])).issubset(extension.get('ProvisionedDevices', [])):
+    sys.exit('The extension profile must include the host profile\'s devices.')
+PY
+  cp "$5" "$broadcast/embedded.mobileprovision"
+  plutil -extract Entitlements xml1 -o "$scratch/broadcast-entitlements.plist" "$scratch/broadcast-profile.plist"
+  codesign --force --sign "$identity" --timestamp=none \
+    --entitlements "$scratch/broadcast-entitlements.plist" "$broadcast"
+fi
 # Xcode debug builds place executable code in an app-local debug dylib.
 # Sign nested libraries before their containing frameworks and app bundle.
 while IFS= read -r -d '' library; do

@@ -867,3 +867,26 @@ it('does not report a native camera interruption while video is arriving', async
     .requestReceiverFallback('phone', 'camera', 'no-media-timeout');
   expect(onEnded).not.toHaveBeenCalled();
 });
+
+it('cancels a host start that is still waiting when sharing stops', async () => {
+  let finish!: (session: unknown) => void;
+  const invoke = vi.fn((command: string) => command === 'native_screen_start'
+    ? new Promise((resolve) => { finish = resolve; })
+    : Promise.resolve(undefined));
+  const cancelPending = vi.fn().mockResolvedValue(undefined);
+  const transport = new NativeScreenTransport({ localPeerId: 'self', send: vi.fn() }, [], false,
+    vi.fn(), vi.fn(), vi.fn(), vi.fn(), undefined, {
+      invoke: invoke as never, listen: vi.fn().mockResolvedValue(vi.fn()), externalPreview: true, cancelPending,
+    });
+  const start = transport.start({ sourceId: 'ios-broadcast', encoder: 'libx264', width: 720, height: 1280,
+    fps: 30, bitrateMbps: 3, cursor: false, h264Profile: 'baseline' }, []);
+  await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith('native_screen_start', expect.anything()));
+  // Leaving the call while the iOS picker is open.
+  await transport.stop();
+  expect(cancelPending).toHaveBeenCalledOnce();
+  // A start that completes anyway is stopped rather than published.
+  finish({ sessionId: 'late', fps: 30, bitrateMbps: 3 });
+  await start;
+  expect(transport.active).toBe(false);
+  expect(invoke).toHaveBeenCalledWith('native_screen_stop', { sessionId: 'late' });
+});

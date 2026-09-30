@@ -10,11 +10,14 @@ import '@fontsource-variable/dm-sans';
 import '@fontsource-variable/manrope';
 import './styles.css';
 import { startWailsFrontendRuntime } from '@/desktop/wailsFrontendRuntime';
+import { releaseOrphanedIOSBroadcast } from '@/media/iosBroadcast';
 
 // Before the first render: the Wails runtime is what reports this page's
 // non-client regions to the host, and a title bar whose regions arrive after
 // the first click is a title bar Windows does not hit-test.
 startWailsFrontendRuntime();
+// A reloaded page cannot see or stop a screen broadcast it did not start.
+releaseOrphanedIOSBroadcast();
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

@@ -26,7 +26,7 @@ import { createDeepfilterWasmDenoiser } from './deepfilterWasmDenoise';
 import { createMicrophoneEffects } from './microphoneEffects';
 import { hasNativeMediaHost } from '../desktop/nativeMedia';
 import { readDesktopBootReport } from '../desktop/runtime';
-import { startIOSAppScreen } from './iosAppScreen';
+import { hasIOSBroadcast, iosBroadcastDriver } from './iosBroadcast';
 import { createNativeSystemAudio, type NativeSystemAudioTrack } from './nativeSystemAudio';
 import type { DenoisedTrack } from './denoise';
 import type { MicrophoneProcessingSettings } from './types';
@@ -162,6 +162,7 @@ export class MediaEngine extends EventTarget {
       },
       (reason) => this.emit('error', { operation: 'native-screen-ended', error: new Error(reason) }),
       (peerId) => this.enableNativeScreenFallback(peerId),
+      hasIOSBroadcast() ? iosBroadcastDriver : undefined,
     );
   }
 
@@ -488,15 +489,9 @@ export class MediaEngine extends EventTarget {
   }
 
   async captureIOSAppScreen(): Promise<void> {
-    this.ensureActive();
-    const capture = await startIOSAppScreen();
-    try {
-      this.ensureActive();
-      await this.replaceLocalTrack('screen', capture.track, capture.dispose);
-    } catch (error) {
-      capture.dispose();
-      throw error;
-    }
+    await this.captureNativeScreen({ sourceId: 'ios-broadcast', encoder: 'libx264',
+      width: 720, height: 1280, fps: 30, bitrateMbps: 3,
+      h264Profile: 'baseline', contentHint: 'detail', cursor: false, systemAudio: false });
   }
 
   async captureNativeScreen(options: NativeScreenStartOptions): Promise<void> {

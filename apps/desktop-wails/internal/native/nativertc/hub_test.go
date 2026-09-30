@@ -432,3 +432,19 @@ func TestOperationsOnAnUnknownPeerFail(t *testing.T) {
 		t.Errorf("RemovePeer: %v", err)
 	}
 }
+
+func TestClosingDuringPeerCreationReleasesThePeer(t *testing.T) {
+	hub, err := NewHub("closing-session", h264.Baseline, 1280, 720, 30, 8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Stopping a share while an offer is still gathering ICE.
+	beforeAttach = func(h *Hub) { h.Close() }
+	defer func() { beforeAttach = nil }()
+	if _, err := hub.CreatePeer(context.Background(), "late-viewer", nil, false); err == nil {
+		t.Fatal("a peer was attached to a closed hub")
+	}
+	if hub.PeerCount() != 0 {
+		t.Fatalf("closed hub still holds %d peers", hub.PeerCount())
+	}
+}

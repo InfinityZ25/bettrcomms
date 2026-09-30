@@ -95,6 +95,10 @@ func run() error {
 	apiProxy := startAPIProxy(apiOrigin)
 	if apiProxy != nil {
 		defer func() { _ = apiProxy.Close() }()
+		// An iPhone screen broadcast outlives a suspended page, so it follows
+		// the call's signaling socket, which this host process carries.
+		iosBroadcastWatchSignaling(apiProxy.CallSignalingOpen, apiProxy.CallSignalingOpens)
+		apiProxy.OnCallSignalingClosed(iosBroadcastSignalingClosed)
 	}
 
 	// The ported native media stack. A failure here is reported rather than

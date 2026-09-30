@@ -23,13 +23,13 @@ root. GitHub Actions can build the same ad hoc IPA without local Xcode via
 This package is a build experiment, not a release claim. The desktop host's
 authentication, API routing, and media service lifecycle have not passed
 packaged iPhone acceptance. iPhone Safari and Chrome do not expose the browser
-`getDisplayMedia` picker. The native iPhone app now offers **Share BetterComms
-screen** using ReplayKit's in-app capture and a bounded video bridge into the
-existing WebRTC screen track. This shares the foreground app only, without
-system audio. Sharing other apps or the entire phone requires a ReplayKit
-broadcast extension and an independent sender that survives app suspension.
-The in-app path still needs signed-device sender, viewer, stop, and background
-acceptance; it must not be advertised as working until those checks pass.
+`getDisplayMedia` picker. The experimental native iPhone app now packages a
+ReplayKit Broadcast Upload Extension for whole-phone screen sharing. The system
+picker requires a user start. Capture, H.264 encoding, and the native WebRTC sender
+live in the extension, independent of webview visibility. Microphone audio remains
+owned by the call; screen system audio is not included yet. A signed iPhone test confirmed remote sharing continues after switching to another
+app, with the iOS broadcast indicator visible. Memory, orientation, locked-phone,
+long-duration and stop/error acceptance are still required.
 
 The experimental Ray-Ban Meta camera path uses Meta Wearables Device Access
 Toolkit 1.0.0 in the iOS host. It is available in the in-call camera picker and
@@ -88,7 +88,13 @@ capabilities were enabled cannot authorize them, even if the app declares
 them in its signature.
 
 Sign the downloaded IPA with a local Apple Development identity and the new
-profile using `scripts/sign-desktop-wails-ios.sh`. The script rejects a profile
+profile using `scripts/sign-desktop-wails-ios.sh`. Archives containing the broadcast
+extension require a fifth argument: the development profile for the
+extension, whose App ID is the app's bundle ID plus `.broadcast`
+(`com.bettrcomms.ios.broadcast` by default). Both profiles must grant the App
+Group `group.<extension ID>` (`group.com.bettrcomms.ios.broadcast` by default),
+use the same team, and include the test phone. Changing the bundle ID in
+`build/config.yml` changes both derived IDs. The script rejects a profile
 that does not contain both capabilities, checks its App ID, signs the embedded
 Meta frameworks and app, and verifies the result. Keep the certificate,
 private key, and provisioning profile outside Git. Install the resulting IPA

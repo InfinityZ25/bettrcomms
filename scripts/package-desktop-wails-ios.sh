@@ -88,6 +88,9 @@ xcrun --sdk iphoneos clang -target arm64-apple-ios17.2 -isysroot "$sdk" \
 xcrun --sdk iphoneos clang -target arm64-apple-ios17.2 -isysroot "$sdk" \
   -fobjc-arc -fmodules -I "$scratch/wails/pkg/application" \
   -c "$app/native/ios/ios_app_screen.m" -o "$app/bin/ios_app_screen.o"
+xcrun --sdk iphoneos clang -target arm64-apple-ios17.2 -isysroot "$sdk" \
+  -fobjc-arc -fmodules -I "$scratch/wails/pkg/application" \
+  -c "$app/native/ios/broadcast_host.m" -o "$app/bin/broadcast_host.o"
 
 xcrun --sdk iphoneos clang -target arm64-apple-ios17.2 -isysroot "$sdk" \
   -fobjc-arc -fmodules -c "$app/native/ios/meta_video_encoder.m" -o "$app/bin/meta_video_encoder.o"
@@ -105,7 +108,7 @@ xcrun --sdk iphoneos clang -target arm64-apple-ios17.2 -isysroot "$sdk" \
   -L "$sdk/usr/lib/swift" -lswiftCore -lswift_Concurrency \
   -lresolv -o "$app/bin/BetterComms" \
   "$app/build/ios/xcode/main/main.m" "$app/bin/meta_camera_ios.o" "$app/bin/meta_video_encoder.o" \
-  "$app/bin/ios_call_audio.o" "$app/bin/ios_app_screen.o" "$app/bin/meta_session_probe.o" \
+  "$app/bin/ios_call_audio.o" "$app/bin/ios_app_screen.o" "$app/bin/broadcast_host.o" "$app/bin/meta_session_probe.o" \
   -Wl,-force_load,"$archive"
 
 rm -rf "$bundle"
@@ -174,7 +177,55 @@ codesign --force --sign - "$bundle/Frameworks/MWDATCamera.framework"
 # The artifact is a device-target IPA for a developer to re-sign with their
 # own certificate and provisioning profile. Ad-hoc signing is not installable
 # on a physical iPhone.
-codesign --force --sign - --entitlements "$repo/scripts/BetterComms-ios.entitlements" "$bundle"
+broadcast="$bundle/PlugIns/BetterCommsBroadcast.appex"
+mkdir -p "$broadcast"
+(
+  cd "$app"
+  GOOS=ios GOARCH=arm64 CGO_ENABLED=1 \
+    CGO_CFLAGS="-isysroot $sdk -target arm64-apple-ios17.2" \
+    CGO_LDFLAGS="-isysroot $sdk -target arm64-apple-ios17.2" \
+    go build -buildmode=c-archive -tags ios -trimpath -buildvcs=false \
+    -o "$app/bin/Broadcast-ios.a" ./cmd/iosbroadcast
+)
+xcrun --sdk iphoneos clang -target arm64-apple-ios17.2 -isysroot "$sdk" \
+  -fobjc-arc -fmodules -fapplication-extension \
+  -framework Foundation -framework UIKit -framework ReplayKit -framework VideoToolbox \
+  -framework CoreMedia -framework CoreVideo -framework Security -framework CoreFoundation \
+  -framework SystemConfiguration -lresolv -Wl,-e,_NSExtensionMain \
+  "$app/native/ios/broadcast/SampleHandler.m" -Wl,-force_load,"$app/bin/Broadcast-ios.a" \
+  -o "$broadcast/BetterCommsBroadcast"
+python3 - "$bundle/Info.plist" "$broadcast/Info.plist" <<'PY'
+import plistlib, sys
+with open(sys.argv[1], 'rb') as file:
+    app = plistlib.load(file)
+extension = {
+    # Derived from the configured host ID so re-signing under another App ID
+    # works; the App Group follows the same rule below.
+    'CFBundleIdentifier': app['CFBundleIdentifier'] + '.broadcast',
+    'CFBundleExecutable': 'BetterCommsBroadcast',
+    'CFBundleName': 'BetterCommsBroadcast',
+    'CFBundleDisplayName': 'BetterComms',
+    'CFBundlePackageType': 'XPC!',
+    'CFBundleVersion': app['CFBundleVersion'],
+    'CFBundleShortVersionString': app['CFBundleShortVersionString'],
+    'MinimumOSVersion': '17.2',
+    'NSExtension': {
+        'NSExtensionPointIdentifier': 'com.apple.broadcast-services-upload',
+        'NSExtensionPrincipalClass': 'SampleHandler',
+        'NSExtensionAttributes': {'RPBroadcastProcessMode': 'RPBroadcastProcessModeSampleBuffer'},
+    },
+}
+with open(sys.argv[2], 'wb') as file:
+    plistlib.dump(extension, file)
+PY
+host_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$bundle/Info.plist")"
+broadcast_group="group.$host_id.broadcast"
+for target in ios broadcast; do
+  sed "s/group\.com\.bettrcomms\.ios\.broadcast/$broadcast_group/" \
+    "$repo/scripts/BetterComms-$target.entitlements" > "$scratch/$target.entitlements"
+done
+codesign --force --sign - --entitlements "$scratch/broadcast.entitlements" "$broadcast"
+codesign --force --sign - --entitlements "$scratch/ios.entitlements" "$bundle"
 codesign --verify --deep --strict --verbose=2 "$bundle"
 mkdir -p "$payload/Payload"
 ditto "$bundle" "$payload/Payload/BetterComms.app"

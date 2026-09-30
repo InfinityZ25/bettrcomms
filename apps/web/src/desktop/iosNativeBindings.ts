@@ -11,6 +11,7 @@ export const iosNativeBinding = {
   metaStart: 0xBC160106,
   metaStop: 0xBC160107,
   metaSender: 0xBC160108,
+  screenSender: 0xBC160109,
 } as const;
 
 export async function callIOSNative(method: number): Promise<void> {
@@ -19,4 +20,8 @@ export async function callIOSNative(method: number): Promise<void> {
 
 export async function callIOSMetaSender<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {
   return await Call.ByID(iosNativeBinding.metaSender, nativePageToken(), command, args) as T;
+}
+
+export async function callIOSScreenSender<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {
+  return await Call.ByID(iosNativeBinding.screenSender, nativePageToken(), command, args) as T;
 }

@@ -12,7 +12,7 @@ import {
 import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import CameraSourceMenu from './CameraSourceMenu';
-import { hasIOSAppScreen } from '@/media/iosAppScreen';
+import { hasIOSBroadcast } from '@/media/iosBroadcast';
 
 /** The microphone, headphones, camera, share, record and leave row. */
 export default function CallControls({
@@ -100,8 +100,8 @@ export default function CallControls({
           <Button
             variant={sharing ? 'default' : 'secondary'}
             size="icon"
-            aria-label={sharing ? 'Stop sharing' : hasIOSAppScreen() ? 'Share BetterComms screen' : 'Share screen'}
-            title={!sharing && hasIOSAppScreen() ? 'Share the BetterComms screen while this app is open' : undefined}
+            aria-label={sharing ? 'Stop sharing' : hasIOSBroadcast() ? 'Share iPhone screen' : 'Share screen'}
+            title={!sharing && hasIOSBroadcast() ? 'Share your whole iPhone screen, including other apps and notifications' : undefined}
             onClick={onToggleShare}
             disabled={busy}
           >

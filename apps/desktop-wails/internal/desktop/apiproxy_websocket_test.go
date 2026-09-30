@@ -100,3 +100,67 @@ func TestProxyHandshakeFollowsTheNativeClientContract(t *testing.T) {
 		t.Fatal("upstream never saw the handshake")
 	}
 }
+
+// On iOS the call's signaling socket is the host's only view of whether the
+// call is still up while the page is suspended; see ios_broadcast_ios.go.
+func TestProxyReportsWhenTheLastCallSignalingSocketCloses(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		socket, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer socket.CloseNow()
+		_, _, _ = socket.Read(r.Context())
+	}))
+	t.Cleanup(upstream.Close)
+
+	proxy := newProxy(t, upstream.URL)
+	closed := make(chan struct{}, 4)
+	proxy.OnCallSignalingClosed(func() { closed <- struct{}{} })
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	address := strings.Replace(proxy.Base(), "http://", "ws://", 1)
+	dial := func(path string) *websocket.Conn {
+		socket, _, err := websocket.Dial(ctx, address+path+"?"+TokenQueryParam+"="+proxy.Token(), nil)
+		if err != nil {
+			t.Fatalf("dial %s: %v", path, err)
+		}
+		return socket
+	}
+
+	first, second := dial("/api/v1/rooms/7/ws"), dial("/api/v1/rooms/7/ws")
+	relay := dial("/api/v1/rooms/7/voice-relay")
+	waitFor(t, func() bool { return proxy.CallSignalingOpen() })
+	// Only signaling sockets count, and each one that opens is counted once.
+	if opens := proxy.CallSignalingOpens(); opens != 2 {
+		t.Fatalf("counted %d signaling opens, want 2", opens)
+	}
+
+	first.Close(websocket.StatusNormalClosure, "")
+	relay.Close(websocket.StatusNormalClosure, "")
+	select {
+	case <-closed:
+		t.Fatal("reported closed while another signaling socket was still open")
+	case <-time.After(300 * time.Millisecond):
+	}
+	second.Close(websocket.StatusNormalClosure, "")
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the last signaling socket closed without a report")
+	}
+	if proxy.CallSignalingOpen() {
+		t.Fatal("signaling still counted as open")
+	}
+}
+
+func waitFor(t *testing.T, condition func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !condition() {
+		if time.Now().After(deadline) {
+			t.Fatal("condition not met")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}

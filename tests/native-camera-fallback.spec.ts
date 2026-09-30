@@ -40,6 +40,7 @@ async function fakeNativeSender(page: Page) {
     contentType: 'application/javascript',
     body: `export const iosNativeBinding = {};
 export async function callIOSNative() {}
+export async function callIOSScreenSender() { throw new Error('No screen broadcast in this camera test'); }
 export async function callIOSMetaSender(command, args) { return window.__fakeMeta(command, args); }`,
   }));
   await page.route('**/src/media/metaGlassesCamera.ts*', route => route.fulfill({
