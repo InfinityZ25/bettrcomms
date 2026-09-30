@@ -510,6 +510,7 @@ static void BCMetaEmit(NSDictionary *detail) {
     self.camera = camera;
     self.stream = camera.stream;
     self.videoEncoder = [BCMetaVideoEncoder new];
+    [self.videoEncoder appForegroundChanged:self.foreground];
     __weak BCMetaCamera *weakSelf = self;
     __weak MWDATStream *expectedStream = self.stream;
     BCMetaVideoEncoder *encoder = self.videoEncoder;
@@ -565,8 +566,10 @@ static void BCMetaEmit(NSDictionary *detail) {
     NSNumber *width = @(CGImageGetWidth(image.CGImage));
     NSNumber *height = @(CGImageGetHeight(image.CGImage));
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (self.stream) {
-            if (!BCMetaPage()) [self stop];
+        if (self.stream && self.foreground) {
+            // Preview is optional during a native call. A queued foreground
+            // frame must not tear down DAT when the page is being suspended.
+            if (!BCMetaPage()) { if (!self.publishing) [self stop]; }
             else {
                 BCMetaEmitWithCompletion(@{@"kind": @"frame", @"jpeg": base64,
                                            @"width": width, @"height": height}, ^{
@@ -580,6 +583,7 @@ static void BCMetaEmit(NSDictionary *detail) {
 }
 
 - (void)stop {
+    BCNativeVideoLog([NSString stringWithFormat:@"capture stop publishing=%d foreground=%d", self.publishing, self.foreground]);
     self.publishing = NO;
     bc_meta_sender_ended();
     BCMetaVideoEncoder *encoder = self.videoEncoder;
@@ -637,6 +641,8 @@ static void BCMetaEmit(NSDictionary *detail) {
 
 - (void)appActivated:(NSNotification *)notification {
     self.foreground = YES;
+    [self.videoEncoder appForegroundChanged:YES];
+    BCNativeVideoLog([NSString stringWithFormat:@"app foreground publishing=%d stream=%d", self.publishing, self.stream != nil]);
     // The SDK can keep its external-accessory session across an app switch.
     // WebKit may defer a frame's JavaScript completion while in the background;
     // allow a fresh frame immediately when the call becomes visible again.
@@ -685,6 +691,8 @@ static void BCMetaEmit(NSDictionary *detail) {
 
 - (void)appBackgrounded:(NSNotification *)notification {
     self.foreground = NO;
+    [self.videoEncoder appForegroundChanged:NO];
+    BCNativeVideoLog([NSString stringWithFormat:@"app background publishing=%d stream=%d", self.publishing, self.stream != nil]);
     // Calls transmit entirely natively. Only standalone previews stop here.
     if (self.publishing) return;
     // Permission redirects intentionally retain a session with no stream.
@@ -724,4 +732,8 @@ void bc_meta_set_publishing(int value) {
     dispatch_async(dispatch_get_main_queue(), ^{ [BCMetaCamera shared].publishing = value != 0; });
 }
 
-void bc_meta_log(const char *message) { os_log(OS_LOG_DEFAULT, "BetterComms Meta native: %{public}s", message); }
+void bc_meta_log(const char *message) {
+    NSString *text = [NSString stringWithUTF8String:message];
+    if ([text hasPrefix:@"sender frames="]) BCNativeVideoLog(text);
+    else os_log(OS_LOG_DEFAULT, "BetterComms Meta native: %{public}s", message);
+}

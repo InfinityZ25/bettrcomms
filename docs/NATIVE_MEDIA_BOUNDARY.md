@@ -33,6 +33,17 @@ and locked-phone video remain unverified. Room signaling, capability negotiation
 and fallback decisions still run in the webview. Adding a background mode alone
 does not establish continued delivery or recovery during suspension.
 
+The local background-recovery build retries invalid VideoToolbox sessions and
+temporarily unavailable decoders/encoders from the native frame callback, with
+backoff capped at five seconds. A recreated decoder waits for a source keyframe;
+the encoder requests a fresh output keyframe. Terminal codec errors still stop
+capture. A physical iPhone test identified decoder invalidation (`-12903`)
+immediately after backgrounding; continued delivery with recovery is still an
+acceptance gate. Bounded native diagnostics in `Library/Caches/NativeMedia`
+record frame rates, numeric codec errors and foreground transitions, without
+media, signaling payloads or credentials. The two rotating files total roughly
+512 KiB. Preview availability does not own an active native sender's lifetime.
+
 The next iPhone screen-sharing implementation needs a ReplayKit Broadcast
 Upload Extension for other apps and the system broadcast indicator. Its sample
 buffers must reach a native video encoder and a native network sender with
