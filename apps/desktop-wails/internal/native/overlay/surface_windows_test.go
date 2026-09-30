@@ -185,7 +185,12 @@ func TestFramesArePaced(t *testing.T) {
 	frame := testFrame(info.Width, info.Height)
 
 	const count = 6
+	// Open anchors the cadence before testFrame prepares the pixels. Start a
+	// fresh cadence here so unmeasured setup time cannot shorten this burst.
+	manager.mu.Lock()
 	started := time.Now()
+	manager.current.nextFrameAt = started
+	manager.mu.Unlock()
 	for range count {
 		if err := manager.Frame(info.OverlayID, info.Width, info.Height, frame); err != nil {
 			t.Fatalf("Frame: %v", err)
