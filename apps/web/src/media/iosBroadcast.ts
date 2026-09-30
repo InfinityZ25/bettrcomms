@@ -24,17 +24,43 @@ export function releaseOrphanedIOSBroadcast() {
   void callIOSScreenSender('native_screen_release_orphans', { owner: pageOwner }).catch(() => undefined);
 }
 
+// The share this page started and has not stopped, if any.
+let liveSession: string | undefined;
+
 export const iosBroadcastDriver = {
-  invoke: ((command: string, args: Record<string, unknown> = {}) =>
-    callIOSScreenSender(command, command === 'native_screen_start' ? { ...args, owner: pageOwner } : args)
-  ) as typeof callIOSScreenSender,
+  invoke: (async (command: string, args: Record<string, unknown> = {}) => {
+    const result = await callIOSScreenSender(command,
+      command === 'native_screen_start' ? { ...args, owner: pageOwner } : args);
+    if (command === 'native_screen_start') liveSession = (result as { sessionId?: string } | undefined)?.sessionId;
+    if (command === 'native_screen_stop' && args.sessionId === liveSession) liveSession = undefined;
+    return result;
+  }) as typeof callIOSScreenSender,
   // Leaving the call while the picker is open must close the picker too.
   cancelPending: () => callIOSScreenSender('native_screen_cancel_pending').then(() => undefined, () => undefined),
   // The local preview is a native peer too. Screen pixels never traverse IPC
   // or a canvas on the sender, and sending survives a suspended webview.
   listen: async (listener: Parameters<typeof onNativeCaptureEnded>[0]) => {
-    const onEnded = (event: Event) => listener({ payload: (event as CustomEvent).detail } as Parameters<typeof listener>[0]);
+    const end = (detail: { sessionId: string; reason: string }) => {
+      if (detail.sessionId === liveSession) liveSession = undefined;
+      listener({ payload: detail } as Parameters<typeof listener>[0]);
+    };
+    const onEnded = (event: Event) => end((event as CustomEvent).detail);
+    // Stopping from the iOS indicator while BetterComms is in the background
+    // sends the ended event into a suspended webview, where iOS may drop it.
+    // Coming back, ask the host whether this page's share is still live.
+    const onVisible = () => {
+      const session = liveSession;
+      if (document.visibilityState !== 'visible' || !session) return;
+      void callIOSScreenSender<{ sessionId?: string }>('native_screen_active').then((active) => {
+        if (liveSession === session && active?.sessionId !== session)
+          end({ sessionId: session, reason: 'Screen broadcast ended.' });
+      }, () => undefined);
+    };
     window.addEventListener('bc-ios-broadcast-ended', onEnded);
-    return () => window.removeEventListener('bc-ios-broadcast-ended', onEnded);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('bc-ios-broadcast-ended', onEnded);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   },
 };

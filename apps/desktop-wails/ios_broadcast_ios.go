@@ -83,6 +83,22 @@ func iosBroadcastCommand(command string, raw json.RawMessage) (any, error) {
 	if command == "native_screen_start" {
 		return startIOSBroadcast(raw)
 	}
+	if command == "native_screen_active" {
+		// The ended event is a script call into a webview iOS may have
+		// suspended, so it can be lost. A resumed page reconciles with this.
+		screenBroadcast.Lock()
+		b := screenBroadcast.current
+		screenBroadcast.Unlock()
+		active := ""
+		if b != nil {
+			b.mu.Lock()
+			if b.client != nil && !b.closed {
+				active = b.id
+			}
+			b.mu.Unlock()
+		}
+		return map[string]string{"sessionId": active}, nil
+	}
 	if command == "native_screen_release_orphans" {
 		// A freshly loaded page cannot see or stop a broadcast an earlier load
 		// of the page started, so it asks for any such broadcast to end.
