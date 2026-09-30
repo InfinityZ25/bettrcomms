@@ -406,52 +406,53 @@ export default function CallStage({
             ) : undefined
           }
         />
-        {!phone && (
-          <CallToolbar
-            galleryLayout={gallery.galleryLayout}
-            onGalleryLayout={gallery.setGalleryLayout}
-            galleryFit={gallery.galleryFit}
-            onToggleGalleryFit={gallery.toggleGalleryFit}
-            hasStageContent={hasStageContent}
-            showAllMedia={
-              gallery.galleryLayout === 'all' && Boolean(focusedStageItem)
-            }
-            watchedScreenCount={focusedStageItem ? watchedScreens.length : 0}
-            onClearFocus={() => selection.setFocusedStageKey(null)}
-            docking={docking}
-            overlayCameras={[
-              ...(locals.get('camera')
-                ? [
-                    {
-                      id: 'self',
-                      name: 'You',
-                      track: locals.get('camera')!,
-                      speaking: speaking.has('self'),
-                      muted,
-                      deafened,
-                    },
-                  ]
-                : []),
-              ...remote
-                .filter((track) => track.source === 'camera')
-                .map((track) => ({
-                  id: track.peerId,
-                  name: names[track.peerId] ?? 'Friend',
-                  track: track.track,
-                  speaking: speaking.has(track.peerId),
-                  muted: remotePresence[track.peerId]?.muted,
-                  deafened: remotePresence[track.peerId]?.deafened,
-                })),
-            ]}
-            focused={focused}
-            fullscreen={immersive.fullscreen}
-            onInvite={onInvite && (() => immersive.leavingFullscreen(onInvite))}
-            onChat={onChat && (() => immersive.leavingFullscreen(onChat))}
-            chatOpen={chatOpen}
-            onFocus={onFocus}
-            onFullscreen={immersive.toggleFullscreen}
-          />
-        )}
+        {/* Keep the native overlay alive when responsive controls move into
+            More. Its session ends with the call, not with a window resize. */}
+        <CallToolbar
+          hidden={phone}
+          galleryLayout={gallery.galleryLayout}
+          onGalleryLayout={gallery.setGalleryLayout}
+          galleryFit={gallery.galleryFit}
+          onToggleGalleryFit={gallery.toggleGalleryFit}
+          hasStageContent={hasStageContent}
+          showAllMedia={
+            gallery.galleryLayout === 'all' && Boolean(focusedStageItem)
+          }
+          watchedScreenCount={focusedStageItem ? watchedScreens.length : 0}
+          onClearFocus={() => selection.setFocusedStageKey(null)}
+          docking={docking}
+          overlayCameras={[
+            ...(locals.get('camera')
+              ? [
+                  {
+                    id: 'self',
+                    name: 'You',
+                    track: locals.get('camera')!,
+                    speaking: speaking.has('self'),
+                    muted,
+                    deafened,
+                  },
+                ]
+              : []),
+            ...remote
+              .filter((track) => track.source === 'camera')
+              .map((track) => ({
+                id: track.peerId,
+                name: names[track.peerId] ?? 'Friend',
+                track: track.track,
+                speaking: speaking.has(track.peerId),
+                muted: remotePresence[track.peerId]?.muted,
+                deafened: remotePresence[track.peerId]?.deafened,
+              })),
+          ]}
+          focused={focused}
+          fullscreen={immersive.fullscreen}
+          onInvite={onInvite && (() => immersive.leavingFullscreen(onInvite))}
+          onChat={onChat && (() => immersive.leavingFullscreen(onChat))}
+          chatOpen={chatOpen}
+          onFocus={onFocus}
+          onFullscreen={immersive.toggleFullscreen}
+        />
       </div>
       {showStats && (
         <ConnectionDetails

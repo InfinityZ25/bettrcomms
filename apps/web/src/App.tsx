@@ -41,7 +41,7 @@ import SpacesRail from '@/features/shell/SpacesRail';
 import HomeScreen from '@/features/shell/HomeScreen';
 import WorkspaceScreen from '@/features/shell/WorkspaceScreen';
 import { readScreen, useScreenRoute } from '@/features/shell/useScreenRoute';
-import { PHONE_QUERY } from '@/hooks/use-mobile';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { useAsyncAction } from '@/hooks/useAsyncAction';
 import { cn } from '@/lib/utils';
 import { AnimatePresence, motion } from 'motion/react';
@@ -100,13 +100,13 @@ export default function App() {
   */
   const [callOpen, setCallOpen] = useState(false);
   /*
-    Whether the conversation stays on screen during the call. It does by
-    default: pressing Call used to take the entire chat away, with no way back
-    to it except the sidebar.
+    Default to chat beside desktop calls and a full stage on phones. Follow
+    resizing until the user explicitly opens or closes chat, then keep their
+    choice rather than dismissing a conversation during a resize.
   */
-  const [chatColumn, setChatColumn] = useState(
-    () => !window.matchMedia(PHONE_QUERY).matches,
-  );
+  const phone = useIsMobile();
+  const [chatColumnChoice, setChatColumn] = useState<boolean | null>(null);
+  const chatColumn = chatColumnChoice ?? !phone;
   const [channelChat, setChannelChat] = useState(false);
   const [messageTarget, setMessageTarget] = useState<{
     room: string;
@@ -361,7 +361,7 @@ export default function App() {
                 onChat={
                   room
                     ? () => {
-                        if (inDirectRoom) setChatColumn((value) => !value);
+                        if (inDirectRoom) setChatColumn((value) => !(value ?? !phone));
                         else setChannelChat((value) => !value);
                       }
                     : undefined

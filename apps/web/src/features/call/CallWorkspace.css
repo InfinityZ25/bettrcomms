@@ -185,6 +185,10 @@
 
 /* Layout, invite, focus and fullscreen: the third column of the footer grid,
    empty since the controls took the middle one. */
+.call-chrome-actions[hidden] {
+  display: none;
+}
+
 .call-chrome-actions {
   grid-row: 1;
   grid-column: 3;

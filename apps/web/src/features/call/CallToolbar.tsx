@@ -61,6 +61,7 @@ export function RecordingFlag({
  * grid with the controls in the middle, and its third column was empty.
  */
 export default function CallToolbar({
+  hidden = false,
   galleryLayout,
   onGalleryLayout,
   galleryFit,
@@ -79,6 +80,7 @@ export default function CallToolbar({
   onFocus,
   onFullscreen,
 }: {
+  hidden?: boolean;
   galleryLayout: GalleryLayout;
   onGalleryLayout: (layout: GalleryLayout) => void;
   galleryFit: 'cover' | 'contain';
@@ -99,7 +101,7 @@ export default function CallToolbar({
   onFullscreen: () => void;
 }) {
   return (
-    <div className="call-chrome-actions">
+    <div className="call-chrome-actions" hidden={hidden}>
       {/*
         Everything about how the call is arranged lives behind one button.
         These were four controls spread along the top edge — two raw selects

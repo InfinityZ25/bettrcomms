@@ -69,7 +69,7 @@ distribution, not an installer.
 ## Windows installer (preview)
 
 With NSIS 3 installed, `npm run package` in this directory builds the host and
-creates `bin/bettercomms-wails-0.1.18-windows-x64-setup.exe`. For an explicit
+creates `bin/bettercomms-wails-0.1.19-windows-x64-setup.exe`. For an explicit
 compiler path or an already validated portable build, use from the repo root:
 
 ```powershell
@@ -95,7 +95,7 @@ compares payload hashes, reinstalls, uninstalls and verifies that unknown files
 survive. It refuses to run if a Wails installation/shortcut already exists:
 
 ```powershell
-./scripts/test-wails-installer.ps1 -Installer ./apps/desktop-wails/bin/bettercomms-wails-0.1.18-windows-x64-setup.exe
+./scripts/test-wails-installer.ps1 -Installer ./apps/desktop-wails/bin/bettercomms-wails-0.1.19-windows-x64-setup.exe
 ```
 
 It temporarily creates a per-user Wails uninstall registration and Start menu
