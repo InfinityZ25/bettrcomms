@@ -56,6 +56,15 @@ test('mobile conversation navigation, actions and keyboard preserve usable scree
       });
     const page = await phone.newPage();
     await page.goto('/');
+    const cdp =
+      browser.browserType().name() === 'chromium'
+        ? await phone.newCDPSession(page)
+        : null;
+    if (cdp)
+      await cdp.send('Emulation.setSafeAreaInsetsOverride', {
+        insets: { top: 59, bottom: 34 },
+      });
+    const safeTop = cdp ? 59 : 0;
     const conversation = page.getByRole('region', {
       name: 'Conversation with Phone Friend',
       exact: true,
@@ -153,7 +162,7 @@ test('mobile conversation navigation, actions and keyboard preserve usable scree
     ).toBeVisible();
     await expect
       .poll(async () => Math.round((await header.boundingBox())!.y))
-      .toBe(0);
+      .toBe(safeTop);
 
     await page
       .getByRole('button', { name: 'Back to messages', exact: true })
@@ -188,6 +197,13 @@ test('mobile conversation navigation, actions and keyboard preserve usable scree
       { width: 874, height: 402 },
     ]) {
       await page.setViewportSize(size);
+      if (cdp)
+        await cdp.send('Emulation.setSafeAreaInsetsOverride', {
+          insets:
+            size.width > size.height
+              ? { left: 59, right: 59, bottom: 21 }
+              : { top: 20, bottom: 0 },
+        });
       await expect(composer).toBeInViewport();
       const box = (await composer.boundingBox())!;
       expect(box.x).toBeGreaterThanOrEqual(0);
@@ -203,6 +219,27 @@ test('mobile conversation navigation, actions and keyboard preserve usable scree
         expect(button.width).toBeGreaterThanOrEqual(44);
       }
     }
+    await page
+      .getByRole('navigation', { name: 'Sections' })
+      .getByRole('button', { name: 'Friends', exact: true })
+      .click();
+    const friends = page.getByRole('dialog', { name: 'Better with friends' });
+    await expect(friends).toBeVisible();
+    const close = (await friends
+      .getByRole('button', { name: 'Close' })
+      .boundingBox())!;
+    expect(close.x + close.width).toBeLessThanOrEqual(874 - (cdp ? 59 : 0));
+    expect(close.height).toBeGreaterThanOrEqual(44);
+    await friends.getByRole('button', { name: 'Close' }).click();
+    await page
+      .getByRole('button', { name: 'Mobile Writer and account options' })
+      .click();
+    await page
+      .getByRole('menuitem', { name: 'Recordings', exact: true })
+      .click();
+    await expect(
+      page.getByRole('main', { name: 'Recordings', exact: true }),
+    ).toBeVisible();
     await page
       .getByRole('navigation', { name: 'Sections' })
       .getByRole('button', { name: 'Bettercomms home' })

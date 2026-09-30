@@ -142,7 +142,7 @@ export default function SpacesRail({
       >
         <Phone size={20} />
       </RailButton>
-      <div className="max-[820px]:hidden">
+      <div className="phone:hidden">
         <RailButton
           label="Recordings"
           current={screen === 'recordings'}
@@ -197,7 +197,7 @@ export default function SpacesRail({
             <DropdownMenuSeparator />
             <DropdownMenuItem
               onClick={onRecordings}
-              className="min-h-11 min-[821px]:hidden"
+              className="hidden min-h-11 phone:flex"
             >
               <Clapperboard /> Recordings
             </DropdownMenuItem>
