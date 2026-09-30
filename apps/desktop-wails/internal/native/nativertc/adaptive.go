@@ -26,6 +26,7 @@ type HubOption func(*Hub) error
 
 type receiverFeedback struct {
 	reportAt   time.Time
+	handledAt  time.Time
 	loss       uint8 // RFC 3550 fraction lost, in units of 1/256.
 	estimateAt time.Time
 	estimate   int
@@ -93,8 +94,9 @@ func (c *bitrateController) rate(now time.Time) int {
 	ceiling := c.maximum
 	healthy := len(c.peers) > 0
 	var loss uint8
+	newHighLoss := false
 	newest := c.lastReport
-	for _, f := range c.peers {
+	for id, f := range c.peers {
 		if !f.estimateAt.IsZero() && now.Sub(f.estimateAt) <= feedbackLifetime {
 			ceiling = min(ceiling, max(c.minimum, f.estimate))
 		}
@@ -103,6 +105,11 @@ func (c *bitrateController) rate(now time.Time) int {
 			continue
 		}
 		loss = max(loss, f.loss)
+		if f.reportAt.After(f.handledAt) {
+			newHighLoss = newHighLoss || f.loss >= 13
+			f.handledAt = f.reportAt
+			c.peers[id] = f
+		}
 		if f.reportAt.After(newest) {
 			newest = f.reportAt
 		}
@@ -115,7 +122,7 @@ func (c *bitrateController) rate(now time.Time) int {
 	}
 	// Act on each new report only once. A stale high-loss sample must not keep
 	// multiplying the rate downward on every camera frame.
-	if newest.After(c.lastReport) && loss >= 13 {
+	if newHighLoss {
 		target = min(target, c.current*4/5)
 		healthy = false
 	}

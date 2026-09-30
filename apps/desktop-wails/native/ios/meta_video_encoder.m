@@ -11,6 +11,7 @@ extern void bc_meta_video_encoded(void *data, int size);
     BOOL _closed;
     NSInteger _targetBitrate;
     NSInteger _configuredBitrate;
+    CFAbsoluteTime _nextRateAttempt;
     BOOL _forceKeyframe;
     CFAbsoluteTime _statsStarted;
     NSUInteger _frames;
@@ -142,10 +143,21 @@ static void BCEncoded(void *ref, void *source, OSStatus status, VTEncodeInfoFlag
             }
             if (_encoder && !status) {
                 NSInteger bitrate = _targetBitrate ?: 3000000;
-                if (bitrate != _configuredBitrate) {
-                    status=VTSessionSetProperties(_encoder,(__bridge CFDictionaryRef)[self rateSettings]);
-                    if (!status) _configuredBitrate=bitrate;
-                    else [self fail:status stage:@"rate update"];
+                if (bitrate != _configuredBitrate && now >= _nextRateAttempt) {
+                    OSStatus rateStatus=VTSessionSetProperties(_encoder,(__bridge CFDictionaryRef)[self rateSettings]);
+                    if (!rateStatus) {
+                        _configuredBitrate=bitrate;
+                    } else {
+                        // Rate tuning is optional. Restore both properties if a
+                        // partial update failed and keep encoding the current
+                        // camera session. Avoid retrying every incoming frame.
+                        _nextRateAttempt=now+5;
+                        NSInteger requested=_targetBitrate;
+                        _targetBitrate=_configuredBitrate;
+                        VTSessionSetProperties(_encoder,(__bridge CFDictionaryRef)[self rateSettings]);
+                        _targetBitrate=requested;
+                        os_log(OS_LOG_DEFAULT, "BetterComms Meta native: bitrate update rejected (%d); retaining last rate", (int)rateStatus);
+                    }
                 }
                 if (!status) {
                     NSDictionary *options = _forceKeyframe ? @{(id)kVTEncodeFrameOptionKey_ForceKeyFrame:@YES} : nil;

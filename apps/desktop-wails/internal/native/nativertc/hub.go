@@ -57,9 +57,8 @@ type encodedFrame struct {
 	data []byte
 	// rtpTime is session-relative 90 kHz capture time, wrapping exactly like
 	// an RTP timestamp.
-	arrivedAt time.Time
-	rtpTime   uint32
-	keyframe  bool
+	rtpTime  uint32
+	keyframe bool
 }
 
 // peerSignaling tracks the answer/candidate handshake for one viewer.
@@ -471,14 +470,9 @@ func (h *Hub) writeFrames(ctx context.Context, attached *peer, track *webrtc.Tra
 			if !ok {
 				return
 			}
-			if h.adaptive != nil && time.Since(frame.arrivedAt) > 250*time.Millisecond {
-				waitingForKeyframe = true
-				h.adaptive.congested(time.Now())
-				h.idrRequested.Store(true)
-				attached.droppedFrames.Add(1)
-				h.droppedFrames.Add(1)
-				continue
-			}
+			// The bounded queue detects backlog by overflow. A wall-clock age
+			// cutoff would mistake our own deliberate keyframe pacing for
+			// congestion and discard the following reference chain.
 			paced.setRate(h.pacingRate(time.Now()))
 			// After an overflow the reference chain is broken. Resume at the
 			// next keyframe rather than sending frames whose references were
@@ -658,7 +652,7 @@ func (h *Hub) WriteAccessUnit(annexB []byte, arrivedAt time.Time) error {
 		h.keyframes.Add(1)
 	}
 
-	frame := &encodedFrame{data: prepared, rtpTime: rtpTime, keyframe: keyframe, arrivedAt: arrivedAt}
+	frame := &encodedFrame{data: prepared, rtpTime: rtpTime, keyframe: keyframe}
 
 	h.mu.Lock()
 	targets := make([]*peer, 0, len(h.peers))

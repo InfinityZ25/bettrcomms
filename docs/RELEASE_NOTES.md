@@ -13,8 +13,10 @@ follows rate changes without refilling its burst bucket.
 
 Viewer PLI/FIR requests and queue overflow now request a fresh encoder frame
 without restarting the glasses session. Recovery requests are coalesced to
-at most one per half second. Video older than 250 ms in an adaptive sender's
-queue is dropped with keyframe recovery instead of accumulating delay.
+at most one per half second. Each viewer's queue stays bounded; overflow
+requests recovery without treating deliberate keyframe pacing as stale video.
+Rejected encoder bitrate updates retain the running camera session and retry
+after a cooldown instead of stopping capture.
 These controls run from native camera frames, independently of web timers.
 Diagnostics include the encoder's current target bitrate.
 

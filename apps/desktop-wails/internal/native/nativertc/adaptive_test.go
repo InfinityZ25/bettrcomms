@@ -2,8 +2,10 @@ package nativertc
 
 import (
 	"bettercomms/desktop-wails/internal/native/h264"
+	"bytes"
 	"context"
 	"github.com/pion/rtcp"
+	"github.com/pion/webrtc/v4"
 	"testing"
 	"time"
 )
@@ -53,6 +55,29 @@ func TestAdaptiveRateBacksOffOncePerLossReportAndHonorsBounds(t *testing.T) {
 	}
 	if got := c.rate(now.Add(100 * time.Second)); got != 1_000_000 {
 		t.Fatal(got)
+	}
+}
+
+func TestHealthyViewerReportsDoNotReplayAnotherViewersLoss(t *testing.T) {
+	c := newBitrateController(1_000_000, 3_000_000, 8_000_000)
+	c.add("lossy")
+	c.add("healthy")
+	now := time.Unix(100, 0)
+	c.report("lossy", 26, now)
+	c.report("healthy", 0, now)
+	if got := c.rate(now); got != 2_400_000 {
+		t.Fatal(got)
+	}
+	for second := 1; second <= 5; second++ {
+		at := now.Add(time.Duration(second) * time.Second)
+		c.report("healthy", 0, at)
+		if got := c.rate(at); got != 2_400_000 {
+			t.Fatalf("healthy peer replayed old loss at %ds: %d", second, got)
+		}
+	}
+	c.report("lossy", 26, now.Add(6*time.Second))
+	if got := c.rate(now.Add(6 * time.Second)); got != 1_920_000 {
+		t.Fatalf("new loss report did not back off: %d", got)
 	}
 }
 func TestAdaptiveRateUsesTheMostConstrainedViewerAndRemovesIt(t *testing.T) {
@@ -172,5 +197,110 @@ func TestNativeFeedbackDispatchMatchesVideoSSRC(t *testing.T) {
 	h.handleFeedback("viewer", 42, []rtcp.Packet{&rtcp.ReceiverEstimatedMaximumBitrate{SSRCs: []uint32{42}, Bitrate: 1_500_000}}, now.Add(3*time.Second))
 	if got := h.NextEncoderControl(now.Add(3 * time.Second)); got.Bitrate != 1_275_000 {
 		t.Fatal("REMB was not applied", got)
+	}
+}
+
+// Exercise feedback through the negotiated RTP sender, including its real
+// rewritten SSRC, rather than only invoking the packet dispatcher directly.
+func TestAdaptiveFeedbackArrivesThroughNegotiatedPeer(t *testing.T) {
+	h, err := NewHub("feedback", h264.Baseline, 720, 1280, 30, 8, WithAdaptiveBitrate(1_000_000, 3_000_000, 8_000_000))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	offer, err := h.CreatePeer(ctx, "viewer", nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	viewer, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer viewer.Close()
+	received := make(chan uint32, 1)
+	viewer.OnTrack(func(track *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
+		select {
+		case received <- uint32(track.SSRC()):
+		default:
+		}
+	})
+	if err := viewer.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: offer.SDP}); err != nil {
+		t.Fatal(err)
+	}
+	answer, err := viewer.CreateAnswer(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gathered := webrtc.GatheringCompletePromise(viewer)
+	if err := viewer.SetLocalDescription(answer); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-gathered:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if err := h.ApplyAnswer("viewer", viewer.LocalDescription().SDP); err != nil {
+		t.Fatal(err)
+	}
+	var ssrc uint32
+	for ssrc == 0 {
+		if err := h.WriteAccessUnit(keyframeUnit(), time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case ssrc = <-received:
+		case <-time.After(20 * time.Millisecond):
+		case <-ctx.Done():
+			t.Fatal("viewer never received video", ctx.Err())
+		}
+	}
+	if err := viewer.WriteRTCP([]rtcp.Packet{
+		&rtcp.ReceiverReport{Reports: []rtcp.ReceptionReport{{SSRC: ssrc, FractionLost: 26}}},
+		&rtcp.ReceiverEstimatedMaximumBitrate{SSRCs: []uint32{ssrc}, Bitrate: 1_500_000},
+		&rtcp.PictureLossIndication{MediaSSRC: ssrc},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	requested := false
+	for {
+		control := h.NextEncoderControl(time.Now())
+		requested = requested || control.ForceKeyframe
+		if control.Bitrate == 1_275_000 && requested {
+			break
+		}
+		select {
+		case <-time.After(10 * time.Millisecond):
+		case <-ctx.Done():
+			t.Fatalf("negotiated feedback was not applied: bitrate=%d keyframe=%v", control.Bitrate, requested)
+		}
+	}
+	// A deliberately paced 64 KiB keyframe exceeds the former 250 ms age
+	// cutoff at this rate. Its queued delta must still be sent without
+	// breaking the reference chain or requesting a replacement keyframe.
+	// Obtain the remote track again through the already negotiated receiver.
+	track := viewer.GetReceivers()[0].Track()
+	large := append(keyframeUnit(), bytes.Repeat([]byte{0x55}, 64*1024)...)
+	if err := h.WriteAccessUnit(large, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(33 * time.Millisecond)
+	if err := h.WriteAccessUnit([]byte{0, 0, 0, 1, 0x41, 0x55}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	_ = track.SetReadDeadline(time.Now().Add(3 * time.Second))
+	for {
+		packet, _, err := track.ReadRTP()
+		if err != nil {
+			t.Fatalf("paced keyframe prevented subsequent delta: %v", err)
+		}
+		if len(packet.Payload) > 0 && packet.Payload[0]&0x1f == 1 {
+			break
+		}
+	}
+	if h.droppedFrames.Load() != 0 {
+		t.Fatalf("own pacing discarded frames: %d", h.droppedFrames.Load())
 	}
 }
