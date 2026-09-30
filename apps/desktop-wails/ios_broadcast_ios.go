@@ -29,6 +29,7 @@ import (
 
 type iosBroadcast struct {
 	id       string
+	owner    string // the page load that started it
 	listener net.Listener
 	client   *broadcastipc.Client
 	config   string
@@ -82,6 +83,23 @@ func iosBroadcastCommand(command string, raw json.RawMessage) (any, error) {
 	if command == "native_screen_start" {
 		return startIOSBroadcast(raw)
 	}
+	if command == "native_screen_release_orphans" {
+		// A freshly loaded page cannot see or stop a broadcast an earlier load
+		// of the page started, so it asks for any such broadcast to end.
+		var args struct {
+			Owner string `json:"owner"`
+		}
+		if json.Unmarshal(raw, &args) != nil || args.Owner == "" {
+			return nil, errors.New("Invalid broadcast request")
+		}
+		screenBroadcast.Lock()
+		b := screenBroadcast.current
+		screenBroadcast.Unlock()
+		if b != nil && b.owner != args.Owner {
+			b.close()
+		}
+		return nil, nil
+	}
 	if command == "native_screen_cancel_pending" {
 		// The page learns a session ID only when the start returns, so it cannot
 		// name a broadcast still waiting in the picker. Close that one only.
@@ -126,6 +144,10 @@ func iosBroadcastCommand(command string, raw json.RawMessage) (any, error) {
 }
 
 func startIOSBroadcast(raw json.RawMessage) (any, error) {
+	var owned struct {
+		Owner string `json:"owner"`
+	}
+	_ = json.Unmarshal(raw, &owned)
 	screenBroadcast.Lock()
 	if screenBroadcast.current != nil {
 		screenBroadcast.Unlock()
@@ -144,7 +166,7 @@ func startIOSBroadcast(raw json.RawMessage) (any, error) {
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	b := &iosBroadcast{id: uuid.NewString(), listener: listener, config: filepath.Join(group, "broadcast.json"), cancel: cancel}
+	b := &iosBroadcast{id: uuid.NewString(), owner: owned.Owner, listener: listener, config: filepath.Join(group, "broadcast.json"), cancel: cancel}
 	// Two single-use keys. The extension proves itself with token; the app then
 	// proves itself with hostToken, so an app that binds this loopback port
 	// after BetterComms exits cannot receive the screen from the extension.
@@ -187,7 +209,22 @@ func startIOSBroadcast(raw json.RawMessage) (any, error) {
 	// Verify each connection on its own goroutine: a local app opening idle
 	// connections must not hold up the extension behind its read deadline.
 	verified := make(chan net.Conn, 1)
+	var handshakes sync.WaitGroup
+	// Whatever becomes of this start, a connection that finishes its
+	// handshake after the start has returned is closed rather than stranded
+	// in the channel, where it would leave the extension serving nobody.
+	defer func() {
+		go func() {
+			handshakes.Wait()
+			close(verified)
+			for conn := range verified {
+				conn.Close()
+			}
+		}()
+	}()
+	handshakes.Add(1)
 	go func() {
+		defer handshakes.Done()
 		slots := make(chan struct{}, 8)
 		for {
 			conn, err := listener.Accept()
@@ -200,7 +237,9 @@ func startIOSBroadcast(raw json.RawMessage) (any, error) {
 				conn.Close()
 				continue
 			}
+			handshakes.Add(1)
 			go func() {
+				defer handshakes.Done()
 				defer func() { <-slots }()
 				if broadcastipc.AcceptExtension(conn, token, hostToken, 3*time.Second) != nil {
 					conn.Close()

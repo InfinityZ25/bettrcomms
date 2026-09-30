@@ -7,8 +7,9 @@
 // The sheet on screen and the share it belongs to. Main queue only.
 static UIViewController *broadcastPicker;
 static NSString *broadcastPickerSession;
-// A share that finished before its delayed sheet appeared must never show it.
-static NSString *broadcastRetiredSession;
+// Shares whose sheet may still be shown. A delayed retry for a share that has
+// since ended finds itself missing here and gives up. Main queue only.
+static NSMutableSet<NSString *> *broadcastPickerPending;
 extern void bc_broadcast_picker_cancel(const char *session);
 
 @interface BCBroadcastPickerController : UIViewController <UIAdaptivePresentationControllerDelegate>
@@ -33,7 +34,7 @@ static BOOL BCPresentationSettling(UIViewController *host) {
 }
 
 static void BCShowPicker(NSString *identifier, int attempt) {
-    if ([identifier isEqualToString:broadcastRetiredSession]) return;
+    if (![broadcastPickerPending containsObject:identifier]) return;
     UIViewController *host=appDelegate.window.rootViewController;
     // A previous share's sheet may still be animating away after a quick
     // cancel and restart. UIKit refuses to present during a transition, so
@@ -97,7 +98,11 @@ static void BCShowPicker(NSString *identifier, int attempt) {
 
 void bc_broadcast_picker_show(const char *session) {
     NSString *identifier=[NSString stringWithUTF8String:session];
-    dispatch_async(dispatch_get_main_queue(), ^{ BCShowPicker(identifier, 0); });
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (!broadcastPickerPending) broadcastPickerPending=[NSMutableSet set];
+        [broadcastPickerPending addObject:identifier];
+        BCShowPicker(identifier, 0);
+    });
 }
 
 // Dismisses only the given share's sheet, so a late hide from one share can
@@ -105,10 +110,9 @@ void bc_broadcast_picker_show(const char *session) {
 void bc_broadcast_picker_hide(const char *session) {
     NSString *identifier=[NSString stringWithUTF8String:session];
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (!broadcastPicker || ![broadcastPickerSession isEqualToString:identifier]) {
-            broadcastRetiredSession=identifier;
-            return;
-        }
+        // Every start ends with exactly one hide, so the set stays bounded.
+        [broadcastPickerPending removeObject:identifier];
+        if (!broadcastPicker || ![broadcastPickerSession isEqualToString:identifier]) return;
         UIViewController *sheet=broadcastPicker;
         broadcastPicker=nil; broadcastPickerSession=nil;
         if (sheet.presentingViewController) [sheet dismissViewControllerAnimated:YES completion:nil];
