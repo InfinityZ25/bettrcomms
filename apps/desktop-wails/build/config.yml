@@ -2,9 +2,9 @@ version: '3'
 info:
   productName: BetterComms
   productIdentifier: com.bettrcomms.ios
-  version: 0.0.1
+  version: 0.1.17
 ios:
   bundleID: com.bettrcomms.ios
   displayName: BetterComms
-  version: 0.0.1
+  version: 0.1.17
   minIOSVersion: '17.2'
