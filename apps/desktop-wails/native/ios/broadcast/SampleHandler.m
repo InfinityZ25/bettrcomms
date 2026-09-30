@@ -37,7 +37,10 @@ static void encoded(void *ref, void *source, OSStatus status, VTEncodeInfoFlags 
 - (void)broadcastStartedWithSetupInfo:(NSDictionary<NSString *,NSObject *> *)setupInfo {
     currentHandler=self;
     atomic_init(&_encodeError,0); atomic_init(&_encoded,false);
-    NSURL *group=[NSFileManager.defaultManager containerURLForSecurityApplicationGroupIdentifier:@"group.com.bettrcomms.ios.broadcast"];
+    // The extension's own ID is the host's plus ".broadcast"; its App Group
+    // is that ID with a "group." prefix (see broadcast_host.m).
+    NSString *identifier=[@"group." stringByAppendingString:NSBundle.mainBundle.bundleIdentifier];
+    NSURL *group=[NSFileManager.defaultManager containerURLForSecurityApplicationGroupIdentifier:identifier];
     if (!group) { [self endWithMessage:@"Screen sharing needs the BetterComms broadcast provisioning profile."]; return; }
     bc_broadcast_connect([[group URLByAppendingPathComponent:@"broadcast.json"].path fileSystemRepresentation]);
 }

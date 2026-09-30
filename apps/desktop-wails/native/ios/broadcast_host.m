@@ -22,8 +22,16 @@ extern void bc_broadcast_picker_cancel(const char *session);
 }
 @end
 
+// Derived from this app's own bundle ID, so a developer who re-signs under
+// another App ID gets a matching extension and App Group. Keep in sync with
+// package-desktop-wails-ios.sh, sign-desktop-wails-ios.sh and SampleHandler.m.
+static NSString *BCBroadcastExtensionID(void) {
+    return [NSBundle.mainBundle.bundleIdentifier stringByAppendingString:@".broadcast"];
+}
+
 char *bc_broadcast_group_path(void) {
-    NSURL *url=[NSFileManager.defaultManager containerURLForSecurityApplicationGroupIdentifier:@"group.com.bettrcomms.ios.broadcast"];
+    NSString *group=[@"group." stringByAppendingString:BCBroadcastExtensionID()];
+    NSURL *url=[NSFileManager.defaultManager containerURLForSecurityApplicationGroupIdentifier:group];
     return url ? strdup(url.path.fileSystemRepresentation) : NULL;
 }
 
@@ -69,7 +77,7 @@ static void BCShowPicker(NSString *identifier, int attempt) {
     label.numberOfLines=0; label.textAlignment=NSTextAlignmentCenter;
     label.translatesAutoresizingMaskIntoConstraints=NO;
     RPSystemBroadcastPickerView *picker=[[RPSystemBroadcastPickerView alloc] initWithFrame:CGRectMake(0,0,64,64)];
-    picker.preferredExtension=@"com.bettrcomms.ios.broadcast";
+    picker.preferredExtension=BCBroadcastExtensionID();
     picker.showsMicrophoneButton=NO;
     picker.translatesAutoresizingMaskIntoConstraints=NO;
     [view.view addSubview:label]; [view.view addSubview:picker];

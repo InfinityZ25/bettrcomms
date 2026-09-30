@@ -45,22 +45,28 @@ if [[ -d "$broadcast" ]]; then
     exit 1
   fi
   security cms -D -i "$5" > "$scratch/broadcast-profile.plist"
-  python3 - "$scratch/profile.plist" "$scratch/broadcast-profile.plist" <<'PY'
+  python3 - "$bundle_id" "$broadcast/Info.plist" "$scratch/profile.plist" "$scratch/broadcast-profile.plist" <<'PY'
 import plistlib, sys
+bundle_id, extension_plist = sys.argv[1:3]
 profiles = []
-for path in sys.argv[1:]:
+for path in sys.argv[3:]:
     with open(path, 'rb') as file:
         profiles.append(plistlib.load(file))
 host, extension = profiles
-group = 'group.com.bettrcomms.ios.broadcast'
+# The extension and its App Group are derived from the host's bundle ID.
+extension_id = bundle_id + '.broadcast'
+group = 'group.' + extension_id
+with open(extension_plist, 'rb') as file:
+    if plistlib.load(file)['CFBundleIdentifier'] != extension_id:
+        sys.exit(f'The archive\'s broadcast extension is not {extension_id}; repackage it.')
 for profile in profiles:
     if group not in profile['Entitlements'].get('com.apple.security.application-groups', []):
-        sys.exit('Both profiles must grant the BetterComms broadcast App Group.')
+        sys.exit(f'Both profiles must grant the App Group {group}.')
 if host['TeamIdentifier'] != extension['TeamIdentifier']:
     sys.exit('Host and broadcast profiles must belong to the same team.')
-prefix = host['Entitlements']['application-identifier'].rsplit('com.bettrcomms.ios', 1)[0]
-if extension['Entitlements']['application-identifier'] != prefix + 'com.bettrcomms.ios.broadcast':
-    sys.exit('The extension profile has the wrong App ID.')
+prefix = host['Entitlements']['application-identifier'].rsplit(bundle_id, 1)[0]
+if extension['Entitlements']['application-identifier'] != prefix + extension_id:
+    sys.exit(f'The extension profile must be for {extension_id}.')
 if not set(host.get('ProvisionedDevices', [])).issubset(extension.get('ProvisionedDevices', [])):
     sys.exit('The extension profile must include the host profile\'s devices.')
 PY

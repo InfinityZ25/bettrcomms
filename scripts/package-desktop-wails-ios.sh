@@ -199,7 +199,9 @@ import plistlib, sys
 with open(sys.argv[1], 'rb') as file:
     app = plistlib.load(file)
 extension = {
-    'CFBundleIdentifier': 'com.bettrcomms.ios.broadcast',
+    # Derived from the configured host ID so re-signing under another App ID
+    # works; the App Group follows the same rule below.
+    'CFBundleIdentifier': app['CFBundleIdentifier'] + '.broadcast',
     'CFBundleExecutable': 'BetterCommsBroadcast',
     'CFBundleName': 'BetterCommsBroadcast',
     'CFBundleDisplayName': 'BetterComms',
@@ -216,8 +218,14 @@ extension = {
 with open(sys.argv[2], 'wb') as file:
     plistlib.dump(extension, file)
 PY
-codesign --force --sign - --entitlements "$repo/scripts/BetterComms-broadcast.entitlements" "$broadcast"
-codesign --force --sign - --entitlements "$repo/scripts/BetterComms-ios.entitlements" "$bundle"
+host_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$bundle/Info.plist")"
+broadcast_group="group.$host_id.broadcast"
+for target in ios broadcast; do
+  sed "s/group\.com\.bettrcomms\.ios\.broadcast/$broadcast_group/" \
+    "$repo/scripts/BetterComms-$target.entitlements" > "$scratch/$target.entitlements"
+done
+codesign --force --sign - --entitlements "$scratch/broadcast.entitlements" "$broadcast"
+codesign --force --sign - --entitlements "$scratch/ios.entitlements" "$bundle"
 codesign --verify --deep --strict --verbose=2 "$bundle"
 mkdir -p "$payload/Payload"
 ditto "$bundle" "$payload/Payload/BetterComms.app"

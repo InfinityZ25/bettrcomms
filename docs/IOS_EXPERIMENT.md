@@ -89,9 +89,12 @@ them in its signature.
 
 Sign the downloaded IPA with a local Apple Development identity and the new
 profile using `scripts/sign-desktop-wails-ios.sh`. Archives containing the broadcast
-extension require a fifth argument: the development profile for
-`com.bettrcomms.ios.broadcast`. Both profiles must grant
-`group.com.bettrcomms.ios.broadcast`, use the same team, and include the test phone. The script rejects a profile
+extension require a fifth argument: the development profile for the
+extension, whose App ID is the app's bundle ID plus `.broadcast`
+(`com.bettrcomms.ios.broadcast` by default). Both profiles must grant the App
+Group `group.<extension ID>` (`group.com.bettrcomms.ios.broadcast` by default),
+use the same team, and include the test phone. Changing the bundle ID in
+`build/config.yml` changes both derived IDs. The script rejects a profile
 that does not contain both capabilities, checks its App ID, signs the embedded
 Meta frameworks and app, and verifies the result. Keep the certificate,
 private key, and provisioning profile outside Git. Install the resulting IPA
