@@ -9,6 +9,10 @@ extern void bc_meta_video_encoded(void *data, int size);
     CMFormatDescriptionRef _format;
     VTCompressionSessionRef _encoder;
     BOOL _closed;
+    NSInteger _targetBitrate;
+    NSInteger _configuredBitrate;
+    CFAbsoluteTime _nextRateAttempt;
+    BOOL _forceKeyframe;
     CFAbsoluteTime _statsStarted;
     NSUInteger _frames;
     BOOL _reportedError;
@@ -54,6 +58,19 @@ static void BCEncoded(void *ref, void *source, OSStatus status, VTEncodeInfoFlag
     if (at==size) bc_meta_video_encoded(annex.mutableBytes,(int)annex.length);
 }
 @implementation BCMetaVideoEncoder
+- (void)configureBitrate:(NSInteger)bitrate forceKeyframe:(BOOL)force {
+    @synchronized(self) {
+        if (_closed) return;
+        if (bitrate > 0) _targetBitrate = MAX(1000000, MIN(8000000, bitrate));
+        _forceKeyframe = _forceKeyframe || force;
+    }
+}
+- (NSDictionary *)rateSettings {
+    NSInteger bitrate = _targetBitrate ?: 3000000;
+    return @{(id)kVTCompressionPropertyKey_AverageBitRate:@(bitrate),
+        // Hard cap over one second, in bytes. Keep encoder and RTP pacing aligned.
+        (id)kVTCompressionPropertyKey_DataRateLimits:@[@(bitrate * 5 / 32), @1]};
+}
 - (void)fail:(OSStatus)status stage:(NSString *)stage {
     if (_reportedError) return;
     _reportedError=YES;
@@ -110,20 +127,44 @@ static void BCEncoded(void *ref, void *source, OSStatus status, VTEncodeInfoFlag
                 status=VTCompressionSessionCreate(NULL,(int)CVPixelBufferGetWidth(pixel),(int)CVPixelBufferGetHeight(pixel),
                     kCMVideoCodecType_H264,NULL,NULL,NULL,BCEncoded,(__bridge void *)self,&_encoder);
                 if (!status) {
-                    NSDictionary *settings=@{(id)kVTCompressionPropertyKey_RealTime:@YES,
+                    NSMutableDictionary *settings=[@{(id)kVTCompressionPropertyKey_RealTime:@YES,
                         (id)kVTCompressionPropertyKey_AllowFrameReordering:@NO,
                         (id)kVTCompressionPropertyKey_ProfileLevel:(id)kVTProfileLevel_H264_Baseline_3_1,
-                        (id)kVTCompressionPropertyKey_AverageBitRate:@3000000,
                         (id)kVTCompressionPropertyKey_ExpectedFrameRate:@30,
-                        (id)kVTCompressionPropertyKey_MaxKeyFrameInterval:@30};
+                        (id)kVTCompressionPropertyKey_MaxKeyFrameInterval:@30} mutableCopy];
+                    [settings addEntriesFromDictionary:[self rateSettings]];
                     status=VTSessionSetProperties(_encoder,(__bridge CFDictionaryRef)settings);
-                    if (!status) status=VTCompressionSessionPrepareToEncodeFrames(_encoder);
+                    if (!status) {
+                        _configuredBitrate = _targetBitrate ?: 3000000;
+                        status=VTCompressionSessionPrepareToEncodeFrames(_encoder);
+                    }
                 }
                 if (status) [self fail:status stage:@"encoder setup"];
             }
             if (_encoder && !status) {
-                status=VTCompressionSessionEncodeFrame(_encoder,pixel,CMSampleBufferGetPresentationTimeStamp(sample),
-                    kCMTimeInvalid,NULL,NULL,NULL);
+                NSInteger bitrate = _targetBitrate ?: 3000000;
+                if (bitrate != _configuredBitrate && now >= _nextRateAttempt) {
+                    OSStatus rateStatus=VTSessionSetProperties(_encoder,(__bridge CFDictionaryRef)[self rateSettings]);
+                    if (!rateStatus) {
+                        _configuredBitrate=bitrate;
+                    } else {
+                        // Rate tuning is optional. Restore both properties if a
+                        // partial update failed and keep encoding the current
+                        // camera session. Avoid retrying every incoming frame.
+                        _nextRateAttempt=now+5;
+                        NSInteger requested=_targetBitrate;
+                        _targetBitrate=_configuredBitrate;
+                        VTSessionSetProperties(_encoder,(__bridge CFDictionaryRef)[self rateSettings]);
+                        _targetBitrate=requested;
+                        os_log(OS_LOG_DEFAULT, "BetterComms Meta native: bitrate update rejected (%d); retaining last rate", (int)rateStatus);
+                    }
+                }
+                if (!status) {
+                    NSDictionary *options = _forceKeyframe ? @{(id)kVTEncodeFrameOptionKey_ForceKeyFrame:@YES} : nil;
+                    status=VTCompressionSessionEncodeFrame(_encoder,pixel,CMSampleBufferGetPresentationTimeStamp(sample),
+                        kCMTimeInvalid,(__bridge CFDictionaryRef)options,NULL,NULL);
+                    if (!status) _forceKeyframe=NO;
+                }
                 if (status) [self fail:status stage:@"encode"];
             }
         }

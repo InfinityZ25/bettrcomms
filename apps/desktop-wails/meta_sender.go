@@ -53,7 +53,7 @@ func (a *AuthService) IOSMetaSender(token, command string, raw json.RawMessage) 
 			return nil, errors.New("Glasses sender is already active")
 		}
 		var err error
-		h, err = nativertc.NewHub(uuid.NewString(), h264.Baseline, 720, 1280, 30, 3)
+		h, err = nativertc.NewHub(uuid.NewString(), h264.Baseline, 720, 1280, 30, 8, nativertc.WithAdaptiveBitrate(1_000_000, 3_000_000, 8_000_000))
 		if err != nil {
 			metaSender.Unlock()
 			return nil, err
@@ -66,7 +66,7 @@ func (a *AuthService) IOSMetaSender(token, command string, raw json.RawMessage) 
 		metaSender.hub = h
 		go monitorMetaSender(h)
 		metaSender.Unlock()
-		return map[string]any{"sessionId": h.SessionID(), "fps": 30, "bitrateMbps": 3}, nil
+		return map[string]any{"sessionId": h.SessionID(), "fps": 30, "bitrateMbps": 3, "maxBitrateMbps": 8}, nil
 	}
 	metaSender.Unlock()
 	if command == "native_camera_trace" {
@@ -138,6 +138,16 @@ func monitorMetaSender(h *nativertc.Hub) {
 			return
 		}
 		stats := h.Stats()
-		metaCameraLog(fmt.Sprintf("sender frames=%d keyframes=%d bytes=%d peers=%d connected=%d dropped=%d", stats.AccessUnits, stats.Keyframes, stats.EncodedBytes, stats.Peers, stats.ConnectedPeers, stats.DroppedFrames))
+		metaCameraLog(fmt.Sprintf("sender frames=%d keyframes=%d bytes=%d peers=%d connected=%d dropped=%d targetBitrate=%d", stats.AccessUnits, stats.Keyframes, stats.EncodedBytes, stats.Peers, stats.ConnectedPeers, stats.DroppedFrames, stats.TargetBitrate))
 	}
+}
+
+func metaEncoderControl() nativertc.EncoderControl {
+	metaSender.Lock()
+	h := metaSender.hub
+	metaSender.Unlock()
+	if h == nil {
+		return nativertc.EncoderControl{}
+	}
+	return h.NextEncoderControl(time.Now())
 }

@@ -8,6 +8,7 @@
 #import "meta_camera_retry.h"
 #import "meta_video_encoder.h"
 extern void bc_meta_sender_ended(void);
+extern int bc_meta_encoder_control(int *force_keyframe);
 #import "BetterCommsMeta-Swift.h"
 #import "webview_window_ios.h"
 #import "application_ios_delegate.h"
@@ -525,6 +526,11 @@ static void BCMetaEmit(NSDictionary *detail) {
         // Native encode/send never waits for JavaScript or the preview image.
         BOOL preview = owner.foreground;
         @synchronized(owner) { preview = preview && !owner.framePending && CFAbsoluteTimeGetCurrent() - owner.lastFrame >= 0.1; }
+        if (owner.publishing) {
+            int forceKeyframe = 0;
+            int bitrate = bc_meta_encoder_control(&forceKeyframe);
+            [encoder configureBitrate:bitrate forceKeyframe:forceKeyframe != 0];
+        }
         UIImage *image = [encoder process:frame.sampleBuffer publish:owner.publishing preview:preview];
         if (image) [owner publishImage:image];
     };

@@ -42,3 +42,13 @@ func metaCameraLog(message string) {
 	defer C.free(unsafe.Pointer(value))
 	C.bc_meta_log(value)
 }
+
+//export bc_meta_encoder_control
+func bc_meta_encoder_control(force *C.int) C.int {
+	settings := metaEncoderControl()
+	*force = 0
+	if settings.ForceKeyframe {
+		*force = 1
+	}
+	return C.int(settings.Bitrate)
+}
