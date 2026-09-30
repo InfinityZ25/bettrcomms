@@ -12,6 +12,7 @@
     "build:desktop-wails:macos": "bash scripts/package-desktop-wails-macos.sh",
     "build": "npm run build -w apps/web",
     "test:e2e": "playwright test",
+    "test:e2e:production-mobile": "npm run build && playwright test --config=playwright.production.config.ts",
     "test": "npm run test -w apps/web"
   },
   "devDependencies": {

@@ -15,6 +15,14 @@ list. The visible viewport bounds the interface while the keyboard is open,
 and message scrolling stays inside the thread. Dialogs, menus and controls
 respect phone safe areas and minimum touch sizes in portrait and landscape.
 
+The packaged build also preserves full-screen Friends and Settings positioning
+after CSS optimization. Dialog centering and full-screen overrides now use the
+same transform property; mixing individual translation with transform resets
+left sheets half off-screen in the optimized assets. With the local API/database
+running, `npm run test:e2e:production-mobile` builds and checks the actual
+production assets in Chromium and WebKit, including rotation and keyboard
+layout. This is separate from development-server browser tests.
+
 Validation: web build, 285 unit tests, Chromium mobile/live-call and desktop
 conversation regressions, WebKit conversation/keyboard layout regression, and
 A/AA accessibility checks for the new conversation and list surfaces. Keyboard
