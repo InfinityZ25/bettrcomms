@@ -1,6 +1,13 @@
 # BetterComms preview release notes
 
-## Unreleased — adaptive glasses video and recovery
+## 0.1.18 — current Wails application release
+
+This release includes the phone layout and adaptive native glasses video fixes.
+Windows x64, macOS Apple Silicon/Intel DMGs, and an experimental re-signable
+iOS IPA are available together. See the [download and compatibility
+notes](releases/0.1.18.md). Native acceptance limits still apply.
+
+### Adaptive glasses video and recovery
 
 The native iPhone glasses sender retains its 720×1280 at 30 fps capture target.
 H.264 starts at 3 Mbps, grows conservatively toward 8 Mbps after sustained
@@ -28,7 +35,7 @@ measurements do not isolate capture, network, receiver, or recording failures.
 The new path still needs a signed iPhone and remote receiver check, including
 variable uplink conditions and multiple viewers, before promising stable 30 fps.
 
-## Unreleased — phone layout review fixes
+### Phone layout review fixes
 
 Phone calls keep six 44 px primary controls in one row, with camera source
 selection in More and connection/push-to-talk/reconnect status in a separate
@@ -40,7 +47,7 @@ offered when the browser positively exposes it, and calls guard missing APIs.
 These changes still require a packaged iPhone check; synthetic browser media
 and layout tests do not establish device behavior.
 
-## Unreleased — phone layout
+### Phone layout
 
 Phone-sized windows no longer render the desktop layout squeezed. Portrait
 phones navigate from a bottom tab bar, and Messages and Calls open the
@@ -54,7 +61,7 @@ tapped. Checked with synthetic media in Chromium at iPhone 15 and iPhone SE
 sizes, portrait and landscape; the packaged iPhone app has not been
 re-accepted on a device.
 
-## 0.1.17 — current Wails application release
+## 0.1.17 — Wails application release
 
 Windows x64, macOS Apple Silicon/Intel DMGs, and an experimental re-signable
 iOS IPA are published together as the latest release. See the [download and

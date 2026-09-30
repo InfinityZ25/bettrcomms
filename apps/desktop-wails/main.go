@@ -23,7 +23,7 @@ import (
 )
 
 // hostVersion identifies the Wails native host in the boot report.
-const hostVersion = "0.1.17-wails"
+const hostVersion = "0.1.18-wails"
 
 // Set only by the release build's linker flag. Empty means the repository's
 // production origin; runtime/development overrides do not alter this metadata.
