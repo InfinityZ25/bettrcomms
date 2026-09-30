@@ -7,7 +7,17 @@
 @custom-variant dark (&:is(.dark *));
 /* Phone-sized windows, portrait or landscape. Keep in sync with PHONE_QUERY in
    hooks/use-mobile.ts. */
-@custom-variant phone (@media (max-width: 820px), (max-height: 500px) and (max-width: 1000px));
+@custom-variant phone {
+  /* One block per condition: Tailwind keeps only the first query of a
+     comma-separated media list in the shorthand form, which silently dropped
+     every phone: utility on a phone held sideways. */
+  @media (max-width: 820px) {
+    @slot;
+  }
+  @media (max-height: 500px) and (max-width: 1000px) {
+    @slot;
+  }
+}
 
 /* Wails v3 Windows native non-client regions. The host enables both WebView2
    app-region support and composition hosting; these markers produce native
@@ -233,6 +243,9 @@
   [data-app-shell] {
     gap: 0;
     padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+    /* The status bar sits over the content, as in a native app, rather than
+       over a strip of the sidebar's colour. The tab bar keeps its own. */
+    background: var(--background);
   }
   [data-desktop-frame] > [data-app-shell] { padding-top: 0; }
   .content-canvas {

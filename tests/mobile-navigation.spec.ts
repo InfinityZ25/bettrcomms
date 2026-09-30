@@ -443,3 +443,74 @@ for (const initialWidth of [375, 1280]) {
     }
   });
 }
+
+// The installed iPhone app's boot report: iOS-only code paths run, and the
+// host-dependent ones fail as they would without the native side, which is
+// what raises the notice this test checks the placement of.
+const iosBoot = (() => {
+  const unavailable = { state: 'unavailable', detail: 'test', fallback: 'browser' };
+  return {
+    schemaVersion: 1, runtime: 'wails', hostVersion: 'test', platform: 'ios', architecture: 'arm64',
+    apiOrigin: '', authReturn: unavailable,
+    windowControls: { platform: 'ios', mode: 'native-frame', height: 0, insetStart: 0, insetEnd: 0, buttons: [], buttonSide: 'end' },
+    capabilities: {
+      schemaVersion: 1, platform: 'ios', architecture: 'arm64', browserMedia: { state: 'implemented', detail: 'test' },
+      nativeGameVideo: unavailable, nativeProcessAudio: unavailable, nativeMicrophoneDsp: unavailable,
+      localTrackRecording: unavailable, mediaPermissions: unavailable, globalInput: unavailable,
+      nativeOverlays: unavailable, notes: [],
+    },
+  };
+})();
+
+test('the iPhone app keeps notices clear of call controls and uses full-screen sheets', async ({ browser }) => {
+  const context = await browser.newContext({ baseURL, viewport: { width: 402, height: 874 }, hasTouch: true, isMobile: true });
+  try {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    await login(context, 'iPhone Owner', `iphone-owner-${suffix}@example.test`);
+    const room = (await json<{ room: { name: string } }>(await context.request.post('/api/v1/rooms', {
+      headers: { Origin: origin }, data: { name: `iPhone room ${suffix}` },
+    }))).room;
+    await context.addInitScript((boot) => { Object.assign(window, { __BETTERCOMMS_DESKTOP__: boot }); }, iosBoot);
+    const page = await context.newPage();
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: room.name })).toBeVisible();
+    await page.getByRole('button', { name: 'Join call' }).click();
+    await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
+
+    // Without the native side the app reports its missing background audio.
+    const notice = page.getByRole('alert');
+    await expect(notice).toBeVisible();
+    const dismissButton = notice.getByRole('button', { name: 'Dismiss notification' });
+    // Measure once the entrance animation has settled at full scale.
+    await expect.poll(async () => (await dismissButton.boundingBox())!.height).toBeGreaterThanOrEqual(40);
+    const box = (await notice.boundingBox())!;
+    const leave = (await page.getByRole('button', { name: 'Leave call' }).boundingBox())!;
+    expect(box.width).toBeGreaterThan(402 * 0.85);
+    expect(box.y).toBeLessThan(874 / 3);
+    expect(box.y + box.height).toBeLessThan(leave.y);
+
+    // With no text status, the connection icon shares the controls' row.
+    const connection = (await page.getByRole('button', { name: 'Connection diagnostics' }).boundingBox())!;
+    expect(Math.abs(connection.y + connection.height / 2 - (leave.y + leave.height / 2))).toBeLessThan(4);
+    await dismissButton.click();
+    await expect(notice).toBeHidden();
+
+    // Settings is a full-screen sheet on a phone.
+    await page.getByRole('button', { name: /account options/ }).click();
+    await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
+    const settings = page.getByRole('dialog', { name: 'Settings' });
+    await expect(settings).toBeVisible();
+    await expect.poll(async () => Math.round((await settings.boundingBox())!.width)).toBe(402);
+    await page.keyboard.press('Escape');
+    await expect(settings).toBeHidden();
+
+    // A phone held sideways gets the same phone styles, not the desktop ones.
+    await page.setViewportSize({ width: 874, height: 402 });
+    await page.getByRole('button', { name: /account options/ }).click();
+    await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
+    await expect(settings).toBeVisible();
+    await expect.poll(async () => Math.round((await settings.boundingBox())!.width)).toBe(874);
+  } finally {
+    await context.close();
+  }
+});

@@ -1,5 +1,21 @@
 # BetterComms preview release notes
 
+## Unreleased — iPhone layout polish
+
+Phone styles now apply to a phone held sideways too: the `phone` Tailwind
+variant had compiled to the portrait width query alone, so landscape phones got
+desktop sizing for every `phone:` utility. Notices drop from the top under the
+status bar at full width instead of a half-width column that covered the call
+controls and tab bar (and blocked taps on them); they were also offset by a
+doubled centring transform. The status bar area matches the content rather
+than a lighter strip, Settings opens as a full-screen sheet, the connection
+indicator shares the call controls' row unless a text status needs its own
+line, the chat header shows Mark as read as an icon, and a friend's actions
+wrap under their name. Checked in Chromium with the iOS boot report and
+emulated iPhone safe areas at 402×874 in both orientations, and installed on
+a physical iPhone; safe-area rendering on the device itself was not
+separately measured.
+
 ## Unreleased — iPhone background media
 
 The experimental iPhone build now includes a ReplayKit Broadcast Upload

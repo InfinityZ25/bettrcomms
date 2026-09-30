@@ -49,6 +49,15 @@
     width: 100%;
     min-width: 0;
   }
+  /* Only the connection icon: one row with the controls. */
+  .call-workspace > .call-footer:has(> .phone-call-status[data-text='false']) {
+    flex-direction: row;
+  }
+  .phone-call-status[data-text='false'] {
+    width: auto;
+    flex: 0 0 auto;
+  }
+
   .phone-call-status .push-to-talk-status,
   .phone-call-status .signaling-reconnecting {
     flex: 1 1 160px;
