@@ -96,6 +96,11 @@ export default function MobileRoomList({
           size={20}
         />
         <input
+          type="search"
+          enterKeyHint="search"
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') event.currentTarget.blur();
+          }}
           aria-label={messages ? 'Filter conversations' : 'Filter rooms'}
           placeholder={messages ? 'Find a conversation' : 'Find a room'}
           className="h-11 pl-10!"

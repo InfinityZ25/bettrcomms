@@ -263,6 +263,7 @@
   .conversation-header { min-height: 64px; }
   .space-rail button > svg, .conversation-header button > svg { width: 20px; height: 20px; }
   .message-log { scrollbar-width: thin; }
+  .message-composer textarea { max-height: min(144px, max(44px, calc(var(--app-viewport-height, 100dvh) * 0.3))); }
   .mobile-room-back { min-height: 44px; }
   [data-slot='dialog-content'] button,
   [data-slot='dialog-content'] [role='combobox'],
