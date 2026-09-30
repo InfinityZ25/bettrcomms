@@ -1,6 +1,20 @@
 # BetterComms preview release notes
 
-## 0.1.18 — current Wails application release
+## 0.1.19 — Call resize fixes (current)
+
+Includes all 0.1.18 mobile and adaptive glasses video changes, plus fixes from
+late review of the combined release. Narrowing a Windows call window keeps
+its active native camera overlay running; More can show or hide it, and leaving
+the call still closes it.
+An untouched direct-call chat default follows the current screen size until
+the user explicitly opens or closes chat, then preserves their choice.
+
+Validation: web build, 280 unit tests and browser regressions with the real
+local API/database; native overlay calls are mocked in the resize regression,
+so it does not establish physical Windows overlay acceptance. Platform and
+native media limits remain unchanged. See [downloads](releases/0.1.19.md).
+
+## 0.1.18 — Wails application release
 
 This release includes the phone layout and adaptive native glasses video fixes.
 Windows x64, macOS Apple Silicon/Intel DMGs, and an experimental re-signable

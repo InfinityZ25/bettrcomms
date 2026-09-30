@@ -61,6 +61,7 @@ export function RecordingFlag({
  * grid with the controls in the middle, and its third column was empty.
  */
 export default function CallToolbar({
+  hidden = false,
   galleryLayout,
   onGalleryLayout,
   galleryFit,
@@ -70,7 +71,7 @@ export default function CallToolbar({
   watchedScreenCount,
   onClearFocus,
   docking,
-  overlayCameras,
+  cameraOverlay,
   focused,
   fullscreen,
   onInvite,
@@ -79,6 +80,7 @@ export default function CallToolbar({
   onFocus,
   onFullscreen,
 }: {
+  hidden?: boolean;
   galleryLayout: GalleryLayout;
   onGalleryLayout: (layout: GalleryLayout) => void;
   galleryFit: 'cover' | 'contain';
@@ -88,7 +90,7 @@ export default function CallToolbar({
   watchedScreenCount: number;
   onClearFocus: () => void;
   docking: Docking;
-  overlayCameras: Parameters<typeof CameraOverlay>[0]['cameras'];
+  cameraOverlay: Parameters<typeof CameraOverlay>[0]['overlay'];
   focused: boolean;
   fullscreen: boolean;
   /** Absent in a direct room, which is a pair and not a place to add people. */
@@ -99,7 +101,7 @@ export default function CallToolbar({
   onFullscreen: () => void;
 }) {
   return (
-    <div className="call-chrome-actions">
+    <div className="call-chrome-actions" hidden={hidden}>
       {/*
         Everything about how the call is arranged lives behind one button.
         These were four controls spread along the top edge — two raw selects
@@ -192,7 +194,7 @@ export default function CallToolbar({
           )}
         </>
       )}
-      <CameraOverlay cameras={overlayCameras} />
+      <CameraOverlay overlay={cameraOverlay} />
       {onChat && (
         <Button
           variant="ghost"

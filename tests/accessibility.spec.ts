@@ -115,6 +115,9 @@ test("utility screens have no A/AA violations or viewport overflow", async ({ br
       if (screen.route === 'settings') {
         await page.getByRole('button', { name: 'Accessibility QA and account options' }).click();
         await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
+        // The dialog opens before the account menu's exit animation finishes.
+        // Audit the settled settings screen, not that transient fading menu.
+        await expect(page.getByRole('menu')).toBeHidden();
       }
       const main = page.getByRole(screen.route === 'settings' ? 'dialog' : 'main', { name: screen.label, exact: true });
       await expect(main).toBeVisible();

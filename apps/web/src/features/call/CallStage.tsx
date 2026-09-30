@@ -28,6 +28,7 @@ import './CallBase.css';
 import './CallWorkspace.css';
 import './CallPhone.css';
 import CallMoreMenu from './CallMoreMenu';
+import { useCameraOverlay } from './CameraOverlay';
 import { useIsMobile } from '@/hooks/use-mobile';
 
 // Keep the desktop status elements as direct footer children: its grid and
@@ -127,6 +128,31 @@ export default function CallStage({
     })),
   ];
   const availableStageItems = buildStageItems(shares, cameraParticipants);
+  // Native overlay ownership follows the call, independent of responsive UI.
+  const cameraOverlay = useCameraOverlay([
+      ...(locals.get('camera')
+        ? [
+            {
+              id: 'self',
+              name: 'You',
+              track: locals.get('camera')!,
+              speaking: speaking.has('self'),
+              muted,
+              deafened,
+            },
+          ]
+        : []),
+      ...remote
+        .filter((track) => track.source === 'camera')
+        .map((track) => ({
+          id: track.peerId,
+          name: names[track.peerId] ?? 'Friend',
+          track: track.track,
+          speaking: speaking.has(track.peerId),
+          muted: remotePresence[track.peerId]?.muted,
+          deafened: remotePresence[track.peerId]?.deafened,
+        })),
+  ], joined);
 
   const selection = useStageSelection(shares, availableStageItems);
   const { focusedStageItem, watchedScreens, watchedShareIds, focusedStageKey } = selection;
@@ -390,6 +416,8 @@ export default function CallStage({
                 docking={docking}
                 recording={call.recording}
                 onToggleRecord={call.toggleRecord}
+                cameraOverlayEnabled={cameraOverlay.enabled}
+                onToggleCameraOverlay={cameraOverlay.supported ? cameraOverlay.toggle : undefined}
                 galleryLayout={gallery.galleryLayout}
                 onGalleryLayout={gallery.setGalleryLayout}
                 galleryFit={gallery.galleryFit}
@@ -406,52 +434,30 @@ export default function CallStage({
             ) : undefined
           }
         />
-        {!phone && (
-          <CallToolbar
-            galleryLayout={gallery.galleryLayout}
-            onGalleryLayout={gallery.setGalleryLayout}
-            galleryFit={gallery.galleryFit}
-            onToggleGalleryFit={gallery.toggleGalleryFit}
-            hasStageContent={hasStageContent}
-            showAllMedia={
-              gallery.galleryLayout === 'all' && Boolean(focusedStageItem)
-            }
-            watchedScreenCount={focusedStageItem ? watchedScreens.length : 0}
-            onClearFocus={() => selection.setFocusedStageKey(null)}
-            docking={docking}
-            overlayCameras={[
-              ...(locals.get('camera')
-                ? [
-                    {
-                      id: 'self',
-                      name: 'You',
-                      track: locals.get('camera')!,
-                      speaking: speaking.has('self'),
-                      muted,
-                      deafened,
-                    },
-                  ]
-                : []),
-              ...remote
-                .filter((track) => track.source === 'camera')
-                .map((track) => ({
-                  id: track.peerId,
-                  name: names[track.peerId] ?? 'Friend',
-                  track: track.track,
-                  speaking: speaking.has(track.peerId),
-                  muted: remotePresence[track.peerId]?.muted,
-                  deafened: remotePresence[track.peerId]?.deafened,
-                })),
-            ]}
-            focused={focused}
-            fullscreen={immersive.fullscreen}
-            onInvite={onInvite && (() => immersive.leavingFullscreen(onInvite))}
-            onChat={onChat && (() => immersive.leavingFullscreen(onChat))}
-            chatOpen={chatOpen}
-            onFocus={onFocus}
-            onFullscreen={immersive.toggleFullscreen}
-          />
-        )}
+        {/* Keep the native overlay alive when responsive controls move into
+            More. Its session ends with the call, not with a window resize. */}
+        <CallToolbar
+          hidden={phone}
+          galleryLayout={gallery.galleryLayout}
+          onGalleryLayout={gallery.setGalleryLayout}
+          galleryFit={gallery.galleryFit}
+          onToggleGalleryFit={gallery.toggleGalleryFit}
+          hasStageContent={hasStageContent}
+          showAllMedia={
+            gallery.galleryLayout === 'all' && Boolean(focusedStageItem)
+          }
+          watchedScreenCount={focusedStageItem ? watchedScreens.length : 0}
+          onClearFocus={() => selection.setFocusedStageKey(null)}
+          docking={docking}
+          cameraOverlay={cameraOverlay}
+          focused={focused}
+          fullscreen={immersive.fullscreen}
+          onInvite={onInvite && (() => immersive.leavingFullscreen(onInvite))}
+          onChat={onChat && (() => immersive.leavingFullscreen(onChat))}
+          chatOpen={chatOpen}
+          onFocus={onFocus}
+          onFullscreen={immersive.toggleFullscreen}
+        />
       </div>
       {showStats && (
         <ConnectionDetails
