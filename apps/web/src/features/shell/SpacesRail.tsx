@@ -13,7 +13,7 @@ import type { User } from '@/api';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { SidebarTrigger } from '@/components/ui/sidebar';
+import { SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,6 +28,9 @@ import type { Screen } from './useScreenRoute';
 import type { Section } from './sections';
 
 const railButton = 'size-10 rounded-2xl min-[481px]:size-11';
+// Portrait phones: a labelled tab, sized for a thumb rather than a pointer.
+const tabButton =
+  'max-[820px]:h-12 max-[820px]:w-auto max-[820px]:min-w-14 max-[820px]:flex-1 max-[820px]:flex-col max-[820px]:gap-0.5 max-[820px]:rounded-xl max-[820px]:px-1';
 
 /**
  * The icon rail: where you are in the application.
@@ -65,13 +68,21 @@ export default function SpacesRail({
   // A section button is current when the sidebar is showing it and no other
   // screen has taken over.
   const ownFace = useOwnFace();
+  const { isMobile, setOpenMobile } = useSidebar();
   const inSection = (candidate: Section) =>
     screen === 'call' && section === candidate;
+  // On a phone the list a section shows is a drawer, so choosing the section
+  // is choosing to look at that list.
+  const openSection = (candidate: Section) => {
+    onSection(candidate);
+    if (isMobile) setOpenMobile(true);
+  };
 
   return (
     <nav
       className={cn(
         'space-rail flex w-[54px] shrink-0 flex-col items-center gap-2 bg-sidebar px-1 py-3 min-[481px]:w-[62px] min-[481px]:px-2 min-[1001px]:w-[68px] min-[1001px]:py-4',
+        'max-[820px]:w-full max-[820px]:flex-row max-[820px]:gap-1 max-[820px]:border-t max-[820px]:border-border/60 max-[820px]:px-2 max-[820px]:pt-1 max-[820px]:pb-[max(0.25rem,env(safe-area-inset-bottom))]',
         collapsed && 'min-[821px]:w-[52px] min-[821px]:px-1',
         hidden && 'hidden',
       )}
@@ -84,20 +95,20 @@ export default function SpacesRail({
         tears down the call, its media engine and every socket with it. Returning
         home is a state change, and it is made as one.
       */}
-      <RailButton label="Bettercomms home" onClick={onHome} solid>
+      <RailButton label="Bettercomms home" tab="Home" onClick={onHome} solid>
         <AudioLines />
       </RailButton>
       <SidebarTrigger
-        className={cn(railButton, 'text-muted-foreground')}
+        className={cn(railButton, 'text-muted-foreground max-[820px]:hidden')}
         aria-label="Toggle sidebar"
         title="Toggle sidebar"
       />
-      <Separator className="my-1 w-6" />
+      <Separator className="my-1 w-6 max-[820px]:hidden" />
 
       <RailButton
         label="Messages"
         current={inSection('messages')}
-        onClick={() => onSection('messages')}
+        onClick={() => openSection('messages')}
       >
         <MessageSquare size={21} />
       </RailButton>
@@ -107,7 +118,7 @@ export default function SpacesRail({
       <RailButton
         label="Calls"
         current={inSection('calls')}
-        onClick={() => onSection('calls')}
+        onClick={() => openSection('calls')}
       >
         <Phone size={20} />
       </RailButton>
@@ -119,14 +130,14 @@ export default function SpacesRail({
         <Clapperboard size={21} />
       </RailButton>
 
-      <div className="mt-auto flex flex-col items-center">
+      <div className="mt-auto flex flex-col items-center max-[820px]:mt-0 max-[820px]:flex-1">
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
               <Button
                 variant="ghost"
                 size="icon"
-                className={cn(railButton, 'rounded-full')}
+                className={cn(railButton, 'rounded-full max-[820px]:size-12')}
                 aria-label={user ? `${user.name} and account options` : 'Account options'}
               />
             }
@@ -137,7 +148,7 @@ export default function SpacesRail({
               <span className="size-2 rounded-full bg-primary" />
             )}
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" side="left" className="w-52">
+          <DropdownMenuContent align="end" side={isMobile ? 'top' : 'left'} className="w-52">
             {/* The label is a group label: Base UI requires it inside a group. */}
             <DropdownMenuGroup>
               <DropdownMenuLabel className="truncate">
@@ -168,12 +179,15 @@ export default function SpacesRail({
  */
 function RailButton({
   label,
+  tab = label,
   current = false,
   solid = false,
   onClick,
   children,
 }: {
   label: string;
+  /** The shorter name printed under the icon in the phone tab bar. */
+  tab?: string;
   current?: boolean;
   solid?: boolean;
   onClick: () => void;
@@ -188,7 +202,8 @@ function RailButton({
             size="icon"
             className={cn(
               railButton,
-              solid && 'shadow-lg shadow-primary/15',
+              tabButton,
+              solid && 'shadow-lg shadow-primary/15 max-[820px]:bg-transparent max-[820px]:text-foreground max-[820px]:shadow-none',
               current && 'bg-accent text-accent-foreground',
             )}
             aria-label={label}
@@ -198,6 +213,9 @@ function RailButton({
         }
       >
         {children}
+        <span className="hidden text-[0.625rem] leading-none font-medium max-[820px]:block" aria-hidden="true">
+          {tab}
+        </span>
       </TooltipTrigger>
       <TooltipContent side="left">{label}</TooltipContent>
     </Tooltip>

@@ -79,7 +79,7 @@ export default function RoomNavigation({
             <Button
               variant="ghost"
               size="icon"
-              className="size-7 rounded-lg"
+              className="size-7 rounded-lg phone:size-10"
               aria-label="Create room"
               onClick={onCreate}
             >

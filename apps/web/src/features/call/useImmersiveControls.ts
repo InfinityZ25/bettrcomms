@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type PointerEvent, type RefObject } from 'react';
+import { canUseFullscreen } from './fullscreenSupport';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent,
+  type RefObject,
+} from 'react';
 
 /** Fullscreen is a lean-back posture, so it gets the shorter fuse. */
 const IDLE_FULLSCREEN = 2400;
@@ -80,10 +87,23 @@ export function useImmersiveControls(
   const onPointerDown = () => reveal();
 
   const toggleFullscreen = () => {
-    const action = document.fullscreenElement
-      ? document.exitFullscreen()
-      : workspace.current?.requestFullscreen();
-    void action?.catch((error: Error) => onError(error.message));
+    void (async () => {
+      try {
+        if (document.fullscreenElement) {
+          if (typeof document.exitFullscreen === 'function')
+            await document.exitFullscreen();
+        } else if (
+          canUseFullscreen(document) &&
+          typeof workspace.current?.requestFullscreen === 'function'
+        ) {
+          await workspace.current.requestFullscreen();
+        }
+      } catch (error) {
+        onError(
+          error instanceof Error ? error.message : 'Could not enter fullscreen',
+        );
+      }
+    })();
   };
 
   /** Runs an action that must not happen behind a fullscreen surface. */

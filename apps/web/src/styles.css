@@ -5,6 +5,9 @@
 @import 'blobatar/motion.css';
 @import '@fontsource-variable/noto-serif';
 @custom-variant dark (&:is(.dark *));
+/* Phone-sized windows, portrait or landscape. Keep in sync with PHONE_QUERY in
+   hooks/use-mobile.ts. */
+@custom-variant phone (@media (max-width: 820px), (max-height: 500px) and (max-width: 1000px));
 
 /* Wails v3 Windows native non-client regions. The host enables both WebView2
    app-region support and composition hosting; these markers produce native
@@ -221,16 +224,38 @@
 .share-options,
 .share-source-preview { border-color: var(--border) !important; border-radius: var(--radius-2xl) !important; background: var(--card) !important; }
 
-@media (max-width: 820px) {
+/*
+  A phone gets the whole screen. The desktop's inset, rounded canvas cost a
+  margin on every side of a screen that has none to spare, so the content meets
+  the edges and only the device's own safe areas are kept clear.
+*/
+@media (max-width: 820px), (max-height: 500px) and (max-width: 1000px) {
   [data-app-shell] {
-    gap: 0.25rem;
-    padding-top: max(0.375rem, env(safe-area-inset-top));
-    padding-bottom: max(0.375rem, env(safe-area-inset-bottom));
-    padding-left: max(0.375rem, env(safe-area-inset-left));
-    padding-right: max(0.375rem, env(safe-area-inset-right));
+    gap: 0;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
   }
   [data-desktop-frame] > [data-app-shell] { padding-top: 0; }
-  .content-canvas { border-radius: var(--radius-2xl); }
+  .content-canvas {
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+  /* In a call the cameras take the width; a phone has none to give to margins. */
+  [data-app-shell][data-in-call='true'] .call-section {
+    padding: 6px 6px 0;
+  }
+}
+
+/* Portrait phones put the section tabs along the bottom edge, where a thumb
+   reaches them; the tab bar keeps the home indicator clear itself. */
+@media (max-width: 820px) {
+  [data-app-shell] { flex-direction: column; }
+}
+@media (max-height: 500px) and (max-width: 1000px) {
+  [data-app-shell] { padding-bottom: env(safe-area-inset-bottom); }
+}
+
+@media (max-width: 820px) {
   .friends-dialog {
     inset: calc(env(safe-area-inset-top) + 0.75rem) 0.75rem calc(env(safe-area-inset-bottom) + 0.75rem);
     width: auto;

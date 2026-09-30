@@ -1,4 +1,4 @@
-import { expect, test, type APIResponse } from '@playwright/test';
+import { expect, test, type APIResponse, type Page } from '@playwright/test';
 
 const baseURL = process.env.E2E_BASE_URL ?? 'http://localhost:5173';
 const origin = new URL(baseURL).origin;
@@ -6,6 +6,17 @@ const origin = new URL(baseURL).origin;
 async function json<T>(response: APIResponse): Promise<T> {
   if (!response.ok()) throw new Error(`API ${response.status()} ${response.url()}: ${await response.text()}`);
   return response.json() as Promise<T>;
+}
+
+async function openCameraChoices(page: Page) {
+  await page.getByRole('button', { name: 'More call options' }).click();
+  await page.getByRole('menuitem', { name: 'Camera source', exact: true }).click();
+}
+
+async function selectCamera(page: Page, label: string) {
+  await page.getByRole('menuitemradio', { name: label, exact: true }).click();
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
 }
 
 test('mobile call switches to a browser-exposed camera without recapturing the microphone', async ({ browser, browserName }) => {
@@ -99,13 +110,13 @@ test('mobile call switches to a browser-exposed camera without recapturing the m
       await expect(page.getByRole('button', { name: 'Turn off camera' })).toBeVisible();
       await page.getByRole('button', { name: 'Turn off camera' }).click();
       await expect(page.getByRole('button', { name: 'Turn on camera' })).toBeVisible();
-      await page.getByRole('button', { name: 'Choose camera' }).click();
+      await openCameraChoices(page);
       const cameras = await page.evaluate(async () =>
         (await navigator.mediaDevices.enumerateDevices()).filter((device) => device.kind === 'videoinput' && device.deviceId)
           .map((device) => ({ id: device.deviceId, label: device.label })),
       );
       expect(cameras.length).toBeGreaterThan(1);
-      await page.getByRole('menuitemradio', { name: cameras[1].label }).click();
+      await selectCamera(page, cameras[1].label);
       await expect.poll(() => page.evaluate(() => localStorage.getItem('bc-camera'))).toBe(cameras[1].id);
       await expect(page.getByRole('button', { name: 'Turn on camera' })).toBeVisible();
       await page.getByRole('button', { name: 'Turn on camera' }).click();
@@ -113,9 +124,9 @@ test('mobile call switches to a browser-exposed camera without recapturing the m
       await page.getByRole('button', { name: 'Leave call' }).click();
       return;
     }
-    await page.getByRole('button', { name: 'Choose camera' }).click();
+    await openCameraChoices(page);
     await expect(page.getByRole('menuitemradio', { name: 'Back camera' })).toBeVisible();
-    await page.getByRole('menuitemradio', { name: 'Back camera' }).click();
+    await selectCamera(page, 'Back camera');
     await expect(page.getByRole('button', { name: 'Turn on camera' })).toBeVisible();
     await expect.poll(() => page.evaluate(() => localStorage.getItem('bc-camera'))).toBe('phone-back');
     expect(await page.evaluate(() => {
@@ -126,9 +137,9 @@ test('mobile call switches to a browser-exposed camera without recapturing the m
     })).toEqual({ captures: [], microphoneCaptures: 1 });
     await page.getByRole('button', { name: 'Turn on camera' }).click();
     await expect(page.getByRole('button', { name: 'Turn off camera' })).toBeVisible();
-    await page.getByRole('button', { name: 'Choose camera' }).click();
+    await openCameraChoices(page);
     await expect(page.getByRole('menuitemradio', { name: 'Connected camera' })).toBeVisible();
-    await page.getByRole('menuitemradio', { name: 'Connected camera' }).click();
+    await selectCamera(page, 'Connected camera');
     await expect(page.getByRole('button', { name: 'Turn off camera' })).toBeVisible();
     await expect.poll(() => page.evaluate(() => {
       const probe = (window as typeof window & { __cameraSourceProbe: {
@@ -151,8 +162,8 @@ test('mobile call switches to a browser-exposed camera without recapturing the m
     await page.getByRole('button', { name: 'Dismiss notification' }).click();
     await page.getByRole('button', { name: 'Turn off camera' }).click();
     await expect(page.getByRole('button', { name: 'Turn on camera' })).toBeVisible();
-    await page.getByRole('button', { name: 'Choose camera' }).click();
-    await page.getByRole('menuitemradio', { name: 'Connected camera' }).click();
+    await openCameraChoices(page);
+    await selectCamera(page, 'Connected camera');
     await expect.poll(() => page.evaluate(() => localStorage.getItem('bc-camera'))).toBe('browser-accessory');
     await page.getByRole('button', { name: 'Turn on camera' }).click();
     await expect(page.getByRole('button', { name: 'Turn off camera' })).toBeVisible();

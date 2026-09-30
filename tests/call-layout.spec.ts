@@ -206,6 +206,22 @@ test('camera dock resizes, snaps, focuses, and preserves the active share', asyn
     expect(await sharedVideo.evaluate((video: HTMLVideoElement) =>
       (video.srcObject as MediaStream).getVideoTracks()[0]?.id,
     )).toBe(originalTrackId);
+    await page.getByRole('button', { name: 'More call options' }).click();
+    await page.getByRole('menuitem', { name: 'Reset layout', exact: true }).click();
+    await expect(stage).toHaveAttribute('data-dock', 'top');
+    expect(await page.evaluate(() => localStorage.getItem('bc-camera-row-size'))).toBeNull();
+    await page.getByRole('button', { name: 'More call options' }).click();
+    await page.getByRole('menuitemradio', { name: 'Everyone + screens', exact: true }).click();
+    // Radio menu items retain the menu so another layout can be selected.
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Focus Your screen', exact: true }).click();
+    await expect(stage).toHaveAttribute('data-has-share', 'true');
+    await page.getByRole('button', { name: 'More call options' }).click();
+    await page.getByRole('menuitem', { name: 'Back to all media', exact: true }).click();
+    await expect(stage).toHaveAttribute('data-has-share', 'false');
+    await expect(page.getByRole('button', { name: 'Stop watching Your screen' })).toBeVisible();
+    expect(await page.locator('.screen-share-tile video').evaluate((video: HTMLVideoElement) =>
+      (video.srcObject as MediaStream).getVideoTracks()[0]?.id)).toBe(originalTrackId);
     await page.screenshot({ path: '.local/call-layout-mobile.png', fullPage: true });
 
     await page.setViewportSize({ width: 1280, height: 900 });
