@@ -273,6 +273,7 @@
     overscroll-behavior: contain;
   }
   .settings-dialog {
+    animation: none;
     top: var(--app-viewport-top, 0px);
     bottom: auto;
     height: var(--app-viewport-height, 100dvh);
@@ -306,6 +307,7 @@
 
 @media (max-width: 820px), (max-height: 500px) and (max-width: 1000px) {
   .friends-dialog {
+    animation: none;
     inset: calc(var(--app-viewport-top, 0px) + env(safe-area-inset-top)) 0 auto;
     height: calc(var(--app-viewport-height, 100dvh) - env(safe-area-inset-top) - env(safe-area-inset-bottom));
     width: auto;

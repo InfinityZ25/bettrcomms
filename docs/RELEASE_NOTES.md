@@ -1,5 +1,26 @@
 # BetterComms preview release notes
 
+## Unreleased — mobile navigation and conversations
+
+Messages and Calls now open full-screen mobile lists with filtering, readable
+rows and explicit back navigation. Home opens the home screen, and Recordings
+is available in the account menu alongside Settings. Navigation preserves the
+active call, whose compact controls sit above the page rather than covering
+the message composer.
+
+Direct messages have one mobile header, a growing one-line composer and
+explicit message menus. Reading or scrolling no longer expands message rows.
+Dates separate message history; drafts survive returning to the conversation
+list. The visible viewport bounds the interface while the keyboard is open,
+and message scrolling stays inside the thread. Dialogs, menus and controls
+respect phone safe areas and minimum touch sizes in portrait and landscape.
+
+Validation: web build, 285 unit tests, Chromium mobile/live-call and desktop
+conversation regressions, WebKit conversation/keyboard layout regression, and
+A/AA accessibility checks for the new conversation and list surfaces. Keyboard
+geometry is emulated in these tests; physical iPhone keyboard and interaction
+acceptance is still required before declaring the interface production-ready.
+
 ## Unreleased — iPhone layout polish
 
 Phone styles now apply to a phone held sideways too: the `phone` Tailwind
