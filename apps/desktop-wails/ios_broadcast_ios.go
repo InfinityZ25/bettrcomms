@@ -35,6 +35,7 @@ type iosBroadcast struct {
 	config   string
 	cancel   context.CancelFunc
 	mu       sync.Mutex
+	started  bool // native_screen_start returned; guarded by mu
 	once     sync.Once
 	closed   bool
 }
@@ -94,11 +95,12 @@ func armSignalingCheck() {
 		if b == nil {
 			return
 		}
-		// Only a share that is already streaming. One still in its picker or
-		// handshake sends nothing yet, and when it finishes starting with
-		// signaling down, checkSignalingAfterStart re-arms a full grace.
+		// Only a share whose start has completed. One still in its picker,
+		// handshake or start command is not streaming yet, and when it
+		// finishes starting with signaling down, checkSignalingAfterStart
+		// re-arms a full grace for it.
 		b.mu.Lock()
-		live := b.client != nil && !b.closed
+		live := b.started && !b.closed
 		b.mu.Unlock()
 		if live {
 			b.close()
@@ -368,6 +370,9 @@ func startIOSBroadcast(raw json.RawMessage) (any, error) {
 		return nil, err
 	}
 	success = true
+	b.mu.Lock()
+	b.started = true
+	b.mu.Unlock()
 	go func() { <-client.Done(); b.close() }()
 	checkSignalingAfterStart()
 	return result, nil
