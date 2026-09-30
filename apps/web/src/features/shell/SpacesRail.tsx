@@ -23,14 +23,18 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import type { Screen } from './useScreenRoute';
 import type { Section } from './sections';
 
 const railButton = 'size-10 rounded-2xl min-[481px]:size-11';
 // Portrait phones: a labelled tab, sized for a thumb rather than a pointer.
 const tabButton =
-  'max-[820px]:h-12 max-[820px]:w-auto max-[820px]:min-w-14 max-[820px]:flex-1 max-[820px]:flex-col max-[820px]:gap-0.5 max-[820px]:rounded-xl max-[820px]:px-1';
+  'max-[820px]:h-12 max-[820px]:w-auto max-[820px]:min-w-0 max-[820px]:flex-1 max-[820px]:flex-col max-[820px]:gap-0.5 max-[820px]:rounded-xl max-[820px]:px-1';
 
 /**
  * The icon rail: where you are in the application.
@@ -44,6 +48,9 @@ export default function SpacesRail({
   user,
   screen,
   section,
+  mobileDestination,
+  home,
+  friendsOpen,
   collapsed,
   hidden,
   onSection,
@@ -56,6 +63,9 @@ export default function SpacesRail({
   user: User | null;
   screen: Screen;
   section: Section;
+  mobileDestination: Section | 'home' | null;
+  home: boolean;
+  friendsOpen: boolean;
   collapsed: boolean;
   hidden: boolean;
   onSection: (section: Section) => void;
@@ -68,14 +78,18 @@ export default function SpacesRail({
   // A section button is current when the sidebar is showing it and no other
   // screen has taken over.
   const ownFace = useOwnFace();
-  const { isMobile, setOpenMobile } = useSidebar();
+  const { isMobile } = useSidebar();
   const inSection = (candidate: Section) =>
-    screen === 'call' && section === candidate;
+    screen === 'call' &&
+    !home &&
+    !friendsOpen &&
+    (isMobile && mobileDestination
+      ? mobileDestination === candidate
+      : section === candidate);
   // On a phone the list a section shows is a drawer, so choosing the section
   // is choosing to look at that list.
   const openSection = (candidate: Section) => {
     onSection(candidate);
-    if (isMobile) setOpenMobile(true);
   };
 
   return (
@@ -95,7 +109,13 @@ export default function SpacesRail({
         tears down the call, its media engine and every socket with it. Returning
         home is a state change, and it is made as one.
       */}
-      <RailButton label="Bettercomms home" tab="Home" onClick={onHome} solid>
+      <RailButton
+        label="Bettercomms home"
+        tab="Home"
+        onClick={onHome}
+        solid
+        current={home && !friendsOpen}
+      >
         <AudioLines />
       </RailButton>
       <SidebarTrigger
@@ -112,7 +132,7 @@ export default function SpacesRail({
       >
         <MessageSquare size={21} />
       </RailButton>
-      <RailButton label="Friends" onClick={onFriends}>
+      <RailButton label="Friends" onClick={onFriends} current={friendsOpen}>
         <Users size={21} />
       </RailButton>
       <RailButton
@@ -122,13 +142,15 @@ export default function SpacesRail({
       >
         <Phone size={20} />
       </RailButton>
-      <RailButton
-        label="Recordings"
-        current={screen === 'recordings'}
-        onClick={onRecordings}
-      >
-        <Clapperboard size={21} />
-      </RailButton>
+      <div className="max-[820px]:hidden">
+        <RailButton
+          label="Recordings"
+          current={screen === 'recordings'}
+          onClick={onRecordings}
+        >
+          <Clapperboard size={21} />
+        </RailButton>
+      </div>
 
       <div className="mt-auto flex flex-col items-center max-[820px]:mt-0 max-[820px]:flex-1">
         <DropdownMenu>
@@ -137,18 +159,35 @@ export default function SpacesRail({
               <Button
                 variant="ghost"
                 size="icon"
-                className={cn(railButton, 'rounded-full max-[820px]:size-12')}
-                aria-label={user ? `${user.name} and account options` : 'Account options'}
+                className={cn(
+                  railButton,
+                  'rounded-full max-[820px]:h-12 max-[820px]:w-full max-[820px]:flex-col max-[820px]:gap-0.5',
+                )}
+                aria-label={
+                  user ? `${user.name} and account options` : 'Account options'
+                }
               />
             }
           >
             {user ? (
-              <Avatar name={user.name} id={user.id} src={user.avatar_url} prefer={ownFace} />
+              <Avatar
+                name={user.name}
+                id={user.id}
+                src={user.avatar_url}
+                prefer={ownFace}
+              />
             ) : (
               <span className="size-2 rounded-full bg-primary" />
             )}
+            <span className="hidden text-[0.6875rem] leading-none font-medium max-[820px]:block">
+              You
+            </span>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" side={isMobile ? 'top' : 'left'} className="w-52">
+          <DropdownMenuContent
+            align="end"
+            side={isMobile ? 'top' : 'left'}
+            className="w-52"
+          >
             {/* The label is a group label: Base UI requires it inside a group. */}
             <DropdownMenuGroup>
               <DropdownMenuLabel className="truncate">
@@ -156,7 +195,13 @@ export default function SpacesRail({
               </DropdownMenuLabel>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={onSettings}>
+            <DropdownMenuItem
+              onClick={onRecordings}
+              className="min-h-11 min-[821px]:hidden"
+            >
+              <Clapperboard /> Recordings
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onSettings} className="phone:min-h-11">
               <Settings2 /> Settings
             </DropdownMenuItem>
             {user && (
@@ -203,7 +248,8 @@ function RailButton({
             className={cn(
               railButton,
               tabButton,
-              solid && 'shadow-lg shadow-primary/15 max-[820px]:bg-transparent max-[820px]:text-foreground max-[820px]:shadow-none',
+              solid &&
+                'shadow-lg shadow-primary/15 max-[820px]:bg-transparent max-[820px]:text-foreground max-[820px]:shadow-none',
               current && 'bg-accent text-accent-foreground',
             )}
             aria-label={label}
@@ -213,7 +259,10 @@ function RailButton({
         }
       >
         {children}
-        <span className="hidden text-[0.625rem] leading-none font-medium max-[820px]:block" aria-hidden="true">
+        <span
+          className="hidden text-[0.6875rem] leading-none font-medium max-[820px]:block"
+          aria-hidden="true"
+        >
           {tab}
         </span>
       </TooltipTrigger>
