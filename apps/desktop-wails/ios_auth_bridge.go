@@ -2,6 +2,7 @@ package main
 
 import (
 	"bettercomms/desktop-wails/internal/desktop"
+	"encoding/json"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -9,6 +10,7 @@ import (
 // methods so a c-archive's reflected package name cannot change the JS calls.
 // Keep these values in sync with apps/web/src/desktop/iosNativeBindings.ts.
 func init() {
+	application.RegisterBindingMethodID((*AuthService).IOSScreenSender, 0xBC160109)
 	application.RegisterBindingMethodID((*AuthService).IOSMetaSender, 0xBC160108)
 	application.RegisterBindingMethodID((*AuthService).IOSCallAudioStart, 0xBC160101)
 	application.RegisterBindingMethodID((*AuthService).IOSCallAudioStop, 0xBC160102)
@@ -17,6 +19,13 @@ func init() {
 	application.RegisterBindingMethodID((*AuthService).IOSMetaConnect, 0xBC160105)
 	application.RegisterBindingMethodID((*AuthService).IOSMetaStart, 0xBC160106)
 	application.RegisterBindingMethodID((*AuthService).IOSMetaStop, 0xBC160107)
+}
+
+func (a *AuthService) IOSScreenSender(hostToken, command string, args json.RawMessage) (any, error) {
+	if err := a.authoriseNative(hostToken); err != nil {
+		return nil, err
+	}
+	return iosBroadcastCommand(command, args)
 }
 
 func (a *AuthService) authoriseNative(hostToken string) error {

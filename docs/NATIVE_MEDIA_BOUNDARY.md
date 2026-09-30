@@ -11,7 +11,7 @@ Changing the UI or navigating to Messages must not release an active call.
 | --- | --- | --- | --- |
 | Microphone and camera | `getUserMedia` | Native device capture and audio session, with independently switchable tracks | iPhone audio session is native, but microphone and phone camera tracks still originate in WebKit. |
 | Incoming call audio | Browser media playback | Native audio session and a persistent playback owner | iPhone uses media elements under a native audio session; call playback stays mounted across in-app navigation. Background audibility has been tested on one iPhone. |
-| Screen and optional system audio | `getDisplayMedia` where supported | Native capture and encoding, independent of webview visibility | Windows has a native capture/transport path. macOS uses webview capture. iPhone ReplayKit captures only the foreground BetterComms screen, then sends JPEG frames through the webview; it stops on background. |
+| Screen and optional system audio | `getDisplayMedia` where supported | Native capture and encoding, independent of webview visibility | Windows has a native capture/transport path. macOS uses webview capture. The experimental iPhone broadcast extension captures the whole screen, encodes H.264 and owns its native WebRTC sender. A signed iPhone app-switch test confirmed remote sharing and the OS indicator; screen system audio is not yet included. |
 | Meta glasses camera | Unavailable unless the browser exposes a standard camera | Meta DAT session and media transport on iPhone | DAT captures natively; VideoToolbox H.264 and the native WebRTC hub send call video to capable clients. JPEG/canvas provides local preview and the ordinary call fallback. Gen 2 streaming has been exercised, but repeatability and remote native-stream quality remain acceptance work. |
 | Call signaling | Authorized WebSocket and WebRTC negotiation | Same authenticated room signaling; native sender must use scoped credentials and release them on leave | Ordinary media peer connections still live in the webview on iPhone. |
 
@@ -24,12 +24,13 @@ release their native connection and watchdogs. Fallback requests survive
 temporary signaling outages through a notification retry bounded
 to 20 seconds; call disposal, peer removal, or capture replacement cancels it.
 Local preview and fallback still use bounded JPEG delivery and
-`canvas.captureStream()`, and the ReplayKit
-in-app screen source also publishes through a canvas. These webview paths
-cannot promise media after iOS suspends WKWebView.
+`canvas.captureStream()`. These compatibility paths cannot promise media after
+iOS suspends WKWebView. The experimental broadcast extension uses a separate
+native sender instead.
 
-Glasses capture and sending stay native during an active call, but background
-and locked-phone video remain unverified. Room signaling, capability negotiation,
+Glasses capture and sending stay native during an active call. A physical iPhone
+app-switch test passed after decoder recovery was added; locked-phone video and
+long-duration background delivery remain unverified. Room signaling, capability negotiation,
 and fallback decisions still run in the webview. Adding a background mode alone
 does not establish continued delivery or recovery during suspension.
 
@@ -38,22 +39,31 @@ temporarily unavailable decoders/encoders from the native frame callback, with
 backoff capped at five seconds. A recreated decoder waits for a source keyframe;
 the encoder requests a fresh output keyframe. Terminal codec errors still stop
 capture. A physical iPhone test identified decoder invalidation (`-12903`)
-immediately after backgrounding; continued delivery with recovery is still an
-acceptance gate. Bounded native diagnostics in `Library/Caches/NativeMedia`
+immediately after backgrounding. After recovery was added, native logs showed
+continued output while backgrounded, and the user confirmed the glasses video
+continued. Bounded native diagnostics in `Library/Caches/NativeMedia`
 record frame rates, numeric codec errors and foreground transitions, without
 media, signaling payloads or credentials. The two rotating files total roughly
 512 KiB. Preview availability does not own an active native sender's lifetime.
 
-The next iPhone screen-sharing implementation needs a ReplayKit Broadcast
-Upload Extension for other apps and the system broadcast indicator. Its sample
-buffers must reach a native video encoder and a native network sender with
-bounded queues. The host and extension need an explicit authenticated session
-handoff and an App Group IPC contract; the extension cannot inherit a webview
-session token or write one to logs. Native signaling and peer transport must
-survive webview suspension. On stop, error, call leave, or extension exit, the
-app must stop the broadcast and release buffers, encoders, sockets, tracks,
-and any system-audio capture together. The in-app ReplayKit source should stay
-labeled as BetterComms-only until this path is accepted on a physical phone.
+The experimental whole-phone share uses a ReplayKit Broadcast Upload Extension.
+Its sample buffers go directly to VideoToolbox and a separate native WebRTC hub
+inside the extension. No screen pixels pass through the host or its webview.
+The host starts a loopback control listener and writes a random, single-use
+32-byte connection key into the private broadcast App Group. It expires after
+two minutes and is removed on connection or cancellation. Control messages are
+bounded; closing the host connection ends capture and releases the extension's
+encoder and peers. Existing authenticated room signaling handles negotiation;
+new viewers and renegotiation still require the host webview to be running.
+
+The iOS broadcast picker requires an explicit user start and provides the OS
+sharing indicator and stop control. The call microphone stays independent;
+ReplayKit microphone and system-audio samples are ignored in this first version.
+The app and extension need separate development profiles with the same broadcast
+App Group. A signed iPhone test confirmed remote screen sharing continues after
+leaving BetterComms, with the OS broadcast indicator visible. Extension memory
+use, orientation, locked-phone and long-duration operation, denied/cancelled
+starts, force-quit and stop behavior still require signed-device acceptance.
 
 The native sender boundary already carries Meta DAT call frames and should
 also carry phone camera frames if background video is supported by the OS and SDK. The interface exposed to

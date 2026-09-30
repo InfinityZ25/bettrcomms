@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 4 ]]; then
-  echo "Usage: $0 <ad-hoc.ipa> <development.mobileprovision> <codesign identity> <signed.ipa>" >&2
+if [[ $# -lt 4 || $# -gt 5 ]]; then
+  echo "Usage: $0 <ad-hoc.ipa> <development.mobileprovision> <codesign identity> <signed.ipa> [broadcast.mobileprovision]" >&2
   exit 2
 fi
 
@@ -38,6 +38,37 @@ if [[ "$application_id" != *".$bundle_id" ]]; then
 fi
 
 cp "$profile" "$bundle/embedded.mobileprovision"
+broadcast="$bundle/PlugIns/BetterCommsBroadcast.appex"
+if [[ -d "$broadcast" ]]; then
+  if [[ -z "${5:-}" ]]; then
+    echo 'This archive includes screen broadcasting. Supply its development profile as the fifth argument.' >&2
+    exit 1
+  fi
+  security cms -D -i "$5" > "$scratch/broadcast-profile.plist"
+  python3 - "$scratch/profile.plist" "$scratch/broadcast-profile.plist" <<'PY'
+import plistlib, sys
+profiles = []
+for path in sys.argv[1:]:
+    with open(path, 'rb') as file:
+        profiles.append(plistlib.load(file))
+host, extension = profiles
+group = 'group.com.bettrcomms.ios.broadcast'
+for profile in profiles:
+    if group not in profile['Entitlements'].get('com.apple.security.application-groups', []):
+        sys.exit('Both profiles must grant the BetterComms broadcast App Group.')
+if host['TeamIdentifier'] != extension['TeamIdentifier']:
+    sys.exit('Host and broadcast profiles must belong to the same team.')
+prefix = host['Entitlements']['application-identifier'].rsplit('com.bettrcomms.ios', 1)[0]
+if extension['Entitlements']['application-identifier'] != prefix + 'com.bettrcomms.ios.broadcast':
+    sys.exit('The extension profile has the wrong App ID.')
+if not set(host.get('ProvisionedDevices', [])).issubset(extension.get('ProvisionedDevices', [])):
+    sys.exit('The extension profile must include the host profile\'s devices.')
+PY
+  cp "$5" "$broadcast/embedded.mobileprovision"
+  plutil -extract Entitlements xml1 -o "$scratch/broadcast-entitlements.plist" "$scratch/broadcast-profile.plist"
+  codesign --force --sign "$identity" --timestamp=none \
+    --entitlements "$scratch/broadcast-entitlements.plist" "$broadcast"
+fi
 # Xcode debug builds place executable code in an app-local debug dylib.
 # Sign nested libraries before their containing frameworks and app bundle.
 while IFS= read -r -d '' library; do

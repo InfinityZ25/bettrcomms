@@ -1,5 +1,20 @@
 # BetterComms preview release notes
 
+## Unreleased — iPhone background media
+
+The experimental iPhone build now includes a ReplayKit Broadcast Upload
+Extension for whole-phone screen sharing. Capture, H.264 encoding and sending
+run in the extension rather than the webview. Development installation requires
+separate host and extension profiles with their shared App Group enabled.
+Screen system audio is not included; the call microphone remains independent.
+
+Signed-device testing confirmed screen sharing continues after switching to
+another app, with the iOS broadcast indicator visible. Ray-Ban video also
+continued after app switching following native decoder/encoder recovery fixes.
+Locking the phone, long-duration operation, orientation changes, and broadcast
+stop/error paths remain acceptance work. Built-in phone cameras still use the
+foreground webview capture path.
+
 ## 0.1.19 — Call resize fixes (current)
 
 Includes all 0.1.18 mobile and adaptive glasses video changes, plus fixes from
