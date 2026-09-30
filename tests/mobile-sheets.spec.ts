@@ -85,7 +85,7 @@ test('phone sheets keep their full bounds visible after production CSS optimizat
       await cdp.send('Emulation.setSafeAreaInsetsOverride', {
         insets: { top: 59, bottom: 34 },
       });
-    await page.getByRole('button', { name: 'New room', exact: true }).click();
+    await page.getByRole('button', { name: /^New room/ }).click();
     const room = page.getByRole('dialog', { name: 'Make a little room' });
     await expect(room).toBeVisible();
     const box = (await room.boundingBox())!;
