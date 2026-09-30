@@ -70,7 +70,7 @@ func iosBroadcastWatchSignaling(open func() bool, opens func() uint64) {
 func iosBroadcastSignalingClosed() { armSignalingCheck() }
 
 // armSignalingCheck (re)starts the one grace timer. When it fires it ends
-// whichever broadcast is current then, unless a signaling socket opened
+// whichever broadcast is streaming then, unless a signaling socket opened
 // since it was armed: a reconnect that drops again re-arms it for a full
 // grace period rather than being cut short by an older timer.
 func armSignalingCheck() {
@@ -91,7 +91,16 @@ func armSignalingCheck() {
 		screenBroadcast.Lock()
 		b := screenBroadcast.current
 		screenBroadcast.Unlock()
-		if b != nil {
+		if b == nil {
+			return
+		}
+		// Only a share that is already streaming. One still in its picker or
+		// handshake sends nothing yet, and when it finishes starting with
+		// signaling down, checkSignalingAfterStart re-arms a full grace.
+		b.mu.Lock()
+		live := b.client != nil && !b.closed
+		b.mu.Unlock()
+		if live {
 			b.close()
 		}
 	})
