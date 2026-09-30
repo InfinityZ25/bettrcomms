@@ -350,8 +350,8 @@ for (const initialWidth of [375, 1280]) {
     const phone = await browser.newContext({
       baseURL,
       viewport: { width: initialWidth, height: 667 },
-      hasTouch: true,
-      isMobile: true,
+      hasTouch: initialWidth === 375,
+      isMobile: initialWidth === 375,
     });
     const friend = await browser.newContext({ baseURL });
     try {
@@ -404,7 +404,7 @@ for (const initialWidth of [375, 1280]) {
       await expect(
         page.getByRole('button', { name: 'Leave call', exact: true }),
       ).toBeVisible();
-      const conversation = page.getByRole('region', {
+      const conversation = page.getByRole('main', { name: 'Call', exact: true }).getByRole('region', {
         name: `Conversation with ${other.name}`,
         exact: true,
       });
