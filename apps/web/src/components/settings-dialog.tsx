@@ -43,14 +43,14 @@ export function SettingsDialog({ open, onOpenChange, user, noise, onNoiseChange,
           // A phone gets a full-screen sheet, like iOS Settings, not a card
           // floating with a margin on a screen that has none to spare.
           // All four safe areas: held sideways, the notch sits at a side edge.
-          'phone:inset-0 phone:h-dvh phone:max-w-none phone:transform-none phone:rounded-none phone:pt-[env(safe-area-inset-top)] phone:pr-[env(safe-area-inset-right)] phone:pb-[env(safe-area-inset-bottom)] phone:pl-[env(safe-area-inset-left)] phone:ring-0 phone:sm:max-w-none phone:[&>[data-slot=dialog-close]]:top-[calc(env(safe-area-inset-top)+1rem)] phone:[&>[data-slot=dialog-close]]:right-[calc(env(safe-area-inset-right)+1rem)]',
+          'phone:inset-0 phone:h-dvh phone:max-w-none phone:transform-none phone:rounded-none phone:pr-[env(safe-area-inset-right)] phone:pl-[env(safe-area-inset-left)] phone:ring-0 phone:sm:max-w-none phone:[&>[data-slot=dialog-close]]:top-[calc(env(safe-area-inset-top)+0.75rem)] phone:[&>[data-slot=dialog-close]]:right-[calc(env(safe-area-inset-right)+1rem)]',
         )}
         showCloseButton
       >
         <DialogTitle className="sr-only">Settings</DialogTitle>
         <DialogDescription className="sr-only">Adjust BetterComms preferences.</DialogDescription>
         <SidebarProvider className="min-h-0 items-stretch [--sidebar-width:15rem]">
-          <Sidebar collapsible="none" className="hidden border-r border-sidebar-border md:flex">
+          <Sidebar collapsible="none" className="hidden border-r border-sidebar-border md:flex phone:hidden">
             <SidebarContent className="pt-3">
               <SidebarGroup>
                 <SidebarGroupLabel>Settings</SidebarGroupLabel>
@@ -78,8 +78,8 @@ export function SettingsDialog({ open, onOpenChange, user, noise, onNoiseChange,
           </Sidebar>
 
           <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
-            <header className="shrink-0 border-b border-border/60 px-5 py-4 pr-16 sm:px-7 sm:pr-16">
-              <div className="mb-3 md:hidden">
+            <header className="settings-header shrink-0 border-b border-border/60 px-5 py-4 pr-16 sm:px-7 sm:pr-16">
+              <div className="mb-3 md:hidden phone:mb-2 phone:block">
                 <Select value={page} onValueChange={(value) => { if (value) setPage(value as SettingsPage); }}>
                   <SelectTrigger className="w-full" aria-label="Settings category"><SelectValue>{current.label}</SelectValue></SelectTrigger>
                   <SelectContent align="start">
@@ -89,7 +89,7 @@ export function SettingsDialog({ open, onOpenChange, user, noise, onNoiseChange,
               </div>
               {/* The note was behind an info button here and printed again
                   inside the page's card. One copy, in plain sight. */}
-              <h2 className="font-heading text-lg font-semibold tracking-tight">{current.label}</h2>
+              <h2 className="font-heading text-lg font-semibold tracking-tight phone:hidden">{current.label}</h2>
               <p className="mt-0.5 text-xs text-muted-foreground">{current.note}</p>
             </header>
             {/*
@@ -98,7 +98,7 @@ export function SettingsDialog({ open, onOpenChange, user, noise, onNoiseChange,
               twice; switching pages in a settings list is navigation between
               forms, where a transition costs time and returns nothing.
             */}
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-3 sm:px-7 sm:py-4">
+            <div className="settings-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-3 sm:px-7 sm:py-4">
               <SettingsScreen page={page} user={user} noise={noise} onNoiseChange={onNoiseChange} balanced={balanced} onBalancedChange={onBalancedChange} layout={layout} onLayoutChange={onLayoutChange} />
             </div>
           </main>

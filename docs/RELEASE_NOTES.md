@@ -23,6 +23,21 @@ running, `npm run test:e2e:production-mobile` builds and checks the actual
 production assets in Chromium and WebKit, including rotation and keyboard
 layout. This is separate from development-server browser tests.
 
+Phone Settings and Friends backgrounds now reach behind the status bar and
+home indicator. Safe-area spacing is applied to controls and the end of the
+scrolling content rather than leaving a separate band around the page.
+Settings uses its category selector as the phone heading, freeing the space
+previously occupied by a duplicate category title.
+
+Mobile navigation supports a right swipe from the left edge to go back and a
+left swipe from the right edge to go forward. History includes conversations,
+lists, Recordings and full-screen Settings/Friends panels; navigation does not
+restart or end the call. Vertical scrolling, editable controls, sliders,
+video gestures and the transient native screen picker keep their own gestures.
+Chromium checks use browser-dispatched touch input with a synthetic-microphone
+call. Desktop WebKit checks deliver touch sequences to the page's listeners
+from a call lobby; physical iPhone gesture acceptance remains required.
+
 Validation: web build, 285 unit tests, Chromium mobile/live-call and desktop
 conversation regressions, WebKit conversation/keyboard layout regression, and
 A/AA accessibility checks for the new conversation and list surfaces. Keyboard

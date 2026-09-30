@@ -38,6 +38,7 @@ import ErrorToast from '@/features/shell/ErrorToast';
 import RoomSidebar from '@/features/shell/RoomSidebar';
 import MobileRoomList from '@/features/shell/MobileRoomList';
 import { useAppViewport } from '@/hooks/useAppViewport';
+import { useMobileSwipeNavigation } from '@/hooks/useMobileSwipeNavigation';
 import { sectionForRoom, type Section } from '@/features/shell/sections';
 import SpacesRail from '@/features/shell/SpacesRail';
 import HomeScreen from '@/features/shell/HomeScreen';
@@ -70,6 +71,8 @@ export default function App() {
   const [email, setEmail] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [friendsOpen, setFriendsOpen] = useState(false);
+  const [mobileBackRevision, markMobileBack] = useState(0);
+  const returningOnMobile = () => markMobileBack((value) => value + 1);
   const [settingsRoom, setSettingsRoom] = useState<Room | null>(null);
   const [inviteRoom, setInviteRoom] = useState<Room | null>(null);
   // Chrome only. The call itself is owned by CallSessionProvider below, which
@@ -171,7 +174,8 @@ export default function App() {
     to create your first room.
   */
   useEffect(() => {
-    if (room) setSection(sectionForRoom(room.kind));
+    if (room && !(phone && mobileDestination))
+      setSection(sectionForRoom(room.kind));
   }, [room?.id]);
   /*
     The end of a call in a conversation hands the screen back to the
@@ -267,6 +271,49 @@ export default function App() {
     });
 
   const immersive = callJoined && callFocused && screen === 'call';
+
+  useMobileSwipeNavigation({
+    enabled: phone && !loading,
+    // The native picker owns cancellation and transient capture resources.
+    suspended: screen === 'share' || immersive,
+    session: user?.id ?? null,
+    backRevision: mobileBackRevision,
+    value: {
+      screen,
+      destination: mobileDestination,
+      roomId: room?.id ?? null,
+      section,
+      callOpen,
+      channelChat,
+      chatColumnChoice,
+      settingsOpen,
+      friendsOpen,
+      inviteRoomId: inviteRoom?.id ?? null,
+    },
+    valid: (entry) =>
+      entry.screen !== 'share' &&
+      (!entry.roomId ||
+        rooms.some((candidate) => candidate.id === entry.roomId)) &&
+      (!entry.inviteRoomId ||
+        rooms.some((candidate) => candidate.id === entry.inviteRoomId)),
+    restore: (entry) => {
+      setMobileDestination(entry.destination);
+      setRoom(rooms.find((candidate) => candidate.id === entry.roomId) ?? null);
+      setSection(entry.section);
+      setCallOpen(entry.callOpen);
+      setChannelChat(entry.channelChat);
+      setChatColumn(entry.chatColumnChoice);
+      setSettingsOpen(entry.settingsOpen);
+      setFriendsOpen(entry.friendsOpen);
+      setInviteRoom(
+        rooms.find((candidate) => candidate.id === entry.inviteRoomId) ?? null,
+      );
+      // Share is excluded above: restoring these ordinary screens cannot
+      // bypass the native picker's hash-change cancellation path.
+      setScreen(entry.screen);
+      navigate(entry.screen);
+    },
+  });
 
   if (loading)
     return (
@@ -381,7 +428,10 @@ export default function App() {
                   <Button
                     className="mobile-room-back mb-2 shrink-0 self-start"
                     variant="ghost"
-                    onClick={() => showSection('calls')}
+                    onClick={() => {
+                      returningOnMobile();
+                      showSection('calls');
+                    }}
                     aria-label="Back to rooms"
                   >
                     ← Rooms
@@ -513,7 +563,14 @@ export default function App() {
                         ? messageTarget.id
                         : undefined
                     }
-                    onBack={phone ? () => showSection('messages') : undefined}
+                    onBack={
+                      phone
+                        ? () => {
+                            returningOnMobile();
+                            showSection('messages');
+                          }
+                        : undefined
+                    }
                     onCall={() => setCallOpen(true)}
                     onError={setError}
                   />
@@ -562,7 +619,10 @@ export default function App() {
             </AnimatePresence>
             <SettingsDialog
               open={settingsOpen}
-              onOpenChange={setSettingsOpen}
+              onOpenChange={(open) => {
+                setSettingsOpen(open);
+                if (!open) returningOnMobile();
+              }}
               user={user}
               noise={preferences.noise}
               onNoiseChange={preferences.setNoise}
@@ -683,7 +743,10 @@ export default function App() {
           open={friendsOpen}
           onOpenChange={(next) => {
             setFriendsOpen(next);
-            if (!next) setInviteRoom(null);
+            if (!next) {
+              returningOnMobile();
+              setInviteRoom(null);
+            }
           }}
           user={user}
           room={inviteRoom ?? room}

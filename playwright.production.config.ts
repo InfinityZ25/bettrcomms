@@ -6,7 +6,7 @@ import config from './playwright.config';
 // point to a separately running preview with its own isolated API.
 export default defineConfig({
   ...config,
-  testMatch: 'mobile-sheets.spec.ts',
+  testMatch: ['mobile-sheets.spec.ts', 'mobile-swipe.spec.ts'],
   webServer: process.env.E2E_BASE_URL
     ? undefined
     : {

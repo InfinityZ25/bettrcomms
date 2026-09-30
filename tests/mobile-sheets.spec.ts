@@ -47,10 +47,10 @@ test('phone sheets keep their full bounds visible after production CSS optimizat
         .toBe(0);
       await expect
         .poll(async () => Math.round((await friends.boundingBox())!.y))
-        .toBe(top);
+        .toBe(0);
       expect(Math.round((await friends.boundingBox())!.width)).toBe(size.width);
       expect(Math.round((await friends.boundingBox())!.height)).toBe(
-        size.height - top - bottom,
+        size.height,
       );
       await friends.getByRole('button', { name: 'Close', exact: true }).click();
       await page
@@ -76,6 +76,31 @@ test('phone sheets keep their full bounds visible after production CSS optimizat
       expect(Math.round((await settings.boundingBox())!.height)).toBe(
         size.height,
       );
+      // Safe areas protect controls, not an inset rectangle of a different
+      // color. The scrolling surface continues to the physical bottom edge.
+      expect(
+        await settings.evaluate(
+          (node) => getComputedStyle(node).backgroundColor,
+        ),
+      ).toBe(
+        await settings
+          .locator('main')
+          .evaluate((node) => getComputedStyle(node).backgroundColor),
+      );
+      const category = settings.getByRole('combobox', {
+        name: 'Settings category',
+      });
+      await expect(category).toBeVisible();
+      expect((await category.boundingBox())!.y).toBeGreaterThanOrEqual(top);
+      expect(
+        (await settings
+          .getByRole('button', { name: 'Close', exact: true })
+          .boundingBox())!.y,
+      ).toBeGreaterThanOrEqual(top);
+      const scroll = (await settings
+        .locator('.settings-scroll')
+        .boundingBox())!;
+      expect(Math.round(scroll.y + scroll.height)).toBe(size.height);
       await settings
         .getByRole('button', { name: 'Close', exact: true })
         .click();
