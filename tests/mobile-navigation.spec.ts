@@ -523,6 +523,9 @@ test('the iPhone app keeps notices clear of call controls and uses full-screen s
     // The narrowest supported phone, with no text status: the controls wrap
     // below the connection icon rather than being clipped off the edge.
     await page.setViewportSize({ width: 320, height: 640 });
+    // Back to portrait insets: a small phone's status bar and no side notch,
+    // so the check measures the full 320px width.
+    await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: { top: 20 } });
     for (const name of ['Mute microphone', 'More call options', 'Leave call']) {
       const control = (await page.getByRole('button', { name, exact: true }).boundingBox())!;
       expect(control.x).toBeGreaterThanOrEqual(0);
