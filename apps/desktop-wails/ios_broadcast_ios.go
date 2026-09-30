@@ -15,12 +15,10 @@ import (
 	"bettercomms/desktop-wails/internal/native/broadcastipc"
 	"context"
 	"crypto/rand"
-	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"github.com/google/uuid"
-	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -84,6 +82,22 @@ func iosBroadcastCommand(command string, raw json.RawMessage) (any, error) {
 	if command == "native_screen_start" {
 		return startIOSBroadcast(raw)
 	}
+	if command == "native_screen_cancel_pending" {
+		// The page learns a session ID only when the start returns, so it cannot
+		// name a broadcast still waiting in the picker. Close that one only.
+		screenBroadcast.Lock()
+		b := screenBroadcast.current
+		screenBroadcast.Unlock()
+		if b != nil {
+			b.mu.Lock()
+			pending := b.client == nil
+			b.mu.Unlock()
+			if pending {
+				b.close()
+			}
+		}
+		return nil, nil
+	}
 	var args struct {
 		SessionID string `json:"sessionId"`
 	}
@@ -131,14 +145,22 @@ func startIOSBroadcast(raw json.RawMessage) (any, error) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	b := &iosBroadcast{id: uuid.NewString(), listener: listener, config: filepath.Join(group, "broadcast.json"), cancel: cancel}
-	token := make([]byte, 32)
-	if _, err = rand.Read(token); err != nil {
+	// Two single-use keys. The extension proves itself with token; the app then
+	// proves itself with hostToken, so an app that binds this loopback port
+	// after BetterComms exits cannot receive the screen from the extension.
+	token := make([]byte, broadcastipc.KeySize)
+	hostToken := make([]byte, broadcastipc.KeySize)
+	_, err = rand.Read(token)
+	if err == nil {
+		_, err = rand.Read(hostToken)
+	}
+	if err != nil {
 		cancel()
 		listener.Close()
 		screenBroadcast.Unlock()
 		return nil, err
 	}
-	config, _ := json.Marshal(map[string]any{"port": listener.Addr().(*net.TCPAddr).Port, "token": hex.EncodeToString(token), "session": b.id, "expires": time.Now().Add(2 * time.Minute).Unix()})
+	config, _ := json.Marshal(map[string]any{"port": listener.Addr().(*net.TCPAddr).Port, "token": hex.EncodeToString(token), "hostToken": hex.EncodeToString(hostToken), "session": b.id, "expires": time.Now().Add(2 * time.Minute).Unix()})
 	if err = os.WriteFile(b.config, config, 0600); err != nil {
 		cancel()
 		listener.Close()
@@ -160,40 +182,62 @@ func startIOSBroadcast(raw json.RawMessage) (any, error) {
 	wait, stopWait := context.WithTimeout(ctx, 2*time.Minute)
 	defer stopWait()
 	go func() { <-wait.Done(); listener.Close() }()
-	for {
-		conn, err := listener.Accept()
-		if err != nil {
-			return nil, errors.New("Screen broadcast did not start. Tap Start Broadcast in the iOS picker")
+	// Verify each connection on its own goroutine: a local app opening idle
+	// connections must not hold up the extension behind its read deadline.
+	verified := make(chan net.Conn, 1)
+	go func() {
+		slots := make(chan struct{}, 8)
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			select {
+			case slots <- struct{}{}:
+			default:
+				conn.Close()
+				continue
+			}
+			go func() {
+				defer func() { <-slots }()
+				if broadcastipc.AcceptExtension(conn, token, hostToken, 3*time.Second) != nil {
+					conn.Close()
+					return
+				}
+				select {
+				case verified <- conn:
+				default:
+					conn.Close()
+				}
+			}()
 		}
-		_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
-		got := make([]byte, 32)
-		_, err = io.ReadFull(conn, got)
-		if err != nil || subtle.ConstantTimeCompare(got, token) != 1 {
-			conn.Close()
-			continue
-		}
-		_ = conn.SetReadDeadline(time.Time{})
-		client := broadcastipc.NewClient(conn)
-		b.mu.Lock()
-		if b.closed || wait.Err() != nil {
-			b.mu.Unlock()
-			client.Close()
-			return nil, context.Canceled
-		}
-		b.client = client
-		b.mu.Unlock()
-		screenBroadcast.Lock()
-		if screenBroadcast.current == b {
-			_ = os.Remove(b.config) // single-use handoff
-		}
-		screenBroadcast.Unlock()
-		listener.Close()
-		result, err := client.Call(wait, "native_screen_start", raw)
-		if err != nil {
-			return nil, err
-		}
-		success = true
-		go func() { <-client.Done(); b.close() }()
-		return result, nil
+	}()
+	var conn net.Conn
+	select {
+	case conn = <-verified:
+	case <-wait.Done():
+		return nil, errors.New("Screen broadcast did not start. Tap Start Broadcast in the iOS picker")
 	}
+	client := broadcastipc.NewClient(conn)
+	b.mu.Lock()
+	if b.closed || wait.Err() != nil {
+		b.mu.Unlock()
+		client.Close()
+		return nil, context.Canceled
+	}
+	b.client = client
+	b.mu.Unlock()
+	screenBroadcast.Lock()
+	if screenBroadcast.current == b {
+		_ = os.Remove(b.config) // single-use handoff
+	}
+	screenBroadcast.Unlock()
+	listener.Close()
+	result, err := client.Call(wait, "native_screen_start", raw)
+	if err != nil {
+		return nil, err
+	}
+	success = true
+	go func() { <-client.Done(); b.close() }()
+	return result, nil
 }

@@ -49,17 +49,19 @@ func bc_broadcast_connect(path *C.char) {
 		debug.SetGCPercent(30)
 		data, err := os.ReadFile(configPath)
 		var cfg struct {
-			Port    int    `json:"port"`
-			Token   string `json:"token"`
-			Session string `json:"session"`
-			Expires int64  `json:"expires"`
+			Port      int    `json:"port"`
+			Token     string `json:"token"`
+			HostToken string `json:"hostToken"`
+			Session   string `json:"session"`
+			Expires   int64  `json:"expires"`
 		}
 		if err != nil || len(data) > 4096 || json.Unmarshal(data, &cfg) != nil || cfg.Expires < time.Now().Unix() || cfg.Port < 1 || cfg.Port > 65535 {
 			C.bc_broadcast_ended()
 			return
 		}
 		token, err := hex.DecodeString(cfg.Token)
-		if err != nil || len(token) != 32 || cfg.Session == "" {
+		hostToken, hostErr := hex.DecodeString(cfg.HostToken)
+		if err != nil || hostErr != nil || len(token) != broadcastipc.KeySize || len(hostToken) != broadcastipc.KeySize || cfg.Session == "" {
 			C.bc_broadcast_ended()
 			return
 		}
@@ -68,13 +70,13 @@ func bc_broadcast_connect(path *C.char) {
 			C.bc_broadcast_ended()
 			return
 		}
-		_ = conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-		if _, err = conn.Write(token); err != nil {
+		// Only BetterComms, which wrote the handoff file, knows hostToken.
+		// Anything else listening on the port gets no screen.
+		if err = broadcastipc.DialHost(conn, token, hostToken, 5*time.Second); err != nil {
 			conn.Close()
 			C.bc_broadcast_ended()
 			return
 		}
-		_ = conn.SetWriteDeadline(time.Time{})
 		state.Lock()
 		if ctx.Err() != nil {
 			state.Unlock()

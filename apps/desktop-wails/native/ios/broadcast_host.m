@@ -24,11 +24,20 @@ char *bc_broadcast_group_path(void) {
 void bc_broadcast_picker_show(const char *session) {
     NSString *identifier=[NSString stringWithUTF8String:session];
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (broadcastPicker) return;
+        // Every way out without a sheet cancels at once: otherwise the page's
+        // start waits two minutes on a picker nobody can see.
+        if (broadcastPicker) { bc_broadcast_picker_cancel(identifier.UTF8String); return; }
         UIViewController *host=appDelegate.window.rootViewController;
-        if (![host isKindOfClass:WailsViewController.class]) return;
+        if (![host isKindOfClass:WailsViewController.class]) { bc_broadcast_picker_cancel(identifier.UTF8String); return; }
         NSURL *url=((WailsViewController *)host).webView.URL;
-        if (![url.scheme isEqualToString:@"wails"] || ![url.host isEqualToString:@"localhost"]) return;
+        if (![url.scheme isEqualToString:@"wails"] || ![url.host isEqualToString:@"localhost"]) {
+            bc_broadcast_picker_cancel(identifier.UTF8String);
+            return;
+        }
+        // A controller that is already presenting cannot present the sheet.
+        UIViewController *presenter=host;
+        while (presenter.presentedViewController && !presenter.presentedViewController.isBeingDismissed)
+            presenter=presenter.presentedViewController;
         BCBroadcastPickerController *view=[BCBroadcastPickerController new];
         view.session=identifier;
         view.modalPresentationStyle=UIModalPresentationPageSheet;
@@ -60,7 +69,7 @@ void bc_broadcast_picker_show(const char *session) {
             [cancel.centerXAnchor constraintEqualToAnchor:view.view.centerXAnchor],
             [cancel.heightAnchor constraintGreaterThanOrEqualToConstant:44]]];
         broadcastPicker=view;
-        [host presentViewController:view animated:YES completion:nil];
+        [presenter presentViewController:view animated:YES completion:nil];
         view.presentationController.delegate=view;
     });
 }

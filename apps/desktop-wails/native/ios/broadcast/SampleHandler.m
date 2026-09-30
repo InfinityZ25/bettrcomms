@@ -44,11 +44,26 @@ static void encoded(void *ref, void *source, OSStatus status, VTEncodeInfoFlags 
 - (void)encoded:(OSStatus)status sample:(CMSampleBufferRef)sample {
     if (status) { atomic_store(&_encodeError,status); return; }
     if (!sample) return;
+    // VideoToolbox's callback thread has no pool of its own. Without one, each
+    // frame's buffers wait for an unrelated drain in a ~50 MB extension.
+    @autoreleasepool { [self forward:sample]; }
+}
+- (void)forward:(CMSampleBufferRef)sample {
     CMBlockBufferRef block=CMSampleBufferGetDataBuffer(sample);
     size_t length=block ? CMBlockBufferGetDataLength(block) : 0;
     if (!length || length>2*1024*1024) return;
-    NSMutableData *avcc=[NSMutableData dataWithLength:length];
-    if (CMBlockBufferCopyDataBytes(block,0,length,avcc.mutableBytes)) return;
+    // Read the encoder's buffer in place when it is contiguous (the usual
+    // case) instead of copying every frame first.
+    char *pointer=NULL; size_t contiguous=0;
+    NSMutableData *copy=nil;
+    const uint8_t *bytes=NULL;
+    if (CMBlockBufferGetDataPointer(block,0,&contiguous,NULL,&pointer)==kCMBlockBufferNoErr && contiguous==length) {
+        bytes=(const uint8_t *)pointer;
+    } else {
+        copy=[NSMutableData dataWithLength:length];
+        if (CMBlockBufferCopyDataBytes(block,0,length,copy.mutableBytes)) return;
+        bytes=copy.bytes;
+    }
     NSMutableData *annex=[NSMutableData dataWithCapacity:length+128];
     const uint8_t prefix[]={0,0,0,1};
     CMFormatDescriptionRef format=CMSampleBufferGetFormatDescription(sample);
@@ -61,7 +76,7 @@ static void encoded(void *ref, void *source, OSStatus status, VTEncodeInfoFlags 
             [annex appendBytes:prefix length:4]; [annex appendBytes:bytes length:size];
         }
     }
-    const uint8_t *bytes=avcc.bytes; size_t at=0;
+    size_t at=0;
     while (at+(size_t)lengthSize<=length) {
         uint32_t n=0; for (int j=0;j<lengthSize;j++) n=(n<<8)|bytes[at++];
         if (!n || n>length-at) return;
@@ -89,6 +104,8 @@ static void encoded(void *ref, void *source, OSStatus status, VTEncodeInfoFlags 
         double scale=MIN(1.0,1280.0/MAX(w,h));
         NSInteger width=MAX(2,((NSInteger)(w*scale)/2)*2),height=MAX(2,((NSInteger)(h*scale)/2)*2);
         if (_encoder && (_recovery.resetRequired || width!=_width || height!=_height)) {
+            // Drain first so a late error from this encoder cannot land on the next.
+            VTCompressionSessionCompleteFrames(_encoder,kCMTimeInvalid);
             VTCompressionSessionInvalidate(_encoder); CFRelease(_encoder); _encoder=NULL;
             atomic_store(&_encodeError,0);
         }
@@ -123,7 +140,7 @@ static void encoded(void *ref, void *source, OSStatus status, VTEncodeInfoFlags 
         if (_stopped) return;
         _stopped=YES;
         bc_broadcast_stop();
-        if (_encoder) { VTCompressionSessionInvalidate(_encoder); CFRelease(_encoder); _encoder=NULL; }
+        if (_encoder) { VTCompressionSessionCompleteFrames(_encoder,kCMTimeInvalid); VTCompressionSessionInvalidate(_encoder); CFRelease(_encoder); _encoder=NULL; }
     }
 }
 - (void)endWithMessage:(NSString *)message {

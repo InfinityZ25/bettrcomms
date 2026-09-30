@@ -177,6 +177,8 @@ export class NativeScreenTransport {
       listen: typeof onNativeCaptureEnded;
       externalPreview?: boolean;
       closeReceiverOnFallback?: boolean;
+      /** Abandons a start still waiting on the host (an iOS picker). */
+      cancelPending?: () => Promise<void>;
     },
   ) {}
 
@@ -555,7 +557,10 @@ export class NativeScreenTransport {
     this.preview?.close();
     this.preview = undefined;
     this.onPreview(null);
-    if (!session) return;
+    if (!session) {
+      await this.driver?.cancelPending?.();
+      return;
+    }
     const peers = [...this.outboundPeers];
     this.outboundPeers.clear();
     await Promise.allSettled([

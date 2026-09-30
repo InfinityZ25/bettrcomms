@@ -244,9 +244,10 @@ static void BCEncoded(void *ref, void *source, OSStatus status, VTEncodeInfoFlag
         _awaitingKeyframe=NO; _decodeFailures=0;
         if (publish && now >= _recovery.retryAt && !_reportedError) {
             if (_recovery.resetRequired) {
-                if (_encoder) { VTCompressionSessionInvalidate(_encoder); CFRelease(_encoder); _encoder=NULL; }
-                // Invalidation waits for callbacks; discard errors belonging to
-                // the retired encoder before accepting the new encoder's output.
+                // Drain the retired encoder first: invalidation alone does not
+                // guarantee its callbacks have run, and a late error from it
+                // would otherwise tear down the replacement.
+                if (_encoder) { VTCompressionSessionCompleteFrames(_encoder,kCMTimeInvalid); VTCompressionSessionInvalidate(_encoder); CFRelease(_encoder); _encoder=NULL; }
                 atomic_store(&_callbackError, 0);
                 _recovery.resetRequired = false;
             }
