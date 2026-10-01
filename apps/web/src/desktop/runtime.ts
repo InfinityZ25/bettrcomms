@@ -217,6 +217,9 @@ function parseCapabilities(value: unknown): DesktopMediaCapabilities | null {
     if (!capability) return null;
     parsed[name] = capability;
   }
+  const nativeMetaCamera = value.nativeMetaCamera === undefined
+    ? undefined : parseCapability(value.nativeMetaCamera);
+  if (nativeMetaCamera === null) return null;
   return {
     schemaVersion: 1,
     platform: asString(value.platform),
@@ -225,6 +228,7 @@ function parseCapabilities(value: unknown): DesktopMediaCapabilities | null {
       ? value.notes.filter((note): note is string => typeof note === 'string')
       : [],
     ...parsed,
+    ...(nativeMetaCamera ? { nativeMetaCamera } : {}),
   };
 }
 
@@ -245,7 +249,7 @@ function parseCapability(value: unknown): Capability | null {
 
 function parseWindowControls(value: unknown): DesktopWindowControls | null {
   if (!isRecord(value)) return null;
-  const platforms = ['windows', 'macos', 'linux', 'ios', 'unknown'];
+  const platforms = ['windows', 'macos', 'linux', 'ios', 'android', 'unknown'];
   const modes = [
     'native-frame',
     'native-overlay',

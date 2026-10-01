@@ -6,12 +6,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"path"
+	"runtime"
 	"strings"
 )
 
@@ -183,6 +185,12 @@ func newStaticHandler(dist fs.FS) http.Handler {
 		if name == "" {
 			name = "index.html"
 		}
+		// Wails' Android JNI asset loader normalizes the root to /index.html
+		// and cannot follow file-server redirects. Serve that document directly.
+		if runtime.GOOS == "android" && r.URL.Path == "/index.html" {
+			r = r.Clone(r.Context())
+			r.URL.Path = "/"
+		}
 		if _, err := fs.Stat(dist, name); err != nil {
 			// Serve the root rather than "/index.html": net/http redirects the
 			// explicit index path to "./", which would turn a deep link into a
@@ -233,6 +241,15 @@ func (h *htmlInjector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		body = injected
+		// The Android Wails asset loader returns bytes without forwarding Go's
+		// response headers. Carry the same restrictive policy in the document
+		// before any script (including the hash-authorised boot script) runs.
+		if report.Platform == "android" {
+			if index := headInsertionPoint(body); index >= 0 {
+				meta := []byte(`<meta http-equiv="Content-Security-Policy" content="` + html.EscapeString(policy) + `"><meta name="referrer" content="no-referrer">`)
+				body = append(append(append([]byte{}, body[:index]...), meta...), body[index:]...)
+			}
+		}
 		capture.header.Set("Content-Security-Policy", policy)
 		capture.header.Set("Referrer-Policy", "no-referrer")
 		capture.header.Set("X-Content-Type-Options", "nosniff")
@@ -261,7 +278,9 @@ func mayBeDocument(r *http.Request) bool {
 	}
 	// A webview that sends no Accept still has to receive the document, and a
 	// route such as "/rooms/42" has no extension to distinguish it from one.
-	return path.Ext(path.Base(r.URL.Path)) == ""
+	extension := path.Ext(path.Base(r.URL.Path))
+	// JNI asset requests omit Accept and use an explicit /index.html path.
+	return extension == "" || extension == ".html"
 }
 
 type bufferedResponse struct {

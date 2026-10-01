@@ -2,8 +2,11 @@ import { callIOSNative, iosNativeBinding } from '@/desktop/iosNativeBindings';
 import { readDesktopBootReport } from '@/desktop/runtime';
 
 export const META_GLASSES_CAMERA_ID = 'bettercomms:meta-glasses-camera';
-export const hasMetaGlassesCamera = () =>
-  readDesktopBootReport()?.platform === 'ios';
+export const hasMetaGlassesCamera = () => {
+  const boot = readDesktopBootReport();
+  return boot?.platform === 'ios' || (boot?.platform === 'android' &&
+    ['experimental', 'implemented'].includes(boot.capabilities.nativeMetaCamera?.state ?? ''));
+};
 
 type MetaEvent =
   | { kind: 'frame'; jpeg: string; width: number; height: number }
@@ -16,16 +19,16 @@ let activeConsumers = 0;
 const metaTracks = new WeakSet<MediaStreamTrack>();
 export const isMetaGlassesTrack = (track: MediaStreamTrack | null) => !!track && metaTracks.has(track);
 
-/** Convert native DAT frames into an ordinary call camera track on iOS. */
+/** Convert native DAT frames into an ordinary call camera preview track on native mobile. */
 export async function startMetaGlassesCamera(signal?: AbortSignal): Promise<{
   track: MediaStreamTrack;
   dispose: () => void;
 }> {
   signal?.throwIfAborted();
-  if (!hasMetaGlassesCamera()) throw new Error('Meta glasses camera requires the iPhone app.');
+  if (!hasMetaGlassesCamera()) throw new Error('Meta glasses camera requires the native mobile app.');
   const canvas = document.createElement('canvas');
   if (typeof canvas.captureStream !== 'function') {
-    throw new Error('This iPhone webview cannot publish the glasses camera.');
+    throw new Error('This mobile webview cannot publish the glasses camera.');
   }
   canvas.width = 360;
   canvas.height = 640;
@@ -142,7 +145,7 @@ export async function startMetaGlassesCamera(signal?: AbortSignal): Promise<{
 /** User-requested repair; never revoke registration as part of automatic retry. */
 export async function reconnectMetaGlassesCamera(signal?: AbortSignal): Promise<void> {
   signal?.throwIfAborted();
-  if (!hasMetaGlassesCamera()) throw new Error('Reconnecting glasses requires the iPhone app.');
+  if (!hasMetaGlassesCamera()) throw new Error('Reconnecting glasses requires the native mobile app.');
   if (activeConsumers) throw new Error('Turn off glasses video before reconnecting.');
   await new Promise<void>((resolve, reject) => {
     const cleanup = () => {

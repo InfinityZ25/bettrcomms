@@ -77,6 +77,10 @@ The browser suite uses two isolated authenticated browser contexts against the r
 
 ## Native desktop and remaining scope
 
+An experimental Android native host now builds standard (Android 8+) and Meta
+glasses (Android 12+) APKs. See [Android setup, SDK bindings and acceptance
+limits](docs/ANDROID.md). Build locally with `npm run build:android`.
+
 `apps/desktop-wails/` is the Wails v3 desktop host. Build it with `npm run build:desktop-wails` on Windows or `npm run build:desktop-wails:macos` on macOS; see [desktop setup](apps/desktop-wails/README.md). Native process-specific game audio, Krisp integration, continuous rewind, in-progress recording crash recovery, signed installers, and macOS/Linux native media parity remain release gates; see the [completion ledger](docs/WAILS_COMPLETION.md).
 
 Read [the product spec](docs/PRODUCT_SPEC.md), [implementation matrix](docs/IMPLEMENTATION_MATRIX.md), [Wails completion ledger](docs/WAILS_COMPLETION.md), and [server protocol](server/PROTOCOL.md).

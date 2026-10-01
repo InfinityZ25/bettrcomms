@@ -82,3 +82,39 @@ func TestContentPolicyChangesWithBootDocumentAndKeepsDevRefresh(t *testing.T) {
 		t.Fatal("development lost document restrictions")
 	}
 }
+
+func TestAndroidCarriesPolicyBeforeScriptsWhenAssetLoaderDropsHeaders(t *testing.T) {
+	handler, err := NewAssetHandler(AssetOptions{
+		Dist: fstest.MapFS{"index.html": {Data: []byte("<html><head><script src=\"/app.js\"></script></head></html>")}},
+		Boot: func() BootReport { report := testBoot(); report.Platform = "android"; return report },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/", nil))
+	body := response.Body.String()
+	meta := strings.Index(body, `http-equiv="Content-Security-Policy"`)
+	script := strings.Index(body, "<script>")
+	if meta < 0 || script < meta {
+		t.Fatal("Android policy is missing or comes after executable content")
+	}
+	if !strings.Contains(body, "frame-src &#39;none&#39;") || !strings.Contains(body, "sha256-") {
+		t.Fatal("Android meta policy lost frame isolation or exact boot-script hash")
+	}
+}
+
+func TestHTMLAssetWithoutAcceptStillGetsBootAndPolicy(t *testing.T) {
+	handler := &htmlInjector{
+		next: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = w.Write([]byte("<html><head></head><body>app</body></html>"))
+		}),
+		boot: func() BootReport { report := testBoot(); report.Platform = "android"; return report },
+	}
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/index.html", nil))
+	if !strings.Contains(response.Body.String(), "__BETTERCOMMS_DESKTOP__") || !strings.Contains(response.Body.String(), "Content-Security-Policy") {
+		t.Fatal("headerless JNI document omitted boot or policy")
+	}
+}

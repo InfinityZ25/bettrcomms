@@ -1,4 +1,4 @@
-//go:build !windows && (!darwin || !cgo)
+//go:build !windows && !android && (!darwin || !cgo)
 
 package desktop
 

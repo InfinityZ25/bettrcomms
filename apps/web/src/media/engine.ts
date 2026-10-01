@@ -26,6 +26,7 @@ import { createDeepfilterDenoiser } from './deepfilterDenoise';
 import { createDeepfilterWasmDenoiser } from './deepfilterWasmDenoise';
 import { createMicrophoneEffects } from './microphoneEffects';
 import { readDesktopBootReport } from '../desktop/runtime';
+import { hasAndroidProjection, androidProjectionDriver } from './androidProjection';
 import { hasIOSBroadcast, iosBroadcastDriver } from './iosBroadcast';
 import { hasDesktopCapability } from '../desktop/capabilities';
 import { createNativeSystemAudio, type NativeSystemAudioTrack } from './nativeSystemAudio';
@@ -170,7 +171,7 @@ export class MediaEngine extends EventTarget {
       },
       (reason) => this.emit('error', { operation: 'native-screen-ended', error: new Error(reason) }),
       (peerId) => this.enableNativeScreenFallback(peerId),
-      hasIOSBroadcast() ? iosBroadcastDriver : undefined,
+      hasAndroidProjection() ? androidProjectionDriver : hasIOSBroadcast() ? iosBroadcastDriver : undefined,
     );
   }
 
@@ -498,7 +499,7 @@ export class MediaEngine extends EventTarget {
   }
 
   async captureIOSAppScreen(): Promise<void> {
-    await this.captureNativeScreen({ sourceId: 'ios-broadcast', encoder: 'libx264',
+    await this.captureNativeScreen({ sourceId: hasAndroidProjection() ? 'android-projection' : 'ios-broadcast', encoder: 'libx264',
       width: 720, height: 1280, fps: 30, bitrateMbps: 3,
       h264Profile: 'baseline', contentHint: 'detail', cursor: false, systemAudio: false });
   }

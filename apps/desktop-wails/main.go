@@ -98,7 +98,11 @@ func run() error {
 		// An iPhone screen broadcast outlives a suspended page, so it follows
 		// the call's signaling socket, which this host process carries.
 		iosBroadcastWatchSignaling(apiProxy.CallSignalingOpen, apiProxy.CallSignalingOpens)
-		apiProxy.OnCallSignalingClosed(iosBroadcastSignalingClosed)
+		androidWatchSignaling(apiProxy.CallSignalingOpen, apiProxy.CallSignalingOpens)
+		apiProxy.OnCallSignalingClosed(func() {
+			iosBroadcastSignalingClosed()
+			androidSignalingClosed()
+		})
 	}
 
 	// The ported native media stack. A failure here is reported rather than
@@ -127,7 +131,13 @@ func run() error {
 	// Native toasts. The page sends them through the generated bindings; this
 	// host only needs to exist for the service to be bound, and to bring the
 	// window back when one is clicked.
-	toasts := notifications.New()
+	// The pinned Wails notification service selects its Linux D-Bus backend
+	// on Android. Android has no session bus; its native media service owns
+	// the foreground notification instead.
+	var toasts *notifications.NotificationService
+	if runtime.GOOS != "android" {
+		toasts = notifications.New()
+	}
 	tray := newTrayService(gate)
 
 	boot := func() desktop.BootReport {

@@ -14,6 +14,7 @@ import { CallMicrophone } from '@/media/pushToTalk';
 import { allowDesktopCapture } from '@/media/permissions';
 import { cameraCaptureConstraints, captureCameraWithFallback, readCameraSettings } from '@/media/cameraSettings';
 import { META_GLASSES_CAMERA_ID, startMetaGlassesCamera } from '@/media/metaGlassesCamera';
+import { hasAndroidProjection } from '@/media/androidProjection';
 import { hasIOSBroadcast } from '@/media/iosBroadcast';
 import { microphoneCaptureOptions } from '@/media/processingSettings';
 import { readRecordingQuality } from '@/media/recordingQuality';
@@ -657,7 +658,7 @@ export function useCallSession({
         try {
           await startIOSCallAudio();
         } catch (error) {
-          onError(`iPhone background audio unavailable: ${errorMessage(error)}`);
+          onError(`Native call audio unavailable: ${errorMessage(error)}`);
         }
         await media.captureUserMedia({ camera: false, ...captureOptions() });
         await connection.connect();
@@ -701,7 +702,7 @@ export function useCallSession({
       });
       return;
     }
-    if (hasIOSBroadcast()) {
+    if (hasIOSBroadcast() || hasAndroidProjection()) {
       await perform(async () => {
         await engine.current?.captureIOSAppScreen();
       });

@@ -32,18 +32,19 @@ export interface DesktopMediaCapabilities {
   mediaPermissions: Capability;
   globalInput: Capability;
   nativeOverlays: Capability;
+  nativeMetaCamera?: Capability;
   notes: string[];
 }
 
 /** The names a feature can ask about. */
 export type DesktopCapabilityName = Exclude<
   keyof DesktopMediaCapabilities,
-  'schemaVersion' | 'platform' | 'architecture' | 'notes'
+  'schemaVersion' | 'platform' | 'architecture' | 'notes' | 'nativeMetaCamera'
 >;
 
 /** Window-control description from the desktop host. */
 export interface DesktopWindowControls {
-  platform: 'windows' | 'macos' | 'linux' | 'ios' | 'unknown';
+  platform: 'windows' | 'macos' | 'linux' | 'ios' | 'android' | 'unknown';
   mode:
     | 'native-frame'
     | 'native-overlay'
