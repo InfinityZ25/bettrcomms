@@ -74,7 +74,12 @@ class AndroidScreenCapture(private val host: BetterCommsAndroidHost, private val
         session = id
         pending = id
         try { consent.launch(manager.createScreenCaptureIntent()) }
-        catch (error: Exception) { stop(id, "Android could not open screen-sharing consent.") }
+        catch (error: Exception) {
+            // No picker opened, so no result will arrive to clear this generation.
+            // Normal cancellation keeps pending until Android returns its result.
+            if (pending == id) pending = null
+            stop(id, "Android could not open screen-sharing consent.")
+        }
     }
     fun reportState() {} // The token-gated active-session query reconciles resume/reload.
     fun stop(expected: String? = null, reason: String = "Screen sharing ended.") {
