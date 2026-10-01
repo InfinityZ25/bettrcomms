@@ -1,5 +1,18 @@
 # BetterComms preview release notes
 
+## Unreleased — iPhone video sender timing
+
+Ray-Ban and iPhone screen-broadcast video is now stamped with each frame's own
+capture time instead of a fixed 30 fps grid, which drifted and jumped whenever
+the source ran slower or unevenly. Screen broadcasts no longer discard frames
+that arrive a few milliseconds early, and landscape apps are rotated upright
+before encoding (at the already scaled-down size, to respect the extension's
+memory limit). Both senders now schedule a keyframe about every four seconds
+instead of every second; viewers still get one as they connect and whenever
+they request it. The pacer runs with more headroom above the encoder's cap.
+The build is installed on a physical iPhone, but playback smoothness,
+landscape rotation and extension memory under rotation have not yet been
+measured on a real call.
 ## Unreleased — iPhone layout polish
 
 Phone styles now apply to a phone held sideways too: the `phone` Tailwind

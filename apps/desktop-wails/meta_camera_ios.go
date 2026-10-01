@@ -11,7 +11,10 @@ void bc_meta_stop(void);
 void bc_meta_set_publishing(int value);
 */
 import "C"
-import "unsafe"
+import (
+	"time"
+	"unsafe"
+)
 
 func metaCameraConnect() error { C.bc_meta_connect(); return nil }
 func metaCameraStart() error   { C.bc_meta_start(); return nil }
@@ -27,11 +30,11 @@ func metaCameraSetPublishing(value bool) error {
 }
 
 //export bc_meta_video_encoded
-func bc_meta_video_encoded(data unsafe.Pointer, size C.int) {
+func bc_meta_video_encoded(data unsafe.Pointer, size C.int, capturedMicros C.longlong) {
 	if size <= 0 || size > 16*1024*1024 {
 		return
 	}
-	writeMetaVideo(C.GoBytes(data, size))
+	writeMetaVideo(C.GoBytes(data, size), time.Duration(capturedMicros)*time.Microsecond)
 }
 
 //export bc_meta_sender_ended

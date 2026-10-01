@@ -173,7 +173,7 @@ func bc_broadcast_stop() {
 }
 
 //export bc_broadcast_video
-func bc_broadcast_video(data unsafe.Pointer, size C.int) {
+func bc_broadcast_video(data unsafe.Pointer, size C.int, capturedMicros C.longlong) {
 	if size <= 0 || size > 2*1024*1024 {
 		return
 	}
@@ -181,7 +181,7 @@ func bc_broadcast_video(data unsafe.Pointer, size C.int) {
 	h := state.hub
 	state.Unlock()
 	if h != nil {
-		_ = h.WriteAccessUnit(C.GoBytes(data, size), time.Now())
+		_ = h.WriteTimedAccessUnit(C.GoBytes(data, size), time.Now(), time.Duration(capturedMicros)*time.Microsecond)
 	}
 }
 

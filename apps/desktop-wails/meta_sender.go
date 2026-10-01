@@ -118,12 +118,12 @@ func stopMetaSender(expected *nativertc.Hub) {
 		h.Close()
 	}
 }
-func writeMetaVideo(data []byte) {
+func writeMetaVideo(data []byte, capturedAt time.Duration) {
 	metaSender.Lock()
 	h := metaSender.hub
 	metaSender.Unlock()
 	if h != nil {
-		_ = h.WriteAccessUnit(data, time.Now())
+		_ = h.WriteTimedAccessUnit(data, time.Now(), capturedAt)
 	}
 }
 

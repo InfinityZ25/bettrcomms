@@ -6,7 +6,7 @@
 #include <stdatomic.h>
 #include <fcntl.h>
 #include <unistd.h>
-extern void bc_meta_video_encoded(void *data, int size);
+extern void bc_meta_video_encoded(void *data, int size, long long captured_us);
 
 void BCNativeVideoLog(NSString *message) {
     os_log(OS_LOG_DEFAULT, "BetterComms Meta native: %{public}@", message);
@@ -109,7 +109,12 @@ static void BCEncoded(void *ref, void *source, OSStatus status, VTEncodeInfoFlag
         [annex appendBytes:prefix length:4]; [annex appendBytes:bytes+at length:n]; at+=n;
     }
     if (at==size) {
-        bc_meta_video_encoded(annex.mutableBytes,(int)annex.length);
+        // The glasses' own capture time. They deliver 22-30 fps with jitter,
+        // and stamping frames on a fixed 30 fps grid made viewers' playback
+        // drift and then jump. Zero falls back to arrival time.
+        CMTime captured = CMSampleBufferGetPresentationTimeStamp(sample);
+        long long micros = CMTIME_IS_NUMERIC(captured) ? (long long)(CMTimeGetSeconds(captured)*1e6) : 0;
+        bc_meta_video_encoded(annex.mutableBytes,(int)annex.length,micros);
         [owner encodedFrame];
     }
 }
@@ -259,7 +264,11 @@ static void BCEncoded(void *ref, void *source, OSStatus status, VTEncodeInfoFlag
                         (id)kVTCompressionPropertyKey_AllowFrameReordering:@NO,
                         (id)kVTCompressionPropertyKey_ProfileLevel:(id)kVTProfileLevel_H264_Baseline_3_1,
                         (id)kVTCompressionPropertyKey_ExpectedFrameRate:@30,
-                        (id)kVTCompressionPropertyKey_MaxKeyFrameInterval:@30} mutableCopy];
+                        // Viewers request keyframes when they need one, and
+                        // get one as they connect. A scheduled one every
+                        // second cost bitrate and pulsed the picture.
+                        (id)kVTCompressionPropertyKey_MaxKeyFrameInterval:@120,
+                        (id)kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration:@4} mutableCopy];
                     [settings addEntriesFromDictionary:[self rateSettings]];
                     status=VTSessionSetProperties(_encoder,(__bridge CFDictionaryRef)settings);
                     if (!status) {
