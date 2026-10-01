@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { isMetaGlassesTrack } from '@/media/metaGlassesCamera';
 
 /**
  * Plays one live track. Screen shares also report whether frames are actually
@@ -25,6 +26,10 @@ export default function TrackVideo({
   const aspectCallback = useRef(onAspectRatio);
   aspectCallback.current = onAspectRatio;
   const [videoStatus, setVideoStatus] = useState('Waiting for video frames…');
+  // A selfie preview is mirrored because that is how people know their own
+  // face. A camera pointing away from you (a phone's rear camera, glasses)
+  // shows the world, and mirroring it reverses text and directions.
+  const outward = self && (isMetaGlassesTrack(track) || track.getSettings?.().facingMode === 'environment');
   useEffect(() => {
     const video = ref.current;
     if (!video) return;
@@ -76,7 +81,7 @@ export default function TrackVideo({
   }, [track, showStatus]);
   return (
     <>
-      <video ref={ref} autoPlay playsInline muted className={self ? 'self-video' : ''} />
+      <video ref={ref} autoPlay playsInline muted className={self ? (outward ? 'self-video unmirrored' : 'self-video') : ''} />
       {showStatus && videoStatus && (
         <div
           role="status"

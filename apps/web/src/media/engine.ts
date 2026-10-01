@@ -1,4 +1,5 @@
 import { NativeCameraTransport } from './nativeCamera';
+import { cameraBitrateCeiling, perViewerBitrate, preferredVideoCodecs } from './videoQuality';
 import { isMetaGlassesTrack } from './metaGlassesCamera';
 import { AudioLeveler, type AudioLevelerOptions } from './audio';
 import { VisualCopilot } from './visualCopilot';
@@ -695,6 +696,8 @@ export class MediaEngine extends EventTarget {
       pendingCandidates: [],
     };
     this.peers.set(peerId, peer);
+    // Each viewer's share of the uplink budget depends on how many there are.
+    this.refreshQuality();
     this.copilot.attach(peerId, pc);
     for (const [source, track] of this.localTracks) {
       if (source === 'screen' && this.nativeScreen.active) continue;
@@ -761,6 +764,7 @@ export class MediaEngine extends EventTarget {
     if (!peer) return;
     peer.pc.close();
     this.peers.delete(peerId);
+    this.refreshQuality();
     const removedSources = [...peer.remote.keys()];
     peer.remote.clear();
     peer.pendingTracks.clear();
@@ -939,6 +943,7 @@ export class MediaEngine extends EventTarget {
       for (const candidate of peer.pendingCandidates.splice(0))
         await peer.pc.addIceCandidate(candidate);
       if (description.type === 'offer') {
+        this.preferVideoCodecs(peer.pc);
         await peer.pc.setLocalDescription();
         await this.send({
           type: 'answer',
@@ -980,11 +985,29 @@ export class MediaEngine extends EventTarget {
 
   async setQuality(quality: MediaQualityOptions): Promise<void> {
     this.quality = { ...this.quality, ...quality };
-    await Promise.all(
+    await this.refreshQuality();
+  }
+
+  private refreshQuality(): Promise<void[]> {
+    return Promise.all(
       [...this.peers.values()].flatMap((peer) =>
         [...peer.senders.values()].map((sender) => this.applyQuality(sender)),
       ),
     );
+  }
+
+  /** States one codec order on every video transceiver; see videoQuality.ts. */
+  private preferVideoCodecs(pc: RTCPeerConnection) {
+    const capabilities =
+      typeof RTCRtpReceiver !== 'undefined' ? RTCRtpReceiver.getCapabilities?.('video') : null;
+    if (!capabilities || typeof pc.getTransceivers !== 'function') return;
+    const codecs = preferredVideoCodecs(capabilities.codecs);
+    for (const transceiver of pc.getTransceivers()) {
+      const kind = transceiver.sender.track?.kind ?? transceiver.receiver.track?.kind;
+      if (kind !== 'video' || typeof transceiver.setCodecPreferences !== 'function') continue;
+      // A browser that rejects the list keeps its own order and still connects.
+      try { transceiver.setCodecPreferences(codecs); } catch { /* keep the default */ }
+    }
   }
 
   async getStats(peerId: string): Promise<PeerMediaStats> {
@@ -1063,6 +1086,15 @@ export class MediaEngine extends EventTarget {
             ? { packetsLost: row.packetsLost }
             : {}),
           ...(row.jitter !== undefined ? { jitterMs: row.jitter * 1000 } : {}),
+          // Why video looks the way it does: what limited the encoder, which
+          // implementation ran, and how often the picture froze or was repaired.
+          ...(typeof row.qualityLimitationReason === 'string' ? { qualityLimitation: row.qualityLimitationReason } : {}),
+          ...(typeof (row.encoderImplementation ?? row.decoderImplementation) === 'string'
+            ? { implementation: row.encoderImplementation ?? row.decoderImplementation } : {}),
+          ...(typeof row.framesDropped === 'number' ? { framesDropped: row.framesDropped } : {}),
+          ...(typeof row.freezeCount === 'number' ? { freezeCount: row.freezeCount } : {}),
+          ...(typeof row.pliCount === 'number' ? { pliCount: row.pliCount } : {}),
+          ...(typeof row.nackCount === 'number' ? { nackCount: row.nackCount } : {}),
           ...(localSource === 'screen' && descriptor?.screenTransport
             ? { screenTransport: descriptor.screenTransport }
             : {}),
@@ -1090,6 +1122,8 @@ export class MediaEngine extends EventTarget {
               localCandidateType: local?.candidateType,
               remoteCandidateType: remote?.candidateType,
               protocol: local?.protocol,
+              ...(typeof selectedPair.availableOutgoingBitrate === 'number'
+                ? { availableOutgoingBitrate: selectedPair.availableOutgoingBitrate } : {}),
               currentRoundTripTimeMs:
                 selectedPair.currentRoundTripTime === undefined
                   ? undefined
@@ -1171,6 +1205,7 @@ export class MediaEngine extends EventTarget {
     if (peer.makingOffer || peer.pc.signalingState !== 'stable') return;
     try {
       peer.makingOffer = true;
+      this.preferVideoCodecs(peer.pc);
       await peer.pc.setLocalDescription();
       await Promise.all([...peer.senders.values()].map(sender => this.applyQuality(sender)));
       await this.send({
@@ -1360,7 +1395,30 @@ export class MediaEngine extends EventTarget {
     if (this.disposed) throw new MediaEngineDisposedError();
   }
 
-  private async applyQuality(sender: RTCRtpSender): Promise<void> {
+  private readonly qualityQueues = new WeakMap<RTCRtpSender, Promise<void>>();
+
+  /**
+   * Applies the ceilings to one sender, one call at a time.
+   *
+   * Joining, negotiating and a settings change can all ask at once, and
+   * setParameters rejects parameters read before another call changed them.
+   * Those rejections used to surface as unhandled errors or fail an offer that
+   * had already succeeded. A rejected attempt is retried once with fresh
+   * parameters; after that the next negotiation applies them.
+   */
+  private applyQuality(sender: RTCRtpSender): Promise<void> {
+    const run = (this.qualityQueues.get(sender) ?? Promise.resolve()).then(async () => {
+      try {
+        await this.applyQualityNow(sender);
+      } catch {
+        await this.applyQualityNow(sender).catch(() => undefined);
+      }
+    });
+    this.qualityQueues.set(sender, run);
+    return run;
+  }
+
+  private async applyQualityNow(sender: RTCRtpSender): Promise<void> {
     if (!sender.track) return;
     const parameters = sender.getParameters();
     // Encoding entries are owned by WebRTC. A new sender may have none until
@@ -1370,10 +1428,25 @@ export class MediaEngine extends EventTarget {
     const isScreen =
       sender.track.kind === 'video' &&
       sender.track === this.localTracks.get('screen');
+    const isCamera =
+      sender.track.kind === 'video' &&
+      sender.track === this.localTracks.get('camera');
     const nativeCompatibility = isScreen && this.nativeScreen.active;
     const quality = nativeCompatibility
       ? this.nativeScreen.compatibilityQuality ?? this.quality
       : this.quality;
+    // The stream-quality settings describe a share. A camera gets a ceiling
+    // sized to its own picture (never above the share's), keeps its capture
+    // frame rate, and is not scaled by the share's setting.
+    let maxVideoBitrate = isCamera
+      ? Math.min(cameraBitrateCeiling(sender.track.getSettings?.() ?? {}), quality.maxVideoBitrate ?? Infinity)
+      : quality.maxVideoBitrate;
+    // Every viewer receives its own encoded copy, so the uplink carries the
+    // ceiling once per viewer. The compatibility sender serves one viewer.
+    if (maxVideoBitrate !== undefined && !nativeCompatibility)
+      maxVideoBitrate = perViewerBitrate(maxVideoBitrate, this.peers.size);
+    const maxFramerate = isCamera ? undefined : quality.maxFramerate;
+    const scaleResolutionDownBy = isCamera ? undefined : quality.scaleResolutionDownBy;
     let changed = false;
     // Every screen sender degrades by dropping frames rather than resolution.
     // Motion content is the one case where the reverse reads better.
@@ -1396,16 +1469,16 @@ export class MediaEngine extends EventTarget {
           changed = true;
         }
       } else {
-        if (quality.maxVideoBitrate !== undefined && encoding.maxBitrate !== quality.maxVideoBitrate) {
-          encoding.maxBitrate = quality.maxVideoBitrate;
+        if (maxVideoBitrate !== undefined && encoding.maxBitrate !== maxVideoBitrate) {
+          encoding.maxBitrate = maxVideoBitrate;
           changed = true;
         }
-        if (quality.maxFramerate !== undefined && encoding.maxFramerate !== quality.maxFramerate) {
-          encoding.maxFramerate = quality.maxFramerate;
+        if (maxFramerate !== undefined && encoding.maxFramerate !== maxFramerate) {
+          encoding.maxFramerate = maxFramerate;
           changed = true;
         }
-        if (quality.scaleResolutionDownBy !== undefined && encoding.scaleResolutionDownBy !== quality.scaleResolutionDownBy) {
-          encoding.scaleResolutionDownBy = quality.scaleResolutionDownBy;
+        if (scaleResolutionDownBy !== undefined && encoding.scaleResolutionDownBy !== scaleResolutionDownBy) {
+          encoding.scaleResolutionDownBy = scaleResolutionDownBy;
           changed = true;
         }
       }
