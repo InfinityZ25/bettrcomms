@@ -117,7 +117,7 @@ func stopMetaSender(expected *nativertc.Hub) {
 	_ = metaCameraSetPublishing(false)
 	metaSender.Unlock()
 	if h != nil {
-		h.Close()
+		closeMetaHub(h)
 	}
 }
 func writeMetaVideo(data []byte, capturedAt time.Duration) {

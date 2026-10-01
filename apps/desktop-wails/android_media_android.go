@@ -162,7 +162,7 @@ func androidScreenCommand(ctx context.Context, command string, raw json.RawMessa
 	case "native_screen_cancel_pending":
 		// Capture consent is owned by Android. Cancel our generation, so a
 		// late picker result cannot start capturing after leaving the call.
-		stopAndroidScreen("")
+		releaseAndroidScreen("", true)
 		return nil, nil
 	}
 	if h == nil || h.SessionID() != args.SessionID {
@@ -219,17 +219,21 @@ func awaitAndroidScreen(ctx context.Context, expected *nativertc.Hub) error {
 		}
 	}
 }
-func stopAndroidScreen(expected string) {
+func stopAndroidScreen(expected string) { releaseAndroidScreen(expected, false) }
+
+func releaseAndroidScreen(expected string, pendingOnly bool) {
 	androidScreen.Lock()
 	h := androidScreen.hub
-	if h == nil || (expected != "" && h.SessionID() != expected) {
+	if h == nil || (expected != "" && h.SessionID() != expected) || (pendingOnly && h.Stats().AccessUnits > 0) {
 		androidScreen.Unlock()
 		return
 	}
 	androidScreen.hub, androidScreen.owner = nil, ""
 	androidScreen.Unlock()
 	_ = androidCommand("screen:stop:" + h.SessionID())
-	h.Close()
+	// JNI stop callbacks run on Android's main looper. Detach immediately,
+	// then tear down peer sockets off that thread using the captured hub.
+	go h.Close()
 }
 func writeAndroidScreen(session string, data []byte, captured time.Duration) {
 	androidScreen.Lock()

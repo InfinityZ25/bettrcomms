@@ -25,6 +25,7 @@ apps/sfu/turnserver.conf
 
 # Android build output and machine-local SDK paths
 apps/desktop-wails/android/.gradle/
+apps/desktop-wails/android/.kotlin/
 apps/desktop-wails/android/generated/
 apps/desktop-wails/android/app/build/
 apps/desktop-wails/android/build/

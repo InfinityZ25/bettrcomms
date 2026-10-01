@@ -26,4 +26,24 @@ public class NativeBoundaryTest {
             assertThrows(IllegalArgumentException.class, () -> AnnexB.normalize(bytes));
         }
     }
+    @Test public void replacesSpsWithoutDroppingSeparatePps() {
+        byte[] old = {0,0,0,1,103,10,0,0,1,104,20};
+        byte[] next = {0,0,0,1,103,30};
+        assertArrayEquals(new byte[]{0,0,0,1,103,30,0,0,1,104,20}, AnnexB.parameterSets(old, next));
+        assertArrayEquals(old, AnnexB.parameterSets(old, new byte[]{0,0,0,1,101,40}));
+    }
+    @Test public void copiesVisibleCropFromPaddedRowsWithoutMovingCursors() {
+        java.nio.ByteBuffer source = java.nio.ByteBuffer.wrap(new byte[]{99, 0,1,2,3,88,88, 4,5,6,7,88,88, 8,9,10,11,88,88});
+        source.position(1);
+        java.nio.ByteBuffer target = java.nio.ByteBuffer.allocate(7); target.position(1);
+        YuvPlane.copy(source, 6, 1, 1, 1, target, 3, 1, 2, 2);
+        assertArrayEquals(new byte[]{0,5,6,0,9,10,0}, target.array());
+        assertEquals(1, source.position()); assertEquals(1, target.position());
+    }
+    @Test public void copiesInterleavedChromaWithoutPaddingSamples() {
+        java.nio.ByteBuffer source = java.nio.ByteBuffer.wrap(new byte[]{1,99,2,99,88,88,3,99,4,99,88,88});
+        java.nio.ByteBuffer target = java.nio.ByteBuffer.allocate(8); target.position(1);
+        YuvPlane.copy(source, 6, 2, 0, 0, target, 4, 2, 2, 2);
+        assertArrayEquals(new byte[]{0,1,0,2,0,3,0,4}, target.array());
+    }
 }

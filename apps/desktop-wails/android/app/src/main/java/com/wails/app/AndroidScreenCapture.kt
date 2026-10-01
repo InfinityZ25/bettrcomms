@@ -90,8 +90,9 @@ class AndroidScreenCapture(private val host: BetterCommsAndroidHost, private val
         val id = session ?: return
         if (expected != null && expected != id) return
         session = null
-        worker?.cancel(); worker = null
+        // Detach the producer before cancellation closes its encoder surface.
         display?.release(); display = null
+        worker?.cancel(); worker = null
         val capture = projection; projection = null
         callback?.let { capture?.unregisterCallback(it) }; callback = null
         capture?.stop()

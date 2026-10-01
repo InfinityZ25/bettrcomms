@@ -52,6 +52,11 @@ replace('''    @Override
             super.onBackPressed();
         }
     }''', '')
+# Request paths can contain pairing or native-token query parameters.
+for line in ['if (DEBUG) Log.d(TAG, "Wails API call: " + fullPath);',
+             'if (DEBUG) Log.d(TAG, "Page loaded: " + url);',
+             'if (DEBUG) Log.d(TAG, "Loading URL: " + url);']:
+    replace(line, '// Request URLs are deliberately not logged.')
 activity.write_text(text)
 
 # JNI invoke logs must never include host tokens, authentication, or signaling.
@@ -72,7 +77,18 @@ for line in ['if (DEBUG) Log.d(TAG, "Message from JS: " + message);',
     if text.count(line) != 1:
         raise SystemExit('Wails native logging anchor changed')
     text = text.replace(line, '// Do not log private binding arguments.')
-text = text.replace('private SharedPreferences securePrefs()', 'private synchronized SharedPreferences securePrefs()')
+for old, new in [
+    ('if (DEBUG) Log.d(TAG, "Serving asset: " + path);', '// Request paths are not logged.'),
+    ('Log.w(TAG, "Bridge not initialized, cannot serve asset: " + path);', 'Log.w(TAG, "Bridge not initialized, cannot serve asset");'),
+    ('Log.e(TAG, "Error serving asset: " + path, e);', 'Log.e(TAG, "Error serving asset", e);'),
+]:
+    if text.count(old) != 1:
+        raise SystemExit('Wails request logging anchor changed')
+    text = text.replace(old, new)
+anchor = 'private SharedPreferences securePrefs()'
+if text.count(anchor) != 1:
+    raise SystemExit('Wails secure preferences anchor changed')
+text = text.replace(anchor, 'private synchronized SharedPreferences securePrefs()')
 # BetterComms does not use location. Disable this generic host method instead
 # of asking for unrelated, sensitive location permissions to satisfy lint.
 start = text.index('    public void getLocation() {')

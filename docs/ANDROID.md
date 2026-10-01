@@ -47,8 +47,12 @@ With a disposable emulator running and the debug APK installed, run
 `ANDROID_HOME=/path/to/android-sdk node scripts/test-android-emulator.mjs standard`
 (or `meta`). This checks the actual native host, CSP, binding authorization,
 MediaProjection consent, a 720×1280 H.264 WebRTC receiver, background frames and
-stop cleanup. It is restricted to emulator serials and does not use a real
-account. It does not prove physical microphones/cameras/glasses or cross-network
+stop cleanup, including cancelling a picker without ending a live share and
+stopping a share while backgrounded with call audio still active. Run
+`./gradlew connectedStandardDebugAndroidTest` from the Android directory for
+the rejected-foreground-service-start regression on a disposable emulator.
+The smoke script is restricted to emulator serials and uses no real account.
+These checks do not prove physical microphones/cameras/glasses or cross-network
 connectivity. Android itself can end screen projection on locking the device.
 
 ```sh
@@ -83,7 +87,9 @@ alignment is used for Android's page-size requirements. Java namespace
   pixels do not cross JavaScript/canvas. The same sender supplies local preview
   and remote peers. Stop/error/consent cancellation/reload release native
   capture, encoder, service and sender resources. Protected content cannot be
-  captured. System/app audio capture is not implemented in this preview.
+  captured. The current encoder uses a fixed 720×1280 portrait buffer;
+  landscape content is letterboxed, and negotiated resizing remains a follow-up.
+  System/app audio capture is not implemented in this preview.
 - The Meta flavor registers through Meta AI, checks SDK camera permission and
   starts one native device session. HEVC frames are decoded into explicit YUV
   planes and encoded to browser-compatible H.264 for the existing Go sender;

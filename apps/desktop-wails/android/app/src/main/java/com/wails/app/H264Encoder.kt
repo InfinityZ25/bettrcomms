@@ -18,7 +18,6 @@ class H264Encoder(private val source: Int, val width: Int, val height: Int, surf
     private var parameters = byteArrayOf()
     private var bitrate = 3_000_000
     private var lastControl = 0L
-    private var lastFrame = Long.MIN_VALUE
     val surface: Surface?
 
     init {
@@ -39,23 +38,23 @@ class H264Encoder(private val source: Int, val width: Int, val height: Int, surf
         } catch (error: Exception) { codec.release(); throw error }
     }
     fun encode(image: Image, micros: Long) {
-        if (lastFrame != Long.MIN_VALUE && micros - lastFrame < 33_333) return
-        require(image.width == width && image.height == height) { "Glasses changed video dimensions; restart video." }
+        // DAT already supplies 30 fps. A strict timestamp gate drops frames
+        // arriving a few microseconds early and can halve the delivered rate.
+        val crop = image.cropRect
+        require(crop.left % 2 == 0 && crop.top % 2 == 0 && crop.width() == width && crop.height() == height) { "Glasses changed video dimensions; restart video." }
         val input = codec.dequeueInputBuffer(0)
         if (input < 0) { drain(); return } // Drop instead of accumulating latency.
         val target = codec.getInputImage(input) ?: throw IllegalStateException("H.264 encoder has no YUV input")
-        for (plane in 0..2) {
-            val src = image.planes[plane]
-            val dst = target.planes[plane]
-            val w = if (plane == 0) width else width / 2
-            val h = if (plane == 0) height else height / 2
-            for (row in 0 until h) for (col in 0 until w) {
-                dst.buffer.put(row * dst.rowStride + col * dst.pixelStride,
-                    src.buffer.get(src.buffer.position() + row * src.rowStride + col * src.pixelStride))
+        target.use {
+            for (plane in 0..2) {
+                val src = image.planes[plane]; val dst = target.planes[plane]
+                val scale = if (plane == 0) 1 else 2
+                YuvPlane.copy(src.buffer, src.rowStride, src.pixelStride,
+                    crop.left / scale, crop.top / scale, dst.buffer, dst.rowStride,
+                    dst.pixelStride, width / scale, height / scale)
             }
         }
         codec.queueInputBuffer(input, 0, width * height * 3 / 2, micros, 0)
-        lastFrame = micros
         drain()
     }
     fun drain() {
@@ -80,10 +79,12 @@ class H264Encoder(private val source: Int, val width: Int, val height: Int, surf
             }
             if (index < 0) return
             try {
-                if (info.size <= 0 || info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) continue
+                if (info.size <= 0) continue
                 val buffer = codec.getOutputBuffer(index) ?: continue
                 buffer.position(info.offset); buffer.limit(info.offset + info.size)
                 var bytes = AnnexB.normalize(copy(buffer))
+                parameters = AnnexB.parameterSets(parameters, bytes)
+                if (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) continue
                 if (info.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME != 0) bytes = parameters + bytes
                 BetterCommsNative.encoded(source, sessionId, bytes, info.presentationTimeUs)
             } finally { codec.releaseOutputBuffer(index, false) }
@@ -91,22 +92,22 @@ class H264Encoder(private val source: Int, val width: Int, val height: Int, surf
     }
     override fun close() {
         runCatching { codec.stop() }
-        codec.release()
-        surface?.release()
+        try { codec.release() } finally { surface?.release() }
     }
     companion object {
         fun copy(buffer: ByteBuffer): ByteArray = ByteArray(buffer.remaining()).also { buffer.duplicate().get(it) }
         fun preview(image: Image): ByteArray {
-            val w = image.width; val h = image.height
+            val crop = image.cropRect
+            val w = crop.width(); val h = crop.height()
             val bytes = ByteArray(w * h * 3 / 2)
             for (plane in 0..2) {
                 val src = image.planes[plane]
-                val pw = if (plane == 0) w else w / 2
-                val ph = if (plane == 0) h else h / 2
-                for (row in 0 until ph) for (col in 0 until pw) {
-                    val out = if (plane == 0) row * w + col else w * h + row * w + col * 2 + if (plane == 1) 1 else 0
-                    bytes[out] = src.buffer.get(src.buffer.position() + row * src.rowStride + col * src.pixelStride)
-                }
+                val scale = if (plane == 0) 1 else 2
+                val target = ByteBuffer.wrap(bytes)
+                if (plane != 0) target.position(w * h + if (plane == 1) 1 else 0)
+                YuvPlane.copy(src.buffer, src.rowStride, src.pixelStride,
+                    crop.left / scale, crop.top / scale, target, w,
+                    if (plane == 0) 1 else 2, w / scale, h / scale)
             }
             return ByteArrayOutputStream().use { output ->
                 YuvImage(bytes, ImageFormat.NV21, w, h, null).compressToJpeg(Rect(0, 0, w, h), 60, output)

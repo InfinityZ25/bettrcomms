@@ -20,4 +20,30 @@ final class AnnexB {
         }
         return result.toByteArray();
     }
+    /** Retain the newest SPS/PPS even when a codec emits them separately. */
+    static byte[] parameterSets(byte[] previous, byte[] update) {
+        byte[][] sets = new byte[2][];
+        for (byte[] bytes : new byte[][]{previous, update}) {
+            for (int i = 0; i < bytes.length;) {
+                int prefix = startCode(bytes, i);
+                if (prefix == 0) { i++; continue; }
+                int nal = i + prefix, end = nal;
+                while (end < bytes.length && startCode(bytes, end) == 0) end++;
+                if (nal < end) {
+                    int type = bytes[nal] & 31;
+                    if (type == 7 || type == 8)
+                        sets[type - 7] = java.util.Arrays.copyOfRange(bytes, i, end);
+                }
+                i = end;
+            }
+        }
+        ByteArrayOutputStream result = new ByteArrayOutputStream();
+        for (byte[] set : sets) if (set != null) result.write(set, 0, set.length);
+        return result.toByteArray();
+    }
+    private static int startCode(byte[] bytes, int offset) {
+        if (offset + 2 >= bytes.length || bytes[offset] != 0 || bytes[offset + 1] != 0) return 0;
+        if (bytes[offset + 2] == 1) return 3;
+        return offset + 3 < bytes.length && bytes[offset + 2] == 0 && bytes[offset + 3] == 1 ? 4 : 0;
+    }
 }

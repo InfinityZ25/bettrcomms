@@ -14,6 +14,7 @@ async function until(check, timeout = 15000) {
   while (Date.now() < end) { const result = await check(); if (result) return result; await delay(150); }
   throw new Error('Android acceptance step timed out');
 }
+shell('shell', 'pm', 'grant', 'com.bettrcomms.android', 'android.permission.RECORD_AUDIO');
 shell('shell', 'am', 'start', '-n', 'com.bettrcomms.android/com.wails.app.MainActivity');
 const pid = await until(() => { try { return shell('shell', 'pidof', 'com.bettrcomms.android').trim(); } catch { return false; } });
 const port = Number(process.env.ANDROID_CDP_PORT ?? 19222);
@@ -48,6 +49,7 @@ try {
   assert.equal(await evaluate(`(async()=>{
     const module=await import(performance.getEntriesByType('resource').map(e=>e.name).find(n=>n.includes('wails-runtime-')));
     const runtime=Object.values(module).find(v=>v?.Call?.ByID);
+    window.bcAndroidAudio=active=>runtime.Call.ByID(0xBC170101,window.__BETTERCOMMS_DESKTOP__.pageToken,active);
     window.bcAndroidCheck=(command,args={})=>runtime.Call.ByID(0xBC170102,window.__BETTERCOMMS_DESKTOP__.pageToken,command,args);
     try { await runtime.Call.ByID(0xBC170102,'test-only-invalid-token','native_screen_active',{}); return false; } catch { return true; }
   })()`), true, 'Native binding must reject an invalid host token');
@@ -61,6 +63,7 @@ try {
     shell('shell', 'input', 'tap', String(Math.floor((+bounds[1] + +bounds[3]) / 2)), String(Math.floor((+bounds[2] + +bounds[4]) / 2)));
     return true;
   }
+  await evaluate('bcAndroidAudio(true)');
   await evaluate(`window.bcShareResult=null;window.bcShareError=null;
     window.bcAndroidCheck('native_screen_start',{owner:'emulator-acceptance'}).then(r=>window.bcShareResult=r,e=>window.bcShareError=true);true`);
   await until(() => tapText('Share one app'));
@@ -81,20 +84,34 @@ try {
     await bcAndroidCheck('native_screen_peer_answer',{...args,description:bcCheckPeer.localDescription.toJSON()});
   })()`);
   await until(() => evaluate('bcCheckVideo.videoWidth===720 && bcCheckVideo.videoHeight===1280'));
+  await evaluate("bcAndroidCheck('native_screen_cancel_pending')");
+  assert.equal((await evaluate("bcAndroidCheck('native_screen_active')")).sessionId,
+    await evaluate('bcShareResult.sessionId'), 'Cancelling a pending picker must preserve a live share');
   const before = await stats();
   shell('shell', 'input', 'keyevent', 'KEYCODE_HOME');
-  await delay(4000);
+  await delay(2000); // Let the home transition settle into a static screen.
+  const staticScreen = await stats();
+  await delay(2000);
   const background = await stats();
+  assert(background.accessUnits - staticScreen.accessUnits >= 10,
+    'A static screen must repeat frames so late viewers/keyframe requests can recover');
   assert(background.accessUnits > before.accessUnits, 'Native frames must continue after backgrounding');
-  shell('shell', 'am', 'start', '-n', 'com.bettrcomms.android/com.wails.app.MainActivity');
+  // Stop while the app is backgrounded: updating/removing the running
+  // foreground service must not try to launch a fresh background service.
   await evaluate(`(async()=>{bcCheckPeer.close();bcCheckVideo.remove();await bcAndroidCheck('native_screen_stop',{sessionId:bcShareResult.sessionId})})()`);
+  assert.equal(shell('shell', 'pidof', 'com.bettrcomms.android').trim(), pid, 'Background stop must not crash the app');
+  await delay(500);
+  assert(shell('shell', 'dumpsys', 'activity', 'services', 'com.bettrcomms.android').includes('.BetterCommsMediaService'),
+    'Stopping a screen share in the background must preserve the active call service');
+  await evaluate('bcAndroidAudio(false)');
+  shell('shell', 'am', 'start', '-n', 'com.bettrcomms.android/com.wails.app.MainActivity');
   assert.equal((await evaluate("bcAndroidCheck('native_screen_active')")).sessionId, '');
   await delay(500);
   assert(!shell('shell', 'dumpsys', 'activity', 'services', 'com.bettrcomms.android').includes('.BetterCommsMediaService'), 'Foreground service must be released');
   console.log('PASS: Android launch, viewport, CSP, authorization, projection consent, native 720x1280 receiver, background frames and stop cleanup.');
 } finally {
   if (evaluate) {
-    await evaluate(`(async()=>{window.bcCheckPeer?.close();window.bcCheckVideo?.remove();if(window.bcAndroidCheck)await bcAndroidCheck('native_screen_cancel_pending')})()`).catch(() => {});
+    await evaluate(`(async()=>{window.bcCheckPeer?.close();window.bcCheckVideo?.remove();if(window.bcAndroidCheck){if(window.bcShareResult)await bcAndroidCheck('native_screen_stop',{sessionId:bcShareResult.sessionId});else await bcAndroidCheck('native_screen_cancel_pending')}if(window.bcAndroidAudio)await bcAndroidAudio(false)})()`).catch(() => {});
   }
   socket?.close();
   shell('forward', '--remove', `tcp:${port}`);

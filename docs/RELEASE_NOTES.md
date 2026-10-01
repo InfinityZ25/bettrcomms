@@ -412,6 +412,15 @@ the Meta APK requires API 31+ and includes DAT 1.0.0 camera bindings and the
 native H.264/WebRTC sender. Screen sharing uses Android MediaProjection and
 native encoding rather than browser getDisplayMedia. CI builds both flavors.
 
+The review follow-up updates an existing foreground service rather than
+restarting it from the background, and handles Android service rejections by
+ending native capture and reporting the failure. Static screen frames repeat
+for late viewers; cancelling an unopened picker cannot stop a live share.
+Meta decoding tolerates brief backpressure, copies visible cropped YUV planes,
+and retains updated AVC parameter sets without a strict frame-time gate.
+Native peer teardown runs off Android's UI thread. The Gradle wrapper is checked
+against its official release checksum before execution.
+
 Phone camera/microphone transport still uses WebView WebRTC; system audio
 capture and production Android notification delivery are not implemented.
 Hardware, background-media and cross-network acceptance remain pending.

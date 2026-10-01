@@ -10,7 +10,7 @@ import (
 
 func shellOpen(target string) error {
 	u, err := url.Parse(target)
-	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+	if err != nil || u.Scheme != "https" || u.Host == "" {
 		return errors.New("invalid external browser address")
 	}
 	application.Mobile.OpenURL(target)

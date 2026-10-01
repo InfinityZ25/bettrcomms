@@ -46,10 +46,17 @@ class MetaCameraController(private val host: BetterCommsAndroidHost, private val
             permissionPending = true
             permissionWaiter = continuation
             continuation.invokeOnCancellation { permissionWaiter = null }
-            permissionLauncher.launch(Permission.CAMERA)
+            try { permissionLauncher.launch(Permission.CAMERA) }
+            catch (error: RuntimeException) {
+                permissionPending = false; permissionWaiter = null
+                if (continuation.isActive) continuation.resume(PermissionStatus.Denied)
+            }
         }
     }
     private var task: Job? = null
+    private var registeringOnly = false
+    private var startAfterRegistration = false
+    private var streaming = false
     private var session: DeviceSession? = null
     private var camera: Camera? = null
     @Volatile var publishing = false
@@ -70,17 +77,27 @@ class MetaCameraController(private val host: BetterCommsAndroidHost, private val
     }
     fun connect() {
         if (task != null) return
+        registeringOnly = true
         task = host.scope.launch(start = CoroutineStart.LAZY) {
-            try { register() }
+            var registered = false
+            try { register(); registered = true }
             catch (timeout: TimeoutCancellationException) { event("error", "Meta camera connection timed out. Check the glasses link in Meta AI, then try again.") }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) { event("error", error.message ?: "Meta registration failed.") }
-            finally { task = null }
+            finally {
+                task = null; registeringOnly = false
+                val requested = startAfterRegistration; startAfterRegistration = false
+                if (registered && requested) start()
+            }
         }
         task?.start()
     }
     fun start() {
-        if (task != null) return
+        if (task != null) {
+            if (registeringOnly) startAfterRegistration = true
+            event(if (streaming) "streaming" else "connecting")
+            return
+        }
         task = host.scope.launch(start = CoroutineStart.LAZY) {
             try {
                 register()
@@ -122,6 +139,7 @@ class MetaCameraController(private val host: BetterCommsAndroidHost, private val
                     }
                     stream.start().onFailure { error, _ -> throw IllegalStateException(error.description) }
                     withTimeout(45_000) { stream.state.first { it == StreamState.STREAMING } }
+                    streaming = true
                     event("streaming")
                     stream.state.first { it == StreamState.STOPPED || it == StreamState.CLOSED }
                     frames.cancelAndJoin()
@@ -141,7 +159,7 @@ class MetaCameraController(private val host: BetterCommsAndroidHost, private val
                             publishing = false
                             host.metaState(false)
                             BetterCommsNative.stopped(0)
-                            task = null
+                            task = null; streaming = false; startAfterRegistration = false
                             event("stopped")
                         }
                     }
@@ -150,7 +168,7 @@ class MetaCameraController(private val host: BetterCommsAndroidHost, private val
         }
         task?.start()
     }
-    fun stop() { task?.cancel() }
+    fun stop() { startAfterRegistration = false; task?.cancel() }
 
     // Decode the SDK's compressed HEVC to explicit Image planes, then encode
     // browser-compatible AVC. This avoids assuming a vendor's raw YUV layout.
@@ -168,16 +186,27 @@ class MetaCameraController(private val host: BetterCommsAndroidHost, private val
         }
         fun frame(frame: VideoFrame) {
             check(frame.isCompressed) { "Unsupported glasses frame format." }
-            val input = decoder.dequeueInputBuffer(10_000)
-            check(input >= 0) { "Glasses decoder could not keep up. Restart video." }
-            if (input >= 0) {
-                val buffer = checkNotNull(decoder.getInputBuffer(input))
-                val bytes = H264Encoder.copy(frame.buffer)
-                check(bytes.size <= buffer.capacity()) { "Glasses frame exceeds decoder buffer." }
-                buffer.clear(); buffer.put(bytes)
-                decoder.queueInputBuffer(input, 0, bytes.size, frame.presentationTimeUs,
-                    if (frame.isCodecConfig) MediaCodec.BUFFER_FLAG_CODEC_CONFIG else 0)
+            // Drain before retrying input: a temporary full output queue is
+            // normal backpressure, not a reason to end the glasses session.
+            // Keep this compressed access unit intact; dropping a reference
+            // frame would corrupt subsequent HEVC frames.
+            drain()
+            var input = decoder.dequeueInputBuffer(10_000)
+            val deadline = System.nanoTime() + 250_000_000L
+            while (input < 0 && System.nanoTime() < deadline) {
+                drain()
+                input = decoder.dequeueInputBuffer(5_000)
             }
+            check(input >= 0) { "Glasses decoder stalled. Restart video." }
+            val buffer = checkNotNull(decoder.getInputBuffer(input))
+            val bytes = H264Encoder.copy(frame.buffer)
+            check(bytes.size <= buffer.capacity()) { "Glasses frame exceeds decoder buffer." }
+            buffer.clear(); buffer.put(bytes)
+            decoder.queueInputBuffer(input, 0, bytes.size, frame.presentationTimeUs,
+                if (frame.isCodecConfig) MediaCodec.BUFFER_FLAG_CODEC_CONFIG else 0)
+            drain()
+        }
+        private fun drain() {
             val info = MediaCodec.BufferInfo()
             while (true) {
                 val output = decoder.dequeueOutputBuffer(info, 0)
@@ -186,13 +215,13 @@ class MetaCameraController(private val host: BetterCommsAndroidHost, private val
                 try {
                     checkNotNull(decoder.getOutputImage(output)) { "This phone's glasses decoder does not expose video frames." }.use { image ->
                         if (publishing) {
-                            if (encoder == null) encoder = H264Encoder(0, image.width, image.height, false)
+                            if (encoder == null) encoder = H264Encoder(0, image.cropRect.width(), image.cropRect.height(), false)
                             encoder!!.encode(image, info.presentationTimeUs)
                         }
                         val now = System.nanoTime() / 1_000_000
                         if (now - previewAt >= 125) {
                             previewAt = now
-                            host.emit("bc-meta-camera", JSONObject().put("kind", "frame").put("width", image.width).put("height", image.height)
+                            host.emit("bc-meta-camera", JSONObject().put("kind", "frame").put("width", image.cropRect.width()).put("height", image.cropRect.height())
                                 .put("jpeg", Base64.encodeToString(H264Encoder.preview(image), Base64.NO_WRAP)))
                         }
                     }

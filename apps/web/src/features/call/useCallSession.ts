@@ -28,6 +28,7 @@ import { useSpeakingActivity } from '@/media/useSpeakingActivity';
 import { readQuality } from '@/features/settings/MediaSettings';
 import { readConnectionMode } from '@/media/connectionMode';
 import { startIOSCallAudio, stopIOSCallAudio } from '@/desktop/iosCallAudio';
+import { readDesktopBootReport } from '@/desktop/runtime';
 import { hasDesktopCapability } from '@/desktop/capabilities';
 import { errorMessage } from '@/lib/errors';
 import { readStored, writeStored } from '@/lib/storage';
@@ -246,9 +247,16 @@ export function useCallSession({
   useEffect(() => {
     active.current = true;
     const blocked = () => setAudioBlocked(true);
+    const nativeMediaError = (event: Event) => {
+      if (readDesktopBootReport()?.platform !== 'android') return;
+      const detail = (event as CustomEvent<{ message?: unknown }>).detail;
+      if (typeof detail?.message === 'string') reportIceError.current(detail.message);
+    };
     window.addEventListener('bc-audio-blocked', blocked);
+    window.addEventListener('bc-android-media-error', nativeMediaError);
     return () => {
       window.removeEventListener('bc-audio-blocked', blocked);
+      window.removeEventListener('bc-android-media-error', nativeMediaError);
       active.current = false;
       socket.current?.close();
       engine.current?.dispose();

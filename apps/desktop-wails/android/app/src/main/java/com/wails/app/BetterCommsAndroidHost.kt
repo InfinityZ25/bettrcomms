@@ -35,7 +35,7 @@ class BetterCommsAndroidHost(private val activity: AppCompatActivity) {
     private val handler = Handler(Looper.getMainLooper())
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var webView: WebView? = null
-    private var destroyed = false
+    @Volatile private var destroyed = false
     private val permissionMutex = Mutex()
     private var permissionWaiter: CancellableContinuation<Boolean>? = null
     private var permissionPending = false
@@ -53,7 +53,24 @@ class BetterCommsAndroidHost(private val activity: AppCompatActivity) {
     private val meta = MetaCameraController(this, activity)
     private val screen = AndroidScreenCapture(this, activity)
 
+    private val serviceFailure: () -> Unit = {
+        handler.post {
+            if (!destroyed) {
+                // Clear every type before stop callbacks update the service.
+                val wasMetaActive = metaActive
+                callActive = false; metaActive = false; screenActive = false
+                screen.stop(reason = "Android could not keep screen sharing active. Return to BetterComms and try again.")
+                meta.stop()
+                stopAudio()
+                emit("bc-android-media-error", JSONObject()
+                    .put("message", "Android could not keep background media active. Return to BetterComms and try again."))
+                if (wasMetaActive) emit("bc-meta-camera", JSONObject().put("kind", "error")
+                    .put("message", "Android could not keep native media active. Return to BetterComms and try again."))
+            }
+        }
+    }
     init {
+        BetterCommsMediaService.onFailure = serviceFailure
         BetterCommsNative.attach(this, activity.filesDir.absolutePath)
         activity.onBackPressedDispatcher.addCallback(activity, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() { back() }
@@ -128,7 +145,11 @@ class BetterCommsAndroidHost(private val activity: AppCompatActivity) {
             permissionPending = true
             permissionWaiter = continuation
             continuation.invokeOnCancellation { permissionWaiter = null }
-            permissions.launch(missing.toTypedArray())
+            try { permissions.launch(missing.toTypedArray()) }
+            catch (error: RuntimeException) {
+                permissionPending = false; permissionWaiter = null
+                if (continuation.isActive) continuation.resume(false)
+            }
         }
     }
     // JNI calls this from Go threads. UI-affecting actions are serialized here.
@@ -199,6 +220,7 @@ class BetterCommsAndroidHost(private val activity: AppCompatActivity) {
         destroyed = true
         scope.cancel()
         BetterCommsMediaService.update(activity, 0)
+        if (BetterCommsMediaService.onFailure === serviceFailure) BetterCommsMediaService.onFailure = null
         BetterCommsNative.detach()
         webView = null
     }
