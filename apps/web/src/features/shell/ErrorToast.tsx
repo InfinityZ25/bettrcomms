@@ -33,7 +33,7 @@ export default function ErrorToast({
       <CircleHelp size={18} className="shrink-0" />
       <span className="min-w-0 flex-1">{message}</span>
       <button
-        className="ml-3 grid shrink-0 place-items-center rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground phone:ml-0 phone:size-10"
+        className="ml-3 grid shrink-0 place-items-center rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground phone:ml-0 phone:size-11"
         onClick={onDismiss}
         aria-label="Dismiss notification"
       >

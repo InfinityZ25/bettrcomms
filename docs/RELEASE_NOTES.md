@@ -1,5 +1,52 @@
 # BetterComms preview release notes
 
+## Unreleased — mobile navigation and conversations
+
+Messages and Calls now open full-screen mobile lists with filtering, readable
+rows and explicit back navigation. Phone navigation has four destinations:
+Home, Messages, Calls and You. Friends is available through + in Messages,
+including when the phone is held sideways; the desktop Friends rail remains.
+Home opens the home screen, and Recordings is available in the account menu
+alongside Settings. Navigation preserves the
+active call, whose compact controls sit above the page rather than covering
+the message composer.
+
+Direct messages have one mobile header, a growing one-line composer and
+explicit message menus. Reading or scrolling no longer expands message rows.
+Dates separate message history; drafts survive returning to the conversation
+list. The visible viewport bounds the interface while the keyboard is open,
+and message scrolling stays inside the thread. Dialogs, menus and controls
+respect phone safe areas and minimum touch sizes in portrait and landscape.
+
+The packaged build also preserves full-screen Friends and Settings positioning
+after CSS optimization. Dialog centering and full-screen overrides now use the
+same transform property; mixing individual translation with transform resets
+left sheets half off-screen in the optimized assets. With the local API/database
+running, `npm run test:e2e:production-mobile` builds and checks the actual
+production assets in Chromium and WebKit, including rotation and keyboard
+layout. This is separate from development-server browser tests.
+
+Phone Settings and Friends backgrounds now reach behind the status bar and
+home indicator. Safe-area spacing is applied to controls and the end of the
+scrolling content rather than leaving a separate band around the page.
+Settings uses its category selector as the phone heading, freeing the space
+previously occupied by a duplicate category title.
+
+Mobile navigation supports a right swipe from the left edge to go back and a
+left swipe from the right edge to go forward. History includes conversations,
+lists, Recordings and full-screen Settings/Friends panels; navigation does not
+restart or end the call. Vertical scrolling, editable controls, sliders,
+video gestures and the transient native screen picker keep their own gestures.
+Chromium checks use browser-dispatched touch input with a synthetic-microphone
+call. Desktop WebKit checks deliver touch sequences to the page's listeners
+from a call lobby; physical iPhone gesture acceptance remains required.
+
+Validation: web build, 285 unit tests, Chromium mobile/live-call and desktop
+conversation regressions, WebKit conversation/keyboard layout regression, and
+A/AA accessibility checks for the new conversation and list surfaces. Keyboard
+geometry is emulated in these tests; physical iPhone keyboard and interaction
+acceptance is still required before declaring the interface production-ready.
+
 ## Unreleased — signaling delivery
 
 The signaling server no longer drops a message silently when a participant's
