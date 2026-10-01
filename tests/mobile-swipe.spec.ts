@@ -80,6 +80,7 @@ test('edge swipes restore mobile screens and sheets while keeping a call connect
     await swipe(page, [398, 120], [255, 125]);
     await expect(settings).toBeVisible();
     await settings.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(settings).toBeHidden();
     // A Close button also leaves the panel in forward history.
     await swipe(page, [398, 120], [255, 125]);
     await expect(settings).toBeVisible();
