@@ -1,5 +1,20 @@
 # BetterComms preview release notes
 
+## Unreleased — call video quality rules
+
+Browser and WebView calls now state one codec order on every client (H.264
+Constrained Baseline first, then VP8), so a pair of devices no longer lands on
+a different codec depending on who connected first. A camera has its own
+bitrate ceiling sized to its picture (2.5 Mbps at 720p) instead of the
+screen-share ceiling (20 Mbps by default), keeps its capture frame rate, and
+each viewer's share of a ceiling shrinks once more than two people are
+watching. Applying these settings is serialized and retried, which removes
+intermittent errors during joins. Your own preview is no longer mirrored for a
+rear camera or the glasses. Call diagnostics now include what limited the
+encoder, the encoder or decoder in use, freezes, dropped frames, and the
+link's estimated capacity. Verified in Chromium with a synthetic camera over
+the real signaling server; hardware encoding on phones and Safari's behaviour
+were not measured.
 ## Unreleased — iPhone video sender timing
 
 Ray-Ban and iPhone screen-broadcast video is now stamped with each frame's own
