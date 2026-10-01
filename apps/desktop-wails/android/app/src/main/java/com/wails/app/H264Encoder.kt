@@ -30,6 +30,9 @@ class H264Encoder(private val source: Int, val width: Int, val height: Int, surf
             format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
             format.setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.AVCProfileBaseline)
             format.setInteger(MediaFormat.KEY_MAX_B_FRAMES, 0)
+            // A virtual display sends nothing while the screen is static, so a
+            // late viewer or a keyframe request would get no frame to use.
+            if (surfaceInput) format.setLong(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, 100_000L)
             codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
             surface = if (surfaceInput) codec.createInputSurface() else null
             codec.start()

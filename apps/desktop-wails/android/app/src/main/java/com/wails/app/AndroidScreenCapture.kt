@@ -57,6 +57,10 @@ class AndroidScreenCapture(private val host: BetterCommsAndroidHost, private val
                     catch (error: Exception) { withContext(Dispatchers.Main) { stop(expected, error.message ?: "Screen encoder stopped.") } }
                     finally { encoder?.close() }
                 }
+            } catch (timeout: TimeoutCancellationException) {
+                // A timeout is a CancellationException too; without this the
+                // share stayed "starting" with no ended event.
+                stop(expected, "Screen sharing could not start in time.")
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) { stop(expected, error.message ?: "Could not start screen capture.") }
         }
