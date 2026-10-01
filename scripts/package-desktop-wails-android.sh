@@ -27,7 +27,9 @@ esac
 [[ "${ANDROID_VERSION_CODE:-1}" =~ ^[1-9][0-9]*$ ]] || { echo 'Version code must be a positive integer.' >&2; exit 1; }
 export ANDROID_HOME="$sdk"
 export ANDROID_ARCHS="$architectures"
+(cd "$app" && go mod download github.com/wailsapp/wails/v3)
 module="$(cd "$app" && go list -m -f '{{.Dir}}' github.com/wailsapp/wails/v3)"
+[[ -d "$module/internal/commands/build_assets/android" ]] || { echo 'Pinned Wails Android template was not downloaded.' >&2; exit 1; }
 python3 "$repo/scripts/prepare-wails-android.py" "$module" "$app/android/generated"
 (cd "$repo" && npm run build)
 mkdir -p "$app/frontend/dist" "$app/bin"
