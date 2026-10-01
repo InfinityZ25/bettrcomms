@@ -11,11 +11,21 @@ async function json<T>(response: APIResponse): Promise<T> {
   if (!response.ok()) throw new Error(`API ${response.status()}: ${await response.text()}`);
   return response.json() as Promise<T>;
 }
+// The dev sign-in is rate limited and shared by the whole suite; wait out a
+// 429 rather than failing before the test reaches what it checks.
 async function login(context: BrowserContext, name: string, email: string): Promise<User> {
-  const value = await json<User | { user: User }>(await context.request.post('/api/v1/auth/dev', {
-    headers: { Origin: origin }, data: { name, email },
-  }));
-  return 'user' in value ? value.user : value;
+  const deadline = Date.now() + 65_000;
+  for (;;) {
+    const response = await context.request.post('/api/v1/auth/dev', {
+      headers: { Origin: origin }, data: { name, email },
+    });
+    if (response.status() !== 429 || Date.now() >= deadline) {
+      const value = await json<User | { user: User }>(response);
+      return 'user' in value ? value.user : value;
+    }
+    await response.dispose();
+    await new Promise((resolve) => setTimeout(resolve, 5_000));
+  }
 }
 
 async function join(page: Page, roomId: string, camera: boolean) {
@@ -87,6 +97,19 @@ test('a camera is sent at a camera-sized bitrate with one stated codec order', a
         return first?.toLowerCase() === expected.toLowerCase() ? 'app order' : `first codec ${first}, expected ${expected}`;
       })).toBe('app order');
     }
+
+    // Switching to a smaller camera mid-call recomputes the ceiling; the
+    // replacement keeps its sender and triggers no negotiation.
+    await sendPage.evaluate(async () => {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { exact: 640 }, height: { exact: 480 } } });
+      type Engine = { setLocalTrack(source: string, track: MediaStreamTrack): Promise<void> };
+      await (window as unknown as { __engine: Engine }).__engine.setLocalTrack('camera', stream.getVideoTracks()[0]);
+    });
+    await expect.poll(() => sendPage.evaluate(() => {
+      const [peer] = [...(window as unknown as { __engine: Internals }).__engine.peers.values()];
+      const encoding = peer.senders.get('camera')!.getParameters().encodings[0];
+      return { maxBitrate: encoding.maxBitrate, maxFramerate: encoding.maxFramerate };
+    })).toEqual({ maxBitrate: 1_000_000, maxFramerate: undefined });
 
     // The viewer actually receives it.
     await expect.poll(() => viewPage.evaluate(async () => {

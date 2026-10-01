@@ -191,6 +191,13 @@ export class NativeScreenTransport {
   /** Relay credentials expire; viewers added from now on use these. */
   setIceServers(iceServers: RTCIceServer[]) {
     this.iceServers = iceServers;
+    // Shares already being received repair their routes with these too.
+    // Native sending connections live in the host and keep the credentials
+    // they were created with; a share that outlives them falls back to the
+    // browser path if its route fails.
+    for (const receiver of this.receivers.values()) {
+      try { receiver.pc.setConfiguration({ ...receiver.pc.getConfiguration(), iceServers: this.nativeIceServers() }); } catch { /* keep current */ }
+    }
   }
 
   get sessionId() {

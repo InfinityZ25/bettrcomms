@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -44,6 +45,41 @@ type client struct {
 	deafened bool
 	// overflowed is set once this client's queue has been full.
 	overflowed atomic.Bool
+	// relayBudget limits what this client may send to others. It is only
+	// touched by this client's own read loop.
+	relayBudget relayBudget
+}
+
+// relayBudget is a token bucket for one connection's relayed signaling.
+//
+// A full queue disconnects its recipient so that it resynchronises, which
+// would let one room member knock another off a call by flooding them. The
+// burst covers a full call's setup (an offer or answer and a dozen or more
+// candidates per peer, for the call and each native sender); the refill is
+// far below what a healthy recipient drains, so only a sender that floods is
+// held back, and only that sender's excess is refused.
+type relayBudget struct {
+	tokens float64
+	last   time.Time
+}
+
+const (
+	relayBurst     = 400
+	relayPerSecond = 100
+)
+
+func (b *relayBudget) allow(now time.Time) bool {
+	if b.last.IsZero() {
+		b.tokens = relayBurst
+	} else {
+		b.tokens = math.Min(relayBurst, b.tokens+now.Sub(b.last).Seconds()*relayPerSecond)
+	}
+	b.last = now
+	if b.tokens < 1 {
+		return false
+	}
+	b.tokens--
+	return true
 }
 
 // signalQueue is how many messages may wait for one client. A new call sends
@@ -443,6 +479,10 @@ func (a *API) websocket(w http.ResponseWriter, r *http.Request, u User, room str
 		case "signal", "offer", "answer", "ice-candidate", "track-metadata":
 			if m.To == "" {
 				c.deliver(wire{Type: "error", Error: &apiError{Code: "missing_target", Message: "to is required"}})
+				continue
+			}
+			if !c.relayBudget.allow(time.Now()) {
+				c.deliver(wire{Type: "error", RequestID: m.RequestID, Error: &apiError{Code: "rate_limited", Message: "signaling messages are being sent too quickly"}})
 				continue
 			}
 			m.From = c.peer

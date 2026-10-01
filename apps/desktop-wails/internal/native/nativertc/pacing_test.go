@@ -237,3 +237,22 @@ func TestMediaClockSurvivesATimelineRestart(t *testing.T) {
 		t.Fatalf("stall jumped %d ticks", fourth-third)
 	}
 }
+
+func TestMediaClockIgnoresAnIsolatedMissingTimestamp(t *testing.T) {
+	var clock mediaClock
+	start := time.Unix(100, 0)
+	base := 500 * time.Millisecond
+	clock.advance(base, start)
+	// A frame without a timestamp is placed by arrival...
+	missing := clock.advance(0, start.Add(40*time.Millisecond))
+	if missing != 3600 {
+		t.Fatalf("missing timestamp stamped %d, want the 40 ms arrival gap (3600)", missing)
+	}
+	// ...and the next valid frame is measured from the last valid one.
+	// It was captured 80 ms after the last valid frame, which is where it
+	// belongs on the timeline, whatever the frame between them did.
+	next := clock.advance(base+80*time.Millisecond, start.Add(85*time.Millisecond))
+	if next != 7200 {
+		t.Fatalf("next frame stamped %d, want 7200", next)
+	}
+}

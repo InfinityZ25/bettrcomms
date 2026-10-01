@@ -370,10 +370,12 @@ func startIOSBroadcast(raw json.RawMessage) (any, error) {
 		return nil, err
 	}
 	success = true
+	// Re-arm a full grace period before this share counts as started, so an
+	// earlier timer firing in between still sees it as starting and skips it.
+	checkSignalingAfterStart()
 	b.mu.Lock()
 	b.started = true
 	b.mu.Unlock()
 	go func() { <-client.Done(); b.close() }()
-	checkSignalingAfterStart()
 	return result, nil
 }

@@ -55,7 +55,6 @@ interface Peer {
 // How long an offer may go unanswered before it is sent again, and how long
 // a connection may sit disconnected before its route is renegotiated.
 const OFFER_RETRY_MS = 5_000;
-const OFFER_RETRIES = 5;
 const DISCONNECT_RESTART_MS = 5_000;
 
 export interface MediaEngineOptions {
@@ -634,6 +633,14 @@ export class MediaEngine extends EventTarget {
       this.trackCleanup.delete(source);
     }
     if (nativeCamera && track) void this.startNativeCamera(track);
+    // A replaced track keeps its sender and needs no negotiation, so nothing
+    // else would recompute its ceiling (a camera's depends on its size). Now
+    // that localTracks names the new track, it is recognised as what it is.
+    if (track)
+      void Promise.all([...this.peers.values()].map((peer) => {
+        const sender = peer.senders.get(source);
+        return sender ? this.applyQuality(sender) : undefined;
+      }));
     try {
       await Promise.all(
         [...this.peers.keys()].map((peerId) => this.sendMetadata(peerId)),
@@ -1249,16 +1256,20 @@ export class MediaEngine extends EventTarget {
    * person again. The pending offer is still valid, and a peer that already
    * answered it simply answers again, so sending it again is safe.
    */
-  private watchOffer(peerId: string, peer: Peer, attempt = 0) {
+  //
+  // It keeps going for as long as the offer is pending and the peer is part of
+  // the call, with no attempt limit: signaling can take over a minute to
+  // reconnect, and an offer abandoned before then stays pending for good. It
+  // stops at the answer, when the peer leaves, or when the engine is disposed.
+  private watchOffer(peerId: string, peer: Peer) {
     clearTimeout(peer.offerTimer);
     peer.offerTimer = setTimeout(() => {
       if (this.disposed || this.peers.get(peerId) !== peer) return;
       const offer = peer.pc.localDescription;
       if (peer.pc.signalingState !== 'have-local-offer' || offer?.type !== 'offer') return;
-      if (attempt >= OFFER_RETRIES) return;
       void Promise.resolve(this.send({ type: 'offer', to: peerId, description: offer.toJSON() }))
         .catch(() => undefined)
-        .then(() => this.watchOffer(peerId, peer, attempt + 1));
+        .then(() => this.watchOffer(peerId, peer));
     }, OFFER_RETRY_MS);
   }
 
@@ -1272,6 +1283,9 @@ export class MediaEngine extends EventTarget {
       peer.makingOffer = true;
       this.preferVideoCodecs(peer.pc);
       await peer.pc.setLocalDescription();
+      // From here the offer is pending. Watch it before any send can fail,
+      // so a failed send (offer or metadata) is still retried.
+      this.watchOffer(peerId, peer);
       await Promise.all([...peer.senders.values()].map(sender => this.applyQuality(sender)));
       await this.send({
         type: 'offer',
@@ -1279,7 +1293,6 @@ export class MediaEngine extends EventTarget {
         description: peer.pc.localDescription!.toJSON(),
       });
       await this.sendMetadata(peerId);
-      this.watchOffer(peerId, peer);
     } catch (error) {
       this.emit('error', { peerId, operation: 'negotiate', error });
     } finally {
@@ -1477,7 +1490,12 @@ export class MediaEngine extends EventTarget {
       try {
         await this.applyQualityNow(sender);
       } catch {
-        await this.applyQualityNow(sender).catch(() => undefined);
+        // Logged rather than thrown or shown: a ceiling that could not be
+        // applied must not fail the negotiation or join that asked for it,
+        // and there is nothing the user could do about it. The next
+        // negotiation or settings change applies it again.
+        await this.applyQualityNow(sender).catch((error) =>
+          console.warn(`Could not apply ${sender.track?.kind ?? 'media'} quality limits`, error));
       }
     });
     this.qualityQueues.set(sender, run);
@@ -1545,6 +1563,17 @@ export class MediaEngine extends EventTarget {
         }
         if (scaleResolutionDownBy !== undefined && encoding.scaleResolutionDownBy !== scaleResolutionDownBy) {
           encoding.scaleResolutionDownBy = scaleResolutionDownBy;
+          changed = true;
+        }
+        // A camera sender may have been configured before it was known to be
+        // one (as a share), so remove the share's limits rather than leaving
+        // them in place.
+        if (isCamera && encoding.maxFramerate !== undefined) {
+          delete encoding.maxFramerate;
+          changed = true;
+        }
+        if (isCamera && encoding.scaleResolutionDownBy !== undefined && encoding.scaleResolutionDownBy !== 1) {
+          encoding.scaleResolutionDownBy = 1;
           changed = true;
         }
       }

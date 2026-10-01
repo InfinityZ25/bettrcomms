@@ -122,14 +122,17 @@ static void encoded(void *ref, void *source, OSStatus status, VTEncodeInfoFlags 
         CMTime stamp=CMSampleBufferGetPresentationTimeStamp(sample);
         double captured=CMTIME_IS_NUMERIC(stamp) ? CMTimeGetSeconds(stamp) : now;
         if (captured>=_lastFrame && captured-_lastFrame<1.0/30.0-0.005) return;
-        int force=0; int bitrate=bc_broadcast_encoder_control(&force);
-        if (bitrate<=0) return;
         CVPixelBufferRef source=CMSampleBufferGetImageBuffer(sample); if (!source) return;
         double w=CVPixelBufferGetWidth(source),h=CVPixelBufferGetHeight(source);
         double scale=MIN(1.0,1280.0/MAX(w,h));
         NSInteger width=MAX(2,((NSInteger)(w*scale)/2)*2),height=MAX(2,((NSInteger)(h*scale)/2)*2);
         CVPixelBufferRef pixel=[self copyUpright:source sample:sample width:width height:height];
         if (!pixel) return;
+        // Polled only once this frame will be encoded: polling takes any
+        // pending keyframe request, and a frame dropped after taking it
+        // would leave a new viewer waiting for the next scheduled keyframe.
+        int force=0; int bitrate=bc_broadcast_encoder_control(&force);
+        if (bitrate<=0) { CVPixelBufferRelease(pixel); return; }
         if (pixel!=source) { width=CVPixelBufferGetWidth(pixel); height=CVPixelBufferGetHeight(pixel); }
         if (_encoder && (_recovery.resetRequired || width!=_width || height!=_height)) {
             // Drain first so a late error from this encoder cannot land on the next.

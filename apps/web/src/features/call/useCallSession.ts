@@ -40,6 +40,10 @@ import type {
 
 /** Under half the credentials' ten-minute lifetime. */
 const ICE_REFRESH_MS = 4 * 60_000;
+/** After a failed renewal, try again this much sooner. */
+const ICE_RETRY_MS = 30_000;
+/** How long credentials from /ice remain valid. */
+const ICE_LIFETIME_MS = 10 * 60_000;
 
 type PeerFlags = { muted: boolean; deafened: boolean };
 type RecordingMetadata = { title: string; labels: Record<string, string> };
@@ -347,16 +351,46 @@ export function useCallSession({
 
   // Relay credentials last ten minutes. Renew them well inside that, so a
   // late joiner or a route repair is never handed expired ones.
+  //
+  // The first renewal runs as soon as the call is joined: the credentials used
+  // to set it up were fetched before any permission prompt, which can stay
+  // open for minutes. A failed renewal is retried after thirty seconds, and
+  // if the credentials do run out the user is told once, since relayed
+  // connections may then fail to reconnect.
+  const reportIceError = useRef(onError);
+  reportIceError.current = onError;
   useEffect(() => {
     if (!joined) return;
-    const timer = setInterval(() => {
+    let live = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let renewedAt = Date.now();
+    let warned = false;
+    const renew = () => {
       const current = engine.current;
       if (!current) return;
       void api<{ ice_servers: RTCIceServer[] }>('/ice')
-        .then((config) => { if (engine.current === current) current.setIceServers(config.ice_servers); })
-        .catch(() => undefined);
-    }, ICE_REFRESH_MS);
-    return () => clearInterval(timer);
+        .then((config) => {
+          if (!live || engine.current !== current) return;
+          current.setIceServers(config.ice_servers);
+          renewedAt = Date.now();
+          warned = false;
+          timer = setTimeout(renew, ICE_REFRESH_MS);
+        })
+        .catch((error) => {
+          if (!live) return;
+          console.warn('Could not renew relay credentials', error);
+          if (!warned && Date.now() - renewedAt >= ICE_LIFETIME_MS) {
+            warned = true;
+            reportIceError.current('Could not renew relay access. If your connection drops, rejoin the call.');
+          }
+          timer = setTimeout(renew, ICE_RETRY_MS);
+        });
+    };
+    renew();
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
   }, [joined]);
 
   useEffect(() => {

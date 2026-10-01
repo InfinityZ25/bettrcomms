@@ -514,6 +514,8 @@ test('unsupported mobile screen sharing explains the limit inside the viewport',
     await page.getByRole('button', { name: 'Share screen' }).click();
     const notice = page.getByRole('alert').filter({ hasText: 'This browser cannot share its screen' });
     await expect(notice).toBeVisible();
+    // On a phone the notice drops in from the top; measure it once settled.
+    await expect.poll(async () => (await notice.boundingBox())!.y).toBeGreaterThanOrEqual(0);
     const box = await notice.boundingBox();
     expect(box).not.toBeNull();
     expect(box!.x).toBeGreaterThanOrEqual(0);

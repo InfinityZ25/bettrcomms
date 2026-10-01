@@ -11,11 +11,21 @@ async function json<T>(response: APIResponse): Promise<T> {
   if (!response.ok()) throw new Error(`API ${response.status()}: ${await response.text()}`);
   return response.json() as Promise<T>;
 }
+// The dev sign-in is rate limited and shared by the whole suite; wait out a
+// 429 rather than failing before the test reaches what it checks.
 async function login(context: BrowserContext, name: string, email: string): Promise<User> {
-  const value = await json<User | { user: User }>(await context.request.post('/api/v1/auth/dev', {
-    headers: { Origin: origin }, data: { name, email },
-  }));
-  return 'user' in value ? value.user : value;
+  const deadline = Date.now() + 65_000;
+  for (;;) {
+    const response = await context.request.post('/api/v1/auth/dev', {
+      headers: { Origin: origin }, data: { name, email },
+    });
+    if (response.status() !== 429 || Date.now() >= deadline) {
+      const value = await json<User | { user: User }>(response);
+      return 'user' in value ? value.user : value;
+    }
+    await response.dispose();
+    await new Promise((resolve) => setTimeout(resolve, 5_000));
+  }
 }
 
 async function sharedRoom(phone: BrowserContext, friend: BrowserContext) {

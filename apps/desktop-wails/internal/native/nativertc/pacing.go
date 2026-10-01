@@ -92,7 +92,8 @@ func (c *captureClock) advance(arrivedAt time.Time) uint32 {
 // Stamping each frame with its capture time gives them the true cadence.
 type mediaClock struct {
 	started     bool
-	last        time.Duration
+	last        time.Duration // the last valid capture timestamp
+	lastTicks   float64       // its RTP time
 	lastArrival time.Time
 	ticks       float64
 }
@@ -102,22 +103,35 @@ type mediaClock struct {
 // gap is measured by arrival instead.
 const maxMediaStep = 2 * time.Second
 
+// advance stamps one frame. capturedAt <= 0 means the source gave no usable
+// timestamp for it.
 func (c *mediaClock) advance(capturedAt time.Duration, arrivedAt time.Time) uint32 {
+	valid := capturedAt > 0
 	if !c.started {
 		c.started = true
 	} else {
-		step := capturedAt - c.last
-		if step <= 0 || step > maxMediaStep {
-			step = arrivedAt.Sub(c.lastArrival)
+		byArrival := func() float64 {
+			step := arrivedAt.Sub(c.lastArrival)
 			// Timestamps must still move forward, or a receiver treats the
 			// frame as a duplicate of the one before it.
 			if step < time.Millisecond {
 				step = time.Millisecond
 			}
+			return c.ticks + math.Min(step.Seconds()*RTPClockRate, maxFrameGapTicks)
 		}
-		c.ticks += math.Min(step.Seconds()*RTPClockRate, maxFrameGapTicks)
+		next := byArrival()
+		if step := capturedAt - c.last; valid && c.last > 0 && step > 0 && step <= maxMediaStep {
+			// Measured from the last valid frame, so frames without a
+			// timestamp in between neither add their arrival gaps twice nor
+			// make the next valid frame look like a restart.
+			next = math.Max(c.lastTicks+step.Seconds()*RTPClockRate, c.ticks+RTPClockRate/1000)
+		}
+		c.ticks = next
 	}
-	c.last = capturedAt
+	if valid {
+		c.last = capturedAt
+		c.lastTicks = c.ticks
+	}
 	c.lastArrival = arrivedAt
 	return uint32(uint64(c.ticks))
 }
