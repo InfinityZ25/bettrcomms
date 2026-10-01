@@ -115,6 +115,7 @@ type Hub struct {
 
 	clockMu sync.Mutex
 	clock   *captureClock
+	media   mediaClock
 }
 
 // h264Codec builds the codec capability, whose fmtp announces exactly the
@@ -413,6 +414,13 @@ func (h *Hub) CreatePeer(ctx context.Context, peerID string, iceServers []IceSer
 	if h.adaptive != nil && peerID != PreviewPeerID {
 		h.adaptive.add(peerID)
 	}
+	// A viewer can decode nothing until its first keyframe. Ask for one as it
+	// connects, so a long keyframe interval does not become a long wait.
+	connection.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
+		if state == webrtc.PeerConnectionStateConnected {
+			h.idrRequested.Store(true)
+		}
+	})
 	go h.readRTCP(peerCtx, sender, attached, peerID)
 	go h.writeFrames(peerCtx, attached, track)
 
@@ -649,6 +657,18 @@ func (h *Hub) peer(peerID string) (*peer, error) {
 // is deliberate: blocking here would let one congested viewer stall the encoder
 // pipe, which stalls capture for everybody including the local preview.
 func (h *Hub) WriteAccessUnit(annexB []byte, arrivedAt time.Time) error {
+	return h.writeAccessUnit(annexB, arrivedAt, func() uint32 { return h.clock.advance(arrivedAt) })
+}
+
+// WriteTimedAccessUnit is WriteAccessUnit for a source that knows when each
+// frame was captured, such as a camera or a screen recorder. capturedAt is on
+// the source's own timeline; only differences between frames are used. A hub
+// must be fed through one of the two methods, not both.
+func (h *Hub) WriteTimedAccessUnit(annexB []byte, arrivedAt time.Time, capturedAt time.Duration) error {
+	return h.writeAccessUnit(annexB, arrivedAt, func() uint32 { return h.media.advance(capturedAt, arrivedAt) })
+}
+
+func (h *Hub) writeAccessUnit(annexB []byte, arrivedAt time.Time, stamp func() uint32) error {
 	if h.closed.Load() {
 		return errors.New("native screen WebRTC hub is closed")
 	}
@@ -667,7 +687,7 @@ func (h *Hub) WriteAccessUnit(annexB []byte, arrivedAt time.Time) error {
 	}
 
 	h.clockMu.Lock()
-	rtpTime := h.clock.advance(arrivedAt)
+	rtpTime := stamp()
 	h.clockMu.Unlock()
 
 	keyframe := annexBHasIDR(prepared)

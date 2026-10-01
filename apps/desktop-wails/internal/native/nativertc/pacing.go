@@ -84,6 +84,44 @@ func (c *captureClock) advance(arrivedAt time.Time) uint32 {
 	return uint32(uint64(c.ticks))
 }
 
+// mediaClock turns a source's own capture timestamps into RTP timestamps.
+//
+// Cameras and screen recorders deliver frames at an uneven, drifting rate. On
+// the fixed grid captureClock assumes, a 25 fps source falls behind until the
+// clock resynchronises with a visible jump, which receivers read as jitter.
+// Stamping each frame with its capture time gives them the true cadence.
+type mediaClock struct {
+	started     bool
+	last        time.Duration
+	lastArrival time.Time
+	ticks       float64
+}
+
+// maxMediaStep is the longest gap taken from capture timestamps on trust. A
+// larger or backwards step means the source restarted its timeline, so the
+// gap is measured by arrival instead.
+const maxMediaStep = 2 * time.Second
+
+func (c *mediaClock) advance(capturedAt time.Duration, arrivedAt time.Time) uint32 {
+	if !c.started {
+		c.started = true
+	} else {
+		step := capturedAt - c.last
+		if step <= 0 || step > maxMediaStep {
+			step = arrivedAt.Sub(c.lastArrival)
+			// Timestamps must still move forward, or a receiver treats the
+			// frame as a duplicate of the one before it.
+			if step < time.Millisecond {
+				step = time.Millisecond
+			}
+		}
+		c.ticks += math.Min(step.Seconds()*RTPClockRate, maxFrameGapTicks)
+	}
+	c.last = capturedAt
+	c.lastArrival = arrivedAt
+	return uint32(uint64(c.ticks))
+}
+
 // pacer is a leaky bucket that spreads a large access unit over time instead of
 // emitting a keyframe as one burst that shallow path buffers simply drop.
 type pacer struct {

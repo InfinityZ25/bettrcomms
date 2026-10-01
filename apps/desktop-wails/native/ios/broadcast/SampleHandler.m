@@ -6,11 +6,18 @@
 
 extern void bc_broadcast_connect(const char *path);
 extern void bc_broadcast_stop(void);
-extern void bc_broadcast_video(void *data, int size);
+extern void bc_broadcast_video(void *data, int size, long long captured_us);
 extern int bc_broadcast_encoder_control(int *force);
 
 @interface SampleHandler : RPBroadcastSampleHandler {
     VTCompressionSessionRef _encoder;
+    // Landscape apps arrive sideways in a portrait buffer. These turn them
+    // upright at the already scaled-down size, to stay inside the extension's
+    // memory limit.
+    VTPixelTransferSessionRef _scaler;
+    VTPixelRotationSessionRef _rotator;
+    CVPixelBufferRef _scaled;
+    CVPixelBufferPoolRef _uprightPool;
     NSInteger _width, _height, _bitrate;
     BOOL _stopped;
     double _lastFrame;
@@ -20,6 +27,8 @@ extern int bc_broadcast_encoder_control(int *force);
 }
 - (void)endWithMessage:(NSString *)message;
 - (void)encoded:(OSStatus)status sample:(CMSampleBufferRef)sample;
+- (CVPixelBufferRef)copyUpright:(CVPixelBufferRef)pixel sample:(CMSampleBufferRef)sample width:(NSInteger)width height:(NSInteger)height CF_RETURNS_RETAINED;
+- (void)releaseRotation;
 @end
 static __weak SampleHandler *currentHandler;
 
@@ -85,7 +94,14 @@ static void encoded(void *ref, void *source, OSStatus status, VTEncodeInfoFlags 
         if (!n || n>length-at) return;
         [annex appendBytes:prefix length:4]; [annex appendBytes:bytes+at length:n]; at+=n;
     }
-    if (at==length) { bc_broadcast_video(annex.mutableBytes,(int)annex.length); atomic_store(&_encoded,true); }
+    if (at==length) {
+        // The frame's own capture time, so viewers see the screen's real
+        // cadence rather than a fixed 30 fps grid. Zero falls back to arrival.
+        CMTime captured=CMSampleBufferGetPresentationTimeStamp(sample);
+        long long micros=CMTIME_IS_NUMERIC(captured) ? (long long)(CMTimeGetSeconds(captured)*1e6) : 0;
+        bc_broadcast_video(annex.mutableBytes,(int)annex.length,micros);
+        atomic_store(&_encoded,true);
+    }
 }
 - (void)processSampleBuffer:(CMSampleBufferRef)sample withType:(RPSampleBufferType)type {
     // The existing call owns its microphone. Never broadcast that microphone
@@ -99,13 +115,22 @@ static void encoded(void *ref, void *source, OSStatus status, VTEncodeInfoFlags 
             if (!BCVideoEncoderCanRecover(status)) { [self endWithMessage:@"Screen video encoding failed."]; return; }
             BCVideoEncoderScheduleRetry(&_recovery,now);
         } else if (atomic_exchange(&_encoded,false) && !_recovery.resetRequired) BCVideoEncoderRecovered(&_recovery);
-        if (now<_recovery.retryAt || now-_lastFrame<1.0/30.0) return;
+        if (now<_recovery.retryAt) return;
+        // Cap at 30 fps by capture time, with tolerance: frames from a 30 fps
+        // screen arrive a few milliseconds early as often as late, and an
+        // exact 1/30 s gate discarded every early one.
+        CMTime stamp=CMSampleBufferGetPresentationTimeStamp(sample);
+        double captured=CMTIME_IS_NUMERIC(stamp) ? CMTimeGetSeconds(stamp) : now;
+        if (captured>=_lastFrame && captured-_lastFrame<1.0/30.0-0.005) return;
         int force=0; int bitrate=bc_broadcast_encoder_control(&force);
         if (bitrate<=0) return;
-        CVPixelBufferRef pixel=CMSampleBufferGetImageBuffer(sample); if (!pixel) return;
-        double w=CVPixelBufferGetWidth(pixel),h=CVPixelBufferGetHeight(pixel);
+        CVPixelBufferRef source=CMSampleBufferGetImageBuffer(sample); if (!source) return;
+        double w=CVPixelBufferGetWidth(source),h=CVPixelBufferGetHeight(source);
         double scale=MIN(1.0,1280.0/MAX(w,h));
         NSInteger width=MAX(2,((NSInteger)(w*scale)/2)*2),height=MAX(2,((NSInteger)(h*scale)/2)*2);
+        CVPixelBufferRef pixel=[self copyUpright:source sample:sample width:width height:height];
+        if (!pixel) return;
+        if (pixel!=source) { width=CVPixelBufferGetWidth(pixel); height=CVPixelBufferGetHeight(pixel); }
         if (_encoder && (_recovery.resetRequired || width!=_width || height!=_height)) {
             // Drain first so a late error from this encoder cannot land on the next.
             VTCompressionSessionCompleteFrames(_encoder,kCMTimeInvalid);
@@ -119,7 +144,12 @@ static void encoded(void *ref, void *source, OSStatus status, VTEncodeInfoFlags 
                 (id)kVTCompressionPropertyKey_RealTime:@YES,
                 (id)kVTCompressionPropertyKey_AllowFrameReordering:@NO,
                 (id)kVTCompressionPropertyKey_ProfileLevel:(id)kVTProfileLevel_H264_Baseline_3_1,
-                (id)kVTCompressionPropertyKey_MaxKeyFrameInterval:@30,
+                // Viewers ask for a keyframe when they need one (and get one as
+                // they connect), so scheduled ones can be rare. One a second
+                // spent a large share of the bitrate re-sending the whole
+                // screen and pulsed text between sharp and soft.
+                (id)kVTCompressionPropertyKey_MaxKeyFrameInterval:@120,
+                (id)kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration:@4,
                 (id)kVTCompressionPropertyKey_ExpectedFrameRate:@30});
             if (!status) status=VTCompressionSessionPrepareToEncodeFrames(_encoder);
             _bitrate=0; force=1;
@@ -130,11 +160,63 @@ static void encoded(void *ref, void *source, OSStatus status, VTEncodeInfoFlags 
                 (id)kVTCompressionPropertyKey_DataRateLimits:@[@(bitrate*5/32),@1]});
             if (!rate) _bitrate=bitrate;
         }
-        if (!status) status=VTCompressionSessionEncodeFrame(_encoder,pixel,CMSampleBufferGetPresentationTimeStamp(sample),kCMTimeInvalid,
+        if (!status) status=VTCompressionSessionEncodeFrame(_encoder,pixel,stamp,kCMTimeInvalid,
             (__bridge CFDictionaryRef)(force ? @{(id)kVTEncodeFrameOptionKey_ForceKeyFrame:@YES} : nil),NULL,NULL);
-        _lastFrame=now;
+        CVPixelBufferRelease(pixel);
+        _lastFrame=captured;
         if (status) atomic_store(&_encodeError,status);
     }
+}
+// Returns the frame the encoder should see, retained. ReplayKit always
+// delivers the screen in the phone's portrait layout and tags how a landscape
+// app is turned within it. Untagged and portrait frames pass through
+// untouched; if anything here fails the frame is sent as it arrived, which is
+// what every frame did before.
+- (CVPixelBufferRef)copyUpright:(CVPixelBufferRef)pixel sample:(CMSampleBufferRef)sample width:(NSInteger)width height:(NSInteger)height {
+    CFStringRef rotation=NULL;
+    NSNumber *tag=(__bridge NSNumber *)CMGetAttachment(sample,(__bridge CFStringRef)RPVideoSampleOrientationKey,NULL);
+    switch ([tag isKindOfClass:NSNumber.class] ? tag.unsignedIntValue : kCGImagePropertyOrientationUp) {
+        case kCGImagePropertyOrientationLeft: rotation=kVTRotation_CW90; break;
+        case kCGImagePropertyOrientationRight: rotation=kVTRotation_CCW90; break;
+        case kCGImagePropertyOrientationDown: rotation=kVTRotation_180; break;
+        default: [self releaseRotation]; return CVPixelBufferRetain(pixel);
+    }
+    BOOL quarter=rotation!=kVTRotation_180;
+    size_t outWidth=quarter ? height : width, outHeight=quarter ? width : height;
+    OSType format=CVPixelBufferGetPixelFormatType(pixel);
+    NSDictionary *surface=@{(id)kCVPixelBufferIOSurfacePropertiesKey:@{}};
+    if (_scaled && (CVPixelBufferGetWidth(_scaled)!=(size_t)width || CVPixelBufferGetHeight(_scaled)!=(size_t)height ||
+                    CVPixelBufferGetPixelFormatType(_scaled)!=format)) [self releaseRotation];
+    if (!_scaled && CVPixelBufferCreate(NULL,width,height,format,(__bridge CFDictionaryRef)surface,&_scaled)) return CVPixelBufferRetain(pixel);
+    if (!_scaler && VTPixelTransferSessionCreate(NULL,&_scaler)) return CVPixelBufferRetain(pixel);
+    if (!_rotator && VTPixelRotationSessionCreate(NULL,&_rotator)) return CVPixelBufferRetain(pixel);
+    if (_uprightPool) {
+        NSDictionary *current=(__bridge NSDictionary *)CVPixelBufferPoolGetPixelBufferAttributes(_uprightPool);
+        if ([current[(id)kCVPixelBufferWidthKey] unsignedLongValue]!=outWidth) { CVPixelBufferPoolRelease(_uprightPool); _uprightPool=NULL; }
+    }
+    if (!_uprightPool) {
+        NSDictionary *attributes=@{(id)kCVPixelBufferPixelFormatTypeKey:@(format),(id)kCVPixelBufferWidthKey:@(outWidth),
+            (id)kCVPixelBufferHeightKey:@(outHeight),(id)kCVPixelBufferIOSurfacePropertiesKey:@{}};
+        if (CVPixelBufferPoolCreate(NULL,NULL,(__bridge CFDictionaryRef)attributes,&_uprightPool)) return CVPixelBufferRetain(pixel);
+    }
+    // The encoder holds a frame briefly after this returns. A small pool lets
+    // it, and the threshold keeps a stalled encoder from growing memory.
+    CVPixelBufferRef upright=NULL;
+    NSDictionary *limit=@{(id)kCVPixelBufferPoolAllocationThresholdKey:@3};
+    if (CVPixelBufferPoolCreatePixelBufferWithAuxAttributes(NULL,_uprightPool,(__bridge CFDictionaryRef)limit,&upright) || !upright) return NULL;
+    if (VTSessionSetProperty(_rotator,kVTPixelRotationPropertyKey_Rotation,rotation) ||
+        VTPixelTransferSessionTransferImage(_scaler,pixel,_scaled) ||
+        VTPixelRotationSessionRotateImage(_rotator,_scaled,upright)) {
+        CVPixelBufferRelease(upright);
+        return CVPixelBufferRetain(pixel);
+    }
+    return upright;
+}
+- (void)releaseRotation {
+    if (_scaler) { VTPixelTransferSessionInvalidate(_scaler); CFRelease(_scaler); _scaler=NULL; }
+    if (_rotator) { VTPixelRotationSessionInvalidate(_rotator); CFRelease(_rotator); _rotator=NULL; }
+    if (_scaled) { CVPixelBufferRelease(_scaled); _scaled=NULL; }
+    if (_uprightPool) { CVPixelBufferPoolRelease(_uprightPool); _uprightPool=NULL; }
 }
 - (void)broadcastPaused { /* ReplayKit supplies no frames while paused. */ }
 - (void)broadcastResumed { @synchronized(self) { _recovery.retryAt=0; _recovery.resetRequired=true; } }
@@ -144,6 +226,7 @@ static void encoded(void *ref, void *source, OSStatus status, VTEncodeInfoFlags 
         _stopped=YES;
         bc_broadcast_stop();
         if (_encoder) { VTCompressionSessionCompleteFrames(_encoder,kCMTimeInvalid); VTCompressionSessionInvalidate(_encoder); CFRelease(_encoder); _encoder=NULL; }
+        [self releaseRotation];
     }
 }
 - (void)endWithMessage:(NSString *)message {
