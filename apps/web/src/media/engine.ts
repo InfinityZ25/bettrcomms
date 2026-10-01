@@ -669,6 +669,25 @@ export class MediaEngine extends EventTarget {
     );
   }
 
+  /**
+   * Replaces the STUN/TURN servers mid-call.
+   *
+   * TURN credentials are short-lived (ten minutes). They were fetched once at
+   * join, so anyone who joined later, and any route repair after that, was
+   * handed expired credentials and could not use the relay.
+   */
+  setIceServers(iceServers: RTCIceServer[]): void {
+    if (this.disposed) return;
+    this.ice.iceServers = iceServers;
+    this.nativeScreen.setIceServers(iceServers);
+    this.nativeCamera.setIceServers(iceServers);
+    for (const peer of this.peers.values()) {
+      // Takes effect at the next ICE gathering; a browser that refuses the
+      // change keeps its working configuration.
+      try { peer.pc.setConfiguration({ ...peer.pc.getConfiguration(), iceServers }); } catch { /* keep current */ }
+    }
+  }
+
   addPeer(peerId: string): void {
     this.ensureActive();
     if (peerId === this.signaling.localPeerId || this.peers.has(peerId)) return;

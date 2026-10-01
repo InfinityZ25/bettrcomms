@@ -188,6 +188,11 @@ export class NativeScreenTransport {
     return Boolean(this.session);
   }
 
+  /** Relay credentials expire; viewers added from now on use these. */
+  setIceServers(iceServers: RTCIceServer[]) {
+    this.iceServers = iceServers;
+  }
+
   get sessionId() {
     return this.session?.sessionId;
   }
