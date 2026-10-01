@@ -1,9 +1,8 @@
 .copilot-settings h3 { margin: 0 0 12px; }
-.copilot-settings-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap: 12px; }
+.copilot-settings-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(200px,1fr)); gap: 12px; align-items: start; padding: 16px 0; }
 .copilot-settings.device-settings__card label { display: flex; flex-direction: column; gap: 8px; align-items: stretch; justify-content: flex-start; min-width: 0; }
 .copilot-settings.device-settings__card label:has(input[type=checkbox]) { flex-direction: row; align-items: center; justify-content: flex-start; }
 .copilot-settings { margin-top: 16px; }
-.copilot-settings-grid { grid-template-columns: repeat(auto-fit,minmax(200px,1fr)); align-items: start; padding: 16px 0; }
 .copilot-settings select { min-width: 0; }
 .copilot-settings-toggles { display: flex; flex-wrap: wrap; gap: 12px 24px; padding: 12px 0; border-bottom: 1px solid var(--muted); }
 .copilot-settings p { max-width: 75ch; line-height: 1.5; }
@@ -33,55 +32,53 @@
   padding: 2px 0;
 }
 .copilot-permissions summary { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.copilot-permissions summary::after { content: '⌄'; margin-left: auto; padding-left: 12px; }
+.copilot-permissions[open] summary::after { transform: rotate(180deg); }
+.copilot-permissions summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
+.copilot-permission-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 8px; margin: 12px 0; }
 .copilot-overlay-status { margin: 4px 0; padding: 6px 12px; font-size: 12px; color: var(--primary); background: var(--card); border-radius: 6px; }
-.copilot-permissions fieldset { display: flex; flex-wrap: wrap; gap: 8px 18px; border: 1px solid var(--muted); margin-bottom: 8px; }
+.copilot-permissions fieldset { display: grid; gap: 8px; min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 8px 12px 12px; }
+.copilot-permissions legend { padding: 0 4px; font-weight: 600; }
 .copilot-permissions label { justify-content: flex-start; width: auto; }
 .copilot-permissions input[type=checkbox], .copilot-settings input[type=checkbox] { width: 16px; height: 16px; flex: 0 0 16px; margin: 0; }
 .copilot-viewer { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
 .copilot-viewer:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
-/*
-  A pill, not a plank.
-
-  This was `left: 10px; right: 10px`, so it ran the full width of the shared
-  screen and sat there whether or not anybody was collaborating — a permanent
-  band across the bottom of the thing you were trying to look at. It takes the
-  width of its own buttons now, sits to the left of the zoom controls, and fades
-  back when the pointer is elsewhere.
-*/
 .copilot-toolbar {
   pointer-events: auto;
   position: absolute;
   bottom: 10px;
   left: 10px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+  display: grid;
+  gap: 3px;
   max-width: calc(100% - 20px);
-  padding: 4px;
+  padding: 6px;
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: color-mix(in oklch, var(--background) 78%, transparent);
   backdrop-filter: blur(10px);
   font-size: 11px;
-  opacity: 0.35;
+  opacity: 0.75;
   transition: opacity 140ms ease;
 }
 .stage-content-pane:hover .copilot-toolbar,
 .copilot-toolbar:focus-within,
-.copilot-toolbar:hover {
+.copilot-toolbar:hover,
+.copilot-viewer.is-marking .copilot-toolbar {
   opacity: 1;
 }
-/* Empty most of the time, and the gap would show if it still took a slot. */
 .copilot-status:empty {
   display: none;
 }
-.copilot-status {
-  max-width: 22ch;
-  overflow: hidden;
+.copilot-status, .copilot-presentation, .copilot-instruction {
+  margin: 0;
+  max-width: 60ch;
   padding-inline: 4px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
   color: var(--muted-foreground);
 }
+.copilot-presentation { font-size: 10px; }
+.copilot-tools { display: flex; flex-wrap: wrap; gap: 4px; }
 .copilot-toolbar button { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; }
 .copilot-toolbar button[aria-pressed=true] { background: var(--primary); color: var(--card); }
 .copilot-toolbar span { color: var(--foreground); }
@@ -91,8 +88,10 @@
 .copilot-frozen-marker circle, .copilot-local-marks circle { fill: color-mix(in oklch, var(--primary) 13%, transparent); stroke: var(--primary); stroke-width: 4; }
 .copilot-local-marks text { fill: var(--primary); stroke: var(--card); stroke-width: 3; paint-order: stroke; font: 24px sans-serif; }
 .copilot-pulse { animation: copilot-arrive .3s ease-out; }
+.copilot-local-marks .copilot-trail-point { fill: #ff665f; stroke: none; animation: copilot-trail-fade linear forwards; }
+@keyframes copilot-trail-fade { to { opacity: 0; } }
 @keyframes copilot-arrive { from { opacity: .2; } to { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { .copilot-pulse { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .copilot-pulse { animation: none; } .copilot-trail-point { display: none; } .copilot-toolbar { transition: none; } }
 .copilot-cards { position: absolute; z-index: 35; max-width: calc(100% - 24px); max-height: 65%; overflow: auto; display: grid; gap: 8px; pointer-events: auto; }
 .copilot-cards--top-right { top: 52px; right: 12px; }.copilot-cards--top-left { top: 52px; left: 12px; }
 .copilot-cards--bottom-right { bottom: 72px; right: 12px; }.copilot-cards--bottom-left { bottom: 72px; left: 12px; }

@@ -365,8 +365,8 @@ export default function CallStage({
                   : manualMuted
                     ? 'Microphone muted'
                     : !transmitting
-                      ? `Hold ${talkBindingLabel(talkSettings.binding)} to talk${microphone.globalStatus === 'active' ? ' · Global' : ''}`
-                      : 'Push-to-talk · Transmitting'}
+                      ? `Hold ${talkBindingLabel(talkSettings.binding)} to talk · ${microphone.globalStatus === 'active' ? 'Global' : 'Focused window only'}`
+                      : `Push-to-talk · Transmitting · ${microphone.globalStatus === 'active' ? 'Global' : 'Focused window only'}`}
             </span>
           )}
           {call.signalingDown && (

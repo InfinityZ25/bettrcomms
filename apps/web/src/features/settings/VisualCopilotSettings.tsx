@@ -43,11 +43,11 @@ export default function VisualCopilotSettings() {
   return (
     <section className="copilot-settings device-settings__card" aria-label="Visual copilot settings">
       <h3>Shared-screen reactions</h3>
-      <SettingRow as="div" title="Allow reactions" description="Let friends point something out while you share." control={<Switch aria-label="Enable visual copilot on this device" checked={settings.enabled} onCheckedChange={(enabled) => save({ enabled })} />} />
+      <SettingRow as="div" title="Allow reactions" description="Enable on both devices, then allow participants each time you share. Captures stay in the call and are not saved." control={<Switch aria-label="Enable visual copilot on this device" checked={settings.enabled} onCheckedChange={(enabled) => save({ enabled })} />} />
       <div className="copilot-settings-toggles">
         <SettingRow as="div" title="Pointers" description="Show quick signals." control={<Switch aria-label="Receive quick signals" checked={settings.showPings} onCheckedChange={(showPings) => save({ showPings })} />} />
         <SettingRow as="div" title="Marked captures" description="Show frames your friends mark up." control={<Switch aria-label="Receive marked captures" checked={settings.showCards} onCheckedChange={(showCards) => save({ showCards })} />} />
-        <SettingRow as="div" title="Motion" description="Animate incoming signals." control={<Switch aria-label="Animate signals" checked={settings.animate} onCheckedChange={(animate) => save({ animate })} />} />
+        <SettingRow as="div" title="Motion" description="Animate signals and briefly show the laser trail." control={<Switch aria-label="Animate signals" checked={settings.animate} onCheckedChange={(animate) => save({ animate })} />} />
       </div>
       <div className="copilot-settings-grid">
         <label>Signal duration<SettingsSelect ariaLabel="Signal duration" value={settings.duration} onValueChange={(value) => save({ duration: Number(value) })} options={[1, 2, 4].map((value) => ({ value, label: `${value} second${value === 1 ? '' : 's'}` }))} /></label>
@@ -58,6 +58,7 @@ export default function VisualCopilotSettings() {
         <label>Point shortcut<SettingsSelect ariaLabel="Point shortcut" value={settings.pingKey} onValueChange={(pingKey) => save({ pingKey })} options={shortcuts} /></label>
         <label>Capture shortcut<SettingsSelect ariaLabel="Freeze shortcut" value={settings.snapshotKey} onValueChange={(snapshotKey) => save({ snapshotKey })} options={shortcuts} /></label>
       </div>
+      <p>Browser signals appear inside BetterComms. Native Windows sharing can also show them over the shared source. A manually closed capture stays until you dismiss it, revoke permission or stop sharing; up to five indications are retained.</p>
       {error && <p role="alert">{error}</p>}
     </section>
   );

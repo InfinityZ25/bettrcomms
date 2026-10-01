@@ -188,8 +188,12 @@ func run() error {
 	})
 
 	controls := desktop.DefaultWindowControls()
+	windowTitle := "BetterComms (Wails)"
+	if debug {
+		windowTitle = "BetterComms (Wails dev)"
+	}
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:  "BetterComms",
+		Title:  windowTitle,
 		Width:  1440,
 		Height: 900,
 		// macOS keeps native traffic lights but extends the webview into their

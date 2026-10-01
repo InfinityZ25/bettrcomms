@@ -3,6 +3,10 @@
 
 export {
     CopilotFrame,
+    CopilotPosition,
+    CopilotStatus,
+    CopilotTrailPoint,
+    CopilotUpdate,
     Info,
     Options,
     Position,

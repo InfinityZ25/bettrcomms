@@ -36,7 +36,7 @@
 /* The shortcut button's label is a sentence while it is listening for a key,
    and the shared button keeps text on one line, so it used to run out of its
    own column. */
-.push-to-talk-settings button {
+.push-to-talk-settings > button {
   min-width: 0;
   height: auto;
   min-height: 36px;
@@ -53,6 +53,10 @@
   .push-to-talk-settings > :nth-child(2) { grid-column: 1; grid-row: 2; }
   .push-to-talk-settings > :nth-child(3) { grid-column: 2; grid-row: 1; }
   .push-to-talk-settings > :nth-child(4) { grid-column: 2; grid-row: 2; }
+  .push-to-talk-settings > :nth-child(5) { grid-column: 1; grid-row: 3; }
+  .push-to-talk-settings > :nth-child(6) { grid-column: 1; grid-row: 4; }
+  .push-to-talk-settings > :nth-child(7) { grid-column: 2; grid-row: 3; }
+  .push-to-talk-settings > :nth-child(8) { grid-column: 2; grid-row: 4; }
 }
 @media (max-width: 650px) { .push-to-talk-settings { grid-template-columns: minmax(0,1fr); } }
 .device-volume {

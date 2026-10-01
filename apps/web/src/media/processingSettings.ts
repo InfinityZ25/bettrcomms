@@ -1,4 +1,4 @@
-import { hasNativeMediaHost } from '../desktop/nativeMedia';
+import { hasDesktopCapability } from '../desktop/capabilities';
 import type { CaptureOptions, MicrophoneProcessingSettings } from './types';
 export type { MicrophoneProcessingSettings } from './types';
 
@@ -106,7 +106,7 @@ export function readProcessingSettings(): MicrophoneProcessingSettings {
   )
     engine = selected;
   else if (selected === 'nvidia' || selected === 'deepfilter')
-    engine = hasNativeMediaHost() ? selected : 'standard';
+    engine = hasDesktopCapability('nativeMicrophoneDsp') ? selected : 'standard';
   else engine = 'rnnoise';
   return { engine, ...normalizedTuning(tuning) };
 }

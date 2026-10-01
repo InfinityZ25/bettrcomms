@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { isNativePushToTalk } from '@/media/nativePushToTalk';
+import { getDesktopCapabilities } from '@/desktop/capabilities';
+import { getDesktopRuntime, readDesktopBootReport } from '@/desktop/runtime';
 import { canBindKey, readTalkSettings, talkBindingLabel, writeTalkSettings, type TalkBinding, type TalkSettings } from '@/media/pushToTalk';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -8,6 +9,9 @@ export default function PushToTalkSettings() {
   const [settings, setSettings] = useState(readTalkSettings);
   const [binding, setBinding] = useState(false);
   const [error, setError] = useState('');
+  const desktop = getDesktopRuntime() === 'wails';
+  const boot = readDesktopBootReport();
+  const globalInput = getDesktopCapabilities().globalInput;
   function save(next: TalkSettings) {
     try {
       writeTalkSettings(next);
@@ -35,6 +39,12 @@ export default function PushToTalkSettings() {
           onCheckedChange={allowWhileTyping => save({ ...settings, allowWhileTyping })} />
       </div>
       <p>Your shortcut keeps working while you type in BetterComms.</p>
+      <div className="push-to-talk-settings__toggle">
+        <span>Play open and close sounds</span>
+        <Switch aria-label="Play push-to-talk sounds" checked={settings.playCues !== false} disabled={!settings.enabled}
+          onCheckedChange={playCues => save({ ...settings, playCues })} />
+      </div>
+      <p>Short local cues play when your microphone starts and stops transmitting. Uses the sound volume in Audio settings.</p>
       <Button
         variant="secondary"
         disabled={!settings.enabled}
@@ -64,7 +74,12 @@ export default function PushToTalkSettings() {
       >
         {binding ? 'Press a key or mouse button here…' : `Shortcut: ${talkBindingLabel(settings.binding)}`}
       </Button>
-      <p role="status">{binding ? 'Press Escape to cancel.' : isNativePushToTalk() ? 'This shortcut also works while BetterComms is in the background.' : 'Keep BetterComms focused to use this shortcut.'}</p>
+      <p role="status">{binding ? 'Press Escape to cancel.' : desktop && globalInput.state === 'implemented'
+        ? 'Windows desktop: the native shortcut starts when you join a call. Check for “Global” beside the call controls before using it in another app.'
+        : desktop
+          ? 'This desktop platform currently supports the shortcut only while BetterComms is focused.'
+          : 'Browser: keep this tab focused to use the shortcut.'}</p>
+      {desktop && <p>Desktop host: Wails {boot?.hostVersion} · {boot?.platform}</p>}
       {error && <p role="alert">{error}</p>}
     </div>
   );

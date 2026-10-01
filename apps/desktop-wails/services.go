@@ -506,6 +506,15 @@ func (s *NativeMediaService) CopilotOverlayFrame(hostToken string, frame overlay
 	return s.copilot.Frame(frame, rgba)
 }
 
+// CopilotOverlaySync reconciles cached annotations, positions, and bounded
+// leases and reports whether this native source is currently visible.
+func (s *NativeMediaService) CopilotOverlaySync(hostToken string, update overlay.CopilotUpdate) (overlay.CopilotStatus, error) {
+	if err := s.authorise(hostToken); err != nil {
+		return overlay.CopilotStatus{}, err
+	}
+	return s.copilot.Sync(update)
+}
+
 // CopilotOverlayClear takes every signal off the desktop. The page calls it
 // when the marks expire, when sharing stops, and once at startup to find out
 // whether this host supports the overlay at all.
