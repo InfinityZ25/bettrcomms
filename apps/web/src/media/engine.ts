@@ -48,7 +48,15 @@ interface Peer {
   remote: Map<MediaSourceKind, RemoteTrack>;
   pendingTracks: Map<string, { track: MediaStreamTrack; streamIds: string[] }>;
   pendingCandidates: (RTCIceCandidateInit | null)[];
+  offerTimer?: ReturnType<typeof setTimeout>;
+  disconnectTimer?: ReturnType<typeof setTimeout>;
 }
+
+// How long an offer may go unanswered before it is sent again, and how long
+// a connection may sit disconnected before its route is renegotiated.
+const OFFER_RETRY_MS = 5_000;
+const OFFER_RETRIES = 5;
+const DISCONNECT_RESTART_MS = 5_000;
 
 export interface MediaEngineOptions {
   signaling: SignalingAdapter;
@@ -733,7 +741,16 @@ export class MediaEngine extends EventTarget {
     pc.onconnectionstatechange = () => {
       this.emit('peer-state', { peerId, state: pc.connectionState });
       this.updateVoiceRoute(peerId);
+      clearTimeout(peer.disconnectTimer);
       if (pc.connectionState === 'failed') pc.restartIce();
+      // Left alone, a browser waits around half a minute before declaring a
+      // disconnected route failed. A network change (Wi-Fi to cellular) rarely
+      // heals by itself, so look for a new route after a few seconds instead.
+      else if (pc.connectionState === 'disconnected')
+        peer.disconnectTimer = setTimeout(() => {
+          if (!this.disposed && this.peers.get(peerId) === peer && pc.connectionState === 'disconnected')
+            pc.restartIce();
+        }, DISCONNECT_RESTART_MS);
     };
     this.updateVoiceRoute(peerId);
     if (this.nativeScreen.active) void this.nativeScreen.addPeer(peerId);
@@ -762,6 +779,8 @@ export class MediaEngine extends EventTarget {
     void this.nativeCamera.removePeer(peerId);
     const peer = this.peers.get(peerId);
     if (!peer) return;
+    clearTimeout(peer.offerTimer);
+    clearTimeout(peer.disconnectTimer);
     peer.pc.close();
     this.peers.delete(peerId);
     this.refreshQuality();
@@ -937,6 +956,9 @@ export class MediaEngine extends EventTarget {
       const offerCollision = description.type === 'offer' && !readyForOffer;
       peer.ignoreOffer = !peer.polite && offerCollision;
       if (peer.ignoreOffer) return;
+      // An answer to an offer that was already answered: the offer had been
+      // re-sent (see watchOffer) and both replies arrived.
+      if (description.type === 'answer' && peer.pc.signalingState !== 'have-local-offer') return;
       peer.isSettingRemoteAnswerPending = description.type === 'answer';
       await peer.pc.setRemoteDescription(description);
       peer.isSettingRemoteAnswerPending = false;
@@ -1197,6 +1219,29 @@ export class MediaEngine extends EventTarget {
     this.emit('local-track', { source: 'screen', track });
   }
 
+  /**
+   * Re-sends an offer that has gone unanswered.
+   *
+   * An offer or its answer can be lost: the signaling socket was reconnecting,
+   * or the other side's queue was full. Nothing noticed, and this side stayed
+   * in have-local-offer for the rest of the call, where negotiate() returns
+   * early, so no camera, share or route change could ever be sent to that
+   * person again. The pending offer is still valid, and a peer that already
+   * answered it simply answers again, so sending it again is safe.
+   */
+  private watchOffer(peerId: string, peer: Peer, attempt = 0) {
+    clearTimeout(peer.offerTimer);
+    peer.offerTimer = setTimeout(() => {
+      if (this.disposed || this.peers.get(peerId) !== peer) return;
+      const offer = peer.pc.localDescription;
+      if (peer.pc.signalingState !== 'have-local-offer' || offer?.type !== 'offer') return;
+      if (attempt >= OFFER_RETRIES) return;
+      void Promise.resolve(this.send({ type: 'offer', to: peerId, description: offer.toJSON() }))
+        .catch(() => undefined)
+        .then(() => this.watchOffer(peerId, peer, attempt + 1));
+    }, OFFER_RETRY_MS);
+  }
+
   private async negotiate(peerId: string, peer: Peer): Promise<void> {
     // On first contact, only the deterministic impolite side offers. Both peers
     // already have their local tracks attached, so the answer remains sendrecv.
@@ -1214,6 +1259,7 @@ export class MediaEngine extends EventTarget {
         description: peer.pc.localDescription!.toJSON(),
       });
       await this.sendMetadata(peerId);
+      this.watchOffer(peerId, peer);
     } catch (error) {
       this.emit('error', { peerId, operation: 'negotiate', error });
     } finally {

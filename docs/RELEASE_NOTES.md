@@ -1,5 +1,17 @@
 # BetterComms preview release notes
 
+## Unreleased — signaling delivery
+
+The signaling server no longer drops a message silently when a participant's
+queue is full. It disconnects that participant, whose client reconnects and
+receives a fresh snapshot of the call, and the queue is larger (256 messages,
+from 32). In the client, an offer that goes unanswered is sent again after
+five seconds, so a lost offer or answer no longer leaves two people unable to
+exchange a camera, share or route change for the rest of the call; a
+connection that stays disconnected for five seconds now looks for a new route
+instead of waiting for the browser to declare it failed. Verified with unit
+tests and two-engine browser tests that discard the first offer or answer;
+not measured on real network changes.
 ## Unreleased — call video quality rules
 
 Browser and WebView calls now state one codec order on every client (H.264
