@@ -9,13 +9,18 @@ describe('push-to-talk sounds', () => {
     vi.stubGlobal('localStorage', { getItem: (key: string) => values.get(key) ?? null });
     const makeContext = vi.fn();
     let failStart = false;
+    const gains: { value: number }[] = [];
     const oscillators: { start: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn>; onended: (() => void) | null }[] = [];
     vi.stubGlobal('AudioContext', class {
       currentTime = 1;
       state = 'running';
       destination = {};
       constructor() { makeContext(); }
-      createGain() { return { gain: { value: 0, setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn() }, connect: vi.fn(), disconnect: vi.fn() }; }
+      createGain() {
+        const parameter = { value: 0, setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn() };
+        gains.push(parameter);
+        return { gain: parameter, connect: vi.fn(), disconnect: vi.fn() };
+      }
       createOscillator() {
         const oscillator = { type: '', frequency: { setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn() }, connect: vi.fn(), disconnect: vi.fn(), start: vi.fn(() => { if (failStart) throw new Error('Audio output lost'); }), stop: vi.fn(), onended: null as (() => void) | null };
         oscillators.push(oscillator);
@@ -30,7 +35,11 @@ describe('push-to-talk sounds', () => {
     expect(makeContext).not.toHaveBeenCalled();
     values.set('bc-sound-volume', '0.45');
     playPushToTalkCue(true);
+    expect(gains[0].value).toBe(0.45);
+    // Another tab updates storage without calling this tab's volume setter.
+    values.set('bc-sound-volume', '0.1');
     playPushToTalkCue(false);
+    expect(gains[0].value).toBe(0.1);
     expect(makeContext).toHaveBeenCalledOnce();
     expect(oscillators).toHaveLength(2);
     expect(oscillators.every(tone => tone.start.mock.calls.length === 1 && tone.stop.mock.calls.length === 1)).toBe(true);

@@ -178,6 +178,7 @@ export function playPushToTalkCue(open: boolean) {
   if (!soundsEnabled() || soundVolume() === 0) return;
   const ctx = audio();
   if (!ctx || !gain) return;
+  gain.gain.value = soundVolume();
   let tone: OscillatorNode | undefined;
   let envelope: GainNode | undefined;
   try {
