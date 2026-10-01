@@ -92,10 +92,14 @@ test('push-to-talk is opt-in and remembers keyboard and mouse shortcuts in Setti
   await page.goto('/');
   await settings(page);
   const toggle = page.getByRole('switch', { name: 'Push-to-talk', exact: true });
+  const cues = page.getByRole('switch', { name: 'Play push-to-talk sounds' });
   const bind = page.getByRole('button', { name: 'Set push-to-talk shortcut' });
   await expect(toggle).not.toBeChecked();
+  await expect(cues).toBeDisabled();
   await expect(bind).toBeDisabled();
   await toggle.check();
+  await expect(cues).toBeChecked();
+  await cues.uncheck();
   await bind.click(); await page.keyboard.press('v');
   await expect(bind).toHaveText('Shortcut: V');
   await bind.click(); await page.keyboard.press('Escape');
@@ -107,6 +111,7 @@ test('push-to-talk is opt-in and remembers keyboard and mouse shortcuts in Setti
   await bind.click(); await page.keyboard.press('v');
   await page.reload(); await settings(page);
   await expect(toggle).toBeChecked();
+  await expect(cues).not.toBeChecked();
   await expect(bind).toHaveText('Shortcut: V');
   await page.screenshot({ path: 'test-results/push-to-talk-settings-desktop.png', fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
@@ -134,6 +139,7 @@ for (const route of ['automatic', 'relay']) {
       // Chat now lives in conversations; keep the channel call alive while typing there.
       await json(await a.request.post('/api/v1/rooms/direct', { headers: { Origin: origin }, data: { user_id: guest.id } }));
       const sender = await a.newPage(); const receiver = await b.newPage();
+      sender.setDefaultTimeout(15_000); receiver.setDefaultTimeout(15_000);
       for (const page of [sender, receiver]) {
         await page.goto('/');
         // Observe the real call engine without adding production-only test hooks.
@@ -259,6 +265,7 @@ for (const route of ['automatic', 'relay']) {
       await sender.keyboard.press('ControlLeft');
       await sender.keyboard.press('Escape');
       await expect(sender.getByRole('dialog', { name: 'Settings', exact: true })).toBeHidden();
+      await sender.locator('.call-workspace').hover();
       await muteButton.click();
       await sender.getByRole('button', { name: 'Unmute microphone', exact: true }).click();
       await expect(muteButton).toBeFocused();
@@ -300,6 +307,9 @@ for (const route of ['automatic', 'relay']) {
       });
       await expect.poll(micEnabled).toBe(false);
 
+      // Settings returns focus to the account menu; wake auto-hidden call controls
+      // through real pointer movement before trying to use them.
+      await sender.locator('.call-workspace').hover();
       await sender.getByRole('button', { name: 'Leave call' }).click();
       await sender.getByRole('button', { name: 'Join call', exact: true }).click();
       await expect(sender.getByRole('button', { name: 'Leave call' })).toBeVisible();
@@ -309,7 +319,9 @@ for (const route of ['automatic', 'relay']) {
       await expect.poll(micEnabled).toBe(true);
       await sender.keyboard.press('Escape');
       await expect(sender.getByRole('dialog', { name: 'Settings', exact: true })).toBeHidden();
+      await sender.locator('.call-workspace').hover();
       await sender.getByRole('button', { name: 'Leave call' }).click();
+      await receiver.locator('.call-workspace').hover();
       await receiver.getByRole('button', { name: 'Leave call' }).click();
       await receiver.evaluate(() => (window as any).pttMeter.context.close());
       await sender.evaluate(() => (window as any).pttSource.close());

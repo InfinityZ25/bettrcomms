@@ -71,6 +71,147 @@ export class CopilotFrame {
     }
 }
 
+export class CopilotPosition {
+    "markId": string;
+    "corner": string;
+    "x": number;
+    "y": number;
+    "remainingMs": number;
+    "revision": number;
+    "trail"?: CopilotTrailPoint[];
+
+    /** Creates a new CopilotPosition instance. */
+    constructor($$source: Partial<CopilotPosition> = {}) {
+        if (!("markId" in $$source)) {
+            this["markId"] = "";
+        }
+        if (!("corner" in $$source)) {
+            this["corner"] = "";
+        }
+        if (!("x" in $$source)) {
+            this["x"] = 0;
+        }
+        if (!("y" in $$source)) {
+            this["y"] = 0;
+        }
+        if (!("remainingMs" in $$source)) {
+            this["remainingMs"] = 0;
+        }
+        if (!("revision" in $$source)) {
+            this["revision"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new CopilotPosition instance from a string or object.
+     */
+    static createFrom($$source: any = {}): CopilotPosition {
+        const $$createField6_0 = $$createType1;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("trail" in $$parsedSource) {
+            $$parsedSource["trail"] = $$createField6_0($$parsedSource["trail"]);
+        }
+        return new CopilotPosition($$parsedSource as Partial<CopilotPosition>);
+    }
+}
+
+/**
+ * Status describes actual source presentation, independently of delivery over
+ * the call channel. Missing identifies artwork expired by the native lease.
+ */
+export class CopilotStatus {
+    "state": string;
+    "missing": string[];
+
+    /** Creates a new CopilotStatus instance. */
+    constructor($$source: Partial<CopilotStatus> = {}) {
+        if (!("state" in $$source)) {
+            this["state"] = "";
+        }
+        if (!("missing" in $$source)) {
+            this["missing"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new CopilotStatus instance from a string or object.
+     */
+    static createFrom($$source: any = {}): CopilotStatus {
+        const $$createField1_0 = $$createType2;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("missing" in $$parsedSource) {
+            $$parsedSource["missing"] = $$createField1_0($$parsedSource["missing"]);
+        }
+        return new CopilotStatus($$parsedSource as Partial<CopilotStatus>);
+    }
+}
+
+export class CopilotTrailPoint {
+    "x": number;
+    "y": number;
+    "ageMs": number;
+
+    /** Creates a new CopilotTrailPoint instance. */
+    constructor($$source: Partial<CopilotTrailPoint> = {}) {
+        if (!("x" in $$source)) {
+            this["x"] = 0;
+        }
+        if (!("y" in $$source)) {
+            this["y"] = 0;
+        }
+        if (!("ageMs" in $$source)) {
+            this["ageMs"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new CopilotTrailPoint instance from a string or object.
+     */
+    static createFrom($$source: any = {}): CopilotTrailPoint {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new CopilotTrailPoint($$parsedSource as Partial<CopilotTrailPoint>);
+    }
+}
+
+/**
+ * CopilotUpdate reconciles the annotations for one capture. Artwork is sent
+ * once through Frame; subsequent updates contain only position and expiry.
+ */
+export class CopilotUpdate {
+    "sessionId": string;
+    "marks": CopilotPosition[];
+
+    /** Creates a new CopilotUpdate instance. */
+    constructor($$source: Partial<CopilotUpdate> = {}) {
+        if (!("sessionId" in $$source)) {
+            this["sessionId"] = "";
+        }
+        if (!("marks" in $$source)) {
+            this["marks"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new CopilotUpdate instance from a string or object.
+     */
+    static createFrom($$source: any = {}): CopilotUpdate {
+        const $$createField1_0 = $$createType4;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("marks" in $$parsedSource) {
+            $$parsedSource["marks"] = $$createField1_0($$parsedSource["marks"]);
+        }
+        return new CopilotUpdate($$parsedSource as Partial<CopilotUpdate>);
+    }
+}
+
 /**
  * Info is what the page needs to send frames the overlay will accept.
  */
@@ -221,3 +362,10 @@ export class Update {
         return new Update($$parsedSource as Partial<Update>);
     }
 }
+
+// Private type creation functions
+const $$createType0 = CopilotTrailPoint.createFrom;
+const $$createType1 = $Create.Array($$createType0);
+const $$createType2 = $Create.Array($Create.Any);
+const $$createType3 = CopilotPosition.createFrom;
+const $$createType4 = $Create.Array($$createType3);

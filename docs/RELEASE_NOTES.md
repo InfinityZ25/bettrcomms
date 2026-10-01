@@ -1,5 +1,39 @@
 # BetterComms preview release notes
 
+## Unreleased — visual copilot reliability
+
+Sharing now opens the participant permission panel, and viewers see whether
+indications appear inside BetterComms, over a native Windows source, or are
+temporarily hidden/unavailable. Native overlays belong to the active call and
+survive navigation to Home, Messages and other screens. Stopping a share,
+revoking permission and leaving the call remove its indications.
+
+Laser movement uses a separate unordered channel with no retransmissions,
+eight updates per second and a bounded 450 ms fading trail. Points, captures
+and permissions keep the reliable channel. Busy connections drop stale
+movement rather than accumulating it. Older clients can still use points and
+captures; the laser requires support on both ends.
+
+Windows overlays cache artwork and reconcile small position/expiry updates.
+They hide while the shared application is not in front and recover after a
+temporary source loss. Capture overlays remain excluded from screen capture.
+Idle sharing has no overlay polling; active indications renew a bounded host
+lease. Corrupt captures are discarded individually. Frozen frames expire
+after 60 seconds, and canceling preparation prevents a late send. Manual
+captures stay until dismissed/revoked, with at most five retained indications.
+
+Validation includes web build/unit tests, real local API/database browser
+flows and Windows overlay/service tests. These do not establish macOS external
+overlays or cross-network acceptance. The unchanged Windows real-recording
+acceptance test still intermittently fails to receive a decodable IDR within
+its four-second recording window on the development machine, including with
+an animated source. Native recording acceptance remains open.
+See [Visual copilot](VISUAL_COPILOT.md) for behavior and limits.
+
+## Unreleased — push-to-talk cues
+
+Push-to-talk now plays short, local opening and closing tones when the call microphone actually starts and stops transmitting, including with the Windows global shortcut. The cues can be disabled in Push-to-talk settings and follow the app-wide Sounds switch and Sound volume. Joining and leaving a call do not trigger these cues.
+
 ## Unreleased — iPhone background media
 
 The experimental iPhone build now includes a ReplayKit Broadcast Upload

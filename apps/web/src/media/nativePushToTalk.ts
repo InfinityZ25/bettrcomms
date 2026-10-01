@@ -1,10 +1,11 @@
-import { hasNativeMediaHost, nativeInputCapabilities, startNativeInput, heartbeatNativeInput, stopNativeInput, onNativeInput } from '../desktop/nativeMedia';
+import { nativeInputCapabilities, startNativeInput, heartbeatNativeInput, stopNativeInput, onNativeInput } from '../desktop/nativeMedia';
+import { hasDesktopCapability } from '../desktop/capabilities';
 import type { TalkBinding } from './pushToTalk';
 
 export type GlobalInputStatus = 'foreground' | 'connecting' | 'active' | 'unavailable';
 interface Snapshot { sessionId: string; sequence: number; pressed: boolean; healthy: boolean; focused: boolean }
 
-export function isNativePushToTalk(): boolean { return hasNativeMediaHost(); }
+export function isNativePushToTalk(): boolean { return hasDesktopCapability('globalInput'); }
 
 /** One native registration per call. Never forwards unselected input or text. */
 export class NativePushToTalk {
@@ -46,7 +47,8 @@ export class NativePushToTalk {
       this.pending = undefined;
       if (!this.disposed) this.timer = setInterval(() => void this.heartbeat(), 1000);
     } catch (error) {
-      this.fail(typeof error === 'string' ? error : 'Global push-to-talk is unavailable. Update the desktop app and rejoin the call.');
+      const detail = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+      this.fail(detail || 'Global push-to-talk is unavailable. Update the desktop app and rejoin the call.');
     }
   }
 

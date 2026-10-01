@@ -8,6 +8,7 @@ import {
 import type { CallParticipant, Room, User } from '@/api';
 import { useCallSession } from './useCallSession';
 import { RemoteAudio } from './PeerAudio';
+import { CopilotNativeOverlay } from './CopilotNativeOverlay';
 import {
   EMPTY_CALL_PRESENCE,
   type CallPresence,
@@ -125,6 +126,7 @@ export function CallSessionProvider({
     <CallSessionContext.Provider
       value={{ ...session, callRoom, room, callPresence, presenceKnown, setAudibleShareIds }}
     >
+      {session.joined && session.engine && <CopilotNativeOverlay copilot={session.engine.copilot} names={session.names} />}
       {session.remote
         .filter((track) => track.track.kind === 'audio' && (
           track.source === 'microphone' ||

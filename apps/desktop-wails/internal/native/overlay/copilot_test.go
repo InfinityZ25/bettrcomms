@@ -1,10 +1,12 @@
 package overlay
 
 import (
+	"bytes"
 	"errors"
 	"math"
 	"strings"
 	"testing"
+	"time"
 )
 
 // A monitor to the left of the primary one has a negative origin. Mapping a
@@ -200,5 +202,110 @@ func TestAManagerWithNoCaptureRefusesSignals(t *testing.T) {
 
 	if err := manager.Frame(validFrame(), make([]byte, 40*40*4)); err == nil {
 		t.Error("a signal was accepted with no way to measure the share")
+	}
+}
+
+func validUpdate() CopilotUpdate {
+	return CopilotUpdate{SessionID: "session-1", Marks: []CopilotPosition{{MarkID: "mark-1", Corner: CopilotPoint, X: 0.5, Y: 0.5, RemainingMS: 1000, Revision: 1}}}
+}
+
+func TestSyncValidatesTheWholeBatchBeforeTouchingTheSource(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		change func(*CopilotUpdate)
+	}{
+		{"no session", func(u *CopilotUpdate) { u.SessionID = "" }},
+		{"overlong session", func(u *CopilotUpdate) { u.SessionID = strings.Repeat("s", 129) }},
+		{"duplicate marks", func(u *CopilotUpdate) { u.Marks = append(u.Marks, u.Marks[0]) }},
+		{"too many marks", func(u *CopilotUpdate) { u.Marks = make([]CopilotPosition, 6) }},
+		{"invalid second mark", func(u *CopilotUpdate) { u.Marks = append(u.Marks, CopilotPosition{MarkID: "../bad"}) }},
+		{"expired lifetime", func(u *CopilotUpdate) { u.Marks[0].RemainingMS = 0 }},
+		{"unbounded lifetime", func(u *CopilotUpdate) { u.Marks[0].RemainingMS = 60_001 }},
+		{"no revision", func(u *CopilotUpdate) { u.Marks[0].Revision = 0 }},
+		{"unsafe revision", func(u *CopilotUpdate) { u.Marks[0].Revision = 9_007_199_254_740_992 }},
+		{"not finite", func(u *CopilotUpdate) { u.Marks[0].X = math.NaN() }},
+		{"unknown anchor", func(u *CopilotUpdate) { u.Marks[0].Corner = "elsewhere" }},
+		{"too many trail points", func(u *CopilotUpdate) { u.Marks[0].Trail = make([]CopilotTrailPoint, 7) }},
+		{"old trail point", func(u *CopilotUpdate) { u.Marks[0].Trail = []CopilotTrailPoint{{X: 0.5, Y: 0.5, AgeMS: 451}} }},
+		{"outside trail point", func(u *CopilotUpdate) { u.Marks[0].Trail = []CopilotTrailPoint{{X: -0.1, Y: 0.5}} }},
+		{"trail on card", func(u *CopilotUpdate) {
+			u.Marks[0].Corner = "top-right"
+			u.Marks[0].Trail = []CopilotTrailPoint{{X: 0.5, Y: 0.5}}
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			manager := NewCopilotManager(func(string, bool) (Geometry, error) {
+				t.Error("invalid update measured the source")
+				return Geometry{}, nil
+			})
+			update := validUpdate()
+			test.change(&update)
+			if _, err := manager.Sync(update); err == nil {
+				t.Fatal("invalid update accepted")
+			}
+		})
+	}
+}
+
+func TestSyncReportsMissingArtworkAndCanProbeAnEmptySource(t *testing.T) {
+	manager := NewCopilotManager(func(string, bool) (Geometry, error) { return Geometry{Width: 1920, Height: 1080}, nil })
+	status, err := manager.Sync(validUpdate())
+	if err != nil || status.State != "visible" || len(status.Missing) != 1 || status.Missing[0] != "mark-1" {
+		t.Fatalf("missing artwork: %+v, %v", status, err)
+	}
+	if manager.watching || manager.Count() != 0 {
+		t.Fatal("a missing sprite started the native watcher")
+	}
+	status, err = manager.Sync(CopilotUpdate{SessionID: "session-1"})
+	if err != nil || status.State != "visible" || len(status.Missing) != 0 {
+		t.Fatalf("empty probe: %+v, %v", status, err)
+	}
+
+	manager.geometry = func(string, bool) (Geometry, error) { return Geometry{}, errors.New("ended") }
+	status, err = manager.Sync(validUpdate())
+	if err != nil || status.State != "unavailable" {
+		t.Fatalf("ended source: %+v, %v", status, err)
+	}
+	manager.geometry = func(_ string, requireForeground bool) (Geometry, error) {
+		if requireForeground {
+			return Geometry{}, errors.New("covered")
+		}
+		return Geometry{Width: 1920, Height: 1080}, nil
+	}
+	status, err = manager.Sync(CopilotUpdate{SessionID: "session-1"})
+	if err != nil || status.State != "hidden" {
+		t.Fatalf("hidden source: %+v, %v", status, err)
+	}
+	status, err = NewCopilotManager(nil).Sync(validUpdate())
+	if err != nil || status.State != "unavailable" {
+		t.Fatalf("unsupported host: %+v, %v", status, err)
+	}
+}
+
+func TestLaserTrailIsBoundedFadesAndPreservesCachedArtwork(t *testing.T) {
+	art := make([]byte, 20*20*4)
+	geometry := Geometry{Width: 1000, Height: 1000}
+	points := []CopilotTrailPoint{{X: 0.495, Y: 0.5, AgeMS: 10}}
+	bright, live := copilotTrailFrame(art, 20, 20, geometry, 0.5, 0.5, points, 0)
+	if !live || bytes.Equal(bright, art) || !bytes.Equal(art, make([]byte, len(art))) {
+		t.Fatal("the trail failed to draw separately from cached artwork")
+	}
+	faded, live := copilotTrailFrame(art, 20, 20, geometry, 0.5, 0.5, points, 300*time.Millisecond)
+	if !live {
+		t.Fatal("a young trail disappeared")
+	}
+	brightAlpha, fadedAlpha := 0, 0
+	for index := 3; index < len(art); index += 4 {
+		brightAlpha += int(bright[index])
+		fadedAlpha += int(faded[index])
+	}
+	if fadedAlpha >= brightAlpha {
+		t.Fatal("the trail did not fade")
+	}
+	if frame, live := copilotTrailFrame(art, 20, 20, geometry, 0.5, 0.5, points, copilotTrailLifetime); live || frame != nil {
+		t.Fatal("an expired trail still allocated a frame")
+	}
+	if frame, live := copilotTrailFrame(art, 20, 20, geometry, 0.5, 0.5, []CopilotTrailPoint{{X: 0.1, Y: 0.1}}, 0); live || frame != nil {
+		t.Fatal("a trail outside the sprite allocated or painted outside it")
 	}
 }

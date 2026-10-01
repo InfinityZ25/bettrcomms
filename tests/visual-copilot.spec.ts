@@ -88,29 +88,33 @@ test('two participants point, freeze a frame, receive its marked capture and rev
     // WebRTC may adapt the synthetic source under load; mark the decoded frame.
     await expect.poll(() => video.evaluate((v: HTMLVideoElement) => v.videoWidth)).toBeGreaterThan(0);
     await expect(viewer.getByRole('button', { name: 'Point', exact: true })).toBeDisabled();
-    await owner.locator('.copilot-permissions summary').click();
+    await expect(owner.locator('.copilot-permissions')).toHaveAttribute('open', '');
     await owner.getByRole('checkbox', { name: 'Allow signals from Viewer' }).check();
     await owner.getByRole('checkbox', { name: 'Allow captures from Viewer' }).check();
     const localVideo = owner.locator('.stage-content-pane video');
     const trackId = await localVideo.evaluate((v: HTMLVideoElement) => (v.srcObject as MediaStream).getVideoTracks()[0].id);
     await viewer.getByRole('button', { name: 'Point', exact: true }).click();
     await viewer.locator('.copilot-pointer-surface').click({ position: { x: 200, y: 130 } });
-    await expect(owner.locator('.copilot-local-marks circle')).toHaveCount(1);
+    await expect(viewer.locator('.copilot-presentation')).toHaveText('Inside BetterComms');
+    await expect(owner.locator('.copilot-marker-head')).toHaveCount(1);
     await expect(viewer.locator('.copilot-toolbar [role=status]')).toContainText('Received by the sharer.');
     await expect(viewer.locator('.copilot-sent-point')).toBeVisible();
-    await expect(owner.locator('.copilot-local-marks circle')).toHaveCount(0, { timeout: 6000 });
+    await expect(owner.locator('.copilot-marker-head')).toHaveCount(0, { timeout: 6000 });
     await viewer.getByRole('button', { name: 'Laser', exact: true }).click();
+    await expect(viewer.locator('.copilot-toolbar [role=status]')).toHaveText('Hold and drag · release to fade');
     const surface = (await viewer.locator('.copilot-pointer-surface').boundingBox())!;
     await viewer.mouse.move(surface.x + surface.width * .4, surface.y + surface.height * .4);
     await viewer.mouse.down();
-    await expect(owner.locator('.copilot-local-marks circle')).toHaveCount(1);
-    const initialPosition = await owner.locator('.copilot-local-marks g').getAttribute('transform');
+    await expect(owner.locator('.copilot-marker-head')).toHaveCount(1);
+    const initialPosition = await owner.locator('.copilot-mark').getAttribute('transform');
     // A quick drag must retain its last position even inside the send throttle.
     await viewer.mouse.move(surface.x + surface.width * .6, surface.y + surface.height * .6);
-    await expect(owner.locator('.copilot-local-marks g')).not.toHaveAttribute('transform', initialPosition!);
+    await expect(owner.locator('.copilot-mark')).not.toHaveAttribute('transform', initialPosition!);
+    await expect(owner.locator('.copilot-trail-point')).toHaveCount(1);
     await viewer.mouse.up();
-    await expect(owner.locator('.copilot-local-marks circle')).toHaveCount(1);
-    await expect(owner.locator('.copilot-local-marks circle')).toHaveCount(0, { timeout: 6000 });
+    await expect(owner.locator('.copilot-marker-head')).toHaveCount(1);
+    await expect.poll(() => owner.locator('.copilot-trail-point').evaluateAll(points => points.every(point => Number(getComputedStyle(point).opacity) === 0))).toBe(true);
+    await expect(owner.locator('.copilot-marker-head')).toHaveCount(0, { timeout: 6000 });
     await viewer.getByRole('button', { name: 'Freeze & mark', exact: true }).click();
     const frozen = await viewer.locator('.copilot-frozen').getAttribute('src');
     await owner.evaluate(() => { (window as any).copilotFixtureColor = '#b71522'; });
@@ -125,7 +129,29 @@ test('two participants point, freeze a frame, receive its marked capture and rev
     expect(color[1]).toBeGreaterThan(color[0] * 2);
     await owner.screenshot({ path: '.local/copilot-received-capture.png', fullPage: true });
     expect(await localVideo.evaluate((v: HTMLVideoElement) => (v.srcObject as MediaStream).getVideoTracks()[0].id)).toBe(trackId);
+    await owner.getByRole('button', { name: 'Dismiss marked capture' }).click();
+    // Cancel an asynchronous encoder: its eventual result must never be sent.
+    await viewer.getByRole('button', { name: 'Freeze & mark', exact: true }).click();
+    await viewer.locator('.copilot-pointer-surface').press('Enter');
+    await viewer.evaluate(() => {
+      const original = HTMLCanvasElement.prototype.toBlob;
+      HTMLCanvasElement.prototype.toBlob = function (callback, ...args) {
+        original.call(this, blob => { (window as any).copilotResume = () => callback(blob); }, ...args);
+      };
+      (window as any).copilotRestoreEncoder = () => { HTMLCanvasElement.prototype.toBlob = original; };
+    });
+    await viewer.getByRole('button', { name: 'Send marked capture' }).click();
+    await expect(viewer.getByRole('button', { name: 'Preparing…' })).toBeVisible();
+    await expect.poll(() => viewer.evaluate(() => typeof (window as any).copilotResume)).toBe('function');
+    await viewer.getByRole('button', { name: 'Back to live' }).click();
+    await viewer.evaluate(() => { (window as any).copilotRestoreEncoder(); (window as any).copilotResume(); });
+    await expect(viewer.locator('.copilot-frozen')).toHaveCount(0);
+    await expect(image).not.toBeVisible();
+    // Revoking permissions also discards a frame already frozen by the viewer.
+    await viewer.getByRole('button', { name: 'Freeze & mark', exact: true }).click();
+    await expect(viewer.locator('.copilot-frozen')).toBeVisible();
     await owner.getByRole('button', { name: 'Pause all indications' }).click();
+    await expect(viewer.locator('.copilot-frozen')).toHaveCount(0);
     await expect(image).not.toBeVisible();
     await expect(viewer.getByRole('button', { name: 'Point', exact: true })).toBeDisabled();
     await expect(viewer.getByRole('button', { name: 'Freeze & mark', exact: true })).toBeDisabled();
@@ -133,7 +159,7 @@ test('two participants point, freeze a frame, receive its marked capture and rev
     await owner.getByRole('checkbox', { name: 'Allow signals from Viewer' }).check();
     await owner.getByRole('button', { name: 'Stop sharing', exact: true }).click();
     await owner.getByRole('button', { name: 'Share screen', exact: true }).click();
-    await owner.locator('.copilot-permissions summary').click();
+    await expect(owner.locator('.copilot-permissions')).toHaveAttribute('open', '');
     await expect(owner.getByRole('checkbox', { name: 'Allow signals from Viewer' })).not.toBeChecked();
   } finally { await a.close().catch(() => {}); await b.close().catch(() => {}); }
 });

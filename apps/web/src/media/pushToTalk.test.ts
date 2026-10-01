@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { CallMicrophone, readTalkSettings, writeTalkSettings } from './pushToTalk';
+import { playPushToTalkCue } from './sounds';
+
+vi.mock('./sounds', () => ({ playPushToTalkCue: vi.fn() }));
 
 describe('call microphone input gate', () => {
   let input: CallMicrophone;
@@ -7,6 +10,7 @@ describe('call microphone input gate', () => {
   let unsubscribe: () => void;
   const key = (type: string, code = 'KeyV', extra = {}) => window.dispatchEvent(Object.assign(new Event(type, { cancelable: true }), { code, repeat: false, ...extra }));
   beforeEach(() => {
+    vi.mocked(playPushToTalkCue).mockClear();
     vi.stubGlobal('window', new EventTarget());
     vi.stubGlobal('document', Object.assign(new EventTarget(), { hidden: false }));
     vi.stubGlobal('Element', class {});
@@ -41,6 +45,33 @@ describe('call microphone input gate', () => {
     expect(enabled).toHaveBeenLastCalledWith(false);
     key('keydown'); expect(enabled).toHaveBeenLastCalledWith(true);
     key('keyup'); expect(enabled).toHaveBeenLastCalledWith(false);
+  });
+  it('sounds only on real transmission changes and respects the cue preference', () => {
+    enablePTT(); input.start();
+    expect(playPushToTalkCue).not.toHaveBeenCalled();
+    key('keydown'); key('keydown');
+    expect(playPushToTalkCue).toHaveBeenCalledExactlyOnceWith(true);
+    key('keyup'); key('keyup');
+    expect(playPushToTalkCue).toHaveBeenNthCalledWith(2, false);
+    key('keydown'); input.toggleMute();
+    expect(playPushToTalkCue).toHaveBeenNthCalledWith(3, true);
+    expect(playPushToTalkCue).toHaveBeenNthCalledWith(4, false);
+    input.stop();
+    expect(playPushToTalkCue).toHaveBeenCalledTimes(4);
+    writeTalkSettings({ enabled: true, binding: { kind: 'keyboard', code: 'KeyV' }, playCues: false });
+    expect(readTalkSettings().playCues).toBe(false);
+    input.start(); key('keydown'); key('keyup');
+    expect(playPushToTalkCue).toHaveBeenCalledTimes(4);
+  });
+  it('changing only cues keeps the held shortcut and microphone open', () => {
+    enablePTT(); input.start(); key('keydown');
+    vi.mocked(playPushToTalkCue).mockClear();
+    writeTalkSettings({ enabled: true, binding: { kind: 'keyboard', code: 'KeyV' }, playCues: false });
+    expect(input.getSnapshot()).toMatchObject({ held: true, transmitting: true });
+    expect(playPushToTalkCue).not.toHaveBeenCalled();
+    key('keyup');
+    expect(input.getSnapshot().transmitting).toBe(false);
+    expect(playPushToTalkCue).not.toHaveBeenCalled();
   });
   it('keeps push-to-talk waiting separate from manual mute', () => {
     enablePTT(); input.start();
