@@ -260,10 +260,12 @@ export default function FriendsPanel({
       )}
       {friends.map((f) => (
         <div
-          className="flex items-center justify-between gap-2.5 border-b py-2 text-xs"
+          // On a phone the name takes the full width and its actions wrap
+          // below it, instead of squeezing the name into a column.
+          className="flex items-center justify-between gap-2.5 border-b py-2 text-xs phone:flex-wrap phone:justify-start phone:gap-y-1.5"
           key={f.id}
         >
-          <span className="min-w-0 flex-1">
+          <span className="min-w-0 flex-1 phone:basis-full">
             <strong className="block">{f.name}</strong>
             <small className="mt-1 block [overflow-wrap:anywhere] text-[0.7rem] text-muted-foreground">
               {(() => {

@@ -33,8 +33,10 @@ import { useIsMobile } from '@/hooks/use-mobile';
 
 // Keep the desktop status elements as direct footer children: its grid and
 // fullscreen rules depend on that structure. Phones need their own status row.
-function CallStatusRow({ phone, children }: { phone: boolean; children: ReactNode }) {
-  return phone ? <div className="phone-call-status">{children}</div> : <>{children}</>;
+function CallStatusRow({ phone, text, children }: { phone: boolean; text: boolean; children: ReactNode }) {
+  // With only the connection icon to show, the row joins the controls rather
+  // than spending a line of a phone's height on one small icon.
+  return phone ? <div className="phone-call-status" data-text={text}>{children}</div> : <>{children}</>;
 }
 
 export type { CallPresence, NativeShareActions } from './callTypes';
@@ -350,7 +352,7 @@ export default function CallStage({
         />
       </div>
       <div className="call-footer">
-        <CallStatusRow phone={phone}>
+        <CallStatusRow phone={phone} text={talkSettings.enabled || call.signalingDown}>
           {talkSettings.enabled && (
             <span
               className="push-to-talk-status"

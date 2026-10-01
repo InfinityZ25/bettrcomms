@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Cable, Headphones, LogOut, Mic, MonitorUp, SlidersHorizontal, SunMoon } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent,
@@ -36,7 +37,16 @@ export function SettingsDialog({ open, onOpenChange, user, noise, onNoiseChange,
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="settings-dialog h-[min(760px,calc(100dvh-2rem))] overflow-hidden p-0 sm:max-w-[min(1040px,calc(100vw-2rem))]" showCloseButton>
+      <DialogContent
+        className={cn(
+          'settings-dialog h-[min(760px,calc(100dvh-2rem))] overflow-hidden p-0 sm:max-w-[min(1040px,calc(100vw-2rem))]',
+          // A phone gets a full-screen sheet, like iOS Settings, not a card
+          // floating with a margin on a screen that has none to spare.
+          // All four safe areas: held sideways, the notch sits at a side edge.
+          'phone:inset-0 phone:h-dvh phone:max-w-none phone:translate-x-0 phone:translate-y-0 phone:rounded-none phone:pt-[env(safe-area-inset-top)] phone:pr-[env(safe-area-inset-right)] phone:pb-[env(safe-area-inset-bottom)] phone:pl-[env(safe-area-inset-left)] phone:ring-0 phone:sm:max-w-none phone:[&>[data-slot=dialog-close]]:top-[calc(env(safe-area-inset-top)+1rem)] phone:[&>[data-slot=dialog-close]]:right-[calc(env(safe-area-inset-right)+1rem)]',
+        )}
+        showCloseButton
+      >
         <DialogTitle className="sr-only">Settings</DialogTitle>
         <DialogDescription className="sr-only">Adjust BetterComms preferences.</DialogDescription>
         <SidebarProvider className="min-h-0 items-stretch [--sidebar-width:15rem]">

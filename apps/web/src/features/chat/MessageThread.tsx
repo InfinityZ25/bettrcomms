@@ -5,7 +5,7 @@ import {
   useSyncExternalStore,
   type FormEvent,
 } from 'react';
-import { ArrowDown, ChevronLeft, Search } from 'lucide-react';
+import { ArrowDown, CheckCheck, ChevronLeft, Search } from 'lucide-react';
 import type { Message, User } from '@/api';
 import { api, uploadMessageAttachment } from '@/api';
 import MessageItem from './MessageItem';
@@ -228,10 +228,11 @@ export default function MessageThread({
             <ChevronLeft size={20} />
           </Button>
         )}
-        <span className="min-w-0 flex-1 truncate">{label}</span>
+        <span className="min-w-0 flex-1 truncate phone:text-sm phone:font-semibold">{label}</span>
         <Button
           variant="ghost"
           size="icon-sm"
+          className="phone:size-10"
           aria-label="Search this conversation"
           onClick={() => openMessageSearch(roomId)}
         >
@@ -240,6 +241,10 @@ export default function MessageThread({
         <Button
           variant="ghost"
           size="sm"
+          // A phone header has room for the conversation's name or this label,
+          // not both; the icon keeps the same accessible name.
+          className="phone:size-10 phone:px-0"
+          aria-label="Mark as read"
           onClick={() => {
             const last = chat.messages.at(-1);
             if (last)
@@ -252,7 +257,8 @@ export default function MessageThread({
               );
           }}
         >
-          Mark as read
+          <CheckCheck className="hidden phone:block" size={18} />
+          <span className="phone:hidden">Mark as read</span>
         </Button>
       </div>
       <div
