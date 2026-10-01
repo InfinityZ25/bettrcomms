@@ -26,8 +26,8 @@ import {
 import { useSpeakingActivity } from '@/media/useSpeakingActivity';
 import { readQuality } from '@/features/settings/MediaSettings';
 import { readConnectionMode } from '@/media/connectionMode';
-import { hasNativeMediaHost } from '@/desktop/nativeMedia';
 import { startIOSCallAudio, stopIOSCallAudio } from '@/desktop/iosCallAudio';
+import { hasDesktopCapability } from '@/desktop/capabilities';
 import { errorMessage } from '@/lib/errors';
 import { readStored, writeStored } from '@/lib/storage';
 import { createCallPeerId } from './callPeerId';
@@ -673,7 +673,9 @@ export function useCallSession({
       });
       return;
     }
-    if (!hasNativeMediaHost()) {
+    // Without native capture (macOS, browsers) the webview's own picker is
+    // the share path; Windows keeps its native picker.
+    if (!hasDesktopCapability('nativeGameVideo')) {
       // Capture constraints follow the configured stream quality.
       await perform(async () => {
         await engine.current?.captureScreen({ systemAudio: true });

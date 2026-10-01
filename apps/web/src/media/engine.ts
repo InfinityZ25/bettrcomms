@@ -440,7 +440,8 @@ export class MediaEngine extends EventTarget {
   ): Promise<void> {
     this.ensureActive();
     if (typeof navigator.mediaDevices?.getDisplayMedia !== 'function') {
-      throw new Error('Screen sharing is unavailable in this browser. On iPhone, use the BetterComms app to share its screen.');
+      // iPhone Safari and Chrome have no screen capture at all.
+      throw new Error('This browser cannot share its screen. Present from the desktop app or a desktop browser, or use the BetterComms iPhone app to share your iPhone screen.');
     }
     const captureOptions: DisplayMediaStreamOptions & { windowAudio: 'window' | 'exclude' } = {
       // Follow the configured stream quality rather than a fixed ceiling, so a
