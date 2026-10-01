@@ -40,7 +40,7 @@ class BetterCommsAndroidHost(private val activity: AppCompatActivity) {
     private var permissionWaiter: CancellableContinuation<Boolean>? = null
     private var permissionPending = false
     private val permissions = activity.registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
-        permissionWaiter?.let { if (it.isActive) it.resume(result.values.all { value -> value }) }
+        permissionWaiter?.let { if (it.isActive) it.resume(result.isNotEmpty() && result.values.all { value -> value }) }
         permissionWaiter = null
         permissionPending = false
     }
@@ -141,7 +141,7 @@ class BetterCommsAndroidHost(private val activity: AppCompatActivity) {
         // A cancelled coroutine does not dismiss Android's permission dialog.
         // Never let its eventual result authorize a newer request.
         if (permissionPending) return@withLock false
-        suspendCancellableCoroutine { continuation ->
+        val allowed = suspendCancellableCoroutine { continuation ->
             permissionPending = true
             permissionWaiter = continuation
             continuation.invokeOnCancellation { permissionWaiter = null }
@@ -151,6 +151,9 @@ class BetterCommsAndroidHost(private val activity: AppCompatActivity) {
                 if (continuation.isActive) continuation.resume(false)
             }
         }
+        // Cancellation can return an empty/partial result. The OS remains the
+        // authority; never grant the WebView or SDK a missing permission.
+        allowed && missing.all { ContextCompat.checkSelfPermission(activity, it) == PackageManager.PERMISSION_GRANTED }
     }
     // JNI calls this from Go threads. UI-affecting actions are serialized here.
     fun command(value: String): String {

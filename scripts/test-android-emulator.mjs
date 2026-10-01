@@ -14,7 +14,9 @@ async function until(check, timeout = 15000) {
   while (Date.now() < end) { const result = await check(); if (result) return result; await delay(150); }
   throw new Error('Android acceptance step timed out');
 }
-shell('shell', 'pm', 'grant', 'com.bettrcomms.android', 'android.permission.RECORD_AUDIO');
+shell('shell', 'am', 'force-stop', 'com.bettrcomms.android');
+shell('shell', 'pm', 'revoke', 'com.bettrcomms.android', 'android.permission.RECORD_AUDIO');
+shell('shell', 'pm', 'clear-permission-flags', 'com.bettrcomms.android', 'android.permission.RECORD_AUDIO', 'user-set', 'user-fixed');
 shell('shell', 'am', 'start', '-n', 'com.bettrcomms.android/com.wails.app.MainActivity');
 const pid = await until(() => { try { return shell('shell', 'pidof', 'com.bettrcomms.android').trim(); } catch { return false; } });
 const port = Number(process.env.ANDROID_CDP_PORT ?? 19222);
@@ -53,16 +55,28 @@ try {
     window.bcAndroidCheck=(command,args={})=>runtime.Call.ByID(0xBC170102,window.__BETTERCOMMS_DESKTOP__.pageToken,command,args);
     try { await runtime.Call.ByID(0xBC170102,'test-only-invalid-token','native_screen_active',{}); return false; } catch { return true; }
   })()`), true, 'Native binding must reject an invalid host token');
-  async function tapText(text) {
+  async function tapText(text, resourceId) {
     shell('shell', 'uiautomator', 'dump', '/sdcard/bc-check.xml');
     const xml = shell('shell', 'cat', '/sdcard/bc-check.xml');
-    const node = [...xml.matchAll(/<node\b[^>]*>/g)].map(m => m[0]).find(n => n.includes(`text="${text}"`));
+    const node = [...xml.matchAll(/<node\b[^>]*>/g)].map(m => m[0]).find(n =>
+      resourceId ? n.includes(`resource-id="${resourceId}"`) : n.includes(`text="${text}"`));
     if (!node) return false;
     const bounds = node.match(/bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/);
     if (!bounds) return false;
     shell('shell', 'input', 'tap', String(Math.floor((+bounds[1] + +bounds[3]) / 2)), String(Math.floor((+bounds[2] + +bounds[4]) / 2)));
     return true;
   }
+  // Exercise Android's real microphone prompt before starting the service.
+  const askForMic = () => evaluate(`window.bcMicResult=null;
+    navigator.mediaDevices.getUserMedia({audio:true}).then(s=>{s.getTracks().forEach(t=>t.stop());window.bcMicResult='granted'},e=>window.bcMicResult=e.name);true`);
+  await askForMic();
+  await until(() => tapText(null, 'com.android.permissioncontroller:id/permission_deny_button'));
+  await until(() => evaluate('bcMicResult!==null'));
+  assert.equal(await evaluate('bcMicResult'), 'NotAllowedError', 'Denied native permission must deny the WebView request');
+  await askForMic();
+  await until(() => tapText(null, 'com.android.permissioncontroller:id/permission_allow_foreground_only_button'));
+  await until(() => evaluate('bcMicResult!==null'));
+  assert.equal(await evaluate('bcMicResult'), 'granted', 'A denied permission can be retried through Android');
   await evaluate('bcAndroidAudio(true)');
   await evaluate(`window.bcShareResult=null;window.bcShareError=null;
     window.bcAndroidCheck('native_screen_start',{owner:'emulator-acceptance'}).then(r=>window.bcShareResult=r,e=>window.bcShareError=true);true`);
@@ -108,7 +122,7 @@ try {
   assert.equal((await evaluate("bcAndroidCheck('native_screen_active')")).sessionId, '');
   await delay(500);
   assert(!shell('shell', 'dumpsys', 'activity', 'services', 'com.bettrcomms.android').includes('.BetterCommsMediaService'), 'Foreground service must be released');
-  console.log('PASS: Android launch, viewport, CSP, authorization, projection consent, native 720x1280 receiver, background frames and stop cleanup.');
+  console.log('PASS: Android launch, viewport, CSP, authorization, microphone denial/retry, projection consent, native 720x1280 receiver, background frames and stop cleanup.');
 } finally {
   if (evaluate) {
     await evaluate(`(async()=>{window.bcCheckPeer?.close();window.bcCheckVideo?.remove();if(window.bcAndroidCheck){if(window.bcShareResult)await bcAndroidCheck('native_screen_stop',{sessionId:bcShareResult.sessionId});else await bcAndroidCheck('native_screen_cancel_pending')}if(window.bcAndroidAudio)await bcAndroidAudio(false)})()`).catch(() => {});
