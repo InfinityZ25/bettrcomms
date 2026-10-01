@@ -1,3 +1,21 @@
+## Unreleased — combined review follow-up
+
+Native screen and glasses senders now receive renewed TURN configuration,
+including peers still gathering candidates. Direct-only peers keep relay
+servers excluded, and local previews remain isolated. Updating credentials
+preserves capture and tracks; it does not itself restart an ICE connection.
+A replaced broadcast also protects its own start deadline from an older
+signaling timer callback that was already running. The macOS
+media-permission translation unit is excluded from iOS builds.
+Custom desktop frames explicitly fill the remaining viewport at phone-sized
+breakpoints. CI also checks optimized phone layouts in Chromium and WebKit.
+
+Validation: frontend build and 292 unit tests, targeted native credential
+renewal tests with the race detector, native authorization checks, Go vet,
+and a complete ad hoc iOS archive with its broadcast extension. Full browser
+and database checks for this follow-up remain pending. These checks do not
+establish physical-device or cross-network media acceptance.
+
 # BetterComms preview release notes
 
 ## Unreleased — mobile navigation and conversations

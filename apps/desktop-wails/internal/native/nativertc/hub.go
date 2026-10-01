@@ -101,6 +101,9 @@ type Hub struct {
 	mu    sync.Mutex
 	peers map[string]*peer
 	slots uint8
+	// Latest relay configuration, also applied to peers still gathering.
+	iceServers []IceServer
+	iceUpdated bool
 
 	idrRequested atomic.Bool
 	closed       atomic.Bool
@@ -403,6 +406,17 @@ func (h *Hub) CreatePeer(ctx context.Context, peerID string, iceServers []IceSer
 		cancel()
 		_ = connection.Close()
 		return Offer{}, errors.New("native screen WebRTC hub is closed")
+	}
+	if h.iceUpdated && peerID != PreviewPeerID {
+		config := connection.GetConfiguration()
+		config.ICEServers = prepareICEServers(h.iceServers, directOnly)
+		if err := connection.SetConfiguration(config); err != nil {
+			delete(h.peers, peerID)
+			h.mu.Unlock()
+			cancel()
+			_ = connection.Close()
+			return Offer{}, publicError(err)
+		}
 	}
 	h.peers[peerID] = attached
 	h.mu.Unlock()
@@ -745,4 +759,40 @@ func (h *Hub) enqueueFrame(target *peer, frame *encodedFrame) {
 		}
 		h.idrRequested.Store(true)
 	}
+}
+
+// UpdateIceServers renews relay credentials without stopping capture or
+// replacing a viewer's track. Pending peers receive them before attachment.
+// Preview and direct-only peers never acquire relay access from a renewal.
+func (h *Hub) UpdateIceServers(servers []IceServer) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.closed.Load() {
+		return errors.New("native screen WebRTC hub is closed")
+	}
+	// Validate once before changing any active connection.
+	config := webrtc.Configuration{ICEServers: prepareICEServers(servers, false)}
+	probe, err := h.api.NewPeerConnection(config)
+	if err != nil {
+		return publicError(err)
+	}
+	_ = probe.Close()
+	h.iceServers = make([]IceServer, len(servers))
+	for i, server := range servers {
+		h.iceServers[i] = server
+		h.iceServers[i].URLs = append([]string(nil), server.URLs...)
+	}
+	h.iceUpdated = true
+	var failures []error
+	for id, peer := range h.peers {
+		if peer == nil || id == PreviewPeerID {
+			continue
+		}
+		config := peer.connection.GetConfiguration()
+		config.ICEServers = prepareICEServers(h.iceServers, peer.directOnly)
+		if err := peer.connection.SetConfiguration(config); err != nil {
+			failures = append(failures, publicError(err))
+		}
+	}
+	return errors.Join(failures...)
 }

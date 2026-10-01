@@ -28,16 +28,17 @@ import (
 )
 
 type iosBroadcast struct {
-	id       string
-	owner    string // the page load that started it
-	listener net.Listener
-	client   *broadcastipc.Client
-	config   string
-	cancel   context.CancelFunc
-	mu       sync.Mutex
-	started  bool // native_screen_start returned; guarded by mu
-	once     sync.Once
-	closed   bool
+	id        string
+	owner     string // the page load that started it
+	listener  net.Listener
+	client    *broadcastipc.Client
+	config    string
+	cancel    context.CancelFunc
+	mu        sync.Mutex
+	started   bool      // native_screen_start returned; guarded by mu
+	startedAt time.Time // minimum lifetime after start, even for an already-fired old timer
+	once      sync.Once
+	closed    bool
 }
 
 var screenBroadcast struct {
@@ -100,7 +101,10 @@ func armSignalingCheck() {
 		// finishes starting with signaling down, checkSignalingAfterStart
 		// re-arms a full grace for it.
 		b.mu.Lock()
-		live := b.started && !b.closed
+		// Timer.Stop cannot cancel a callback that is already running.
+		// Such a callback may reach this lock after the replacement starts,
+		// so it must also respect that share's own minimum grace deadline.
+		live := b.started && !b.closed && time.Since(b.startedAt) >= callSignalingGrace
 		b.mu.Unlock()
 		if live {
 			b.close()
@@ -370,6 +374,9 @@ func startIOSBroadcast(raw json.RawMessage) (any, error) {
 		return nil, err
 	}
 	success = true
+	b.mu.Lock()
+	b.startedAt = time.Now()
+	b.mu.Unlock()
 	// Re-arm a full grace period before this share counts as started, so an
 	// earlier timer firing in between still sees it as starting and skips it.
 	checkSignalingAfterStart()

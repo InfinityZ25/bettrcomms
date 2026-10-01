@@ -251,7 +251,7 @@
        over a strip of the sidebar's colour. The tab bar keeps its own. */
     background: var(--background);
   }
-  [data-desktop-frame] > [data-app-shell] { position: relative; top: auto; height: 0; }
+  [data-desktop-frame] > [data-app-shell] { position: relative; top: auto; height: auto; flex: 1; min-height: 0; }
   input:not([type='checkbox']), select, textarea { font-size: 16px; }
   [data-slot='dialog-close'] { width: 44px; height: 44px; }
   [data-slot='dialog-content'] {

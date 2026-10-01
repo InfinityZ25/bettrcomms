@@ -1,11 +1,11 @@
 import { chromium, expect, test } from '@playwright/test';
 
-test('primes one shared remote playback graph from a real user gesture', async () => {
+test('primes one shared remote playback graph from a real user gesture', async ({ baseURL }) => {
   // Launch separately so the suite-wide autoplay bypass cannot mask permission bugs.
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
   try {
-    await page.goto('http://127.0.0.1:5173');
+    await page.goto(baseURL ?? 'http://127.0.0.1:5173');
     await page.setContent('<button id="join">Join</button>');
     await page.evaluate(() => {
       (window as typeof window & { playbackResult?: Promise<unknown> }).playbackResult =

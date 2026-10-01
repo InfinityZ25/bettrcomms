@@ -191,7 +191,7 @@ export function GpuAdapters(): $CancellablePromise<gpudevices$0.Adapter[]> {
  * 
  * The page asks so it can render the truth rather than a control that would do
  * nothing: this host allows capture outright and cannot revoke it, which is a
- * opaque grant bound to the current page token.
+ * bound to an opaque per-page grant.
  */
 export function MediaPermission(kind: string): $CancellablePromise<desktop$0.MediaPermissionPolicy> {
     return $Call.ByID(3965183451, kind).then(($result: any) => {
@@ -226,6 +226,13 @@ export function NativeScreenDiagnostics(hostToken: string, sessionID: string): $
     return $Call.ByID(2708561293, hostToken, sessionID).then(($result: any) => {
         return $$createType11($result);
     });
+}
+
+/**
+ * NativeScreenIceServers renews active capture peers' relay configuration.
+ */
+export function NativeScreenIceServers(hostToken: string, sessionID: string, iceServers: nativertc$0.IceServer[]): $CancellablePromise<void> {
+    return $Call.ByID(3238902826, hostToken, sessionID, iceServers);
 }
 
 /**

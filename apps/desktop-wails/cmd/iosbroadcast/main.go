@@ -132,6 +132,8 @@ func command(ctx context.Context, name string, raw json.RawMessage) (any, error)
 		return nil, errors.New("Screen broadcast is no longer active")
 	}
 	switch name {
+	case "native_screen_ice_servers":
+		return nil, h.UpdateIceServers(a.IceServers)
 	case "native_screen_peer_offer":
 		offer, err := h.CreatePeer(ctx, a.PeerID, a.IceServers, a.DirectOnly)
 		return map[string]string{"type": "offer", "sdp": offer.SDP}, err

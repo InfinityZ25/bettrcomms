@@ -38,6 +38,8 @@ class FakePeerConnection {
       toJSON: () => ({ type: description.type, sdp: description.sdp }),
     } as RTCSessionDescription;
   }
+  getConfiguration() { return this.configuration ?? {}; }
+  setConfiguration = vi.fn((configuration: RTCConfiguration) => { this.configuration = configuration; });
   addIceCandidate = vi.fn(async () => undefined);
   getStats = vi.fn(async () => FakePeerConnection.stats as unknown as RTCStatsReport);
 }
@@ -889,4 +891,28 @@ it('cancels a host start that is still waiting when sharing stops', async () => 
   await start;
   expect(transport.active).toBe(false);
   expect(invoke).toHaveBeenCalledWith('native_screen_stop', { sessionId: 'late' });
+});
+
+it('renews active native sender and receiver credentials without restarting capture', async () => {
+  const { transport } = setup();
+  await transport.start({ sourceId: 'test', encoder: 'libx264', width: 1280, height: 720, fps: 30, bitrateMbps: 8, cursor: true });
+  await transport.handle({ type: 'offer', from: 'viewer', to: 'self', transport: 'native-screen', captureId: 'other', description: { type: 'offer', sdp: 'offer' } });
+  const connections = [...FakePeerConnection.instances];
+  const servers = [{ urls: ['turn:relay.example.test'], username: 'renewed', credential: 'fixture-only' }];
+  transport.setIceServers(servers);
+  await vi.waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('native_screen_ice_servers', { sessionId: 'capture-1', iceServers: servers }));
+  expect(connections.at(-1)?.getConfiguration().iceServers).toEqual(servers);
+  expect(connections.at(-1)?.close).not.toHaveBeenCalled();
+  expect(mocks.invoke.mock.calls.filter(([command]) => command === 'native_screen_start')).toHaveLength(1);
+  await transport.dispose();
+});
+
+it('credential renewal preserves direct-only filtering on both ends', async () => {
+  const { transport } = setup(true, true);
+  await transport.start({ sourceId: 'test', encoder: 'libx264', width: 1280, height: 720, fps: 30, bitrateMbps: 8, cursor: true });
+  await transport.handle({ type: 'offer', from: 'viewer', to: 'self', transport: 'native-screen', captureId: 'other', description: { type: 'offer', sdp: 'offer' } });
+  transport.setIceServers([{ urls: ['stun:stun.example.test', 'turn:relay.example.test'], username: 'renewed', credential: 'fixture-only' }]);
+  await vi.waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('native_screen_ice_servers', { sessionId: 'capture-1', iceServers: [{ urls: ['stun:stun.example.test'], username: 'renewed', credential: 'fixture-only' }] }));
+  expect(FakePeerConnection.instances.at(-1)?.getConfiguration().iceServers).toEqual([{ urls: ['stun:stun.example.test'], username: 'renewed', credential: 'fixture-only' }]);
+  await transport.dispose();
 });
