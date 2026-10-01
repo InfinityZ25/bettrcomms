@@ -244,8 +244,8 @@ func TestSignalsCloseWhenTheShareEnds(t *testing.T) {
 
 // A signal pinned to a point in a window must disappear while that window is
 // behind another one, or it would float over whatever the person switched to.
-// A corner-anchored card is a reference rather than a pointer, and stays.
-func TestPointSignalsHideWhileTheShareIsNotInFront(t *testing.T) {
+// Captured cards hide too: the native surface must not cover an unrelated app.
+func TestSignalsAndCardsHideWhileTheShareIsNotInFront(t *testing.T) {
 	var inFront atomic.Bool
 	inFront.Store(true)
 	manager := NewCopilotManager(func(_ string, requireForeground bool) (Geometry, error) {
@@ -283,8 +283,8 @@ func TestPointSignalsHideWhileTheShareIsNotInFront(t *testing.T) {
 	if err := manager.Frame(card, testFrame(card.Width, card.Height)); err != nil {
 		t.Fatalf("refresh card: %v", err)
 	}
-	if visible, _, _ := procIsWindowVisible.Call(cardWindow); visible == 0 {
-		t.Error("a corner-anchored card was hidden with the point signals")
+	if visible, _, _ := procIsWindowVisible.Call(cardWindow); visible != 0 {
+		t.Error("a corner-anchored card stayed over an unrelated application")
 	}
 
 	inFront.Store(true)
@@ -293,5 +293,254 @@ func TestPointSignalsHideWhileTheShareIsNotInFront(t *testing.T) {
 	}
 	if visible, _, _ := procIsWindowVisible.Call(pointWindow); visible == 0 {
 		t.Error("the point signal did not come back when the share returned to the front")
+	}
+}
+
+func syncPosition(frame CopilotFrame, remaining uint32, revision uint64) CopilotPosition {
+	return CopilotPosition{MarkID: frame.MarkID, Corner: frame.Corner, X: frame.X, Y: frame.Y, RemainingMS: remaining, Revision: revision}
+}
+
+func TestSyncReusesCachedArtworkAndOnlyPlacesChangedWindows(t *testing.T) {
+	manager := fixedCopilotManager(t)
+	var paints, placements atomic.Int64
+	manager.paint = func(s surface, w, h uint32, pixels []byte, show bool) error {
+		paints.Add(1)
+		return paintSurface(s, w, h, pixels, show)
+	}
+	manager.place = func(s surface, x, y int32, show bool) error { placements.Add(1); return placeSurface(s, x, y, show) }
+	frame := validFrame()
+	if err := manager.Frame(frame, testFrame(frame.Width, frame.Height)); err != nil {
+		t.Fatal(err)
+	}
+	window := signalWindow(t, manager, frame.MarkID)
+	update := CopilotUpdate{SessionID: frame.SessionID, Marks: []CopilotPosition{syncPosition(frame, 3000, 1)}}
+	update.Marks[0].X = 0.7
+	status, err := manager.Sync(update)
+	if err != nil || status.State != "visible" || len(status.Missing) != 0 {
+		t.Fatalf("sync: %+v, %v", status, err)
+	}
+	if signalWindow(t, manager, frame.MarkID) != window {
+		t.Fatal("a position update replaced the signal window")
+	}
+	if paints.Load() != 1 || placements.Load() != 2 {
+		t.Fatalf("after movement paints=%d placements=%d, want 1 and 2", paints.Load(), placements.Load())
+	}
+	if _, err := manager.Sync(update); err != nil {
+		t.Fatal(err)
+	}
+	if paints.Load() != 1 || placements.Load() != 2 {
+		t.Fatal("an unchanged lease repainted or repositioned the window")
+	}
+	manager.mu.Lock()
+	stop := manager.stop
+	manager.mu.Unlock()
+	if !manager.reposition(stop) {
+		t.Fatal("active signals lost their watcher")
+	}
+	if paints.Load() != 1 || placements.Load() != 2 {
+		t.Fatal("the watcher repainted or moved unchanged artwork")
+	}
+}
+
+func TestSyncReconcilesIndividualMarksAndRejectsStaleBatchesAtomically(t *testing.T) {
+	manager := fixedCopilotManager(t)
+	first, second := validFrame(), validFrame()
+	second.MarkID = "mark-2"
+	for _, frame := range []CopilotFrame{first, second} {
+		if err := manager.Frame(frame, testFrame(frame.Width, frame.Height)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	firstWindow, secondWindow := signalWindow(t, manager, first.MarkID), signalWindow(t, manager, second.MarkID)
+	initial := CopilotUpdate{SessionID: first.SessionID, Marks: []CopilotPosition{syncPosition(first, 3000, 2), syncPosition(second, 3000, 2)}}
+	if _, err := manager.Sync(initial); err != nil {
+		t.Fatal(err)
+	}
+	stale := CopilotUpdate{SessionID: first.SessionID, Marks: []CopilotPosition{syncPosition(first, 3000, 1)}}
+	if _, err := manager.Sync(stale); err == nil {
+		t.Fatal("stale revision accepted")
+	}
+	if manager.Count() != 2 || signalWindow(t, manager, second.MarkID) != secondWindow {
+		t.Fatal("a stale batch removed a different signal before failing")
+	}
+	current := CopilotUpdate{SessionID: first.SessionID, Marks: []CopilotPosition{syncPosition(first, 3000, 2)}}
+	if _, err := manager.Sync(current); err != nil {
+		t.Fatal(err)
+	}
+	if manager.Count() != 1 || signalWindow(t, manager, first.MarkID) != firstWindow {
+		t.Fatal("reconcile rebuilt the retained window")
+	}
+	if alive, _, _ := procIsWindow.Call(secondWindow); alive != 0 {
+		t.Fatal("removed artwork left a native window")
+	}
+	if _, err := manager.Sync(CopilotUpdate{SessionID: first.SessionID}); err != nil {
+		t.Fatal(err)
+	}
+	manager.mu.Lock()
+	watching := manager.watching
+	manager.mu.Unlock()
+	if manager.Count() != 0 || watching {
+		t.Fatal("empty reconcile left windows or the follower alive")
+	}
+}
+
+func TestSyncFiniteExpiryDoesNotExtendButNewLaserRevisionRenewsIt(t *testing.T) {
+	manager := fixedCopilotManager(t)
+	var elapsed atomic.Int64
+	manager.now = func() time.Time { return time.Unix(0, elapsed.Load()) }
+	frame := validFrame()
+	if err := manager.Frame(frame, testFrame(frame.Width, frame.Height)); err != nil {
+		t.Fatal(err)
+	}
+	window := signalWindow(t, manager, frame.MarkID)
+	update := CopilotUpdate{SessionID: frame.SessionID, Marks: []CopilotPosition{syncPosition(frame, 1000, 1)}}
+	if _, err := manager.Sync(update); err != nil {
+		t.Fatal(err)
+	}
+	elapsed.Store(int64(500 * time.Millisecond))
+	if _, err := manager.Sync(update); err != nil {
+		t.Fatal(err)
+	}
+	manager.mu.Lock()
+	expiry := manager.items[frame.MarkID].expires
+	manager.mu.Unlock()
+	if expiry != time.Unix(0, int64(time.Second)) {
+		t.Fatalf("same revision extended a finite indication to %v", expiry)
+	}
+	update.Marks[0].Revision = 2
+	update.Marks[0].X = 0.6
+	if _, err := manager.Sync(update); err != nil {
+		t.Fatal(err)
+	}
+	manager.mu.Lock()
+	expiry = manager.items[frame.MarkID].expires
+	manager.mu.Unlock()
+	if expiry != time.Unix(0, int64(1500*time.Millisecond)) || signalWindow(t, manager, frame.MarkID) != window {
+		t.Fatal("new laser point did not renew its existing sprite")
+	}
+	elapsed.Store(int64(1600 * time.Millisecond))
+	status, err := manager.Sync(update)
+	if err != nil || len(status.Missing) != 1 || manager.Count() != 0 {
+		t.Fatalf("expired indication: %+v %v; windows=%d", status, err, manager.Count())
+	}
+}
+
+func TestSyncManualCardsHaveARenewableLifetimeAndABoundedOrphanLease(t *testing.T) {
+	manager := fixedCopilotManager(t)
+	var elapsed atomic.Int64
+	manager.now = func() time.Time { return time.Unix(0, elapsed.Load()) }
+	frame := validFrame()
+	frame.Corner = "top-right"
+	if err := manager.Frame(frame, testFrame(frame.Width, frame.Height)); err != nil {
+		t.Fatal(err)
+	}
+	update := CopilotUpdate{SessionID: frame.SessionID, Marks: []CopilotPosition{syncPosition(frame, 60_000, 1)}}
+	if _, err := manager.Sync(update); err != nil {
+		t.Fatal(err)
+	}
+	elapsed.Store(int64(3 * time.Second))
+	if _, err := manager.Sync(update); err != nil {
+		t.Fatal(err)
+	}
+	manager.mu.Lock()
+	expiry := manager.items[frame.MarkID].expires
+	stop := manager.stop
+	manager.mu.Unlock()
+	if expiry != time.Unix(0, int64(63*time.Second)) {
+		t.Fatal("manual card lifetime was not renewable")
+	}
+	elapsed.Store(int64(6 * time.Second))
+	if !manager.reposition(stop) || manager.Count() != 1 {
+		t.Fatal("a refreshed card closed during permitted background timer slack")
+	}
+	elapsed.Store(int64(7 * time.Second))
+	manager.reposition(stop)
+	if manager.Count() != 0 {
+		t.Fatal("a card survived its page's four-second lease")
+	}
+}
+
+func TestSyncReturnsSourceVisibilityAndClearsAnEndedCapture(t *testing.T) {
+	var hidden, ended atomic.Bool
+	manager := NewCopilotManager(func(_ string, foreground bool) (Geometry, error) {
+		if ended.Load() {
+			return Geometry{}, errors.New("source ended")
+		}
+		if foreground && hidden.Load() {
+			return Geometry{}, errors.New("another app in front")
+		}
+		return fixedGeometry(), nil
+	})
+	t.Cleanup(manager.Shutdown)
+	frame := validFrame()
+	frame.Corner = "top-right"
+	if err := manager.Frame(frame, testFrame(frame.Width, frame.Height)); err != nil {
+		t.Fatal(err)
+	}
+	window := signalWindow(t, manager, frame.MarkID)
+	update := CopilotUpdate{SessionID: frame.SessionID, Marks: []CopilotPosition{syncPosition(frame, 3000, 1)}}
+	hidden.Store(true)
+	status, err := manager.Sync(update)
+	if err != nil || status.State != "hidden" {
+		t.Fatalf("hidden source: %+v, %v", status, err)
+	}
+	if visible, _, _ := procIsWindowVisible.Call(window); visible != 0 {
+		t.Fatal("a card stayed on unrelated foreground content")
+	}
+	hidden.Store(false)
+	status, err = manager.Sync(update)
+	if err != nil || status.State != "visible" {
+		t.Fatalf("visible source: %+v, %v", status, err)
+	}
+	if visible, _, _ := procIsWindowVisible.Call(window); visible == 0 {
+		t.Fatal("source restoration failed to show cached artwork")
+	}
+	ended.Store(true)
+	status, err = manager.Sync(update)
+	if err != nil || status.State != "unavailable" || manager.Count() != 0 {
+		t.Fatalf("ended source: %+v, %v; windows=%d", status, err, manager.Count())
+	}
+	if alive, _, _ := procIsWindow.Call(window); alive != 0 {
+		t.Fatal("an ended capture left its native card behind")
+	}
+}
+
+func TestNativeLaserTailRestoresArtworkOnceAndStopsPainting(t *testing.T) {
+	manager := fixedCopilotManager(t)
+	var elapsed atomic.Int64
+	manager.now = func() time.Time { return time.Unix(0, elapsed.Load()) }
+	var paints atomic.Int64
+	manager.paint = func(s surface, w, h uint32, pixels []byte, show bool) error {
+		paints.Add(1)
+		return paintSurface(s, w, h, pixels, show)
+	}
+	frame := validFrame()
+	if err := manager.Frame(frame, testFrame(frame.Width, frame.Height)); err != nil {
+		t.Fatal(err)
+	}
+	position := syncPosition(frame, 3000, 1)
+	position.Trail = []CopilotTrailPoint{{X: 0.495, Y: 0.5, AgeMS: 20}}
+	if _, err := manager.Sync(CopilotUpdate{SessionID: frame.SessionID, Marks: []CopilotPosition{position}}); err != nil {
+		t.Fatal(err)
+	}
+	if paints.Load() < 2 {
+		t.Fatal("a live tail never painted")
+	}
+	manager.mu.Lock()
+	stop := manager.stop
+	manager.mu.Unlock()
+	elapsed.Store(int64(500 * time.Millisecond))
+	manager.reposition(stop)
+	cleared := paints.Load()
+	manager.reposition(stop)
+	if paints.Load() != cleared {
+		t.Fatal("an expired trail kept repainting cached artwork")
+	}
+	manager.mu.Lock()
+	retained := len(manager.items[frame.MarkID].trail)
+	painted := manager.items[frame.MarkID].trailPainted
+	manager.mu.Unlock()
+	if retained != 0 || painted {
+		t.Fatal("the expired trail retained fading work")
 	}
 }

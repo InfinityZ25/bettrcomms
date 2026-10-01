@@ -25,9 +25,9 @@ import { createNvidiaDenoiser } from './nvidiaDenoise';
 import { createDeepfilterDenoiser } from './deepfilterDenoise';
 import { createDeepfilterWasmDenoiser } from './deepfilterWasmDenoise';
 import { createMicrophoneEffects } from './microphoneEffects';
-import { hasNativeMediaHost } from '../desktop/nativeMedia';
 import { readDesktopBootReport } from '../desktop/runtime';
 import { hasIOSBroadcast, iosBroadcastDriver } from './iosBroadcast';
+import { hasDesktopCapability } from '../desktop/capabilities';
 import { createNativeSystemAudio, type NativeSystemAudioTrack } from './nativeSystemAudio';
 import type { DenoisedTrack } from './denoise';
 import type { MicrophoneProcessingSettings } from './types';
@@ -198,7 +198,7 @@ export class MediaEngine extends EventTarget {
     const requestedDenoiser = options.denoiser ?? 'standard';
     const denoiser =
       (requestedDenoiser === 'nvidia' || requestedDenoiser === 'deepfilter') &&
-      !hasNativeMediaHost()
+      !hasDesktopCapability('nativeMicrophoneDsp')
         ? 'standard'
         : requestedDenoiser;
     const processing: MicrophoneProcessingSettings = options.processing ?? {

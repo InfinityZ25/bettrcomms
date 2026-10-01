@@ -27,6 +27,11 @@ $devServer = 'http://localhost:5173'
 # and Invoke-WebRequest then waits even though Vite is already ready on IPv4.
 $devServerProbe = 'http://127.0.0.1:5173'
 
+$legacyPath = Join-Path $env:LOCALAPPDATA 'BetterComms\bettercomms-desktop.exe'
+if (Test-Path -LiteralPath $legacyPath -PathType Leaf) {
+    Write-Warning 'The old BetterComms desktop app is installed separately. This script opens BetterComms (Wails dev); use that window to test native features.'
+}
+
 if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
     throw 'Go is not on PATH. Install Go 1.25 or newer.'
 }

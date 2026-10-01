@@ -18,6 +18,9 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as desktop$0 from "./internal/desktop/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as json$0 from "../../encoding/json/models.js";
 
 /**
  * BrowserSignInBegin opens the system browser on the confirmation page and
@@ -44,6 +47,45 @@ export function BrowserSignInStatus(): $CancellablePromise<desktop$0.SignInStatu
     return $Call.ByID(757607053).then(($result: any) => {
         return $$createType0($result);
     });
+}
+
+export function IOSCallAudioStart(hostToken: string): $CancellablePromise<void> {
+    return $Call.ByID(1172425750, hostToken);
+}
+
+export function IOSCallAudioStop(hostToken: string): $CancellablePromise<void> {
+    return $Call.ByID(1198987198, hostToken);
+}
+
+export function IOSMetaConnect(hostToken: string): $CancellablePromise<void> {
+    return $Call.ByID(412519885, hostToken);
+}
+
+/**
+ * The page must present its native host capability before changing any sender.
+ */
+export function IOSMetaSender(token: string, command: string, raw: json$0.RawMessage): $CancellablePromise<any> {
+    return $Call.ByID(818610616, token, command, raw);
+}
+
+export function IOSMetaStart(hostToken: string): $CancellablePromise<void> {
+    return $Call.ByID(1795186331, hostToken);
+}
+
+export function IOSMetaStop(hostToken: string): $CancellablePromise<void> {
+    return $Call.ByID(2309734089, hostToken);
+}
+
+export function IOSScreenSender(hostToken: string, command: string, args: json$0.RawMessage): $CancellablePromise<any> {
+    return $Call.ByID(6783441, hostToken, command, args);
+}
+
+export function IOSScreenStart(hostToken: string): $CancellablePromise<void> {
+    return $Call.ByID(4164795156, hostToken);
+}
+
+export function IOSScreenStop(hostToken: string): $CancellablePromise<void> {
+    return $Call.ByID(3307136720, hostToken);
 }
 
 // Private type creation functions

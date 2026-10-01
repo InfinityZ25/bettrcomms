@@ -3,7 +3,7 @@ import { LinkButton } from '@/components/ui/link-button';
 import { useEffect, useState } from 'react';
 import { readStored, writeStored } from '@/lib/storage';
 import { invokeAudioSetup } from '@/desktop/audio';
-import { hasNativeMediaHost } from '@/desktop/nativeMedia';
+import { hasDesktopCapability } from '@/desktop/capabilities';
 import { readConnectionMode, type ConnectionMode } from '@/media/connectionMode';
 import DeviceSettings from './DeviceSettings';
 import VisualCopilotSettings from './VisualCopilotSettings';
@@ -61,7 +61,7 @@ export default function MediaSettings({ section }: { section: 'voice' | 'recordi
   const [recordingRate, setRecordingRate] = useState(
     () => readRecordingQuality().screenVideoBitsPerSecond / 1_000_000,
   );
-  const desktop = hasNativeMediaHost();
+  const desktop = hasDesktopCapability('nativeMicrophoneDsp');
   const storedDenoiser = readStored('bc-denoiser');
   const initialDenoiser =
     (storedDenoiser === 'nvidia' || storedDenoiser === 'deepfilter') && !desktop

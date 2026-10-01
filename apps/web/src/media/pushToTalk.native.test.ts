@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CallMicrophone, writeTalkSettings } from './pushToTalk';
 import type { GlobalInputStatus } from './nativePushToTalk';
+import { playPushToTalkCue } from './sounds';
+
+vi.mock('./sounds', () => ({ playPushToTalkCue: vi.fn() }));
 
 const native = vi.hoisted(() => ({ registrations: [] as {
   pressed: (pressed: boolean, focused?: boolean) => void;
@@ -25,6 +28,7 @@ describe('native call microphone integration', () => {
   const current = () => native.registrations.at(-1)!;
   const configure = (on = true) => writeTalkSettings({ enabled: on, binding: { kind: 'keyboard', code: 'KeyV' } });
   beforeEach(() => {
+    vi.mocked(playPushToTalkCue).mockClear();
     native.registrations.length = 0; enabled.mockClear();
     vi.stubGlobal('window', new EventTarget());
     vi.stubGlobal('document', Object.assign(new EventTarget(), { hasFocus: () => false, hidden: false, activeElement: null }));
@@ -71,11 +75,24 @@ describe('native call microphone integration', () => {
   });
   it('keeps a native hold across blur and minimization until native release', () => {
     configure(); input.start(); current().pressed(true);
+    expect(playPushToTalkCue).toHaveBeenCalledExactlyOnceWith(true);
     window.dispatchEvent(new Event('blur'));
     Object.assign(document, { hidden: true }); document.dispatchEvent(new Event('visibilitychange'));
     window.dispatchEvent(Object.assign(new Event('keyup'), { code: 'KeyV' }));
     expect(enabled).toHaveBeenLastCalledWith(true);
     current().pressed(false); expect(enabled).toHaveBeenLastCalledWith(false);
+    expect(playPushToTalkCue).toHaveBeenNthCalledWith(2, false);
+    expect(playPushToTalkCue).toHaveBeenCalledTimes(2);
+  });
+  it('does not restart native input or drop transmission for a cue-only change', () => {
+    configure(); input.start(); const registration = current();
+    registration.pressed(true, false);
+    writeTalkSettings({ enabled: true, binding: { kind: 'keyboard', code: 'KeyV' }, playCues: false });
+    expect(native.registrations).toHaveLength(1);
+    expect(registration.dispose).not.toHaveBeenCalled();
+    expect(input.getSnapshot()).toMatchObject({ held: true, transmitting: true });
+    registration.pressed(false, false);
+    expect(input.getSnapshot().transmitting).toBe(false);
   });
   it('keeps manual mute and deafen above native input', () => {
     configure(); input.start(); current().pressed(true); input.toggleMute(); current().pressed(true);

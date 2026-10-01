@@ -23,7 +23,7 @@ func TestSensitiveNativeMethodsRejectUnauthorisedPages(t *testing.T) {
 		"NativeScreenRecordingStart", "NativeScreenRecordingStop", "NativeScreenRecordingRead", "NativeScreenRecordingRelease",
 		"PushToTalkStart", "PushToTalkHeartbeat", "PushToTalkStop", "RecordingExportBegin", "RecordingConversionBegin",
 		"RecordingExportAppend", "RecordingExportFinish", "RecordingExportAbort", "CameraOverlayOpen", "CameraOverlayUpdate",
-		"CameraOverlayFrame", "CameraOverlayClose", "CopilotOverlayFrame", "CopilotOverlayClear", "NativeSystemAudioStart",
+		"CameraOverlayFrame", "CameraOverlayClose", "CopilotOverlayFrame", "CopilotOverlaySync", "CopilotOverlayClear", "NativeSystemAudioStart",
 		"NativeSystemAudioRead", "NativeSystemAudioStop", "NvidiaInstall", "DeepfilterInstall", "NvidiaStatus", "DeepfilterStatus",
 		"AudioStreamStart", "AudioStreamStop", "MediaPermissionOpenSettings",
 	}

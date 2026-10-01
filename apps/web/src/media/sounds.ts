@@ -173,6 +173,36 @@ export function playSound(name: SoundName) {
   start(name, false);
 }
 
+/** Short local cues for the call microphone gate. No file fetch or running loop. */
+export function playPushToTalkCue(open: boolean) {
+  if (!soundsEnabled() || soundVolume() === 0) return;
+  const ctx = audio();
+  if (!ctx || !gain) return;
+  gain.gain.value = soundVolume();
+  let tone: OscillatorNode | undefined;
+  let envelope: GainNode | undefined;
+  try {
+    const start = ctx.currentTime;
+    const duration = 0.085;
+    tone = ctx.createOscillator();
+    envelope = ctx.createGain();
+    tone.type = 'sine';
+    tone.frequency.setValueAtTime(open ? 560 : 740, start);
+    tone.frequency.linearRampToValueAtTime(open ? 740 : 520, start + duration);
+    envelope.gain.setValueAtTime(0, start);
+    envelope.gain.linearRampToValueAtTime(0.18, start + 0.012);
+    envelope.gain.exponentialRampToValueAtTime(0.001, start + duration);
+    tone.connect(envelope);
+    envelope.connect(gain);
+    tone.onended = () => { tone?.disconnect(); envelope?.disconnect(); };
+    tone.start(start);
+    tone.stop(start + duration);
+  } catch {
+    try { tone?.stop(); } catch { /* A node that never started cannot be stopped. */ }
+    tone?.disconnect(); envelope?.disconnect();
+  }
+}
+
 /** For the ringtone, which rings until something happens. */
 export function loopSound(name: SoundName) {
   start(name, true);

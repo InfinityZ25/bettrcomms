@@ -66,6 +66,14 @@ describe('native push-to-talk registration', () => {
     await start(); expect(pressed.mock.lastCall?.[0]).toBe(false);
     expect(status).toHaveBeenLastCalledWith('unavailable', 'Unsupported global key');
   });
+  it('shows the native hook failure when Wails rejects with an Error', async () => {
+    mocks.invoke.mockImplementation(command => command === 'push_to_talk_start'
+      ? Promise.reject(new Error('Windows could not register global input'))
+      : Promise.resolve({ available: true }));
+    await start();
+    expect(status).toHaveBeenLastCalledWith('unavailable', 'Windows could not register global input');
+    expect(pressed.mock.lastCall?.[0]).toBe(false);
+  });
   it('uses explicitly reported foreground mode on unsupported platforms', async () => {
     mocks.invoke.mockResolvedValue({ available: false, detail: 'Foreground only' });
     await start();

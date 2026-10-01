@@ -110,11 +110,13 @@ export class Stats {
     "encodedBytes": number;
     "droppedFrames": number;
     "peers": number;
+    "connectedPeers": number;
 
     /**
      * SPSProfileIDC and friends describe the stream the encoder actually
      * produced, which is what proves it honoured the profile it was given.
      */
+    "targetBitrate"?: number;
     "spsProfileIdc"?: string;
     "spsConstraintFlags"?: string;
     "spsLevelIdc"?: string;
@@ -135,6 +137,9 @@ export class Stats {
         }
         if (!("peers" in $$source)) {
             this["peers"] = 0;
+        }
+        if (!("connectedPeers" in $$source)) {
+            this["connectedPeers"] = 0;
         }
 
         Object.assign(this, $$source);

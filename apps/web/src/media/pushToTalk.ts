@@ -1,7 +1,8 @@
 import { isNativePushToTalk, NativePushToTalk, type GlobalInputStatus } from './nativePushToTalk';
+import { playPushToTalkCue } from './sounds';
 
 export type TalkBinding = { kind: 'keyboard'; code: string } | { kind: 'mouse'; button: number };
-export interface TalkSettings { enabled: boolean; binding: TalkBinding; allowWhileTyping?: boolean }
+export interface TalkSettings { enabled: boolean; binding: TalkBinding; allowWhileTyping?: boolean; playCues?: boolean }
 const storageKey = 'bc-push-to-talk';
 const changeEvent = 'bc-push-to-talk';
 const defaults: TalkSettings = { enabled: false, binding: { kind: 'keyboard', code: 'Space' } };
@@ -17,7 +18,7 @@ export function readTalkSettings(): TalkSettings {
     if (typeof value?.enabled === 'boolean' && (
       (binding?.kind === 'keyboard' && typeof binding.code === 'string' && canBindKey(binding.code)) ||
       (binding?.kind === 'mouse' && Number.isInteger(binding.button) && binding.button >= 0 && binding.button <= 4)
-    )) return { enabled: value.enabled, binding, ...(value.allowWhileTyping === true ? { allowWhileTyping: true } : {}) };
+    )) return { enabled: value.enabled, binding, ...(value.allowWhileTyping === true ? { allowWhileTyping: true } : {}), ...(value.playCues === false ? { playCues: false } : {}) };
   } catch { /* Invalid or unavailable storage uses open-mic defaults. */ }
   return { ...defaults, binding: { ...defaults.binding } };
 }
@@ -61,12 +62,15 @@ export class CallMicrophone {
   }
 
   private update(patch: Partial<typeof this.state>): void {
+    const previous = this.state;
     const next = { ...this.state, ...patch };
     next.muted = next.manualMuted || next.deafened;
     next.transmitting = next.active && !next.muted && (!next.settings.enabled || next.held);
     if (!next.held) this.foregroundHeld = false;
     this.state = next;
     this.setEnabled(next.transmitting);
+    if (previous.active && next.active && previous.settings.enabled && next.settings.enabled && next.settings.playCues !== false && previous.transmitting !== next.transmitting)
+      playPushToTalkCue(next.transmitting);
     for (const listener of this.listeners) listener();
   }
 
@@ -122,8 +126,15 @@ export class CallMicrophone {
   private visibility = () => { if (document.hidden) this.blur(); };
   private focus = (event: FocusEvent) => { if (this.blocksInput(event.target)) this.release(); };
   private settingsChanged = () => {
-    this.update({ settings: readTalkSettings(), held: false });
-    this.configureNative();
+    const settings = readTalkSettings();
+    const previous = this.state.settings;
+    const bindingChanged = settings.binding.kind !== previous.binding.kind ||
+      (settings.binding.kind === 'keyboard' && previous.binding.kind === 'keyboard' && settings.binding.code !== previous.binding.code) ||
+      (settings.binding.kind === 'mouse' && previous.binding.kind === 'mouse' && settings.binding.button !== previous.binding.button);
+    const inputChanged = settings.enabled !== previous.enabled ||
+      settings.allowWhileTyping !== previous.allowWhileTyping || bindingChanged;
+    this.update(inputChanged ? { settings, held: false } : { settings });
+    if (inputChanged) this.configureNative();
   };
   private storageChanged = (event: StorageEvent) => {
     if (event.key === storageKey || event.key === null) this.settingsChanged();
