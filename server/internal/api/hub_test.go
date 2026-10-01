@@ -1,10 +1,16 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/coder/websocket"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestCallPresenceDefaultsMutedUpdatesAndCleansUp(t *testing.T) {
@@ -144,5 +150,94 @@ func TestResumedSignalingSocketDoesNotDisturbOtherPeers(t *testing.T) {
 	hub.remove("room", resumed)
 	if left := <-watcher.send; left.Type != "peer.left" || left.From != resumed.peer {
 		t.Fatalf("watcher did not observe a real departure: %#v", left)
+	}
+}
+
+func TestFullSignalQueueDisconnectsInsteadOfDroppingSilently(t *testing.T) {
+	hub := NewHub()
+	stalled := &client{peer: "stalled", user: "user-1", name: "Alice", send: make(chan wire, 2)}
+	if _, _, err := hub.addWithMode("room", stalled, false); err != nil {
+		t.Fatalf("join: %v", err)
+	}
+	sender := &client{peer: "sender", user: "user-2", name: "Bob", send: make(chan wire, 8)}
+	if _, _, err := hub.addWithMode("room", sender, false); err != nil {
+		t.Fatalf("join: %v", err)
+	}
+	// peer.joined took one slot; one candidate fills the queue.
+	if !hub.relay("room", "stalled", wire{Type: "ice-candidate"}) {
+		t.Fatal("a message that fits was not delivered")
+	}
+	if stalled.overflowed.Load() {
+		t.Fatal("a queue with room was treated as overflowed")
+	}
+	// The next one cannot be queued. The sender is told, and the stalled
+	// client is marked for disconnection so it resynchronises on reconnect.
+	if hub.relay("room", "stalled", wire{Type: "offer"}) {
+		t.Fatal("a message was reported delivered to a full queue")
+	}
+	if !stalled.overflowed.Load() {
+		t.Fatal("a full queue dropped a message without disconnecting the client")
+	}
+	if sender.overflowed.Load() {
+		t.Fatal("the sender was penalised for the receiver's full queue")
+	}
+}
+
+func TestRelayBudgetAllowsCallSetupBurstsButNotFloods(t *testing.T) {
+	var budget relayBudget
+	start := time.Unix(1000, 0)
+	for i := 0; i < relayBurst; i++ {
+		if !budget.allow(start) {
+			t.Fatalf("message %d of a setup burst was refused", i)
+		}
+	}
+	if budget.allow(start) {
+		t.Fatal("a flood beyond the burst was allowed")
+	}
+	// It refills at the sustained rate.
+	if !budget.allow(start.Add(20 * time.Millisecond)) {
+		t.Fatal("the budget did not refill")
+	}
+	allowed := 0
+	for i := 0; i < 1000; i++ {
+		if budget.allow(start.Add(time.Second)) {
+			allowed++
+		}
+	}
+	if allowed > relayPerSecond {
+		t.Fatalf("allowed %d in the next second, want at most %d", allowed, relayPerSecond)
+	}
+}
+
+// The close-and-resynchronise path end to end, on a real socket: a client
+// that stops reading gets close code 1013, which the web client treats as
+// reconnectable, instead of silently missing messages.
+func TestOverflowClosesTheRecipientSocketForReconnect(t *testing.T) {
+	accepted := make(chan *websocket.Conn, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			t.Errorf("accept: %v", err)
+			return
+		}
+		accepted <- conn
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	dialed, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer dialed.CloseNow()
+	stalled := &client{peer: "stalled", user: "user-1", conn: <-accepted, send: make(chan wire, 1)}
+	stalled.deliver(wire{Type: "offer"})
+	if stalled.deliver(wire{Type: "ice-candidate"}) {
+		t.Fatal("a full queue accepted a message")
+	}
+	_, _, err = dialed.Read(ctx)
+	if status := websocket.CloseStatus(err); status != websocket.StatusTryAgainLater {
+		t.Fatalf("recipient saw %v (status %d), want close 1013", err, status)
 	}
 }

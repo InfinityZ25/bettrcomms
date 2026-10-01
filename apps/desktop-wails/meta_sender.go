@@ -76,6 +76,8 @@ func (a *AuthService) IOSMetaSender(token, command string, raw json.RawMessage) 
 		return nil, errors.New("Camera sender is no longer active")
 	}
 	switch command {
+	case "native_screen_ice_servers":
+		return nil, h.UpdateIceServers(args.IceServers)
 	case "native_screen_stop":
 		stopMetaSender(h)
 		return nil, nil
@@ -118,12 +120,12 @@ func stopMetaSender(expected *nativertc.Hub) {
 		h.Close()
 	}
 }
-func writeMetaVideo(data []byte) {
+func writeMetaVideo(data []byte, capturedAt time.Duration) {
 	metaSender.Lock()
 	h := metaSender.hub
 	metaSender.Unlock()
 	if h != nil {
-		_ = h.WriteAccessUnit(data, time.Now())
+		_ = h.WriteTimedAccessUnit(data, time.Now(), capturedAt)
 	}
 }
 

@@ -1,4 +1,5 @@
 import { NativeCameraTransport } from './nativeCamera';
+import { cameraBitrateCeiling, perViewerBitrate, preferredVideoCodecs } from './videoQuality';
 import { isMetaGlassesTrack } from './metaGlassesCamera';
 import { AudioLeveler, type AudioLevelerOptions } from './audio';
 import { VisualCopilot } from './visualCopilot';
@@ -47,7 +48,14 @@ interface Peer {
   remote: Map<MediaSourceKind, RemoteTrack>;
   pendingTracks: Map<string, { track: MediaStreamTrack; streamIds: string[] }>;
   pendingCandidates: (RTCIceCandidateInit | null)[];
+  offerTimer?: ReturnType<typeof setTimeout>;
+  disconnectTimer?: ReturnType<typeof setTimeout>;
 }
+
+// How long an offer may go unanswered before it is sent again, and how long
+// a connection may sit disconnected before its route is renegotiated.
+const OFFER_RETRY_MS = 5_000;
+const DISCONNECT_RESTART_MS = 5_000;
 
 export interface MediaEngineOptions {
   signaling: SignalingAdapter;
@@ -431,7 +439,8 @@ export class MediaEngine extends EventTarget {
   ): Promise<void> {
     this.ensureActive();
     if (typeof navigator.mediaDevices?.getDisplayMedia !== 'function') {
-      throw new Error('Screen sharing is unavailable in this browser. On iPhone, use the BetterComms app to share its screen.');
+      // iPhone Safari and Chrome have no screen capture at all.
+      throw new Error('This browser cannot share its screen. Present from the desktop app or a desktop browser, or use the BetterComms iPhone app to share your iPhone screen.');
     }
     const captureOptions: DisplayMediaStreamOptions & { windowAudio: 'window' | 'exclude' } = {
       // Follow the configured stream quality rather than a fixed ceiling, so a
@@ -624,6 +633,14 @@ export class MediaEngine extends EventTarget {
       this.trackCleanup.delete(source);
     }
     if (nativeCamera && track) void this.startNativeCamera(track);
+    // A replaced track keeps its sender and needs no negotiation, so nothing
+    // else would recompute its ceiling (a camera's depends on its size). Now
+    // that localTracks names the new track, it is recognised as what it is.
+    if (track)
+      void Promise.all([...this.peers.values()].map((peer) => {
+        const sender = peer.senders.get(source);
+        return sender ? this.applyQuality(sender) : undefined;
+      }));
     try {
       await Promise.all(
         [...this.peers.keys()].map((peerId) => this.sendMetadata(peerId)),
@@ -669,6 +686,25 @@ export class MediaEngine extends EventTarget {
     );
   }
 
+  /**
+   * Replaces the STUN/TURN servers mid-call.
+   *
+   * TURN credentials are short-lived (ten minutes). They were fetched once at
+   * join, so anyone who joined later, and any route repair after that, was
+   * handed expired credentials and could not use the relay.
+   */
+  setIceServers(iceServers: RTCIceServer[]): void {
+    if (this.disposed) return;
+    this.ice.iceServers = iceServers;
+    this.nativeScreen.setIceServers(iceServers);
+    this.nativeCamera.setIceServers(iceServers);
+    for (const peer of this.peers.values()) {
+      // Takes effect at the next ICE gathering; a browser that refuses the
+      // change keeps its working configuration.
+      try { peer.pc.setConfiguration({ ...peer.pc.getConfiguration(), iceServers }); } catch { /* keep current */ }
+    }
+  }
+
   addPeer(peerId: string): void {
     this.ensureActive();
     if (peerId === this.signaling.localPeerId || this.peers.has(peerId)) return;
@@ -695,6 +731,8 @@ export class MediaEngine extends EventTarget {
       pendingCandidates: [],
     };
     this.peers.set(peerId, peer);
+    // Each viewer's share of the uplink budget depends on how many there are.
+    this.refreshQuality();
     this.copilot.attach(peerId, pc);
     for (const [source, track] of this.localTracks) {
       if (source === 'screen' && this.nativeScreen.active) continue;
@@ -730,7 +768,16 @@ export class MediaEngine extends EventTarget {
     pc.onconnectionstatechange = () => {
       this.emit('peer-state', { peerId, state: pc.connectionState });
       this.updateVoiceRoute(peerId);
+      clearTimeout(peer.disconnectTimer);
       if (pc.connectionState === 'failed') pc.restartIce();
+      // Left alone, a browser waits around half a minute before declaring a
+      // disconnected route failed. A network change (Wi-Fi to cellular) rarely
+      // heals by itself, so look for a new route after a few seconds instead.
+      else if (pc.connectionState === 'disconnected')
+        peer.disconnectTimer = setTimeout(() => {
+          if (!this.disposed && this.peers.get(peerId) === peer && pc.connectionState === 'disconnected')
+            pc.restartIce();
+        }, DISCONNECT_RESTART_MS);
     };
     this.updateVoiceRoute(peerId);
     if (this.nativeScreen.active) void this.nativeScreen.addPeer(peerId);
@@ -759,8 +806,11 @@ export class MediaEngine extends EventTarget {
     void this.nativeCamera.removePeer(peerId);
     const peer = this.peers.get(peerId);
     if (!peer) return;
+    clearTimeout(peer.offerTimer);
+    clearTimeout(peer.disconnectTimer);
     peer.pc.close();
     this.peers.delete(peerId);
+    this.refreshQuality();
     const removedSources = [...peer.remote.keys()];
     peer.remote.clear();
     peer.pendingTracks.clear();
@@ -933,12 +983,16 @@ export class MediaEngine extends EventTarget {
       const offerCollision = description.type === 'offer' && !readyForOffer;
       peer.ignoreOffer = !peer.polite && offerCollision;
       if (peer.ignoreOffer) return;
+      // An answer to an offer that was already answered: the offer had been
+      // re-sent (see watchOffer) and both replies arrived.
+      if (description.type === 'answer' && peer.pc.signalingState !== 'have-local-offer') return;
       peer.isSettingRemoteAnswerPending = description.type === 'answer';
       await peer.pc.setRemoteDescription(description);
       peer.isSettingRemoteAnswerPending = false;
       for (const candidate of peer.pendingCandidates.splice(0))
         await peer.pc.addIceCandidate(candidate);
       if (description.type === 'offer') {
+        this.preferVideoCodecs(peer.pc);
         await peer.pc.setLocalDescription();
         await this.send({
           type: 'answer',
@@ -980,11 +1034,29 @@ export class MediaEngine extends EventTarget {
 
   async setQuality(quality: MediaQualityOptions): Promise<void> {
     this.quality = { ...this.quality, ...quality };
-    await Promise.all(
+    await this.refreshQuality();
+  }
+
+  private refreshQuality(): Promise<void[]> {
+    return Promise.all(
       [...this.peers.values()].flatMap((peer) =>
         [...peer.senders.values()].map((sender) => this.applyQuality(sender)),
       ),
     );
+  }
+
+  /** States one codec order on every video transceiver; see videoQuality.ts. */
+  private preferVideoCodecs(pc: RTCPeerConnection) {
+    const capabilities =
+      typeof RTCRtpReceiver !== 'undefined' ? RTCRtpReceiver.getCapabilities?.('video') : null;
+    if (!capabilities || typeof pc.getTransceivers !== 'function') return;
+    const codecs = preferredVideoCodecs(capabilities.codecs);
+    for (const transceiver of pc.getTransceivers()) {
+      const kind = transceiver.sender.track?.kind ?? transceiver.receiver.track?.kind;
+      if (kind !== 'video' || typeof transceiver.setCodecPreferences !== 'function') continue;
+      // A browser that rejects the list keeps its own order and still connects.
+      try { transceiver.setCodecPreferences(codecs); } catch { /* keep the default */ }
+    }
   }
 
   async getStats(peerId: string): Promise<PeerMediaStats> {
@@ -1063,6 +1135,15 @@ export class MediaEngine extends EventTarget {
             ? { packetsLost: row.packetsLost }
             : {}),
           ...(row.jitter !== undefined ? { jitterMs: row.jitter * 1000 } : {}),
+          // Why video looks the way it does: what limited the encoder, which
+          // implementation ran, and how often the picture froze or was repaired.
+          ...(typeof row.qualityLimitationReason === 'string' ? { qualityLimitation: row.qualityLimitationReason } : {}),
+          ...(typeof (row.encoderImplementation ?? row.decoderImplementation) === 'string'
+            ? { implementation: row.encoderImplementation ?? row.decoderImplementation } : {}),
+          ...(typeof row.framesDropped === 'number' ? { framesDropped: row.framesDropped } : {}),
+          ...(typeof row.freezeCount === 'number' ? { freezeCount: row.freezeCount } : {}),
+          ...(typeof row.pliCount === 'number' ? { pliCount: row.pliCount } : {}),
+          ...(typeof row.nackCount === 'number' ? { nackCount: row.nackCount } : {}),
           ...(localSource === 'screen' && descriptor?.screenTransport
             ? { screenTransport: descriptor.screenTransport }
             : {}),
@@ -1090,6 +1171,8 @@ export class MediaEngine extends EventTarget {
               localCandidateType: local?.candidateType,
               remoteCandidateType: remote?.candidateType,
               protocol: local?.protocol,
+              ...(typeof selectedPair.availableOutgoingBitrate === 'number'
+                ? { availableOutgoingBitrate: selectedPair.availableOutgoingBitrate } : {}),
               currentRoundTripTimeMs:
                 selectedPair.currentRoundTripTime === undefined
                   ? undefined
@@ -1163,6 +1246,33 @@ export class MediaEngine extends EventTarget {
     this.emit('local-track', { source: 'screen', track });
   }
 
+  /**
+   * Re-sends an offer that has gone unanswered.
+   *
+   * An offer or its answer can be lost: the signaling socket was reconnecting,
+   * or the other side's queue was full. Nothing noticed, and this side stayed
+   * in have-local-offer for the rest of the call, where negotiate() returns
+   * early, so no camera, share or route change could ever be sent to that
+   * person again. The pending offer is still valid, and a peer that already
+   * answered it simply answers again, so sending it again is safe.
+   */
+  //
+  // It keeps going for as long as the offer is pending and the peer is part of
+  // the call, with no attempt limit: signaling can take over a minute to
+  // reconnect, and an offer abandoned before then stays pending for good. It
+  // stops at the answer, when the peer leaves, or when the engine is disposed.
+  private watchOffer(peerId: string, peer: Peer) {
+    clearTimeout(peer.offerTimer);
+    peer.offerTimer = setTimeout(() => {
+      if (this.disposed || this.peers.get(peerId) !== peer) return;
+      const offer = peer.pc.localDescription;
+      if (peer.pc.signalingState !== 'have-local-offer' || offer?.type !== 'offer') return;
+      void Promise.resolve(this.send({ type: 'offer', to: peerId, description: offer.toJSON() }))
+        .catch(() => undefined)
+        .then(() => this.watchOffer(peerId, peer));
+    }, OFFER_RETRY_MS);
+  }
+
   private async negotiate(peerId: string, peer: Peer): Promise<void> {
     // On first contact, only the deterministic impolite side offers. Both peers
     // already have their local tracks attached, so the answer remains sendrecv.
@@ -1171,7 +1281,11 @@ export class MediaEngine extends EventTarget {
     if (peer.makingOffer || peer.pc.signalingState !== 'stable') return;
     try {
       peer.makingOffer = true;
+      this.preferVideoCodecs(peer.pc);
       await peer.pc.setLocalDescription();
+      // From here the offer is pending. Watch it before any send can fail,
+      // so a failed send (offer or metadata) is still retried.
+      this.watchOffer(peerId, peer);
       await Promise.all([...peer.senders.values()].map(sender => this.applyQuality(sender)));
       await this.send({
         type: 'offer',
@@ -1360,7 +1474,35 @@ export class MediaEngine extends EventTarget {
     if (this.disposed) throw new MediaEngineDisposedError();
   }
 
-  private async applyQuality(sender: RTCRtpSender): Promise<void> {
+  private readonly qualityQueues = new WeakMap<RTCRtpSender, Promise<void>>();
+
+  /**
+   * Applies the ceilings to one sender, one call at a time.
+   *
+   * Joining, negotiating and a settings change can all ask at once, and
+   * setParameters rejects parameters read before another call changed them.
+   * Those rejections used to surface as unhandled errors or fail an offer that
+   * had already succeeded. A rejected attempt is retried once with fresh
+   * parameters; after that the next negotiation applies them.
+   */
+  private applyQuality(sender: RTCRtpSender): Promise<void> {
+    const run = (this.qualityQueues.get(sender) ?? Promise.resolve()).then(async () => {
+      try {
+        await this.applyQualityNow(sender);
+      } catch {
+        // Logged rather than thrown or shown: a ceiling that could not be
+        // applied must not fail the negotiation or join that asked for it,
+        // and there is nothing the user could do about it. The next
+        // negotiation or settings change applies it again.
+        await this.applyQualityNow(sender).catch((error) =>
+          console.warn(`Could not apply ${sender.track?.kind ?? 'media'} quality limits`, error));
+      }
+    });
+    this.qualityQueues.set(sender, run);
+    return run;
+  }
+
+  private async applyQualityNow(sender: RTCRtpSender): Promise<void> {
     if (!sender.track) return;
     const parameters = sender.getParameters();
     // Encoding entries are owned by WebRTC. A new sender may have none until
@@ -1370,10 +1512,25 @@ export class MediaEngine extends EventTarget {
     const isScreen =
       sender.track.kind === 'video' &&
       sender.track === this.localTracks.get('screen');
+    const isCamera =
+      sender.track.kind === 'video' &&
+      sender.track === this.localTracks.get('camera');
     const nativeCompatibility = isScreen && this.nativeScreen.active;
     const quality = nativeCompatibility
       ? this.nativeScreen.compatibilityQuality ?? this.quality
       : this.quality;
+    // The stream-quality settings describe a share. A camera gets a ceiling
+    // sized to its own picture (never above the share's), keeps its capture
+    // frame rate, and is not scaled by the share's setting.
+    let maxVideoBitrate = isCamera
+      ? Math.min(cameraBitrateCeiling(sender.track.getSettings?.() ?? {}), quality.maxVideoBitrate ?? Infinity)
+      : quality.maxVideoBitrate;
+    // Every viewer receives its own encoded copy, so the uplink carries the
+    // ceiling once per viewer. The compatibility sender serves one viewer.
+    if (maxVideoBitrate !== undefined && !nativeCompatibility)
+      maxVideoBitrate = perViewerBitrate(maxVideoBitrate, this.peers.size);
+    const maxFramerate = isCamera ? undefined : quality.maxFramerate;
+    const scaleResolutionDownBy = isCamera ? undefined : quality.scaleResolutionDownBy;
     let changed = false;
     // Every screen sender degrades by dropping frames rather than resolution.
     // Motion content is the one case where the reverse reads better.
@@ -1396,16 +1553,27 @@ export class MediaEngine extends EventTarget {
           changed = true;
         }
       } else {
-        if (quality.maxVideoBitrate !== undefined && encoding.maxBitrate !== quality.maxVideoBitrate) {
-          encoding.maxBitrate = quality.maxVideoBitrate;
+        if (maxVideoBitrate !== undefined && encoding.maxBitrate !== maxVideoBitrate) {
+          encoding.maxBitrate = maxVideoBitrate;
           changed = true;
         }
-        if (quality.maxFramerate !== undefined && encoding.maxFramerate !== quality.maxFramerate) {
-          encoding.maxFramerate = quality.maxFramerate;
+        if (maxFramerate !== undefined && encoding.maxFramerate !== maxFramerate) {
+          encoding.maxFramerate = maxFramerate;
           changed = true;
         }
-        if (quality.scaleResolutionDownBy !== undefined && encoding.scaleResolutionDownBy !== quality.scaleResolutionDownBy) {
-          encoding.scaleResolutionDownBy = quality.scaleResolutionDownBy;
+        if (scaleResolutionDownBy !== undefined && encoding.scaleResolutionDownBy !== scaleResolutionDownBy) {
+          encoding.scaleResolutionDownBy = scaleResolutionDownBy;
+          changed = true;
+        }
+        // A camera sender may have been configured before it was known to be
+        // one (as a share), so remove the share's limits rather than leaving
+        // them in place.
+        if (isCamera && encoding.maxFramerate !== undefined) {
+          delete encoding.maxFramerate;
+          changed = true;
+        }
+        if (isCamera && encoding.scaleResolutionDownBy !== undefined && encoding.scaleResolutionDownBy !== 1) {
+          encoding.scaleResolutionDownBy = 1;
           changed = true;
         }
       }

@@ -19,7 +19,7 @@ func TestSensitiveNativeMethodsRejectUnauthorisedPages(t *testing.T) {
 	service := &NativeMediaService{gate: gate}
 	methods := []string{
 		"FfmpegInstall", "NativeScreenSources", "NativeScreenThumbnail", "NativeScreenStart", "NativeScreenStop", "NativeScreenDiagnostics",
-		"NativeScreenPeerOffer", "NativeScreenPeerAnswer", "NativeScreenPeerCandidate", "NativeScreenPeerRemove",
+		"NativeScreenIceServers", "NativeScreenPeerOffer", "NativeScreenPeerAnswer", "NativeScreenPeerCandidate", "NativeScreenPeerRemove",
 		"NativeScreenRecordingStart", "NativeScreenRecordingStop", "NativeScreenRecordingRead", "NativeScreenRecordingRelease",
 		"PushToTalkStart", "PushToTalkHeartbeat", "PushToTalkStop", "RecordingExportBegin", "RecordingConversionBegin",
 		"RecordingExportAppend", "RecordingExportFinish", "RecordingExportAbort", "CameraOverlayOpen", "CameraOverlayUpdate",

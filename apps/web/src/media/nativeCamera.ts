@@ -46,6 +46,7 @@ export class NativeCameraTransport {
   }
   readonly trace: (event: string) => void;
   get active() { return this.transport.active; }
+  setIceServers(iceServers: RTCIceServer[]) { this.transport.setIceServers(iceServers); }
   async start() {
     await this.transport.start({ sourceId: 'meta-camera', encoder: 'libx264', width: 720,
       height: 1280, fps: 30, bitrateMbps: 3, cursor: false, h264Profile: 'baseline', contentHint: 'motion' });

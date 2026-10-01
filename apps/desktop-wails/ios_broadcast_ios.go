@@ -28,15 +28,17 @@ import (
 )
 
 type iosBroadcast struct {
-	id       string
-	owner    string // the page load that started it
-	listener net.Listener
-	client   *broadcastipc.Client
-	config   string
-	cancel   context.CancelFunc
-	mu       sync.Mutex
-	once     sync.Once
-	closed   bool
+	id        string
+	owner     string // the page load that started it
+	listener  net.Listener
+	client    *broadcastipc.Client
+	config    string
+	cancel    context.CancelFunc
+	mu        sync.Mutex
+	started   bool      // native_screen_start returned; guarded by mu
+	startedAt time.Time // minimum lifetime after start, even for an already-fired old timer
+	once      sync.Once
+	closed    bool
 }
 
 var screenBroadcast struct {
@@ -70,7 +72,7 @@ func iosBroadcastWatchSignaling(open func() bool, opens func() uint64) {
 func iosBroadcastSignalingClosed() { armSignalingCheck() }
 
 // armSignalingCheck (re)starts the one grace timer. When it fires it ends
-// whichever broadcast is current then, unless a signaling socket opened
+// whichever broadcast is streaming then, unless a signaling socket opened
 // since it was armed: a reconnect that drops again re-arms it for a full
 // grace period rather than being cut short by an older timer.
 func armSignalingCheck() {
@@ -91,7 +93,20 @@ func armSignalingCheck() {
 		screenBroadcast.Lock()
 		b := screenBroadcast.current
 		screenBroadcast.Unlock()
-		if b != nil {
+		if b == nil {
+			return
+		}
+		// Only a share whose start has completed. One still in its picker,
+		// handshake or start command is not streaming yet, and when it
+		// finishes starting with signaling down, checkSignalingAfterStart
+		// re-arms a full grace for it.
+		b.mu.Lock()
+		// Timer.Stop cannot cancel a callback that is already running.
+		// Such a callback may reach this lock after the replacement starts,
+		// so it must also respect that share's own minimum grace deadline.
+		live := b.started && !b.closed && time.Since(b.startedAt) >= callSignalingGrace
+		b.mu.Unlock()
+		if live {
 			b.close()
 		}
 	})
@@ -359,7 +374,15 @@ func startIOSBroadcast(raw json.RawMessage) (any, error) {
 		return nil, err
 	}
 	success = true
-	go func() { <-client.Done(); b.close() }()
+	b.mu.Lock()
+	b.startedAt = time.Now()
+	b.mu.Unlock()
+	// Re-arm a full grace period before this share counts as started, so an
+	// earlier timer firing in between still sees it as starting and skips it.
 	checkSignalingAfterStart()
+	b.mu.Lock()
+	b.started = true
+	b.mu.Unlock()
+	go func() { <-client.Done(); b.close() }()
 	return result, nil
 }

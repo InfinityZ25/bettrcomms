@@ -239,6 +239,13 @@ export function NativeScreenDiagnostics(hostToken: string, sessionID: string): $
 }
 
 /**
+ * NativeScreenIceServers renews active capture peers' relay configuration.
+ */
+export function NativeScreenIceServers(hostToken: string, sessionID: string, iceServers: nativertc$0.IceServer[]): $CancellablePromise<void> {
+    return $Call.ByID(3238902826, hostToken, sessionID, iceServers);
+}
+
+/**
  * NativeScreenPeerAnswer accepts a viewer's answer.
  */
 export function NativeScreenPeerAnswer(hostToken: string, sessionID: string, peerID: string, sdp: string): $CancellablePromise<void> {

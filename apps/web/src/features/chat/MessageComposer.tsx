@@ -1,8 +1,9 @@
-import { useRef, type FormEvent, type RefObject, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useRef, type FormEvent, type RefObject, type Dispatch, type SetStateAction } from 'react';
 import { AtSign, Check, Paperclip, Send, X } from 'lucide-react';
 import type { Message, User } from '@/api';
 import type { PendingAttachment } from './drafts';
 import { Button } from '@/components/ui/button';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
 export default function MessageComposer({
   draft,
@@ -41,10 +42,17 @@ export default function MessageComposer({
   onRemoveFile: (index: number) => void;
   onTypingStop: () => void;
 }) {
+  const phone = useIsMobile();
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!input) return;
+    input.style.height = 'auto';
+    input.style.height = `${Math.min(144, Math.max(phone ? 44 : 48, input.scrollHeight))}px`;
+  }, [draft, inputRef, phone]);
   const fileInput = useRef<HTMLInputElement>(null);
   return (
     <form
-      className="relative m-3 rounded-2xl border bg-muted/60 p-2 focus-within:ring-2 focus-within:ring-ring/40"
+      className="message-composer relative m-3 shrink-0 rounded-2xl border bg-muted/60 p-2 phone:m-2 phone:p-1 focus-within:ring-2 focus-within:ring-ring/40"
       onSubmit={onSend}
       onDragOver={(event) => { if (!editing) event.preventDefault(); }}
       onDrop={(event) => {
@@ -111,16 +119,17 @@ export default function MessageComposer({
         {!editing && (
           <>
             <input ref={fileInput} type="file" multiple className="sr-only" aria-label="Choose attachments" onChange={(event) => { onFiles(event.target.files); event.target.value = ''; }} />
-            <Button variant="ghost" size="icon" type="button" disabled={busy || attachments.length >= 4} aria-label="Attach files" onClick={() => fileInput.current?.click()}><Paperclip size={17} /></Button>
+            <Button variant="ghost" size="icon" className="phone:size-11" type="button" disabled={busy || attachments.length >= 4} aria-label="Attach files" onClick={() => fileInput.current?.click()}><Paperclip size={17} /></Button>
           </>
         )}
         <textarea
           ref={inputRef}
-          rows={2}
+          rows={1}
+          enterKeyHint={phone ? 'send' : undefined}
           maxLength={4000}
-          className="min-w-0 flex-1 resize-none bg-transparent px-2 py-1 text-sm outline-none"
+          className="min-w-0 flex-1 resize-none border-0! bg-transparent! px-2! py-2! text-sm shadow-none! outline-none phone:text-base"
           aria-label={`Message ${label}`}
-          placeholder="Write a message… Type @ to mention"
+          placeholder={phone ? 'Message…' : 'Write a message… Type @ to mention'}
           value={draft}
           disabled={busy}
           onBlur={onTypingStop}
@@ -166,6 +175,7 @@ export default function MessageComposer({
           variant="ghost"
           size="icon"
           type="submit"
+          className="phone:size-11 phone:rounded-full phone:bg-primary phone:text-primary-foreground"
           disabled={(!draft.trim() && (editing || attachments.length === 0)) || busy}
           aria-label={editing ? 'Save message' : 'Send message'}
         >

@@ -74,3 +74,31 @@ test.describe('local TURN relay', () => {
     expect(result.right?.local).toBe('relay');
   });
 });
+
+// Runs without a relay: it checks what the engine hands the browser.
+test('renewed relay credentials reach existing and later participants', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const { MediaEngine } = await import('/src/media/index.ts');
+    const signaling = Object.assign(new EventTarget(), {
+      localPeerId: 'self', send: async () => undefined, sendPresence: async () => undefined,
+      connect: async () => undefined, close: () => undefined,
+    });
+    const server = (credential: string): RTCIceServer =>
+      ({ urls: 'turn:relay.example.test:3478', username: 'call-user', credential });
+    const engine = new MediaEngine({ signaling: signaling as never,
+      ice: { mode: 'direct-preferred', iceServers: [server('first')] } });
+    const credentials = () => [...(engine as unknown as { peers: Map<string, { pc: RTCPeerConnection }> }).peers.values()]
+      .map(peer => peer.pc.getConfiguration().iceServers?.[0]?.credential);
+    engine.addPeer('early');
+    const before = credentials();
+    engine.setIceServers([server('renewed')]);
+    engine.addPeer('late');
+    const after = credentials();
+    engine.dispose();
+    return { before, after };
+  });
+  expect(result.before).toEqual(['first']);
+  // The participant already in the call and the one who joined afterwards.
+  expect(result.after).toEqual(['renewed', 'renewed']);
+});

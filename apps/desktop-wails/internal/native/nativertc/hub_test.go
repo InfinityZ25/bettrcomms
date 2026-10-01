@@ -448,3 +448,46 @@ func TestClosingDuringPeerCreationReleasesThePeer(t *testing.T) {
 		t.Fatalf("closed hub still holds %d peers", hub.PeerCount())
 	}
 }
+
+func TestRenewNativeIceServers(t *testing.T) {
+	h := newTestHub(t)
+	for _, id := range []string{"remote", "direct", PreviewPeerID} {
+		if _, err := h.CreatePeer(context.Background(), id, nil, id != "remote"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	servers := []IceServer{{URLs: []string{"turn:127.0.0.1:9"}, Username: "renewed", Credential: "test-only"}}
+	if err := h.UpdateIceServers(servers); err != nil {
+		t.Fatal(err)
+	}
+	remote := h.peers["remote"].connection.GetConfiguration().ICEServers
+	if len(remote) != 1 || remote[0].Username != "renewed" || remote[0].Credential != "test-only" {
+		t.Fatal("active sender retained expired credentials")
+	}
+	for _, id := range []string{"direct", PreviewPeerID} {
+		if len(h.peers[id].connection.GetConfiguration().ICEServers) != 0 {
+			t.Fatal("renewal introduced relay access")
+		}
+	}
+	h.Close()
+	if h.UpdateIceServers(servers) == nil {
+		t.Fatal("closed hub accepted a renewal")
+	}
+}
+
+func TestRenewWhilePeerIsGathering(t *testing.T) {
+	h := newTestHub(t)
+	beforeAttach = func(h *Hub) {
+		if err := h.UpdateIceServers([]IceServer{{URLs: []string{"stun:127.0.0.1:9"}}}); err != nil {
+			t.Error(err)
+		}
+	}
+	defer func() { beforeAttach = nil }()
+	if _, err := h.CreatePeer(context.Background(), "remote", nil, false); err != nil {
+		t.Fatal(err)
+	}
+	servers := h.peers["remote"].connection.GetConfiguration().ICEServers
+	if len(servers) != 1 || servers[0].URLs[0] != "stun:127.0.0.1:9" {
+		t.Fatal("pending sender missed renewal")
+	}
+}

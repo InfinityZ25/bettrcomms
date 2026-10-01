@@ -5,7 +5,7 @@ import {
   useSyncExternalStore,
   type FormEvent,
 } from 'react';
-import { ArrowDown, ChevronLeft, Search } from 'lucide-react';
+import { ArrowDown, CheckCheck, ChevronLeft, Search } from 'lucide-react';
 import type { Message, User } from '@/api';
 import { api, uploadMessageAttachment } from '@/api';
 import MessageItem from './MessageItem';
@@ -34,6 +34,7 @@ export default function MessageThread({
   onError,
   targetId,
   canModerate = false,
+  compactHeader = false,
   onClose,
 }: {
   roomId: string;
@@ -42,6 +43,7 @@ export default function MessageThread({
   onError: (message: string) => void;
   targetId?: string;
   canModerate?: boolean;
+  compactHeader?: boolean;
   /** Offered on phones, where the thread covers the button that opened it. */
   onClose?: () => void;
 }) {
@@ -166,7 +168,7 @@ export default function MessageThread({
       mentions.current.clear();
       stopTyping();
       nearBottom.current = true;
-      end.current?.scrollIntoView({ block: 'end' });
+      if (viewport.current) viewport.current.scrollTop = viewport.current.scrollHeight;
       input.current?.focus();
     };
     void runMessageAction(submitMessage);
@@ -213,25 +215,26 @@ export default function MessageThread({
     .filter((name): name is string => Boolean(name));
   return (
     <div
-      className="relative flex min-h-0 flex-1 flex-col select-text"
+      className="message-thread relative flex min-h-0 flex-1 flex-col select-text"
       aria-label="Conversation messages"
     >
-      <div className="flex items-center justify-between gap-2 border-b px-3 py-2 text-xs">
+      <div className={compactHeader ? "thread-tools flex shrink-0 items-center justify-end phone:hidden gap-1 border-b px-3 py-1 text-xs" : "thread-tools flex shrink-0 items-center justify-between gap-2 border-b px-3 py-2 text-xs"}>
         {onClose && (
           <Button
             variant="ghost"
             size="icon"
-            className="-ml-1 hidden shrink-0 phone:inline-flex"
+            className="-ml-1 hidden shrink-0 phone:inline-flex phone:size-11"
             aria-label="Close room messages"
             onClick={onClose}
           >
             <ChevronLeft size={20} />
           </Button>
         )}
-        <span className="min-w-0 flex-1 truncate">{label}</span>
+        {!compactHeader && <span className="min-w-0 flex-1 truncate phone:text-sm phone:font-semibold">{label}</span>}
         <Button
           variant="ghost"
           size="icon-sm"
+          className="phone:size-11"
           aria-label="Search this conversation"
           onClick={() => openMessageSearch(roomId)}
         >
@@ -240,6 +243,10 @@ export default function MessageThread({
         <Button
           variant="ghost"
           size="sm"
+          // A phone header has room for the conversation's name or this label,
+          // not both; the icon keeps the same accessible name.
+          className="phone:size-11 phone:px-0"
+          aria-label="Mark as read"
           onClick={() => {
             const last = chat.messages.at(-1);
             if (last)
@@ -252,12 +259,13 @@ export default function MessageThread({
               );
           }}
         >
-          Mark as read
+          <CheckCheck className="hidden phone:block" size={18} />
+          <span className="phone:hidden">Mark as read</span>
         </Button>
       </div>
       <div
         ref={viewport}
-        className="min-h-0 flex-1 overflow-auto p-3"
+        className="message-log min-h-0 flex-1 overflow-auto overscroll-contain p-3 phone:px-2 phone:py-3"
         role="log"
         aria-label="Messages"
         aria-live="polite"
@@ -305,6 +313,13 @@ export default function MessageThread({
         )}
         {messages.map((message, index) => (
           <Fragment key={message.id}>
+            {(index === 0 || new Date(messages[index - 1].created_at).toDateString() !== new Date(message.created_at).toDateString()) && (
+              <div className="my-4 flex items-center gap-3 text-xs text-muted-foreground" role="separator" aria-label={new Date(message.created_at).toLocaleDateString(undefined, { dateStyle: 'long' })}>
+                <span className="h-px flex-1 bg-border" />
+                <span>{new Date(message.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                <span className="h-px flex-1 bg-border" />
+              </div>
+            )}
             {index === firstUnread && <p className="my-3 border-t border-primary pt-1 text-center text-xs font-medium text-primary">New messages</p>}
             {anchor?.id === message.id && (
               <p className="mb-2 text-xs text-muted-foreground">
@@ -353,7 +368,7 @@ export default function MessageThread({
           onClick={() => {
             setHighlight(undefined);
             nearBottom.current = true;
-            end.current?.scrollIntoView({ block: 'end' });
+            if (viewport.current) viewport.current.scrollTop = viewport.current.scrollHeight;
           }}
         >
           <ArrowDown size={14} />

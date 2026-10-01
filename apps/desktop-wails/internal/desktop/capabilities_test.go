@@ -40,14 +40,22 @@ func TestEveryCapabilityExplainsItself(t *testing.T) {
 	}
 }
 
-// Microphone and camera permission is Experimental, not Implemented.
-//
-// The window's policy and the token gate have tests, but nobody has watched a packaged
-// window complete the normal permission prompt. It must not claim that this
-// host can revoke a grant or that all navigation has been constrained.
+// Permission policy is Experimental on Windows and macOS, not Implemented.
+// Packaged camera/microphone acceptance and grant management remain separate.
 func TestMediaPermissionsClaimsOnlyWhatThisHostDoes(t *testing.T) {
 	permissions := NewMediaCapabilities().MediaPermissions
 
+	if runtime.GOOS == "darwin" {
+		if permissions.State != Experimental {
+			t.Errorf("mediaPermissions = %q on macOS, want experimental", permissions.State)
+		}
+		for _, promise := range []string{"bundled BetterComms page", "macOS still asks", "acceptance remains pending"} {
+			if !strings.Contains(permissions.Detail, promise) {
+				t.Errorf("the detail does not say it is %q: %q", promise, permissions.Detail)
+			}
+		}
+		return
+	}
 	if runtime.GOOS != "windows" {
 		if permissions.State != Unavailable {
 			t.Errorf("mediaPermissions = %q off Windows, want unavailable", permissions.State)

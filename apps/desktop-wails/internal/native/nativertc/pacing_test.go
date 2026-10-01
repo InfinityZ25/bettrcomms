@@ -201,3 +201,58 @@ func TestFilteringPreservesLineEndings(t *testing.T) {
 		t.Error("a relay candidate survived")
 	}
 }
+
+func TestMediaClockFollowsCaptureTimestamps(t *testing.T) {
+	var clock mediaClock
+	start := time.Unix(100, 0)
+	// A 25 fps source delivered with arrival jitter: the RTP timeline follows
+	// the capture times exactly, not the arrivals and not a 30 fps grid.
+	arrivals := []time.Duration{0, 55 * time.Millisecond, 70 * time.Millisecond, 131 * time.Millisecond}
+	for index, arrival := range arrivals {
+		got := clock.advance(time.Duration(index)*40*time.Millisecond+7*time.Hour, start.Add(arrival))
+		if want := uint32(index * 3600); got != want {
+			t.Fatalf("frame %d stamped %d, want %d", index, got, want)
+		}
+	}
+}
+
+func TestMediaClockSurvivesATimelineRestart(t *testing.T) {
+	var clock mediaClock
+	start := time.Unix(100, 0)
+	clock.advance(10*time.Second, start)
+	first := clock.advance(10*time.Second+40*time.Millisecond, start.Add(40*time.Millisecond))
+	// The source restarts its timeline at zero; the gap is measured by arrival.
+	second := clock.advance(0, start.Add(90*time.Millisecond))
+	if second-first != 4500 {
+		t.Fatalf("restart advanced %d ticks, want the 50 ms arrival gap (4500)", second-first)
+	}
+	// A repeated timestamp still moves forward.
+	third := clock.advance(0, start.Add(90*time.Millisecond))
+	if third <= second {
+		t.Fatalf("duplicate capture time did not advance: %d then %d", second, third)
+	}
+	// A long stall cannot jump further than a receiver tolerates.
+	fourth := clock.advance(time.Hour, start.Add(time.Hour))
+	if uint64(fourth-third) > uint64(maxFrameGapTicks) {
+		t.Fatalf("stall jumped %d ticks", fourth-third)
+	}
+}
+
+func TestMediaClockIgnoresAnIsolatedMissingTimestamp(t *testing.T) {
+	var clock mediaClock
+	start := time.Unix(100, 0)
+	base := 500 * time.Millisecond
+	clock.advance(base, start)
+	// A frame without a timestamp is placed by arrival...
+	missing := clock.advance(0, start.Add(40*time.Millisecond))
+	if missing != 3600 {
+		t.Fatalf("missing timestamp stamped %d, want the 40 ms arrival gap (3600)", missing)
+	}
+	// ...and the next valid frame is measured from the last valid one.
+	// It was captured 80 ms after the last valid frame, which is where it
+	// belongs on the timeline, whatever the frame between them did.
+	next := clock.advance(base+80*time.Millisecond, start.Add(85*time.Millisecond))
+	if next != 7200 {
+		t.Fatalf("next frame stamped %d, want 7200", next)
+	}
+}

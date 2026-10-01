@@ -1,3 +1,4 @@
+import { openMobileFriends } from './mobile-touch';
 import {
   expect,
   test,
@@ -35,78 +36,39 @@ async function login(
   }
 }
 
-test('mobile sidebar overlays the call and closes after choosing a room', async ({
-  browser,
-}) => {
-  const context = await browser.newContext({
-    baseURL,
-    viewport: { width: 390, height: 650 },
-  });
+test('mobile sections open full-screen lists without interrupting an active call', async ({ browser }) => {
+  const context = await browser.newContext({ baseURL, viewport: { width: 390, height: 650 }, hasTouch: true, isMobile: true });
   try {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     await login(context, 'Mobile Nav', `mobile-nav-${suffix}@example.test`);
-    const room = (
-      await json<{ room: { name: string } }>(
-        await context.request.post('/api/v1/rooms', {
-          headers: { Origin: origin },
-          data: { name: `Mobile room ${suffix}` },
-        }),
-      )
-    ).room;
+    const room = (await json<{ room: { name: string } }>(await context.request.post('/api/v1/rooms', {
+      headers: { Origin: origin }, data: { name: `Mobile room ${suffix}` },
+    }))).room;
     const page = await context.newPage();
     await page.goto('/');
-    await expect(page.getByRole('heading', { name: room.name })).toBeVisible();
     await page.getByRole('button', { name: 'Join call' }).click();
-    await expect(
-      page.getByRole('button', { name: 'Leave call' }),
-    ).toBeVisible();
-    const main = page.locator('main');
-    const before = await main.boundingBox();
-    // Portrait phones navigate from a bottom tab bar; Calls opens the room list.
+    await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
     const tabs = page.getByRole('navigation', { name: 'Sections' });
-    const tabBar = await tabs.boundingBox();
-    expect(tabBar!.width).toBe(390);
-    expect(tabBar!.y + tabBar!.height).toBeCloseTo(650, 0);
-    await tabs.getByRole('button', { name: 'Calls' }).click();
-    const drawer = page.getByRole('dialog', { name: 'Conversations' });
-    await expect(drawer).toBeVisible();
-    await expect(drawer).toBeInViewport({ ratio: 0.9 });
-    const box = await drawer.boundingBox();
-    expect(box).not.toBeNull();
-    expect(box!.width).toBeCloseTo(390 * 0.85, 0);
-    expect((await main.boundingBox())?.width).toBe(before?.width);
-    await page.screenshot({ path: '.local/mobile-sidebar-drawer.png' });
-    await drawer.getByRole('button', { name: room.name }).click();
-    await expect(drawer).toBeHidden();
-    await expect(
-      page.getByRole('button', { name: 'Leave call' }),
-    ).toBeVisible();
-
-    await tabs.getByRole('button', { name: 'Calls' }).click();
-    await expect(drawer).toBeVisible();
-    await page.keyboard.press('Escape');
-    await expect(drawer).toBeHidden();
-
-    // The 768–820px range must use the same drawer as narrower phones.
-    await page.setViewportSize({ width: 800, height: 650 });
-    await tabs.getByRole('button', { name: 'Calls' }).click();
-    await expect(drawer).toBeVisible();
-    expect((await drawer.boundingBox())?.width).toBeCloseTo(384, 0);
-    await page.keyboard.press('Escape');
-
-    // A phone on its side is wider than 820px but still gets the drawer, not
-    // a sidebar beside the call.
-    await page.setViewportSize({ width: 852, height: 393 });
-    await expect(drawer).toBeHidden();
-    // Only the section rail sits beside the call.
-    await expect
-      .poll(async () => (await main.boundingBox())!.width)
-      .toBeGreaterThan(852 - 80);
-    await page.getByRole('button', { name: 'Toggle sidebar' }).click();
-    await expect(drawer).toBeVisible();
-  } finally {
-    await context.close();
-  }
+    for (const size of [{width:390,height:650}, {width:800,height:650}, {width:852,height:393}]) {
+      await page.setViewportSize(size);
+      await expect(tabs.getByRole('button', { name: 'Friends', exact: true })).toBeHidden();
+      if (size.width <= 820) await expect(tabs.getByRole('button')).toHaveCount(4);
+      await tabs.getByRole('button', { name: 'Calls', exact: true }).click();
+      const list = page.getByRole('main', { name: 'Calls', exact: true });
+      await expect(list).toBeVisible();
+      await expect(page.getByRole('dialog', { name: 'Conversations' })).toBeHidden();
+      await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
+      const box = (await list.boundingBox())!;
+      expect(box.width).toBeGreaterThan(size.width - 80);
+      await list.getByRole('button', { name: room.name, exact: true }).click();
+      await expect(list).toBeHidden();
+      await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
+    }
+    await page.screenshot({ path: '.local/mobile-ui-review/mobile-call.png' });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await expect(tabs.getByRole('button', { name: 'Friends', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
+  } finally { await context.close(); }
 });
 
 test('friends dialog stays within a short phone viewport and scrolls to its actions', async ({
@@ -125,10 +87,7 @@ test('friends dialog stays within a short phone viewport and scrolls to its acti
     );
     const page = await context.newPage();
     await page.goto('/');
-    await page
-      .getByRole('navigation', { name: 'Sections' })
-      .getByRole('button', { name: 'Friends', exact: true })
-      .click();
+    await openMobileFriends(page);
     const dialog = page.getByRole('dialog', { name: 'Better with friends' });
     await expect(dialog).toBeVisible();
     const box = await dialog.boundingBox();
@@ -321,19 +280,13 @@ test('a phone call keeps every control in one row below cameras that fill the sc
       .locator('article')
       .filter({ hasText: 'Touch actions regression' });
     await expect(message).toBeVisible();
-    await expect(
-      message.getByRole('button', { name: 'Add reaction', exact: true }),
-    ).toBeHidden();
+    const before = (await message.boundingBox())!;
     await message.getByText('Touch actions regression', { exact: true }).tap();
-    await expect(
-      message.getByRole('button', { name: 'Add reaction', exact: true }),
-    ).toBeVisible();
-    await expect(
-      message.getByRole('button', {
-        name: `Reply to ${caller.name}`,
-        exact: true,
-      }),
-    ).toBeVisible();
+    expect((await message.boundingBox())!.height).toBeCloseTo(before.height, 0);
+    await message.getByRole('button', { name: `Message options for ${caller.name}`, exact: true }).click();
+    await expect(page.getByRole('menuitem', { name: 'Add reaction', exact: true })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: 'Reply', exact: true })).toBeVisible();
+    await page.keyboard.press('Escape');
     await page.getByRole('button', { name: 'Close room messages' }).click();
     await expect(page.getByRole('region', { name: 'Room chat' })).toBeHidden();
     await page.screenshot({ path: '.local/mobile-call.png' });
@@ -443,3 +396,134 @@ for (const initialWidth of [375, 1280]) {
     }
   });
 }
+
+// The installed iPhone app's boot report: iOS-only code paths run, and the
+// host-dependent ones fail as they would without the native side, which is
+// what raises the notice this test checks the placement of.
+const iosBoot = (() => {
+  const unavailable = { state: 'unavailable', detail: 'test', fallback: 'browser' };
+  return {
+    schemaVersion: 1, runtime: 'wails', hostVersion: 'test', platform: 'ios', architecture: 'arm64',
+    apiOrigin: '', authReturn: unavailable,
+    windowControls: { platform: 'ios', mode: 'native-frame', height: 0, insetStart: 0, insetEnd: 0, buttons: [], buttonSide: 'end' },
+    capabilities: {
+      schemaVersion: 1, platform: 'ios', architecture: 'arm64', browserMedia: { state: 'implemented', detail: 'test' },
+      nativeGameVideo: unavailable, nativeProcessAudio: unavailable, nativeMicrophoneDsp: unavailable,
+      localTrackRecording: unavailable, mediaPermissions: unavailable, globalInput: unavailable,
+      nativeOverlays: unavailable, notes: [],
+    },
+  };
+})();
+
+test('the iPhone app keeps notices clear of call controls and uses full-screen sheets', async ({ browser }) => {
+  const context = await browser.newContext({ baseURL, viewport: { width: 402, height: 874 }, hasTouch: true, isMobile: true });
+  try {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    await login(context, 'iPhone Owner', `iphone-owner-${suffix}@example.test`);
+    const room = (await json<{ room: { name: string } }>(await context.request.post('/api/v1/rooms', {
+      headers: { Origin: origin }, data: { name: `iPhone room ${suffix}` },
+    }))).room;
+    await context.addInitScript((boot) => { Object.assign(window, { __BETTERCOMMS_DESKTOP__: boot }); }, iosBoot);
+    const page = await context.newPage();
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: room.name })).toBeVisible();
+    await page.getByRole('button', { name: 'Join call' }).click();
+    await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
+
+    // Without the native side the app reports its missing background audio.
+    const notice = page.getByRole('alert');
+    await expect(notice).toBeVisible();
+    const dismissButton = notice.getByRole('button', { name: 'Dismiss notification' });
+    // Measure once the entrance animation has settled at full scale.
+    await expect.poll(async () => (await dismissButton.boundingBox())!.height).toBeGreaterThanOrEqual(40);
+    const box = (await notice.boundingBox())!;
+    const leave = (await page.getByRole('button', { name: 'Leave call' }).boundingBox())!;
+    expect(box.width).toBeGreaterThan(402 * 0.85);
+    expect(box.y).toBeLessThan(874 / 3);
+    expect(box.y + box.height).toBeLessThan(leave.y);
+
+    // With no text status, the connection icon shares the controls' row.
+    const connection = (await page.getByRole('button', { name: 'Connection diagnostics' }).boundingBox())!;
+    expect(Math.abs(connection.y + connection.height / 2 - (leave.y + leave.height / 2))).toBeLessThan(4);
+    await dismissButton.click();
+    await expect(notice).toBeHidden();
+
+    // Settings is a full-screen sheet on a phone.
+    await page.getByRole('button', { name: /account options/ }).click();
+    await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
+    const settings = page.getByRole('dialog', { name: 'Settings' });
+    await expect(settings).toBeVisible();
+    await expect.poll(async () => Math.round((await settings.boundingBox())!.width)).toBe(402);
+    await page.keyboard.press('Escape');
+    await expect(settings).toBeHidden();
+
+    // A phone held sideways gets the same phone styles, not the desktop ones,
+    // and keeps clear of the notch now at a side edge.
+    await page.setViewportSize({ width: 874, height: 402 });
+    const cdp = await context.newCDPSession(page);
+    await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: { left: 59, right: 59, bottom: 21 } });
+    await page.getByRole('button', { name: /account options/ }).click();
+    await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
+    await expect(settings).toBeVisible();
+    await expect.poll(async () => Math.round((await settings.boundingBox())!.width)).toBe(874);
+    const close = (await settings.getByRole('button', { name: 'Close' }).boundingBox())!;
+    expect(close.x + close.width).toBeLessThanOrEqual(874 - 59);
+    const firstControl = (await settings.getByRole('combobox').or(settings.getByRole('button', { name: /Audio|Devices/ })).first().boundingBox())!;
+    expect(firstControl.x).toBeGreaterThanOrEqual(59);
+    await page.keyboard.press('Escape');
+    await expect(settings).toBeHidden();
+
+    // The narrowest supported phone, with no text status: the controls wrap
+    // below the connection icon rather than being clipped off the edge.
+    await page.setViewportSize({ width: 320, height: 640 });
+    // Back to portrait insets: a small phone's status bar and no side notch,
+    // so the check measures the full 320px width.
+    await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: { top: 20 } });
+    for (const name of ['Mute microphone', 'More call options', 'Leave call']) {
+      // Rotation updates safe areas and the visual viewport on separate
+      // frames. Check the settled geometry rather than the preceding layout.
+      const button = page.getByRole('button', { name, exact: true });
+      await expect.poll(async () => (await button.boundingBox())!.x).toBeGreaterThanOrEqual(0);
+      await expect.poll(async () => {
+        const control = (await button.boundingBox())!;
+        return control.x + control.width;
+      }).toBeLessThanOrEqual(320);
+    }
+  } finally {
+    await context.close();
+  }
+});
+
+test('unsupported mobile screen sharing explains the limit inside the viewport', async ({ browser }) => {
+  const context = await browser.newContext({ baseURL, viewport: { width: 390, height: 650 } });
+  try {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    await login(context, 'Mobile Share', `mobile-share-${suffix}@example.test`);
+    await json(await context.request.post('/api/v1/rooms', {
+      headers: { Origin: origin }, data: { name: `Mobile share ${suffix}` },
+    }));
+    await context.addInitScript(() => {
+      Object.defineProperty(navigator.mediaDevices, 'getDisplayMedia', {
+        configurable: true, value: undefined,
+      });
+    });
+    const page = await context.newPage();
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Join call' }).click();
+    await expect(page.getByRole('button', { name: 'Share screen' })).toBeVisible();
+    await page.getByRole('button', { name: 'Share screen' }).click();
+    const notice = page.getByRole('alert').filter({ hasText: 'This browser cannot share its screen' });
+    await expect(notice).toBeVisible();
+    // On a phone the notice drops in from the top; measure it once settled.
+    await expect.poll(async () => (await notice.boundingBox())!.y).toBeGreaterThanOrEqual(0);
+    const box = await notice.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+    expect(box!.y).toBeGreaterThanOrEqual(0);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(650);
+    await expect(notice.getByRole('button', { name: 'Dismiss notification' })).toBeInViewport();
+  } finally {
+    await context.close();
+  }
+});

@@ -134,7 +134,7 @@ jobs:
       - run: npm test
       - run: go test ./... && go vet ./...
         working-directory: server
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright install --with-deps chromium webkit
       - name: Start local services
         run: |
           (cd server && go run ./cmd/server > /tmp/bettercomms-api.log 2>&1) &
@@ -146,6 +146,20 @@ jobs:
           cat /tmp/bettercomms-api.log /tmp/bettercomms-web.log
           exit 1
       - run: npm run test:e2e
+      - name: Verify optimized phone layouts in Chromium and WebKit
+        env:
+          E2E_BASE_URL: http://localhost:5174
+          BETTERCOMMS_API_TARGET: http://127.0.0.1:8081
+          HTTP_ADDR: 127.0.0.1:8081
+          APP_URL: http://localhost:5174
+        run: |
+          (cd server && go run ./cmd/server > /tmp/bettercomms-preview-api.log 2>&1) &
+          npm exec --workspace apps/web -- vite preview --host 127.0.0.1 --port 5174 --strictPort > /tmp/bettercomms-preview.log 2>&1 &
+          for attempt in $(seq 1 30); do
+            if curl --fail http://127.0.0.1:8081/healthz && curl --fail http://localhost:5174; then break; fi
+            sleep 1
+          done
+          npx playwright test --config=playwright.production.config.ts
       - uses: actions/upload-artifact@v4
         if: always()
         with:

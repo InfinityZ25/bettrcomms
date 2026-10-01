@@ -470,6 +470,9 @@ h1 {
 .camera-tile .self-video {
   transform: scaleX(-1);
 }
+.camera-tile .self-video.unmirrored {
+  transform: none;
+}
 .tile-caption {
   text-shadow: 0 1px 3px #000;
 }

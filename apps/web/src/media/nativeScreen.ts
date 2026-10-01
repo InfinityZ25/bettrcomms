@@ -188,6 +188,31 @@ export class NativeScreenTransport {
     return Boolean(this.session);
   }
 
+  /** Renew both ends of active native shares, including the host senders. */
+  setIceServers(iceServers: RTCIceServer[]) {
+    this.iceServers = iceServers;
+    for (const receiver of this.receivers.values()) {
+      try {
+        receiver.pc.setConfiguration({ ...receiver.pc.getConfiguration(), iceServers: this.nativeIceServers() });
+      } catch {
+        this.log('', 'receiver-ice-refresh-failed');
+      }
+    }
+    const session = this.session;
+    if (session) {
+      // Serialized updates keep a slower old renewal from overwriting a new
+      // one. Read the latest config when dispatched; never log credentials.
+      this.iceRefresh = this.iceRefresh.then(async () => {
+        if (this.disposed || this.session !== session) return;
+        await this.invoke('native_screen_ice_servers', {
+          sessionId: session.sessionId, iceServers: this.nativeIceServers(),
+        });
+      }).catch(() => this.log('', 'sender-ice-refresh-failed'));
+    }
+  }
+
+  private iceRefresh: Promise<void> = Promise.resolve();
+
   get sessionId() {
     return this.session?.sessionId;
   }

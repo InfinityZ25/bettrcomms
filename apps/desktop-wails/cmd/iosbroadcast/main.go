@@ -132,6 +132,8 @@ func command(ctx context.Context, name string, raw json.RawMessage) (any, error)
 		return nil, errors.New("Screen broadcast is no longer active")
 	}
 	switch name {
+	case "native_screen_ice_servers":
+		return nil, h.UpdateIceServers(a.IceServers)
 	case "native_screen_peer_offer":
 		offer, err := h.CreatePeer(ctx, a.PeerID, a.IceServers, a.DirectOnly)
 		return map[string]string{"type": "offer", "sdp": offer.SDP}, err
@@ -173,7 +175,7 @@ func bc_broadcast_stop() {
 }
 
 //export bc_broadcast_video
-func bc_broadcast_video(data unsafe.Pointer, size C.int) {
+func bc_broadcast_video(data unsafe.Pointer, size C.int, capturedMicros C.longlong) {
 	if size <= 0 || size > 2*1024*1024 {
 		return
 	}
@@ -181,7 +183,7 @@ func bc_broadcast_video(data unsafe.Pointer, size C.int) {
 	h := state.hub
 	state.Unlock()
 	if h != nil {
-		_ = h.WriteAccessUnit(C.GoBytes(data, size), time.Now())
+		_ = h.WriteTimedAccessUnit(C.GoBytes(data, size), time.Now(), time.Duration(capturedMicros)*time.Microsecond)
 	}
 }
 

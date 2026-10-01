@@ -9,6 +9,12 @@ import (
 
 const feedbackLifetime = 5 * time.Second
 
+// adaptivePaceHeadroom is how far above the target bitrate an adaptive
+// sender's pacer runs. Native encoders cap their one-second output at 1.25x
+// the target, so pacing at exactly 1.25x left a keyframe no slack: the frames
+// behind it queued, and the lag detector read our own pacing as congestion.
+const adaptivePaceHeadroom = 1.5
+
 // A keyframe may take hundreds of milliseconds to pace at the lowest rate.
 // Recover only sustained queue lag, while continuing the existing reference
 // chain until a fresh keyframe is available to replace the queued backlog.
@@ -191,7 +197,7 @@ func (h *Hub) NextEncoderControl(now time.Time) EncoderControl {
 }
 func (h *Hub) pacingRate(now time.Time) float64 {
 	if h.adaptive != nil {
-		return float64(h.adaptive.rate(now)) * 1.25
+		return float64(h.adaptive.rate(now)) * adaptivePaceHeadroom
 	}
 	return h.paceBitsPerSecond
 }

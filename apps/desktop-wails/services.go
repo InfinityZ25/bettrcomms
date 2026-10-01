@@ -646,3 +646,15 @@ func (s *NativeMediaService) MediaPermissionOpenSettings(hostToken, kind string)
 	}
 	return desktop.OpenExternal(desktop.MediaPermissionSettingsURI(parsed))
 }
+
+// NativeScreenIceServers renews active capture peers' relay configuration.
+func (s *NativeMediaService) NativeScreenIceServers(hostToken, sessionID string, iceServers []nativertc.IceServer) error {
+	if err := s.authorise(hostToken); err != nil {
+		return err
+	}
+	hub, err := s.screen.Hub(sessionID)
+	if err != nil {
+		return err
+	}
+	return hub.UpdateIceServers(iceServers)
+}

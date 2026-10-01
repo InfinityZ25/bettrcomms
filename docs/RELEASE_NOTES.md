@@ -1,5 +1,125 @@
+## Unreleased — combined review follow-up
+
+Native screen and glasses senders now receive renewed TURN configuration,
+including peers still gathering candidates. Direct-only peers keep relay
+servers excluded, and local previews remain isolated. Updating credentials
+preserves capture and tracks; it does not itself restart an ICE connection.
+A replaced broadcast also protects its own start deadline from an older
+signaling timer callback that was already running. The macOS
+media-permission translation unit is excluded from iOS builds.
+Custom desktop frames explicitly fill the remaining viewport at phone-sized
+breakpoints. CI also checks optimized phone layouts in Chromium and WebKit.
+
+Validation after reconciling current main: frontend build and 362 unit tests, targeted native credential
+renewal tests with the race detector, native authorization checks, Go vet,
+and a complete ad hoc iOS archive with its broadcast extension. Full browser
+and database checks for this follow-up remain pending. These checks do not
+establish physical-device or cross-network media acceptance.
+
 # BetterComms preview release notes
 
+## Unreleased — mobile navigation and conversations
+
+Messages and Calls now open full-screen mobile lists with filtering, readable
+rows and explicit back navigation. Phone navigation has four destinations:
+Home, Messages, Calls and You. Friends is available through + in Messages,
+including when the phone is held sideways; the desktop Friends rail remains.
+Home opens the home screen, and Recordings is available in the account menu
+alongside Settings. Navigation preserves the
+active call, whose compact controls sit above the page rather than covering
+the message composer.
+
+Direct messages have one mobile header, a growing one-line composer and
+explicit message menus. Reading or scrolling no longer expands message rows.
+Dates separate message history; drafts survive returning to the conversation
+list. The visible viewport bounds the interface while the keyboard is open,
+and message scrolling stays inside the thread. Dialogs, menus and controls
+respect phone safe areas and minimum touch sizes in portrait and landscape.
+
+The packaged build also preserves full-screen Friends and Settings positioning
+after CSS optimization. Dialog centering and full-screen overrides now use the
+same transform property; mixing individual translation with transform resets
+left sheets half off-screen in the optimized assets. With the local API/database
+running, `npm run test:e2e:production-mobile` builds and checks the actual
+production assets in Chromium and WebKit, including rotation and keyboard
+layout. This is separate from development-server browser tests.
+
+Phone Settings and Friends backgrounds now reach behind the status bar and
+home indicator. Safe-area spacing is applied to controls and the end of the
+scrolling content rather than leaving a separate band around the page.
+Settings uses its category selector as the phone heading, freeing the space
+previously occupied by a duplicate category title.
+
+Mobile navigation supports a right swipe from the left edge to go back and a
+left swipe from the right edge to go forward. History includes conversations,
+lists, Recordings and full-screen Settings/Friends panels; navigation does not
+restart or end the call. Vertical scrolling, editable controls, sliders,
+video gestures and the transient native screen picker keep their own gestures.
+Chromium checks use browser-dispatched touch input with a synthetic-microphone
+call. Desktop WebKit checks deliver touch sequences to the page's listeners
+from a call lobby; physical iPhone gesture acceptance remains required.
+
+Validation: web build, 285 unit tests, Chromium mobile/live-call and desktop
+conversation regressions, WebKit conversation/keyboard layout regression, and
+A/AA accessibility checks for the new conversation and list surfaces. Keyboard
+geometry is emulated in these tests; physical iPhone keyboard and interaction
+acceptance is still required before declaring the interface production-ready.
+
+## Unreleased — signaling delivery
+
+The signaling server no longer drops a message silently when a participant's
+queue is full. It disconnects that participant, whose client reconnects and
+receives a fresh snapshot of the call, and the queue is larger (256 messages,
+from 32). In the client, an offer that goes unanswered is sent again after
+five seconds, so a lost offer or answer no longer leaves two people unable to
+exchange a camera, share or route change for the rest of the call; a
+connection that stays disconnected for five seconds now looks for a new route
+instead of waiting for the browser to declare it failed. Verified with unit
+tests and two-engine browser tests that discard the first offer or answer;
+not measured on real network changes.
+## Unreleased — call video quality rules
+
+Browser and WebView calls now state one codec order on every client (H.264
+Constrained Baseline first, then VP8), so a pair of devices no longer lands on
+a different codec depending on who connected first. A camera has its own
+bitrate ceiling sized to its picture (2.5 Mbps at 720p) instead of the
+screen-share ceiling (20 Mbps by default), keeps its capture frame rate, and
+each viewer's share of a ceiling shrinks once more than two people are
+watching. Applying these settings is serialized and retried, which removes
+intermittent errors during joins. Your own preview is no longer mirrored for a
+rear camera or the glasses. Call diagnostics now include what limited the
+encoder, the encoder or decoder in use, freezes, dropped frames, and the
+link's estimated capacity. Verified in Chromium with a synthetic camera over
+the real signaling server; hardware encoding on phones and Safari's behaviour
+were not measured.
+## Unreleased — iPhone video sender timing
+
+Ray-Ban and iPhone screen-broadcast video is now stamped with each frame's own
+capture time instead of a fixed 30 fps grid, which drifted and jumped whenever
+the source ran slower or unevenly. Screen broadcasts no longer discard frames
+that arrive a few milliseconds early, and landscape apps are rotated upright
+before encoding (at the already scaled-down size, to respect the extension's
+memory limit). Both senders now schedule a keyframe about every four seconds
+instead of every second; viewers still get one as they connect and whenever
+they request it. The pacer runs with more headroom above the encoder's cap.
+The build is installed on a physical iPhone, but playback smoothness,
+landscape rotation and extension memory under rotation have not yet been
+measured on a real call.
+## Unreleased — iPhone layout polish
+
+Phone styles now apply to a phone held sideways too: the `phone` Tailwind
+variant had compiled to the portrait width query alone, so landscape phones got
+desktop sizing for every `phone:` utility. Notices drop from the top under the
+status bar at full width instead of a half-width column that covered the call
+controls and tab bar (and blocked taps on them); they were also offset by a
+doubled centring transform. The status bar area matches the content rather
+than a lighter strip, Settings opens as a full-screen sheet, the connection
+indicator shares the call controls' row unless a text status needs its own
+line, the chat header shows Mark as read as an icon, and a friend's actions
+wrap under their name. Checked in Chromium with the iOS boot report and
+emulated iPhone safe areas at 402×874 in both orientations, and installed on
+a physical iPhone; safe-area rendering on the device itself was not
+separately measured.
 ## Unreleased — visual copilot reliability
 
 Sharing now opens the participant permission panel, and viewers see whether
@@ -231,9 +351,13 @@ The desktop app now builds solely from `apps/desktop-wails`. The removed desktop
 
 The Wails native media implementations still require physical-device and packaged authentication acceptance. macOS uses webview capture where supported and does not claim Windows native capture, process audio, or GPU processing. See [desktop validation status](WAILS_COMPLETION.md).
 
+The macOS Share button now opens the webview's working screen picker directly. macOS has no native window-capture adapter, so the native source list and its FFmpeg setup no longer appear there. For packaged macOS builds, the bundled app page receives its WebKit camera/microphone grant without a second site prompt; macOS still asks for app-level access when each device is first used. Physical-device acceptance remains pending.
+
 Mobile browser calls now offer an in-call camera picker for sources the browser exposes. Choosing a source while video is off saves it for the next camera-on action; switching while video is on replaces only the camera without recapturing the microphone. If the selected camera cannot be opened, the current video stays live and the app reports that the device may be busy or unavailable. For browsers that cannot open two cameras at once, it suggests turning video off before switching. Direct Meta Ray-Ban camera streaming is not implemented in the browser client; it needs a native mobile integration and device acceptance testing.
 
 On narrow screens, the conversations toggle opens a right-side drawer over the current view. The drawer takes two-thirds of the viewport, and selecting a room closes it. The Friends dialog stays within the visible phone viewport and scrolls its contents when the list is long.
+
+When a mobile browser does not expose `getDisplayMedia` (including the reported iPhone Safari and Chrome cases), Share now explains that screen presentation requires the desktop app or a supporting desktop browser. The error notice wraps within the phone viewport instead of overflowing sideways. The website cannot grant a screen-capture API that the iPhone browser does not provide.
 
 ## Unreleased — messaging basics
 

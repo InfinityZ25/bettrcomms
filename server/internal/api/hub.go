@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -41,7 +43,69 @@ type client struct {
 	send     chan wire
 	muted    bool
 	deafened bool
+	// overflowed is set once this client's queue has been full.
+	overflowed atomic.Bool
+	// relayBudget limits what this client may send to others. It is only
+	// touched by this client's own read loop.
+	relayBudget relayBudget
 }
+
+// relayBudget is a token bucket for one connection's relayed signaling.
+//
+// A full queue disconnects its recipient so that it resynchronises, which
+// would let one room member knock another off a call by flooding them. The
+// burst covers a full call's setup (an offer or answer and a dozen or more
+// candidates per peer, for the call and each native sender); the refill is
+// far below what a healthy recipient drains, so only a sender that floods is
+// held back, and only that sender's excess is refused.
+type relayBudget struct {
+	tokens float64
+	last   time.Time
+}
+
+const (
+	relayBurst     = 400
+	relayPerSecond = 100
+)
+
+func (b *relayBudget) allow(now time.Time) bool {
+	if b.last.IsZero() {
+		b.tokens = relayBurst
+	} else {
+		b.tokens = math.Min(relayBurst, b.tokens+now.Sub(b.last).Seconds()*relayPerSecond)
+	}
+	b.last = now
+	if b.tokens < 1 {
+		return false
+	}
+	b.tokens--
+	return true
+}
+
+// signalQueue is how many messages may wait for one client. A new call sends
+// a burst: every peer's offer or answer and a dozen or more ICE candidates
+// each, for the call connection and again for each native video sender.
+const signalQueue = 256
+
+// deliver queues m without blocking, since callers hold the hub lock.
+//
+// A full queue means the client has stopped reading. Dropping the message
+// used to be silent, and a lost peer.joined, offer, answer or candidate left
+// a pair of participants who never connected or a share that never appeared,
+// with nothing to repair it. The connection is closed instead: the client
+// reconnects and receives a fresh snapshot of the room.
+func (c *client) deliver(m wire) bool {
+	select {
+	case c.send <- m:
+		return true
+	default:
+	}
+	if c.overflowed.CompareAndSwap(false, true) && c.conn != nil {
+		go func() { _ = c.conn.Close(websocket.StatusTryAgainLater, "signaling queue overflowed") }()
+	}
+	return false
+}
+
 type Hub struct {
 	mu     sync.RWMutex
 	rooms  map[string]map[*client]struct{}
@@ -98,10 +162,7 @@ func (h *Hub) addWithMode(room string, c *client, replaceUser bool) ([]string, m
 			if old.peer == c.peer && old.user == c.user {
 				continue
 			}
-			select {
-			case existing.send <- wire{Type: "peer.left", From: old.peer, UserID: old.user, Name: old.name}:
-			default:
-			}
+			existing.deliver(wire{Type: "peer.left", From: old.peer, UserID: old.user, Name: old.name})
 		}
 	}
 	h.rooms[room][c] = struct{}{}
@@ -110,10 +171,7 @@ func (h *Hub) addWithMode(room string, c *client, replaceUser bool) ([]string, m
 	if !resumed {
 		for existing := range h.rooms[room] {
 			if existing != c {
-				select {
-				case existing.send <- wire{Type: "peer.joined", From: c.peer, UserID: c.user, Name: c.name}:
-				default:
-				}
+				existing.deliver(wire{Type: "peer.joined", From: c.peer, UserID: c.user, Name: c.name})
 			}
 		}
 	}
@@ -231,10 +289,7 @@ func (h *Hub) broadcast(room string, skip *client, m wire) {
 	defer h.mu.RUnlock()
 	for c := range h.rooms[room] {
 		if c != skip {
-			select {
-			case c.send <- m:
-			default:
-			}
+			c.deliver(m)
 		}
 	}
 }
@@ -244,10 +299,8 @@ func (h *Hub) relay(room, to string, m wire) bool {
 	ok := false
 	for c := range h.rooms[room] {
 		if c.peer == to {
-			select {
-			case c.send <- m:
+			if c.deliver(m) {
 				ok = true
-			default:
 			}
 		}
 	}
@@ -362,7 +415,7 @@ func (a *API) websocket(w http.ResponseWriter, r *http.Request, u User, room str
 		_ = conn.Close(websocket.StatusPolicyViolation, "invalid peer identity or join mode")
 		return
 	}
-	c := &client{peer: peerID, user: u.ID, name: u.Name, conn: conn, send: make(chan wire, 32), muted: true}
+	c := &client{peer: peerID, user: u.ID, name: u.Name, conn: conn, send: make(chan wire, signalQueue), muted: true}
 	initialPeers, identities, addError := a.Hub.addWithMode(room, c, joinMode != "additional")
 	if addError != nil {
 		_ = conn.Close(websocket.StatusPolicyViolation, addError.Error())
@@ -405,23 +458,14 @@ func (a *API) websocket(w http.ResponseWriter, r *http.Request, u User, room str
 		switch m.Type {
 		case "ping":
 			if m.RequestID == "" || len(m.RequestID) > 128 {
-				select {
-				case c.send <- wire{Type: "error", Error: &apiError{Code: "invalid_ping", Message: "request_id must contain 1-128 bytes"}}:
-				default:
-				}
+				c.deliver(wire{Type: "error", Error: &apiError{Code: "invalid_ping", Message: "request_id must contain 1-128 bytes"}})
 				continue
 			}
-			select {
-			case c.send <- wire{Type: "pong", RequestID: m.RequestID}:
-			default:
-			}
+			c.deliver(wire{Type: "pong", RequestID: m.RequestID})
 		case "presence":
 			muted, deafened, presenceError := decodePresence(m.Payload)
 			if presenceError != nil {
-				select {
-				case c.send <- wire{Type: "error", Error: &apiError{Code: "invalid_presence", Message: presenceError.Error()}}:
-				default:
-				}
+				c.deliver(wire{Type: "error", Error: &apiError{Code: "invalid_presence", Message: presenceError.Error()}})
 				continue
 			}
 			if !a.Hub.setPresence(room, c, muted, deafened) {
@@ -434,24 +478,19 @@ func (a *API) websocket(w http.ResponseWriter, r *http.Request, u User, room str
 			a.Hub.broadcast(room, c, m)
 		case "signal", "offer", "answer", "ice-candidate", "track-metadata":
 			if m.To == "" {
-				select {
-				case c.send <- wire{Type: "error", Error: &apiError{Code: "missing_target", Message: "to is required"}}:
-				default:
-				}
+				c.deliver(wire{Type: "error", Error: &apiError{Code: "missing_target", Message: "to is required"}})
+				continue
+			}
+			if !c.relayBudget.allow(time.Now()) {
+				c.deliver(wire{Type: "error", RequestID: m.RequestID, Error: &apiError{Code: "rate_limited", Message: "signaling messages are being sent too quickly"}})
 				continue
 			}
 			m.From = c.peer
 			if !a.Hub.relay(room, m.To, m) {
-				select {
-				case c.send <- wire{Type: "error", RequestID: m.RequestID, Error: &apiError{Code: "peer_unavailable", Message: "target is not connected"}}:
-				default:
-				}
+				c.deliver(wire{Type: "error", RequestID: m.RequestID, Error: &apiError{Code: "peer_unavailable", Message: "target is not connected"}})
 			}
 		default:
-			select {
-			case c.send <- wire{Type: "error", Error: &apiError{Code: "invalid_type", Message: "unsupported message type"}}:
-			default:
-			}
+			c.deliver(wire{Type: "error", Error: &apiError{Code: "invalid_type", Message: "unsupported message type"}})
 		}
 	}
 }

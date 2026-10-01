@@ -34,6 +34,7 @@ export async function invokeNativeCapture<T>(command: string, args: Record<strin
     case 'native_screen_start': result = { ...args, ...await api.NativeScreenStart(token, args as unknown as StartOptions) }; break;
     case 'native_screen_stop': result = await api.NativeScreenStop(token, text('sessionId')); break;
     case 'native_screen_diagnostics': result = await api.NativeScreenDiagnostics(token, text('sessionId')); break;
+    case 'native_screen_ice_servers': result = await api.NativeScreenIceServers(token, text('sessionId'), (args.iceServers ?? []) as IceServer[]); break;
     case 'native_screen_peer_offer': {
       const offer = await api.NativeScreenPeerOffer(token, text('sessionId'), text('peerId'), (args.iceServers ?? []) as IceServer[], Boolean(args.directOnly));
       result = { type: 'offer', sdp: offer.sdp }; break;

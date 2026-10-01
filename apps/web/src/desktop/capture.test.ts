@@ -1,7 +1,7 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import { decodeNativeBytes, invokeNativeCapture, onNativeCaptureEnded } from './capture';
 const mock = vi.hoisted(() => ({ token: 'fixture', on: vi.fn(), api: {
-  NativeScreenSources: vi.fn(), NativeScreenCapabilities: vi.fn(), NativeScreenPeerOffer: vi.fn(), NativeScreenPeerAnswer: vi.fn(),
+  NativeScreenIceServers: vi.fn(), NativeScreenSources: vi.fn(), NativeScreenCapabilities: vi.fn(), NativeScreenPeerOffer: vi.fn(), NativeScreenPeerAnswer: vi.fn(),
   NativeSystemAudioStart: vi.fn(), NativeSystemAudioRead: vi.fn(), NativeScreenRecordingRead: vi.fn(), NativeScreenRecordingStop: vi.fn(), NativeScreenThumbnail: vi.fn(),
 } }));
 vi.mock('./runtime', () => ({ getDesktopRuntime: () => 'wails', readDesktopBootReport: () => ({ pageToken: mock.token }) }));
@@ -54,4 +54,10 @@ it('adapts ended events and returns listener disposal', async () => {
   mock.on.mock.calls[0][1]({ data: { sessionId: 'capture', reason: 'source closed' } });
   expect(handler).toHaveBeenCalledWith({ payload: { sessionId: 'capture', reason: 'source closed' } });
   dispose(); expect(off).toHaveBeenCalledOnce();
+});
+
+it('authorizes native sender credential renewal through the capture boundary', async () => {
+  const servers = [{ urls: ['stun:example.test'] }];
+  await invokeNativeCapture('native_screen_ice_servers', { sessionId: 'capture', iceServers: servers });
+  expect(mock.api.NativeScreenIceServers).toHaveBeenCalledWith('fixture', 'capture', servers);
 });

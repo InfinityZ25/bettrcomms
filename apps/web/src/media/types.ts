@@ -148,6 +148,8 @@ export interface PeerMediaStats {
     localCandidateType?: RTCIceCandidateType;
     remoteCandidateType?: RTCIceCandidateType;
     protocol?: string;
+    /** The browser's estimate of what this link can carry, in bits per second. */
+    availableOutgoingBitrate?: number;
     currentRoundTripTimeMs?: number;
   };
   tracks: Array<{
@@ -167,6 +169,14 @@ export interface PeerMediaStats {
     framesPerSecond?: number;
     packetsLost?: number;
     jitterMs?: number;
+    /** 'none', 'bandwidth', 'cpu' or 'other': what held outgoing video back. */
+    qualityLimitation?: string;
+    /** The encoder or decoder in use, which shows hardware against software. */
+    implementation?: string;
+    framesDropped?: number;
+    freezeCount?: number;
+    pliCount?: number;
+    nackCount?: number;
     screenTransport?: 'browser' | 'native-compatibility';
   }>;
 }
