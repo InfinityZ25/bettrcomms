@@ -38,6 +38,9 @@ import type {
   RecordingSaveState,
 } from './callTypes';
 
+/** Under half the credentials' ten-minute lifetime. */
+const ICE_REFRESH_MS = 4 * 60_000;
+
 type PeerFlags = { muted: boolean; deafened: boolean };
 type RecordingMetadata = { title: string; labels: Record<string, string> };
 
@@ -341,6 +344,20 @@ export function useCallSession({
       live = false;
     };
   }, [room?.id, user?.id, peerIds]);
+
+  // Relay credentials last ten minutes. Renew them well inside that, so a
+  // late joiner or a route repair is never handed expired ones.
+  useEffect(() => {
+    if (!joined) return;
+    const timer = setInterval(() => {
+      const current = engine.current;
+      if (!current) return;
+      void api<{ ice_servers: RTCIceServer[] }>('/ice')
+        .then((config) => { if (engine.current === current) current.setIceServers(config.ice_servers); })
+        .catch(() => undefined);
+    }, ICE_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [joined]);
 
   useEffect(() => {
     if (!joined) return;
