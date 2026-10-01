@@ -1,19 +1,22 @@
 //go:build ios
 
 #import <AVFoundation/AVFoundation.h>
+#import "meta_video_encoder.h"
 
 static NSString *bc_route_ports(NSArray<AVAudioSessionPortDescription *> *ports) {
     NSMutableArray<NSString *> *values = [NSMutableArray array];
     for (AVAudioSessionPortDescription *port in ports)
-        [values addObject:[NSString stringWithFormat:@"%@:%@", port.portType, port.portName]];
+        [values addObject:port.portType];
     return [values componentsJoinedByString:@", "];
 }
 
 static void bc_log_audio_route(NSString *reason) {
     AVAudioSession *audio = [AVAudioSession sharedInstance];
-    NSLog(@"[BetterComms] audio route %@ input=[%@] output=[%@] sampleRate=%.0f channels(in=%ld,out=%ld)",
+    // Use the bounded local media log too, so route/FPS correlation survives
+    // disconnecting this phone from the Mac during the experiment.
+    BCNativeVideoLog([NSString stringWithFormat:@"audio route %@ input=[%@] output=[%@] sampleRate=%.0f channels(in=%ld,out=%ld)",
           reason, bc_route_ports(audio.currentRoute.inputs), bc_route_ports(audio.currentRoute.outputs),
-          audio.sampleRate, (long)audio.inputNumberOfChannels, (long)audio.outputNumberOfChannels);
+          audio.sampleRate, (long)audio.inputNumberOfChannels, (long)audio.outputNumberOfChannels]);
 }
 
 static id bc_route_observer;
