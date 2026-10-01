@@ -146,3 +146,33 @@ func TestResumedSignalingSocketDoesNotDisturbOtherPeers(t *testing.T) {
 		t.Fatalf("watcher did not observe a real departure: %#v", left)
 	}
 }
+
+func TestFullSignalQueueDisconnectsInsteadOfDroppingSilently(t *testing.T) {
+	hub := NewHub()
+	stalled := &client{peer: "stalled", user: "user-1", name: "Alice", send: make(chan wire, 2)}
+	if _, _, err := hub.addWithMode("room", stalled, false); err != nil {
+		t.Fatalf("join: %v", err)
+	}
+	sender := &client{peer: "sender", user: "user-2", name: "Bob", send: make(chan wire, 8)}
+	if _, _, err := hub.addWithMode("room", sender, false); err != nil {
+		t.Fatalf("join: %v", err)
+	}
+	// peer.joined took one slot; one candidate fills the queue.
+	if !hub.relay("room", "stalled", wire{Type: "ice-candidate"}) {
+		t.Fatal("a message that fits was not delivered")
+	}
+	if stalled.overflowed.Load() {
+		t.Fatal("a queue with room was treated as overflowed")
+	}
+	// The next one cannot be queued. The sender is told, and the stalled
+	// client is marked for disconnection so it resynchronises on reconnect.
+	if hub.relay("room", "stalled", wire{Type: "offer"}) {
+		t.Fatal("a message was reported delivered to a full queue")
+	}
+	if !stalled.overflowed.Load() {
+		t.Fatal("a full queue dropped a message without disconnecting the client")
+	}
+	if sender.overflowed.Load() {
+		t.Fatal("the sender was penalised for the receiver's full queue")
+	}
+}
