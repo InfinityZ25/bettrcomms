@@ -36,6 +36,8 @@ type wire struct {
 	Name        string          `json:"name,omitempty"`
 }
 type client struct {
+	session  string
+	revoked  atomic.Bool
 	peer     string
 	user     string
 	name     string
@@ -95,6 +97,9 @@ const signalQueue = 256
 // with nothing to repair it. The connection is closed instead: the client
 // reconnects and receives a fresh snapshot of the room.
 func (c *client) deliver(m wire) bool {
+	if c.revoked.Load() {
+		return false
+	}
 	select {
 	case c.send <- m:
 		return true
@@ -142,6 +147,7 @@ func (h *Hub) addWithMode(room string, c *client, replaceUser bool) ([]string, m
 			return nil, nil, errors.New("peer identity is already in use")
 		}
 		if existing.peer == c.peer || (replaceUser && existing.user == c.user) {
+			existing.revoked.Store(true)
 			if existing.peer == c.peer && existing.user == c.user {
 				resumed = true
 			}
@@ -245,6 +251,9 @@ func (h *Hub) callPresence(room string) []CallParticipant {
 	defer h.mu.RUnlock()
 	byUser := map[string]CallParticipant{}
 	for c := range h.rooms[room] {
+		if c.revoked.Load() {
+			continue
+		}
 		participant, ok := byUser[c.user]
 		if !ok {
 			participant = CallParticipant{UserID: c.user, Name: c.name, Muted: true, Deafened: true}
@@ -324,6 +333,7 @@ func (h *Hub) disconnectRoomUser(room, user string) {
 	targets := []*client{}
 	for c := range h.rooms[room] {
 		if c.user == user {
+			c.revoked.Store(true)
 			targets = append(targets, c)
 		}
 	}
@@ -339,8 +349,11 @@ func (h *Hub) disconnectRoomUser(room, user string) {
 		voice.close("room membership revoked")
 	}
 	for _, c := range targets {
+		h.remove(room, c)
 		go func(target *client) {
-			_ = target.conn.Close(websocket.StatusPolicyViolation, "room membership revoked")
+			if target.conn != nil {
+				_ = target.conn.Close(websocket.StatusPolicyViolation, "room membership revoked")
+			}
 		}(c)
 	}
 }
@@ -349,28 +362,39 @@ func (h *Hub) disconnectRoom(room string) {
 	targets := []*client{}
 	voices := []*voiceClient{}
 	for c := range h.rooms[room] {
+		c.revoked.Store(true)
 		targets = append(targets, c)
 	}
 	for _, voice := range h.voices[room] {
 		voices = append(voices, voice)
 	}
 	delete(h.voices, room)
+	delete(h.rooms, room)
 	h.mu.Unlock()
 	for _, voice := range voices {
 		voice.close("room deleted")
 	}
 	for _, c := range targets {
-		go func(target *client) { _ = target.conn.Close(websocket.StatusPolicyViolation, "room deleted") }(c)
+		go func(target *client) {
+			if target.conn != nil {
+				_ = target.conn.Close(websocket.StatusPolicyViolation, "room deleted")
+			}
+		}(c)
 	}
 }
 func (h *Hub) disconnectUser(user string) {
+	type target struct {
+		room string
+		c    *client
+	}
 	h.mu.Lock()
-	targets := []*client{}
+	targets := []target{}
 	voices := []*voiceClient{}
 	for room, clients := range h.rooms {
 		for c := range clients {
 			if c.user == user {
-				targets = append(targets, c)
+				c.revoked.Store(true)
+				targets = append(targets, target{room, c})
 			}
 		}
 		for peer, voice := range h.voices[room] {
@@ -387,11 +411,29 @@ func (h *Hub) disconnectUser(user string) {
 	for _, voice := range voices {
 		voice.close("session revoked")
 	}
-	for _, c := range targets {
-		go func(target *client) { _ = target.conn.Close(websocket.StatusPolicyViolation, "session revoked") }(c)
+	for _, item := range targets {
+		h.remove(item.room, item.c)
+		go func(c *client) {
+			if c.conn != nil {
+				_ = c.conn.Close(websocket.StatusPolicyViolation, "session revoked")
+			}
+		}(item.c)
 	}
 }
 func (a *API) websocket(w http.ResponseWriter, r *http.Request, u User, room string) {
+	a.accessMu.RLock()
+	registering := true
+	defer func() {
+		if registering {
+			a.accessMu.RUnlock()
+		}
+	}()
+	session, authErr := a.Sessions.Resolve(r)
+	if authErr != nil || session.UserID != u.ID {
+		a.fail(w, 401, "unauthenticated", "sign in required")
+		return
+	}
+
 	if _, e := a.Store.RoomForMember(room, u.ID); e != nil {
 		a.fail(w, http.StatusForbidden, "not_a_member", "room membership required")
 		return
@@ -415,7 +457,11 @@ func (a *API) websocket(w http.ResponseWriter, r *http.Request, u User, room str
 		_ = conn.Close(websocket.StatusPolicyViolation, "invalid peer identity or join mode")
 		return
 	}
-	c := &client{peer: peerID, user: u.ID, name: u.Name, conn: conn, send: make(chan wire, signalQueue), muted: true}
+	c := &client{session: session.ID, peer: peerID, user: u.ID, name: u.Name, conn: conn, send: make(chan wire, signalQueue), muted: true}
+	if !session.ExpiresAt.IsZero() {
+		timer := time.AfterFunc(time.Until(session.ExpiresAt), func() { c.revoked.Store(true); _ = conn.Close(websocket.StatusPolicyViolation, "session expired") })
+		defer timer.Stop()
+	}
 	initialPeers, identities, addError := a.Hub.addWithMode(room, c, joinMode != "additional")
 	if addError != nil {
 		_ = conn.Close(websocket.StatusPolicyViolation, addError.Error())
@@ -424,10 +470,15 @@ func (a *API) websocket(w http.ResponseWriter, r *http.Request, u User, room str
 	a.publishCallPresence(room)
 	defer func() { a.Hub.remove(room, c); a.publishCallPresence(room); conn.CloseNow() }()
 	peers, _ := json.Marshal(map[string]any{"peers": initialPeers, "identities": identities})
-	if e = wsjsonWrite(r.Context(), conn, wire{Type: "peers", Payload: peers}); e != nil {
+	readyCtx, readyCancel := context.WithTimeout(r.Context(), 5*time.Second)
+	e = wsjsonWrite(readyCtx, conn, wire{Type: "peers", Payload: peers})
+	readyCancel()
+	if e != nil {
 		conn.CloseNow()
 		return
 	}
+	a.accessMu.RUnlock()
+	registering = false
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	go func() {
@@ -437,6 +488,10 @@ func (a *API) websocket(w http.ResponseWriter, r *http.Request, u User, room str
 			case <-ctx.Done():
 				return
 			case m = <-c.send:
+			}
+			if c.revoked.Load() {
+				cancel()
+				return
 			}
 			wc, wcancel := context.WithTimeout(ctx, 5*time.Second)
 			e := wsjsonWrite(wc, conn, m)
@@ -453,6 +508,9 @@ func (a *API) websocket(w http.ResponseWriter, r *http.Request, u User, room str
 		e := wsjsonRead(readContext, conn, &m)
 		readCancel()
 		if e != nil {
+			return
+		}
+		if c.revoked.Load() {
 			return
 		}
 		switch m.Type {

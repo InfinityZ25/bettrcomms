@@ -59,6 +59,9 @@ type API struct {
 	pairingMu     sync.Mutex
 	limiter       *rateLimiter
 	Attachments   AttachmentStorage
+	accessMu      sync.RWMutex
+	sfuMu         sync.Mutex
+	sfuLeases     map[*sfuLease]struct{}
 }
 type apiError struct {
 	Code    string `json:"code"`
@@ -100,18 +103,25 @@ func (a *API) Handler() http.Handler {
 	// would otherwise exhaust the shared "auth" limit partway through, 429ing every test after it.
 	m.Handle("POST /api/v1/auth/dev", a.rate("dev-auth", 1000, time.Minute, http.HandlerFunc(a.devLogin)))
 	m.HandleFunc("POST /api/v1/auth/logout", func(w http.ResponseWriter, r *http.Request) {
-		uid, _ := a.Sessions.UserID(r)
+		a.accessMu.Lock()
+		defer a.accessMu.Unlock()
+		session, _ := a.Sessions.Resolve(r)
 		if e := a.Sessions.Revoke(r); e != nil {
 			a.fail(w, 500, "internal", "could not revoke session")
 			return
 		}
 		a.Sessions.Clear(w)
-		if uid != "" {
-			a.Hub.disconnectUser(uid)
-			a.Realtime.disconnectUser(uid)
+		if session.ID != "" {
+			a.Hub.disconnectSession(session.ID)
+			a.Realtime.disconnectSession(session.ID)
+			a.revokeSFU("", "", session.ID)
+		} else if session.UserID != "" {
+			a.Hub.disconnectUser(session.UserID)
+			a.Realtime.disconnectUser(session.UserID)
 		}
 		a.json(w, 200, map[string]bool{"ok": true})
 	})
+	m.HandleFunc("GET /api/v1/sfu/authorization", a.sfuAuthorization)
 	m.Handle("/api/", a.auth(http.HandlerFunc(a.authed)))
 	if a.Config.WebDist != "" {
 		m.Handle("/", spaHandler(a.Config.WebDist))
@@ -208,24 +218,55 @@ type userKey struct{}
 
 func (a *API) auth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		id, e := a.Sessions.UserID(r)
+		session, e := a.Sessions.Resolve(r)
 		if e != nil {
 			a.fail(w, 401, "unauthenticated", "sign in required")
 			return
 		}
-		u, e := a.Store.UserByID(id)
+		u, e := a.Store.UserByID(session.UserID)
 		if e != nil {
 			a.fail(w, 401, "invalid_session", "session user no longer exists")
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), userKey{}, u)))
+		ctx := context.WithValue(r.Context(), userKey{}, u)
+		ctx = context.WithValue(ctx, sessionKey{}, session.ID)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 func userFrom(r *http.Request) User { return r.Context().Value(userKey{}).(User) }
 func (a *API) authed(w http.ResponseWriter, r *http.Request) {
 	u := userFrom(r)
 	p := strings.TrimPrefix(r.URL.Path, "/api/v1/")
+	// A small shared boundary covers ACL/session changes and socket admission.
+	// JSON is bounded before taking it; uploads never hold it across S3 I/O.
+	stream := p == "events" || strings.HasSuffix(p, "/ws") || strings.HasSuffix(p, "/voice-relay")
+	upload := strings.HasSuffix(p, "/attachments") && r.Method == http.MethodPost
+	if !stream && !upload {
+		if r.Body != nil && r.Method != http.MethodGet && r.Method != http.MethodHead {
+			body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
+			r.Body.Close()
+			if err != nil {
+				a.fail(w, 400, "invalid_json", "invalid request body")
+				return
+			}
+			r.Body = io.NopCloser(bytes.NewReader(body))
+		}
+		if lifecycleMutation(r.Method, p) {
+			a.accessMu.Lock()
+			defer a.accessMu.Unlock()
+		} else {
+			a.accessMu.RLock()
+			defer a.accessMu.RUnlock()
+		}
+		session, err := a.Sessions.Resolve(r)
+		if err != nil || session.UserID != u.ID {
+			a.fail(w, 401, "unauthenticated", "sign in required")
+			return
+		}
+	}
 	switch {
+	case p == "me/account" || p == "me/sessions" || strings.HasPrefix(p, "me/sessions/"):
+		a.account(w, r, u, p)
 	case r.Method == "GET" && p == "me":
 		a.json(w, 200, map[string]any{"user": u})
 	case r.Method == "GET" && p == "ice":
@@ -371,12 +412,18 @@ func (a *API) sfuJoin(w http.ResponseWriter, r *http.Request, rid string, u User
 		a.fail(w, 400, "invalid_peer_id", "peer_id must be a UUID")
 		return
 	}
-	claims := struct {
-		RoomID string `json:"room_id"`
-		UserID string `json:"user_id"`
-		PeerID string `json:"peer_id"`
-		Exp    int64  `json:"exp"`
-	}{RoomID: rid, UserID: u.ID, PeerID: peerID, Exp: time.Now().Add(2 * time.Minute).Unix()}
+	session := sessionFrom(r)
+	if session == "" {
+		a.fail(w, 503, "sfu_auth_unavailable", "SFU requires managed session authorization")
+		return
+	}
+	owner := a.Hub.activeSignal(rid, u.ID, peerID)
+	if owner == nil || owner.session != session {
+		a.fail(w, 409, "signaling_required", "wait for this session's signaling peer before joining SFU media")
+		return
+	}
+	claims := sfuClaims{RoomID: rid, UserID: u.ID, PeerID: peerID, SessionID: session, Exp: time.Now().Add(2 * time.Minute).Unix()}
+
 	payload, e := json.Marshal(claims)
 	if e != nil {
 		a.fail(w, 500, "internal", "could not build sfu join token")
@@ -433,6 +480,14 @@ func (a *API) room(w http.ResponseWriter, r *http.Request, u User, p []string) {
 		a.conversationControls(w, r, u, p)
 		return
 	}
+	if len(p) >= 3 && p[2] == "moderation" {
+		a.moderation(w, r, u, p)
+		return
+	}
+	if len(p) == 3 && p[2] == "ownership" {
+		a.transferOwner(w, r, u, rid)
+		return
+	}
 	if len(p) == 3 && p[2] == "attachments" && r.Method == "POST" {
 		a.uploadAttachment(w, r, u, rid)
 		return
@@ -473,6 +528,7 @@ func (a *API) room(w http.ResponseWriter, r *http.Request, u User, p []string) {
 			a.Realtime.publishRoom(rid, wire{Type: "rooms.changed"})
 			a.Realtime.unsubscribeRoom(rid)
 			a.Hub.disconnectRoom(rid)
+			a.revokeSFU(rid, "", "")
 		}
 		a.result(w, map[string]bool{"ok": true}, e)
 		return
@@ -543,6 +599,7 @@ func (a *API) room(w http.ResponseWriter, r *http.Request, u User, p []string) {
 			a.Realtime.publishRoom(rid, wire{Type: "rooms.changed"})
 			a.Realtime.unsubscribeUser(rid, target)
 			a.Hub.disconnectRoomUser(rid, target)
+			a.revokeSFU(rid, target, "")
 		}
 		a.result(w, map[string]bool{"ok": true}, e)
 		return
@@ -750,6 +807,16 @@ func (a *API) fail(w http.ResponseWriter, status int, code, msg string) {
 }
 func (a *API) result(w http.ResponseWriter, v any, e error) { a.resultStatus(w, v, e, 200) }
 func (a *API) resultStatus(w http.ResponseWriter, v any, e error, status int) {
+	var posting *PostingError
+	if errors.As(e, &posting) {
+		w.Header().Set("Retry-After", strconv.Itoa(posting.RetrySeconds()))
+		message := "wait before posting another message"
+		if posting.Code == "posting_restricted" {
+			message = "posting is temporarily restricted in this channel"
+		}
+		a.fail(w, 429, posting.Code, message)
+		return
+	}
 	if e == nil {
 		a.json(w, status, v)
 		return

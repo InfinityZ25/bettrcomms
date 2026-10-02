@@ -5,6 +5,7 @@ import { api, type Room, type User } from '@/api';
 import { Button } from '@/components/ui/button';
 import { AppDialog } from '@/components/app-dialog';
 import { Input } from '@/components/ui/input';
+import ModerationSettings from './ModerationSettings';
 
 type MessageReport = { id: string; message_id: string; reporter_name: string; author_name: string; excerpt: string; reason: string };
 
@@ -119,6 +120,7 @@ export default function RoomSettings({
               </Button>
             )}
           </form>
+          {owner && room.kind === 'channel' && <ModerationSettings key={`${room.id}:${room.owner_id}`} room={room} user={user} onChanged={onChanged} />}
           <div className="flex flex-col gap-4">
             <h3 className="text-sm font-semibold">People in this room</h3>
             {members.map((m) => (

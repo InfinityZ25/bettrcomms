@@ -1,35 +1,52 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffectEvent, useRef, useState, type SetStateAction } from 'react';
 import { api, type User } from '@/api';
 import { useWorkOSSignIn } from './useWorkOSSignIn';
+import { useMountEffect } from '@/hooks/useMountEffect';
+import { setSessionIdentity, subscribeSessionExpiry } from './sessionEvents';
 
-const unwrap = (result: User | { user: User }) =>
-  'user' in result ? result.user : result;
+const unwrap = (result: User | { user: User }) => 'user' in result ? result.user : result;
 
-/** The signed-in user, plus whether this deployment offers the local sign-in form. */
-export function useSession() {
-  const [user, setUser] = useState<User | null>(null);
+export function useSession(onExpired?: () => void) {
+  const [user, setUserState] = useState<User | null>(null);
   const [devAuth, setDevAuth] = useState(false);
   const [loading, setLoading] = useState(true);
-
-  const refresh = useCallback(
-    () =>
-      api<User | { user: User }>('/me')
-        .then((result) => setUser(unwrap(result)))
-        .catch(() => {}),
-    [],
-  );
-
-  // Sign-in lives here rather than in the panels because the session it
-  // produces does. On the desktop host the browser finishes somewhere else
-  // entirely, so whoever started it, this is what notices and loads the user.
+  const request = useRef<AbortController | undefined>(undefined);
+  const currentUser = useRef(user);
+  const revision = useRef(0);
+  const expirationHandler = useEffectEvent(() => onExpired?.());
+  const setUser = useCallback((next: SetStateAction<User | null>) => {
+    revision.current += 1;
+    request.current?.abort();
+    const value = typeof next === 'function' ? next(currentUser.current) : next;
+    currentUser.current = value;
+    setSessionIdentity(value?.id ?? null);
+    setUserState(value);
+  }, []);
+  const refresh = useCallback(async () => {
+    const operation = ++revision.current;
+    request.current?.abort();
+    const controller = new AbortController();
+    request.current = controller;
+    try {
+      const result = unwrap(await api<User | { user: User }>('/me', undefined, undefined, controller.signal));
+      if (!controller.signal.aborted && operation === revision.current) { currentUser.current = result; setSessionIdentity(result.id); setUserState(result); }
+    } catch { /* Authentication errors invalidate the session centrally. */ }
+  }, []);
   const signIn = useWorkOSSignIn(refresh);
-
-  useEffect(() => {
+  useMountEffect(() => {
+    let stopped = false;
+    const stopExpiry = subscribeSessionExpiry(() => {
+      revision.current += 1;
+      request.current?.abort();
+      currentUser.current = null;
+      setUserState(null);
+      expirationHandler();
+    });
     api<{ dev_auth: boolean }>('/config')
-      .then((config) => setDevAuth(config.dev_auth))
+      .then((config) => { if (!stopped) setDevAuth(config.dev_auth); })
       .catch(() => {});
-    refresh().finally(() => setLoading(false));
-  }, [refresh]);
-
+    refresh().finally(() => { if (!stopped) setLoading(false); });
+    return () => { stopped = true; revision.current += 1; request.current?.abort(); stopExpiry(); };
+  });
   return { user, setUser, devAuth, loading, unwrap, signIn };
 }

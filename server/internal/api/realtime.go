@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -14,6 +15,8 @@ import (
 // desktop window. Room subscriptions are derived on the server from the
 // persisted membership list; clients cannot subscribe themselves to rooms.
 type realtimeClient struct {
+	session  string
+	revoked  atomic.Bool
 	user     string
 	conn     *websocket.Conn
 	send     chan wire
@@ -208,8 +211,8 @@ func (h *RealtimeHub) publishRoom(room string, message wire) {
 func (h *RealtimeHub) canPublishRoom(client *realtimeClient, room string) bool {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	_, allowed := client.rooms[room]
-	return allowed
+	_, allowed := h.rooms[room][client]
+	return allowed && !client.revoked.Load()
 }
 
 func (h *RealtimeHub) publishUser(user string, message wire) {
@@ -238,6 +241,8 @@ func (h *RealtimeHub) disconnectUser(user string) {
 	}
 	h.mu.RUnlock()
 	for _, c := range targets {
+		c.revoked.Store(true)
+		h.remove(c)
 		go c.conn.Close(websocket.StatusPolicyViolation, "session revoked")
 	}
 }
@@ -251,6 +256,19 @@ func (a *API) publishCallPresence(room string) {
 }
 
 func (a *API) realtimeWebsocket(w http.ResponseWriter, r *http.Request, user User) {
+	a.accessMu.RLock()
+	registering := true
+	defer func() {
+		if registering {
+			a.accessMu.RUnlock()
+		}
+	}()
+	session, authErr := a.Sessions.Resolve(r)
+	if authErr != nil || session.UserID != user.ID {
+		a.fail(w, 401, "unauthenticated", "sign in required")
+		return
+	}
+
 	if !a.websocketOriginAllowed(r) {
 		a.fail(w, http.StatusForbidden, "origin_not_allowed", "WebSocket origin is not allowed")
 		return
@@ -270,7 +288,11 @@ func (a *API) realtimeWebsocket(w http.ResponseWriter, r *http.Request, user Use
 		return
 	}
 	conn.SetReadLimit(8 << 10)
-	client := &realtimeClient{user: user.ID, conn: conn, send: make(chan wire, 128), rooms: map[string]struct{}{}, contacts: map[string]struct{}{}}
+	client := &realtimeClient{session: session.ID, user: user.ID, conn: conn, send: make(chan wire, 128), rooms: map[string]struct{}{}, contacts: map[string]struct{}{}}
+	if !session.ExpiresAt.IsZero() {
+		timer := time.AfterFunc(time.Until(session.ExpiresAt), func() { client.revoked.Store(true); _ = conn.Close(websocket.StatusPolicyViolation, "session expired") })
+		defer timer.Stop()
+	}
 	becameOnline := a.Realtime.add(client, rooms, friends)
 	defer func() {
 		if a.Realtime.remove(client) {
@@ -284,13 +306,18 @@ func (a *API) realtimeWebsocket(w http.ResponseWriter, r *http.Request, user Use
 		presence = append(presence, RoomCallPresence{RoomID: room.ID, Participants: a.Hub.callPresence(room.ID)})
 	}
 	payload, _ := json.Marshal(map[string]any{"presence": presence, "online_user_ids": a.Realtime.onlineContacts(client)})
-	if err = wsjsonWrite(r.Context(), conn, wire{Type: "app.ready", Payload: payload}); err != nil {
+	readyCtx, readyCancel := context.WithTimeout(r.Context(), 5*time.Second)
+	err = wsjsonWrite(readyCtx, conn, wire{Type: "app.ready", Payload: payload})
+	readyCancel()
+	if err != nil {
 		return
 	}
 	if becameOnline {
 		a.Realtime.publishOnline(user.ID, true)
 	}
 
+	a.accessMu.RUnlock()
+	registering = false
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	go func() {
@@ -318,6 +345,9 @@ func (a *API) realtimeWebsocket(w http.ResponseWriter, r *http.Request, user Use
 		if err != nil {
 			return
 		}
+		if client.revoked.Load() {
+			return
+		}
 		if message.Type == "chat.typing" {
 			var value struct {
 				RoomID       string `json:"room_id"`
@@ -331,14 +361,18 @@ func (a *API) realtimeWebsocket(w http.ResponseWriter, r *http.Request, user Use
 			if !a.limiter.allow("chat-typing:"+user.ID+":"+value.RoomID, 60, time.Minute) {
 				continue
 			}
-			if value.ThreadRootID != "" {
-				store, ok := a.Store.(*PostgresStore)
-				if !ok || !uuidPattern.MatchString(value.ThreadRootID) {
+			if store, ok := a.Store.(*PostgresStore); ok {
+				if err := store.CheckPosting(value.RoomID, user.ID); err != nil {
 					continue
 				}
-				var valid bool
-				if err := store.DB.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM messages WHERE id=$1 AND room_id=$2 AND thread_root_id IS NULL AND deleted_at IS NULL)`, value.ThreadRootID, value.RoomID).Scan(&valid); err != nil || !valid {
-					continue
+				if value.ThreadRootID != "" {
+					if !uuidPattern.MatchString(value.ThreadRootID) {
+						continue
+					}
+					var valid bool
+					if err := store.DB.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM messages WHERE id=$1 AND room_id=$2 AND thread_root_id IS NULL AND deleted_at IS NULL)`, value.ThreadRootID, value.RoomID).Scan(&valid); err != nil || !valid {
+						continue
+					}
 				}
 			}
 			payload, _ := json.Marshal(map[string]any{"room_id": value.RoomID, "user_id": user.ID, "typing": value.Typing, "thread_root_id": value.ThreadRootID})

@@ -73,7 +73,7 @@ func (h *Hub) addVoice(room, peer string, v *voiceClient) bool {
 	h.mu.Lock()
 	active := false
 	for c := range h.rooms[room] {
-		if c == v.owner && c.peer == peer {
+		if c == v.owner && c.peer == peer && !c.revoked.Load() {
 			active = true
 			break
 		}
@@ -110,7 +110,7 @@ func (h *Hub) activeSignal(room, user, peer string) *client {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	for c := range h.rooms[room] {
-		if c.user == user && (peer == "" || c.peer == peer) {
+		if !c.revoked.Load() && c.user == user && (peer == "" || c.peer == peer) {
 			return c
 		}
 	}
@@ -124,7 +124,7 @@ func (h *Hub) relayVoice(room string, sender *voiceClient, to string, message vo
 	if valid {
 		_, senderActive := h.rooms[room][sender.owner]
 		_, targetActive := h.rooms[room][target.owner]
-		valid = senderActive && targetActive
+		valid = senderActive && targetActive && !sender.owner.revoked.Load() && !target.owner.revoked.Load()
 	}
 	h.mu.RUnlock()
 	if valid {
@@ -178,6 +178,19 @@ func decodeVoiceMessage(data []byte) (voiceWire, error) {
 }
 
 func (a *API) voiceRelay(w http.ResponseWriter, r *http.Request, u User, room string) {
+	a.accessMu.RLock()
+	registering := true
+	defer func() {
+		if registering {
+			a.accessMu.RUnlock()
+		}
+	}()
+	session, authErr := a.Sessions.Resolve(r)
+	if authErr != nil || session.UserID != u.ID {
+		a.fail(w, 401, "unauthenticated", "sign in required")
+		return
+	}
+
 	if r.Method != http.MethodGet {
 		a.fail(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
 		return
@@ -196,7 +209,7 @@ func (a *API) voiceRelay(w http.ResponseWriter, r *http.Request, u User, room st
 		return
 	}
 	owner := a.Hub.activeSignal(room, u.ID, peerID)
-	if owner == nil {
+	if owner == nil || owner.session != session.ID {
 		a.fail(w, http.StatusConflict, "signaling_required", "an active signaling connection is required")
 		return
 	}
@@ -214,6 +227,8 @@ func (a *API) voiceRelay(w http.ResponseWriter, r *http.Request, u User, room st
 		return
 	}
 	defer func() { a.Hub.removeVoice(room, peerID, v); conn.CloseNow() }()
+	a.accessMu.RUnlock()
+	registering = false
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	go func() {

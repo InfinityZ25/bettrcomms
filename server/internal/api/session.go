@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -27,7 +28,12 @@ func (s Sessions) Set(r *http.Request, w http.ResponseWriter, userID string) err
 		return e
 	}
 	expires := time.Now().Add(14 * 24 * time.Hour)
-	if e = s.Store.CreateSession(r.Context(), sessionHash(token), userID, expires); e != nil {
+	if managed, ok := s.Store.(ManagedSessions); ok {
+		e = managed.CreateDeviceSession(r.Context(), sessionHash(token), userID, expires, deviceName(r.UserAgent()))
+	} else {
+		e = s.Store.CreateSession(r.Context(), sessionHash(token), userID, expires)
+	}
+	if e != nil {
 		return e
 	}
 	_ = s.Store.DeleteExpiredSessions(r.Context(), time.Now())
@@ -38,11 +44,55 @@ func (s Sessions) Clear(w http.ResponseWriter) {
 	http.SetCookie(w, &http.Cookie{Name: "bettercomms_session", Path: "/", MaxAge: -1, HttpOnly: true, Secure: s.Secure, SameSite: http.SameSiteLaxMode})
 }
 func (s Sessions) UserID(r *http.Request) (string, error) {
+	if _, ok := s.Store.(ManagedSessions); ok {
+		item, err := s.Resolve(r)
+		return item.UserID, err
+	}
 	c, e := r.Cookie("bettercomms_session")
 	if e != nil {
 		return "", e
 	}
 	return s.Store.SessionUser(r.Context(), sessionHash(c.Value), time.Now())
+}
+func (s Sessions) Resolve(r *http.Request) (DeviceSession, error) {
+	c, err := r.Cookie("bettercomms_session")
+	if err != nil {
+		return DeviceSession{}, err
+	}
+	if managed, ok := s.Store.(ManagedSessions); ok {
+		return managed.ResolveSession(r.Context(), sessionHash(c.Value), time.Now())
+	}
+	user, err := s.Store.SessionUser(r.Context(), sessionHash(c.Value), time.Now())
+	return DeviceSession{UserID: user}, err
+}
+func deviceName(agent string) string {
+	os := "Other system"
+	browser := "Browser"
+	switch {
+	case strings.Contains(agent, "Windows"):
+		os = "Windows"
+	case strings.Contains(agent, "iPhone") || strings.Contains(agent, "iPad"):
+		os = "iOS"
+	case strings.Contains(agent, "Android"):
+		os = "Android"
+	case strings.Contains(agent, "Macintosh"):
+		os = "macOS"
+	case strings.Contains(agent, "Linux"):
+		os = "Linux"
+	}
+	switch {
+	case strings.Contains(agent, "BetterComms Desktop"):
+		browser = "BetterComms Desktop"
+	case strings.Contains(agent, "Edg/"):
+		browser = "Edge"
+	case strings.Contains(agent, "Firefox/"):
+		browser = "Firefox"
+	case strings.Contains(agent, "Chrome/"):
+		browser = "Chrome"
+	case strings.Contains(agent, "Safari/"):
+		browser = "Safari"
+	}
+	return os + " · " + browser
 }
 func (s Sessions) Revoke(r *http.Request) error {
 	c, e := r.Cookie("bettercomms_session")

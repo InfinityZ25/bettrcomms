@@ -11,14 +11,15 @@ type User struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 type Room struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	DisplayName *string   `json:"display_name,omitempty"`
-	OwnerID     string    `json:"owner_id"`
-	Role        string    `json:"role"`
-	Kind        string    `json:"kind"`
-	CreatedAt   time.Time `json:"created_at"`
-	ActivityAt  time.Time `json:"activity_at"`
+	SlowModeSeconds int       `json:"slow_mode_seconds"`
+	ID              string    `json:"id"`
+	Name            string    `json:"name"`
+	DisplayName     *string   `json:"display_name,omitempty"`
+	OwnerID         string    `json:"owner_id"`
+	Role            string    `json:"role"`
+	Kind            string    `json:"kind"`
+	CreatedAt       time.Time `json:"created_at"`
+	ActivityAt      time.Time `json:"activity_at"`
 }
 type Message struct {
 	ID                string              `json:"id"`
@@ -82,9 +83,10 @@ type FriendRequest struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 type RoomMember struct {
-	User     User      `json:"user"`
-	Role     string    `json:"role"`
-	JoinedAt time.Time `json:"joined_at"`
+	RestrictedUntil *time.Time `json:"restricted_until,omitempty"`
+	User            User       `json:"user"`
+	Role            string     `json:"role"`
+	JoinedAt        time.Time  `json:"joined_at"`
 }
 
 type Store interface {

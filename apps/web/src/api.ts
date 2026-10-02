@@ -3,6 +3,7 @@ import {
   apiCredentials,
   apiHttpUrl,
 } from '@/desktop/apiTransport';
+import { sessionExpired, sessionGeneration } from '@/features/auth/sessionEvents';
 
 export interface User {
   id: string;
@@ -15,6 +16,7 @@ export interface User {
   avatar_url?: string | null;
 }
 export interface Room {
+  slow_mode_seconds?: number;
   id: string;
   name: string;
   owner_id: string;
@@ -80,6 +82,8 @@ export class ApiRequestError extends Error {
   constructor(
     message: string,
     public status: number,
+    public code?: string,
+    public retryAfter?: number,
   ) {
     super(message);
   }
@@ -90,6 +94,7 @@ export async function api<T>(
   method?: string,
   signal?: AbortSignal,
 ): Promise<T> {
+  const generation = sessionGeneration();
   const response = await fetch(apiHttpUrl('/api/v1' + path), {
     signal,
     credentials: apiCredentials(),
@@ -102,9 +107,12 @@ export async function api<T>(
   });
   if (!response.ok) {
     const error = await response.json().catch(() => null);
+    if (response.status === 401 && !signal?.aborted) sessionExpired(generation);
     throw new ApiRequestError(
       error?.error?.message ?? `Request failed (${response.status})`,
       response.status,
+      error?.error?.code,
+      Number(response.headers.get('Retry-After')) || undefined,
     );
   }
   return response.status === 204 ? (undefined as T) : response.json();
@@ -115,6 +123,7 @@ export async function uploadMessageAttachment(
   file: File,
   signal?: AbortSignal,
 ): Promise<MessageAttachment> {
+  const generation = sessionGeneration();
   const body = new FormData();
   body.append('file', file);
   const response = await fetch(
@@ -129,6 +138,7 @@ export async function uploadMessageAttachment(
   );
   if (!response.ok) {
     const error = await response.json().catch(() => null);
+    if (response.status === 401) sessionExpired(generation);
     throw new ApiRequestError(
       error?.error?.message ?? `Upload failed (${response.status})`,
       response.status,

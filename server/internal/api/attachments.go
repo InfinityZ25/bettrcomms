@@ -103,6 +103,12 @@ func allowedAttachment(name, sniffed string) bool {
 }
 
 func (a *API) uploadAttachment(w http.ResponseWriter, r *http.Request, user User, room string) {
+	if store, ok := a.Store.(*PostgresStore); ok {
+		if err := store.CheckPosting(room, user.ID); err != nil {
+			a.result(w, nil, err)
+			return
+		}
+	}
 	if a.Attachments == nil {
 		a.fail(w, 503, "attachments_unavailable", "S3 attachments are not configured")
 		return
@@ -162,7 +168,16 @@ func (a *API) uploadAttachment(w http.ResponseWriter, r *http.Request, user User
 		return
 	}
 	attachment := MessageAttachment{ID: id, Filename: name, ContentType: contentType, SizeBytes: header.Size}
-	if err = store.SavePendingAttachment(room, user.ID, key, attachment); err != nil {
+	a.accessMu.RLock()
+	session, authErr := a.Sessions.Resolve(r)
+	if authErr != nil || session.UserID != user.ID || session.ID != sessionFrom(r) {
+		a.accessMu.RUnlock()
+		a.fail(w, 401, "unauthenticated", "session was revoked during upload")
+		return
+	}
+	err = store.SavePendingAttachment(room, user.ID, key, attachment)
+	a.accessMu.RUnlock()
+	if err != nil {
 		a.result(w, nil, err)
 		return
 	}
@@ -177,7 +192,17 @@ func (a *API) uploadAttachment(w http.ResponseWriter, r *http.Request, user User
 		a.fail(w, 502, "upload_failed", "could not store file")
 		return
 	}
-	if err = store.CompletePendingAttachment(id, room); err != nil {
+	a.accessMu.RLock()
+	session, authErr = a.Sessions.Resolve(r)
+	if authErr != nil || session.UserID != user.ID || session.ID != sessionFrom(r) {
+		_, _ = store.DB.Exec(context.Background(), `UPDATE message_attachments SET upload_state='ready',deleted_at=clock_timestamp() WHERE id=$1`, id)
+		a.accessMu.RUnlock()
+		a.fail(w, 401, "unauthenticated", "session was revoked during upload")
+		return
+	}
+	err = store.CompletePendingAttachment(id, room)
+	a.accessMu.RUnlock()
+	if err != nil {
 		a.result(w, nil, err)
 		return
 	}

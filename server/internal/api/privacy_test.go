@@ -21,7 +21,7 @@ func TestDMPrivacyIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	for _, file := range []string{"001_init.sql", "002_direct_rooms.sql", "003_messaging.sql", "004_messaging_complete.sql", "005_attachment_cleanup_attempts.sql", "006_attachment_lifecycle.sql", "007_dm_privacy.sql", "008_web_push.sql"} {
+	for _, file := range []string{"001_init.sql", "002_direct_rooms.sql", "003_messaging.sql", "004_messaging_complete.sql", "005_attachment_cleanup_attempts.sql", "006_attachment_lifecycle.sql", "007_dm_privacy.sql", "008_web_push.sql", "010_conversation_threads_pins.sql", "011_moderation.sql", "012_account_sessions.sql"} {
 		data, readErr := os.ReadFile("../../migrations/" + file)
 		if readErr != nil {
 			t.Fatal(readErr)

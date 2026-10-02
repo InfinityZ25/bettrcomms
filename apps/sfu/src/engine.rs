@@ -43,7 +43,10 @@ impl EngineHandle {
     /// Feed one client-originated event (Join/SessionDescription/IceCandidate/Leave)
     /// into the engine.
     pub fn send(&self, event: SFUEvent) {
-        let tagged = TaggedSFUEvent { now: Instant::now(), event };
+        let tagged = TaggedSFUEvent {
+            now: Instant::now(),
+            event,
+        };
         if self.inbound.send(tagged).is_err() {
             warn!("engine task is gone; dropping event");
         }
@@ -52,18 +55,92 @@ impl EngineHandle {
     /// Registers where events for `(room_id, client_id)` should be delivered
     /// and returns the receiving half. Call once per signaling connection,
     /// before sending its Join event.
-    pub fn register(&self, room_id: RoomId, client_id: ClientId) -> mpsc::UnboundedReceiver<SFUEvent> {
+    pub fn register(
+        &self,
+        room_id: RoomId,
+        client_id: ClientId,
+    ) -> Option<mpsc::UnboundedReceiver<SFUEvent>> {
         let (tx, rx) = mpsc::unbounded_channel();
-        self.routes.lock().expect("routes mutex poisoned").insert((room_id, client_id), tx);
-        rx
+        let mut routes = self.routes.lock().expect("routes mutex poisoned");
+        if let std::collections::hash_map::Entry::Vacant(entry) = routes.entry((room_id, client_id))
+        {
+            entry.insert(tx);
+            Some(rx)
+        } else {
+            // The old socket owns Leave/unregister until cleanup completes.
+            // Replacing its route would let its cleanup remove the new peer.
+            None
+        }
     }
 
     pub fn unregister(&self, room_id: RoomId, client_id: ClientId) {
-        self.routes.lock().expect("routes mutex poisoned").remove(&(room_id, client_id));
+        self.routes
+            .lock()
+            .expect("routes mutex poisoned")
+            .remove(&(room_id, client_id));
     }
 
     pub fn telemetry(&self) -> Telemetry {
         self.telemetry.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn duplicate_connection_cannot_replace_an_active_route() {
+        let (inbound, mut pending) = mpsc::unbounded_channel();
+        let routes = Arc::new(Mutex::new(HashMap::new()));
+        let telemetry = Telemetry::new();
+        let handle = EngineHandle {
+            inbound,
+            routes: routes.clone(),
+            telemetry: telemetry.clone(),
+        };
+        let room = uuid::Uuid::from_u128(1);
+        let mut original = handle.register(room, 42).unwrap();
+        assert!(handle.register(room, 42).is_none());
+        route_event(
+            SFUEvent::Join {
+                request_id: 1,
+                room_id: room,
+                client_id: 42,
+            },
+            &routes,
+            &telemetry,
+        );
+        assert!(matches!(
+            original.try_recv(),
+            Ok(SFUEvent::Join { request_id: 1, .. })
+        ));
+        assert!(
+            pending.try_recv().is_err(),
+            "rejected registration must not send Join or Leave"
+        );
+
+        handle.send(SFUEvent::Leave {
+            request_id: 2,
+            room_id: room,
+            client_id: 42,
+            reason: "closed".into(),
+        });
+        handle.unregister(room, 42);
+        let _replacement = handle.register(room, 42).unwrap();
+        handle.send(SFUEvent::Join {
+            request_id: 3,
+            room_id: room,
+            client_id: 42,
+        });
+        assert!(matches!(
+            pending.try_recv().unwrap().event,
+            SFUEvent::Leave { .. }
+        ));
+        assert!(matches!(
+            pending.try_recv().unwrap().event,
+            SFUEvent::Join { .. }
+        ));
     }
 }
 
@@ -81,9 +158,20 @@ pub async fn spawn(
     let (inbound_tx, inbound_rx) = mpsc::unbounded_channel();
     let routes: Routes = Arc::new(Mutex::new(HashMap::new()));
 
-    let handle = EngineHandle { inbound: inbound_tx, routes: routes.clone(), telemetry: telemetry.clone() };
+    let handle = EngineHandle {
+        inbound: inbound_tx,
+        routes: routes.clone(),
+        telemetry: telemetry.clone(),
+    };
 
-    tokio::spawn(run(sfu_id, public_media_addr, socket, inbound_rx, routes, telemetry));
+    tokio::spawn(run(
+        sfu_id,
+        public_media_addr,
+        socket,
+        inbound_rx,
+        routes,
+        telemetry,
+    ));
 
     Ok(handle)
 }
@@ -165,7 +253,10 @@ async fn run(
 /// blocking), so this loop always terminates.
 async fn drain(engine: &mut Sfu, socket: &UdpSocket, routes: &Routes, telemetry: &Telemetry) {
     while let Some(transmit) = engine.poll_write() {
-        if let Err(e) = socket.send_to(&transmit.message, transmit.transport.peer_addr).await {
+        if let Err(e) = socket
+            .send_to(&transmit.message, transmit.transport.peer_addr)
+            .await
+        {
             warn!(error = %e, peer = %transmit.transport.peer_addr, "udp send error");
         }
     }
@@ -180,11 +271,18 @@ fn route_event(event: SFUEvent, routes: &Routes, telemetry: &Telemetry) {
     let client_id = event.client_id();
 
     match &event {
-        SFUEvent::Join { room_id, client_id, .. } => {
+        SFUEvent::Join {
+            room_id, client_id, ..
+        } => {
             telemetry.peer_joined(*room_id, *client_id);
             debug!(%room_id, client_id, "peer joined");
         }
-        SFUEvent::Leave { room_id, client_id, reason, .. } => {
+        SFUEvent::Leave {
+            room_id,
+            client_id,
+            reason,
+            ..
+        } => {
             telemetry.peer_left(*room_id, *client_id);
             debug!(%room_id, client_id, reason, "peer left");
         }
@@ -197,7 +295,11 @@ fn route_event(event: SFUEvent, routes: &Routes, telemetry: &Telemetry) {
         return;
     };
 
-    let sender = routes.lock().expect("routes mutex poisoned").get(&(room_id, client_id)).cloned();
+    let sender = routes
+        .lock()
+        .expect("routes mutex poisoned")
+        .get(&(room_id, client_id))
+        .cloned();
     match sender {
         Some(tx) => {
             if tx.send(event).is_err() {

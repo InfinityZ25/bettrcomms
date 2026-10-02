@@ -213,6 +213,9 @@ func (s *PostgresStore) writeMessage(room, user, id, body, replyID, nonce string
 			return Message{}, false, err
 		}
 	}
+	if err = checkRoomPosting(ctx, tx, room, user, isNew); err != nil {
+		return Message{}, false, err
+	}
 	if id != "" {
 		var author string
 		var deleted bool
@@ -405,6 +408,9 @@ func (s *PostgresStore) ReactMessage(room, user, id, emoji string, remove bool) 
 	}
 	defer tx.Rollback(ctx)
 	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::uuid::text,0))`, room); err != nil {
+		return Message{}, err
+	}
+	if err = checkRoomPosting(ctx, tx, room, user, false); err != nil {
 		return Message{}, err
 	}
 	var member string

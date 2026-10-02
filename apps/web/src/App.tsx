@@ -58,7 +58,15 @@ export default function App() {
   >(null);
   const [error, setError] = useState('');
   const { busy, run } = useAsyncAction(setError);
-  const { user, setUser, devAuth, loading, unwrap, signIn } = useSession();
+  const { user, setUser, devAuth, loading, unwrap, signIn } = useSession(() => {
+    clear();
+    backToCall();
+    setSettingsOpen(false);
+    setFriendsOpen(false);
+    setInviteRoom(null);
+    setSettingsRoom(null);
+    setMessageTarget(null);
+  });
   const presence = useCallPresence(user?.id);
   const { screen, setScreen, navigate } = useScreenRoute();
   const preferences = useCallPreferences();

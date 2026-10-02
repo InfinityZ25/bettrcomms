@@ -395,9 +395,14 @@ func TestSFUJoinReturns503WhenNotConfigured(t *testing.T) {
 func TestSFUJoinTokenIsAuthenticatedAndShortLived(t *testing.T) {
 	u := User{ID: "11111111-1111-4111-8111-111111111111", Email: "a@example.test", Name: "A"}
 	roomID := "22222222-2222-4222-8222-222222222222"
+	peerID := "33333333-3333-4333-8333-333333333333"
 	s := newTestSessions(false)
+	s.Store = &managedSessionFixture{s.Store.(*memorySessionStore)}
 	a := New(testStore{user: u}, s, Config{SFUURL: "wss://sfu.example.test/ws", SFUJoinSecret: "sfu-join-test-secret-32-bytes-long!!"})
-	req := httptest.NewRequest("GET", "http://localhost/api/v1/rooms/"+roomID+"/sfu-join", nil)
+	peer := &client{peer: peerID, user: u.ID, session: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", send: make(chan wire, 8)}
+	a.Hub.add(roomID, peer)
+	defer a.Hub.remove(roomID, peer)
+	req := httptest.NewRequest("GET", "http://localhost/api/v1/rooms/"+roomID+"/sfu-join?peer_id="+peerID, nil)
 	w0 := httptest.NewRecorder()
 	if e := s.Set(req, w0, u.ID); e != nil {
 		t.Fatal(e)
@@ -417,26 +422,27 @@ func TestSFUJoinTokenIsAuthenticatedAndShortLived(t *testing.T) {
 		t.Fatal(e)
 	}
 	if out.SFUURL != "wss://sfu.example.test/ws" || out.TTL != 120 {
-		t.Fatalf("unexpected response: %#v", out)
+		t.Fatal("unexpected SFU URL or token TTL")
 	}
 	parts := strings.Split(out.Token, ".")
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		t.Fatalf("token is not payload.signature: %q", out.Token)
+		t.Fatal("token is not payload.signature")
 	}
 	payload, e := base64.RawURLEncoding.DecodeString(parts[0])
 	if e != nil {
 		t.Fatal(e)
 	}
 	var claims struct {
-		RoomID string `json:"room_id"`
-		UserID string `json:"user_id"`
-		PeerID string `json:"peer_id"`
-		Exp    int64  `json:"exp"`
+		SessionID string `json:"session_id"`
+		RoomID    string `json:"room_id"`
+		UserID    string `json:"user_id"`
+		PeerID    string `json:"peer_id"`
+		Exp       int64  `json:"exp"`
 	}
 	if e := json.Unmarshal(payload, &claims); e != nil {
 		t.Fatal(e)
 	}
-	if claims.RoomID != roomID || claims.UserID != u.ID || claims.PeerID != u.ID {
+	if claims.RoomID != roomID || claims.UserID != u.ID || claims.PeerID != peerID || claims.SessionID != "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" {
 		t.Fatalf("unexpected claims: %#v", claims)
 	}
 	if ttl := claims.Exp - time.Now().Unix(); ttl <= 0 || ttl > 120 {

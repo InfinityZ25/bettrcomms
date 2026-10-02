@@ -7,7 +7,7 @@ import {
 } from 'react';
 import { ArrowDown, CheckCheck, ChevronLeft, Search, Pin, MessagesSquare } from 'lucide-react';
 import type { Message, User } from '@/api';
-import { api, uploadMessageAttachment } from '@/api';
+import { api, ApiRequestError, uploadMessageAttachment } from '@/api';
 import MessageItem from './MessageItem';
 import MessageComposer from './MessageComposer';
 import { MessageBody } from './MessageItem';
@@ -31,6 +31,7 @@ import { editableMessage, encodeMentions, mentionLabel } from './mentions';
 import { clearDraft, readDraft, saveDraft, type PendingAttachment, type SavedDraft } from './drafts';
 import { publishTyping, subscribeTyping, typingSnapshot } from './typingStore';
 import { useMountEffect } from '@/hooks/useMountEffect';
+import { usePostingState } from './usePostingState';
 
 function MessageTimeline({
   roomId,
@@ -58,6 +59,7 @@ function MessageTimeline({
   /** Offered on phones, where the thread covers the button that opened it. */
   onClose?: () => void;
 }) {
+  const posting = usePostingState(roomId);
   const lifetime = useRef(new AbortController());
   useMountEffect(() => {
     lifetime.current = new AbortController();
@@ -113,7 +115,7 @@ function MessageTimeline({
     if (!editing) {
       nonce.current = null;
       saveDraft(user.id, roomId, { body: value, attachments }, threadRootId);
-      if (value.trim()) {
+      if (value.trim() && !posting.restricted) {
         if (Date.now() - lastTyping.current > 2000) {
           publishTyping(user.id, roomId, true, threadRootId);
           lastTyping.current = Date.now();
@@ -124,7 +126,7 @@ function MessageTimeline({
     }
   };
   const addFiles = (files: FileList | null) => {
-    if (busy || !files?.length) return;
+    if (busy || posting.restricted || !files?.length) return;
     const selected = Array.from(files);
     if (attachments.length + selected.length > 4 || selected.some((file) => file.size < 1 || file.size > 10 * 1024 * 1024)) {
       onError('Choose up to four files, each 10 MB or less.');
@@ -149,6 +151,7 @@ function MessageTimeline({
       return true;
     } catch (error) {
       if (lifetime.current.signal.aborted) return false;
+      if (error instanceof ApiRequestError && ['posting_restricted', 'slow_mode'].includes(error.code ?? '')) void posting.refresh();
       onError(error instanceof Error ? error.message : 'Message action failed');
       return false;
     } finally {
@@ -157,7 +160,7 @@ function MessageTimeline({
   };
   const send = (event?: FormEvent) => {
     event?.preventDefault();
-    if ((!draft.trim() && (editing || !attachments.length)) || busy) return;
+    if ((!draft.trim() && (editing || !attachments.length)) || busy || posting.restricted || (!editing && posting.cooldown)) return;
     const body = encodeMentions(draft.trim(), mentions.current);
     const submitMessage = async () => {
       if (editing) {
@@ -207,6 +210,7 @@ function MessageTimeline({
     }
   };
   const startEdit = (message: Message) => {
+    if (posting.restricted) { onError(posting.reason); return; }
     beforeEdit.current = { body: draft, attachments };
     const { body, mentions: selected } = editableMessage(message, chat.members);
     mentions.current = selected;
@@ -384,7 +388,7 @@ function MessageTimeline({
               canPin={canPin}
               onPin={(message, remove) => runMessageAction(() => pinMessage(roomId, message.id, remove))}
               onReact={(message, emoji, remove) =>
-                runMessageAction(() =>
+                posting.restricted ? (onError(posting.reason), Promise.resolve(false)) : runMessageAction(() =>
                   reactMessage(roomId, message.id, emoji, remove),
                 )
               }
@@ -429,6 +433,10 @@ function MessageTimeline({
         editing={!!editing}
         reply={reply}
         busy={busy}
+        blocked={posting.restricted || (!editing && posting.cooldown)}
+        blockedReason={posting.reason}
+        blockedUntil={posting.until}
+        attachmentsBlocked={posting.restricted}
         suggested={suggested}
         suggestion={suggestion}
         onSuggestion={setSuggestion}

@@ -1,3 +1,4 @@
+mod authorization;
 mod config;
 mod engine;
 mod health;
@@ -24,16 +25,27 @@ pub struct AppState {
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .json()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
         .init();
 
     let config = Config::from_env()?;
     info!(?config.http_addr, ?config.udp_addr, ?config.public_media_addr, sfu_id = config.sfu_id, "starting bettrcomms-sfu");
 
     let telemetry = Telemetry::new();
-    let engine = engine::spawn(config.sfu_id, config.udp_addr, config.public_media_addr, telemetry).await?;
+    let engine = engine::spawn(
+        config.sfu_id,
+        config.udp_addr,
+        config.public_media_addr,
+        telemetry,
+    )
+    .await?;
 
-    let state = AppState { engine, config: std::sync::Arc::new(config.clone()) };
+    let state = AppState {
+        engine,
+        config: std::sync::Arc::new(config.clone()),
+    };
 
     let app = Router::new()
         .route("/ws", get(signaling::handler))
@@ -41,13 +53,17 @@ async fn main() -> anyhow::Result<()> {
         .route("/liveness", get(health::liveness))
         .route("/readiness", get(health::readiness))
         .route("/metrics", get(health::metrics))
-        .layer(tower_http::trace::TraceLayer::new_for_http())
+        .layer(tower_http::trace::TraceLayer::new_for_http().make_span_with(|request: &axum::http::Request<axum::body::Body>| {
+            tracing::info_span!("http_request", method = %request.method(), path = request.uri().path())
+        }))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(config.http_addr).await?;
     info!(addr = %config.http_addr, "signaling http server listening");
 
-    axum::serve(listener, app).with_graceful_shutdown(shutdown_signal()).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
 
     info!("shut down cleanly");
     Ok(())
@@ -58,7 +74,9 @@ async fn main() -> anyhow::Result<()> {
 /// requests finish. The engine task itself exits when its channels drop.
 async fn shutdown_signal() {
     let ctrl_c = async {
-        tokio::signal::ctrl_c().await.expect("failed to install Ctrl-C handler");
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl-C handler");
     };
 
     #[cfg(unix)]

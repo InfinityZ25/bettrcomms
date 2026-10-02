@@ -54,10 +54,10 @@ func (s *PostgresStore) UpsertDevUser(e, n string) (User, error) {
 	return scanUser(s.DB.QueryRow(context.Background(), `INSERT INTO users(email,name) VALUES($1,$2) ON CONFLICT(email) DO UPDATE SET name=EXCLUDED.name,updated_at=now() RETURNING `+userCols, e, n))
 }
 func (s *PostgresStore) UserByID(id string) (User, error) {
-	return scanUser(s.DB.QueryRow(context.Background(), `SELECT `+userCols+` FROM users WHERE id=$1`, id))
+	return scanUser(s.DB.QueryRow(context.Background(), `SELECT `+userCols+` FROM users WHERE id=$1 AND deleted_at IS NULL`, id))
 }
 func (s *PostgresStore) FindUsers(q, uid string) ([]User, error) {
-	rows, e := s.DB.Query(context.Background(), `SELECT `+userCols+` FROM users WHERE id<>$2 AND (email ILIKE '%'||$1||'%' OR name ILIKE '%'||$1||'%') AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE (b.blocker_id=$2 AND b.blocked_id=users.id) OR (b.blocker_id=users.id AND b.blocked_id=$2)) ORDER BY name LIMIT 20`, q, uid)
+	rows, e := s.DB.Query(context.Background(), `SELECT `+userCols+` FROM users WHERE deleted_at IS NULL AND id<>$2 AND (email ILIKE '%'||$1||'%' OR name ILIKE '%'||$1||'%') AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE (b.blocker_id=$2 AND b.blocked_id=users.id) OR (b.blocker_id=users.id AND b.blocked_id=$2)) ORDER BY name LIMIT 20`, q, uid)
 	if e != nil {
 		return nil, e
 	}
@@ -73,7 +73,7 @@ func (s *PostgresStore) FindUsers(q, uid string) ([]User, error) {
 	return out, rows.Err()
 }
 func (s *PostgresStore) ListRooms(uid string) ([]Room, error) {
-	rows, e := s.DB.Query(context.Background(), `SELECT r.id::text,r.name,r.owner_id::text,rm.role,r.kind,r.created_at,CASE WHEN r.kind='direct' THEN (SELECT u.name FROM room_members other JOIN users u ON u.id=other.user_id WHERE other.room_id=r.id AND other.user_id<>$1 ORDER BY other.joined_at LIMIT 1) END,COALESCE((SELECT m.created_at FROM messages m WHERE m.room_id=r.id ORDER BY m.sequence DESC LIMIT 1),r.created_at) activity_at FROM rooms r JOIN room_members rm ON rm.room_id=r.id WHERE rm.user_id=$1 AND can_access_room(r.id,$1) ORDER BY activity_at DESC,r.id`, uid)
+	rows, e := s.DB.Query(context.Background(), `SELECT r.id::text,r.name,r.owner_id::text,rm.role,r.kind,r.created_at,r.slow_mode_seconds,CASE WHEN r.kind='direct' THEN (SELECT u.name FROM room_members other JOIN users u ON u.id=other.user_id WHERE other.room_id=r.id AND other.user_id<>$1 ORDER BY other.joined_at LIMIT 1) END,COALESCE((SELECT m.created_at FROM messages m WHERE m.room_id=r.id ORDER BY m.sequence DESC LIMIT 1),r.created_at) activity_at FROM rooms r JOIN room_members rm ON rm.room_id=r.id WHERE rm.user_id=$1 AND can_access_room(r.id,$1) ORDER BY activity_at DESC,r.id`, uid)
 	if e != nil {
 		return nil, e
 	}
@@ -81,7 +81,7 @@ func (s *PostgresStore) ListRooms(uid string) ([]Room, error) {
 	out := []Room{}
 	for rows.Next() {
 		var r Room
-		if e = rows.Scan(&r.ID, &r.Name, &r.OwnerID, &r.Role, &r.Kind, &r.CreatedAt, &r.DisplayName, &r.ActivityAt); e != nil {
+		if e = rows.Scan(&r.ID, &r.Name, &r.OwnerID, &r.Role, &r.Kind, &r.CreatedAt, &r.SlowModeSeconds, &r.DisplayName, &r.ActivityAt); e != nil {
 			return nil, e
 		}
 		out = append(out, r)
@@ -95,7 +95,7 @@ func (s *PostgresStore) CreateRoom(uid, name string) (Room, error) {
 	}
 	defer tx.Rollback(context.Background())
 	var r Room
-	e = tx.QueryRow(context.Background(), `INSERT INTO rooms(name,owner_id) VALUES($1,$2) RETURNING id::text,name,owner_id::text,'owner',kind,created_at`, name, uid).Scan(&r.ID, &r.Name, &r.OwnerID, &r.Role, &r.Kind, &r.CreatedAt)
+	e = tx.QueryRow(context.Background(), `INSERT INTO rooms(name,owner_id) SELECT $1,$2 WHERE EXISTS(SELECT 1 FROM users WHERE id=$2 AND deleted_at IS NULL) RETURNING id::text,name,owner_id::text,'owner',kind,created_at`, name, uid).Scan(&r.ID, &r.Name, &r.OwnerID, &r.Role, &r.Kind, &r.CreatedAt)
 	if e != nil {
 		return r, e
 	}
@@ -108,7 +108,7 @@ func (s *PostgresStore) CreateRoom(uid, name string) (Room, error) {
 }
 func (s *PostgresStore) RoomForMember(rid, uid string) (Room, error) {
 	var r Room
-	e := s.DB.QueryRow(context.Background(), `SELECT r.id::text,r.name,r.owner_id::text,rm.role,r.kind,r.created_at,CASE WHEN r.kind='direct' THEN (SELECT u.name FROM room_members other JOIN users u ON u.id=other.user_id WHERE other.room_id=r.id AND other.user_id<>$2 ORDER BY other.joined_at LIMIT 1) END FROM rooms r JOIN room_members rm ON rm.room_id=r.id WHERE r.id=$1 AND rm.user_id=$2 AND can_access_room(r.id,$2)`, rid, uid).Scan(&r.ID, &r.Name, &r.OwnerID, &r.Role, &r.Kind, &r.CreatedAt, &r.DisplayName)
+	e := s.DB.QueryRow(context.Background(), `SELECT r.id::text,r.name,r.owner_id::text,rm.role,r.kind,r.created_at,r.slow_mode_seconds,CASE WHEN r.kind='direct' THEN (SELECT u.name FROM room_members other JOIN users u ON u.id=other.user_id WHERE other.room_id=r.id AND other.user_id<>$2 ORDER BY other.joined_at LIMIT 1) END FROM rooms r JOIN room_members rm ON rm.room_id=r.id WHERE r.id=$1 AND rm.user_id=$2 AND can_access_room(r.id,$2)`, rid, uid).Scan(&r.ID, &r.Name, &r.OwnerID, &r.Role, &r.Kind, &r.CreatedAt, &r.SlowModeSeconds, &r.DisplayName)
 	return r, norm(e)
 }
 func (s *PostgresStore) CreateDirectRoom(uid, fid string) (Room, error) {
@@ -185,7 +185,7 @@ func (s *PostgresStore) RemoveRoomMember(rid, actor, target string) error {
 	return e
 }
 func (s *PostgresStore) ListRoomMembers(rid string) ([]RoomMember, error) {
-	rows, e := s.DB.Query(context.Background(), `SELECT u.id::text,u.email,u.name,u.avatar_url,u.created_at,rm.role,rm.joined_at FROM room_members rm JOIN users u ON u.id=rm.user_id WHERE rm.room_id=$1 ORDER BY CASE rm.role WHEN 'owner' THEN 0 ELSE 1 END,u.name`, rid)
+	rows, e := s.DB.Query(context.Background(), `SELECT u.id::text,u.email,u.name,u.avatar_url,u.created_at,rm.role,rm.joined_at,rm.posting_restricted_until FROM room_members rm JOIN users u ON u.id=rm.user_id WHERE rm.room_id=$1 ORDER BY CASE rm.role WHEN 'owner' THEN 0 ELSE 1 END,u.name`, rid)
 	if e != nil {
 		return nil, e
 	}
@@ -193,7 +193,7 @@ func (s *PostgresStore) ListRoomMembers(rid string) ([]RoomMember, error) {
 	out := []RoomMember{}
 	for rows.Next() {
 		var m RoomMember
-		if e = rows.Scan(&m.User.ID, &m.User.Email, &m.User.Name, &m.User.AvatarURL, &m.User.CreatedAt, &m.Role, &m.JoinedAt); e != nil {
+		if e = rows.Scan(&m.User.ID, &m.User.Email, &m.User.Name, &m.User.AvatarURL, &m.User.CreatedAt, &m.Role, &m.JoinedAt, &m.RestrictedUntil); e != nil {
 			return nil, e
 		}
 		out = append(out, m)
@@ -201,16 +201,27 @@ func (s *PostgresStore) ListRoomMembers(rid string) ([]RoomMember, error) {
 	return out, rows.Err()
 }
 func (s *PostgresStore) AddRoomMember(rid, owner, newID string) error {
+	ctx := context.Background()
+	tx, e := s.DB.Begin(ctx)
+	if e != nil {
+		return e
+	}
+	defer tx.Rollback(ctx)
+	if e = requireChannelOwner(ctx, tx, rid, owner); e != nil {
+		return e
+	}
 	var permitted bool
-	e := s.DB.QueryRow(context.Background(), `SELECT EXISTS(SELECT 1 FROM rooms WHERE id=$1 AND owner_id=$2) AND EXISTS(SELECT 1 FROM friend_requests WHERE status='accepted' AND ((sender_id=$2 AND receiver_id=$3) OR (sender_id=$3 AND receiver_id=$2)))`, rid, owner, newID).Scan(&permitted)
+	e = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE id=$3 AND deleted_at IS NULL) AND NOT EXISTS(SELECT 1 FROM room_bans WHERE room_id=$1 AND user_id=$3) AND EXISTS(SELECT 1 FROM friend_requests WHERE status='accepted' AND ((sender_id=$2 AND receiver_id=$3) OR (sender_id=$3 AND receiver_id=$2)))`, rid, owner, newID).Scan(&permitted)
 	if e != nil {
 		return e
 	}
 	if !permitted {
 		return ErrForbidden
 	}
-	_, e = s.DB.Exec(context.Background(), `INSERT INTO room_members(room_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING`, rid, newID)
-	return e
+	if _, e = tx.Exec(ctx, `INSERT INTO room_members(room_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING`, rid, newID); e != nil {
+		return e
+	}
+	return tx.Commit(ctx)
 }
 func (s *PostgresStore) ListMessages(rid string, before time.Time, limit int) ([]Message, error) {
 	rows, e := s.DB.Query(context.Background(), `SELECT m.id::text,m.room_id::text,m.body,m.created_at,u.id::text,u.email,u.name,u.avatar_url,u.created_at FROM messages m JOIN users u ON u.id=m.author_id WHERE m.room_id=$1 AND m.created_at<$2 ORDER BY m.created_at DESC LIMIT $3`, rid, before, limit)
@@ -236,6 +247,9 @@ func (s *PostgresStore) CreateMessage(rid, uid, body string) (Message, error) {
 	}
 	defer tx.Rollback(ctx)
 	if _, e = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::uuid::text,0))`, rid); e != nil {
+		return Message{}, e
+	}
+	if e = checkRoomPosting(ctx, tx, rid, uid, true); e != nil {
 		return Message{}, e
 	}
 	var m Message

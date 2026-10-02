@@ -24,8 +24,9 @@ import type { User } from '@/api';
 import { notificationSnapshot, setSystemNotifications, setDoNotDisturb, subscribeNotifications } from '@/features/chat/notificationSettings';
 import './SettingsScreen.css';
 import { getDesktopRuntime } from '@/desktop/runtime';
+import AccountSettings from './AccountSettings';
 
-export type SettingsPage = 'audio' | 'voice' | 'recording' | 'stream' | 'connection' | 'appearance';
+export type SettingsPage = 'audio' | 'voice' | 'recording' | 'stream' | 'connection' | 'appearance' | 'account';
 
 export default function SettingsScreen({ page, user, noise, onNoiseChange, balanced, onBalancedChange, layout, onLayoutChange }: {
   page: SettingsPage;
@@ -48,6 +49,7 @@ export default function SettingsScreen({ page, user, noise, onNoiseChange, balan
     >,
   );
   const desktop = getDesktopRuntime() === 'wails';
+  if (page === 'account') return user ? <AccountSettings key={user.id} user={user} /> : <p className="text-sm text-muted-foreground">Sign in to manage your account.</p>;
   if (page === 'audio') return (
     <SettingsSection id="settings-audio" title="Call audio">
       <SettingRow as="div" title="Noise suppression" description="Keep background sounds out of the conversation." control={<Switch aria-label="Noise suppression" checked={noise} onCheckedChange={onNoiseChange} />} />

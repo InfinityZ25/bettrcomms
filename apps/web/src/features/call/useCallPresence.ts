@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import type { CallParticipant, Message } from '@/api';
+import { api, type CallParticipant, type Message } from '@/api';
 import {
   receiveMessage,
   reconcileMessaging,
   refreshUnread,
 } from '@/features/chat/messageStore';
 import { apiSocketUrl } from '@/desktop/apiTransport';
+import { invalidatePostingState } from '@/features/chat/usePostingState';
 import { receiveTyping, setTypingSocket } from '@/features/chat/typingStore';
 
 type RoomPresence = { room_id: string; participants: CallParticipant[] };
@@ -126,6 +127,7 @@ export function useCallPresence(userId?: string) {
             const value = message.payload as Message;
             if (!value?.id || !value.room_id) return;
             receiveMessage(userId, value);
+            if (value.author.id === userId) invalidatePostingState(value.room_id);
             messageSequence += 1;
             setState((currentState) => ({
               ...currentState,
@@ -134,6 +136,11 @@ export function useCallPresence(userId?: string) {
                 { sequence: messageSequence, value },
               ],
             }));
+          } else if (message.type === 'room.moderation') {
+            const payload = message.payload as { room_id?: string };
+            if (payload?.room_id) invalidatePostingState(payload.room_id);
+          } else if (message.type === 'account.deleted') {
+            reconcileMessaging(userId, true);
           } else if (message.type === 'rooms.changed') {
             reconcileMessaging(userId, true);
             setState((currentState) => ({
@@ -163,7 +170,8 @@ export function useCallPresence(userId?: string) {
           // A malformed event is isolated; the next event remains usable.
         }
       };
-      current.onclose = () => {
+      current.onclose = (event) => {
+        if (event.code === 1008) void api('/me').catch(() => {});
         if (socket !== current) return;
         if (pingTimer !== undefined) window.clearInterval(pingTimer);
         pingTimer = undefined;

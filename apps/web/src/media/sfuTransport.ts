@@ -51,8 +51,8 @@ type ServerMessage =
  * when no SFU is configured for this deployment (caller should fall back
  * to the mesh/P2P transport in that case).
  */
-export async function requestSfuJoin(roomId: string): Promise<SfuJoinResponse> {
-  const response = await fetch(apiHttpUrl(`/api/v1/rooms/${encodeURIComponent(roomId)}/sfu-join`), {
+export async function requestSfuJoin(roomId: string, peerId: string): Promise<SfuJoinResponse> {
+  const response = await fetch(apiHttpUrl(`/api/v1/rooms/${encodeURIComponent(roomId)}/sfu-join?peer_id=${encodeURIComponent(peerId)}`), {
     credentials: apiCredentials(),
     headers: apiAuthHeaders(),
   });
@@ -100,8 +100,9 @@ export class SfuTransport extends EventTarget {
   }
 
   /** Opens the signaling WebSocket to the SFU and completes the bootstrap negotiation. */
-  async connect(roomId: string): Promise<void> {
-    const join = await requestSfuJoin(roomId);
+  async connect(roomId: string, peerId: string): Promise<void> {
+    // Use the admitted room-signaling peer, rather than a user or device ID.
+    const join = await requestSfuJoin(roomId, peerId);
     await new Promise<void>((resolve, reject) => {
       const ws = new WebSocket(`${join.sfu_url}?token=${encodeURIComponent(join.token)}`);
       ws.addEventListener('open', () => resolve(), { once: true });

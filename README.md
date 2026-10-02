@@ -81,6 +81,8 @@ The browser suite uses two isolated authenticated browser contexts against the r
 
 Read [the product spec](docs/PRODUCT_SPEC.md), [implementation matrix](docs/IMPLEMENTATION_MATRIX.md), [Wails completion ledger](docs/WAILS_COMPLETION.md), and [server protocol](server/PROTOCOL.md).
 
+Channel owners can configure [bans, posting restrictions and slow mode](docs/MODERATION.md). Users can manage [device sessions and account deletion](docs/ACCOUNT_SESSIONS.md); the SFU requires live API authorization for revoked sessions to leave media as well as signaling.
+
 ## Repository
 
 ```text

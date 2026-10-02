@@ -6,20 +6,33 @@ import (
 )
 
 func (s *PostgresStore) SavePendingAttachment(room, user, key string, attachment MessageAttachment) error {
-	tag, err := s.DB.Exec(context.Background(), `INSERT INTO message_attachments(id,room_id,uploader_id,object_key,filename,content_type,size_bytes,upload_state) SELECT $1,$2,$3,$4,$5,$6,$7,'uploading' WHERE EXISTS(SELECT 1 FROM room_members WHERE room_id=$2 AND user_id=$3)`, attachment.ID, room, user, key, attachment.Filename, attachment.ContentType, attachment.SizeBytes)
+	ctx := context.Background()
+	tx, err := s.DB.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err = checkRoomPosting(ctx, tx, room, user, false); err != nil {
+		return err
+	}
+	tag, err := tx.Exec(ctx, `INSERT INTO message_attachments(id,room_id,uploader_id,object_key,filename,content_type,size_bytes,upload_state) SELECT $1,$2,$3,$4,$5,$6,$7,'uploading' WHERE can_access_room($2,$3)`, attachment.ID, room, user, key, attachment.Filename, attachment.ContentType, attachment.SizeBytes)
 	if err == nil && tag.RowsAffected() == 0 {
 		return ErrForbidden
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (s *PostgresStore) CompletePendingAttachment(id, room string) error {
 	var currentRoom *string
-	err := s.DB.QueryRow(context.Background(), `UPDATE message_attachments SET upload_state='ready' WHERE id=$1 RETURNING room_id::text`, id).Scan(&currentRoom)
+	var deleted *time.Time
+	err := s.DB.QueryRow(context.Background(), `UPDATE message_attachments a SET upload_state='ready',deleted_at=CASE WHEN can_access_room(a.room_id,a.uploader_id) AND EXISTS(SELECT 1 FROM rooms r JOIN room_members rm ON rm.room_id=r.id AND rm.user_id=a.uploader_id WHERE r.id=a.room_id AND (r.owner_id=a.uploader_id OR rm.posting_restricted_until IS NULL OR rm.posting_restricted_until<=clock_timestamp())) THEN deleted_at ELSE clock_timestamp() END WHERE id=$1 RETURNING room_id::text,deleted_at`, id).Scan(&currentRoom, &deleted)
 	if err != nil {
 		return norm(err)
 	}
-	if currentRoom == nil || *currentRoom != room {
+	if currentRoom == nil || *currentRoom != room || deleted != nil {
 		return ErrForbidden
 	}
 	return nil

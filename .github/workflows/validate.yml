@@ -6,6 +6,17 @@ on:
 permissions:
   contents: read
 jobs:
+  sfu-authorization:
+    name: SFU authorization and revocation
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        run: rustup toolchain install 1.96.0 --profile minimal
+      - name: Test media authorization lifecycle
+        working-directory: apps/sfu
+        run: cargo +1.96.0 test --locked
   wails-macos:
     name: Wails macOS package signature
     runs-on: macos-15
