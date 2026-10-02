@@ -58,6 +58,45 @@ describe('native call microphone integration', () => {
     expect(playback).toHaveBeenLastCalledWith(false);
   });
 
+  it.each([1, 2, 3, 4])('mouse toggle %s follows the typing preference without consuming editing input', button => {
+    writeCallShortcuts({ mute: { kind: 'mouse', button } });
+    const editor = new Element();
+    const dispatch = () => {
+      const event = Object.assign(new Event('mousedown', { cancelable: true }), { button });
+      Object.defineProperty(event, 'target', { value: editor });
+      window.dispatchEvent(event);
+      return event;
+    };
+    input.start();
+    dispatch();
+    expect(input.getSnapshot().manualMuted).toBe(false);
+    writeTalkSettings({ enabled: false, binding: { kind: 'keyboard', code: 'KeyV' }, allowWhileTyping: true });
+    expect(dispatch().defaultPrevented).toBe(false);
+    expect(input.getSnapshot().manualMuted).toBe(true);
+  });
+
+  it('left clicks on editable controls never toggle mute even with typing enabled', () => {
+    writeCallShortcuts({ mute: { kind: 'mouse', button: 0 } });
+    writeTalkSettings({ enabled: false, binding: { kind: 'keyboard', code: 'KeyV' }, allowWhileTyping: true });
+    input.start();
+    const event = Object.assign(new Event('mousedown', { cancelable: true }), { button: 0 });
+    Object.defineProperty(event, 'target', { value: new Element() });
+    window.dispatchEvent(event);
+    expect(input.getSnapshot().manualMuted).toBe(false);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('keyboard toggles also preserve editor shortcuts when the typing option is enabled', () => {
+    writeCallShortcuts({ mute: { kind: 'keyboard', code: 'ControlLeft' } });
+    writeTalkSettings({ enabled: false, binding: { kind: 'keyboard', code: 'KeyV' }, allowWhileTyping: true });
+    input.start();
+    const event = Object.assign(new Event('keydown', { cancelable: true }), { code: 'ControlLeft', repeat: false });
+    Object.defineProperty(event, 'target', { value: new Element() });
+    window.dispatchEvent(event);
+    expect(input.getSnapshot().manualMuted).toBe(true);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
   it.each(['ControlLeft', 'KeyV', 'Space', 'Enter'])('allows %s in editors only when opted in, without consuming editing events', code => {
     const editor = new Element();
     const dispatch = (type: string, target: Element = editor) => {

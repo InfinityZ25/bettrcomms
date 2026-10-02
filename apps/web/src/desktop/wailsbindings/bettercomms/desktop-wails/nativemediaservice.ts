@@ -92,6 +92,14 @@ export function CallShortcutRequestPermission(hostToken: string): $CancellablePr
     });
 }
 
+/**
+ * CallShortcutSupported validates the physical mapping without OS registration
+ * or permission requests, so settings never accept an unusable global binding.
+ */
+export function CallShortcutSupported(hostToken: string, binding: pushtotalk$0.Binding): $CancellablePromise<boolean> {
+    return $Call.ByID(4275943416, hostToken, binding);
+}
+
 export function CallShortcutsStart(hostToken: string, bindings: pushtotalk$0.Bindings): $CancellablePromise<pushtotalk$0.Snapshot> {
     return $Call.ByID(3097465457, hostToken, bindings).then(($result: any) => {
         return $$createType2($result);

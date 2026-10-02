@@ -26,12 +26,12 @@ public verification keys. macOS global shortcuts use an explicit Input Monitorin
 permission and remain experimental pending physical-device acceptance. See
 `DESKTOP_BASICS.md` for packaging, signing and acceptance requirements.
 
-This integrates the social basics below with migrations 009–012. Initial local
-validation passed the web production build, 415 frontend tests, server unit tests
-without the database, and Windows Wails Go tests/vet. Final database/browser and
-Linux SFU checks run separately; local Docker recovery is pending. These results
-do not establish packaged WorkOS auth, physical macOS shortcuts or an upgrade
-between two signed production versions.
+This integrates the social basics below with migrations 009–012. Local validation
+passed the web production build, 429 frontend tests, server unit tests without
+the database, and Windows Wails Go tests/vet. The merge requires CI validation of
+database/browser regressions, Linux SFU revocation and native packaging; local
+Docker recovery is pending. These checks do not establish packaged WorkOS auth,
+physical macOS shortcuts or an upgrade between two signed production versions.
 
 ## Unreleased — social basics
 

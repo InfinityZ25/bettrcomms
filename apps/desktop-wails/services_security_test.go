@@ -22,7 +22,7 @@ func TestSensitiveNativeMethodsRejectUnauthorisedPages(t *testing.T) {
 		"NativeScreenIceServers", "NativeScreenPeerOffer", "NativeScreenPeerAnswer", "NativeScreenPeerCandidate", "NativeScreenPeerRemove",
 		"NativeScreenRecordingStart", "NativeScreenRecordingStop", "NativeScreenRecordingRead", "NativeScreenRecordingRelease",
 		"PushToTalkStart", "PushToTalkHeartbeat", "PushToTalkStop", "RecordingExportBegin", "RecordingConversionBegin",
-		"CallShortcutsStart", "CallShortcutPermission", "CallShortcutRequestPermission",
+		"CallShortcutsStart", "CallShortcutPermission", "CallShortcutRequestPermission", "CallShortcutSupported",
 		"RecordingExportAppend", "RecordingExportFinish", "RecordingExportAbort", "CameraOverlayOpen", "CameraOverlayUpdate",
 		"CameraOverlayFrame", "CameraOverlayClose", "CopilotOverlayFrame", "CopilotOverlaySync", "CopilotOverlayClear", "NativeSystemAudioStart",
 		"NativeSystemAudioRead", "NativeSystemAudioStop", "NvidiaInstall", "DeepfilterInstall", "NvidiaStatus", "DeepfilterStatus",

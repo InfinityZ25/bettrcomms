@@ -167,6 +167,16 @@ func (b Binding) resolve() (input, error) {
 	}
 }
 
+// ValidateBinding probes only the physical mapping; it requests no permissions
+// and installs no observer. Invalid optional actions must not disable valid PTT.
+func ValidateBinding(binding Binding) error {
+	resolved, err := binding.resolve()
+	if err != nil {
+		return err
+	}
+	return validatePlatformInput(resolved)
+}
+
 // inputState debounces a binding into open/closed transitions.
 //
 // A binding already held when the session starts must not open the microphone.
@@ -372,6 +382,9 @@ func (m *Manager) StartBindings(bindings Bindings, options Options) (Snapshot, e
 		}
 		resolved, err := entry.binding.resolve()
 		if err != nil {
+			return Snapshot{}, err
+		}
+		if err := validatePlatformInput(resolved); err != nil {
 			return Snapshot{}, err
 		}
 		for _, prior := range watches {

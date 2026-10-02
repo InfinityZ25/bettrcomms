@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { useMountEffect } from '@/hooks/useMountEffect';
 import { startupStatus, setStartup, updateStatus, checkUpdates, downloadUpdate, cancelUpdate, restartForUpdate, setAutomaticUpdates, onUpdateStatus, type StartupStatus, type UpdateStatus } from '@/desktop/desktopSettings';
-import { nativeShortcutPermission } from '@/desktop/nativeMedia';
+import { nativeShortcutPermission, nativeShortcutSupported } from '@/desktop/nativeMedia';
 import { canBindKey, readTalkSettings, talkBindingLabel, type TalkBinding } from '@/media/pushToTalk';
 import { readCallShortcuts, writeCallShortcuts, sameShortcut, type CallShortcutSettings } from '@/media/callShortcutSettings';
 import { SettingRow } from './SettingRow';
@@ -65,11 +65,16 @@ export default function DesktopSettings() {
     } finally { if (mounted.current) setBusy(false); }
   }
   function saveShortcuts(next: CallShortcutSettings) {
-    try {
+    void perform(async () => {
       const talk = readTalkSettings();
       if (talk.enabled && (sameShortcut(talk.binding, next.mute) || sameShortcut(talk.binding, next.deafen))) throw new Error('Push-to-talk, mute and deafen need different shortcuts.');
-      writeCallShortcuts(next); setShortcuts(next); setError('');
-    } catch (failure) { setError(failure instanceof Error ? failure.message : 'Could not save shortcuts.'); }
+      for (const action of ['mute', 'deafen'] as const) {
+        const binding = next[action];
+        if (binding && !sameShortcut(binding, shortcuts[action]) && !await nativeShortcutSupported(binding)) throw new Error('This shortcut is unsupported globally on this platform. Choose a letter, modifier, F1–F12, navigation key or mouse button.');
+      }
+      writeCallShortcuts(next);
+      return next;
+    }, setShortcuts);
   }
   const downloading = update?.state === 'downloading';
   return <SettingsSection id="settings-desktop" title="Desktop">
@@ -79,9 +84,9 @@ export default function DesktopSettings() {
     <SettingRow as="div" title="Global call shortcuts" description={permission?.detail || 'Keyboard and mouse shortcuts work during calls, including while another app is focused. Input is never blocked in other apps.'}
       control={permission?.available && !permission.granted ? <Button disabled={busy} onClick={() => { void perform(() => nativeShortcutPermission(true), setPermission); }}>Allow input monitoring</Button> : <span className="text-xs text-muted-foreground">{permission?.granted ? 'Permission ready' : 'Unavailable'}</span>} />
     <SettingRow as="div" title="Toggle microphone mute" description="Press once to mute or unmute. Overrides push-to-talk."
-      control={<ShortcutField title="mute" value={shortcuts.mute} disabled={!permission?.available} onChange={mute => saveShortcuts({ ...shortcuts, mute })} />} />
+      control={<ShortcutField title="mute" value={shortcuts.mute} disabled={busy || !permission?.available} onChange={mute => saveShortcuts({ ...shortcuts, mute })} />} />
     <SettingRow as="div" title="Toggle deafen" description="Press once to pause or restore listening and microphone transmission."
-      control={<ShortcutField title="deafen" value={shortcuts.deafen} disabled={!permission?.available} onChange={deafen => saveShortcuts({ ...shortcuts, deafen })} />} />
+      control={<ShortcutField title="deafen" value={shortcuts.deafen} disabled={busy || !permission?.available} onChange={deafen => saveShortcuts({ ...shortcuts, deafen })} />} />
     <p className="text-xs text-muted-foreground">Shortcuts pause while assigning a key. While typing in BetterComms, they follow “Allow while typing” in Voice &amp; devices. Choose a key other than Escape, Tab or the Windows/Command key.</p>
     <SettingRow as="div" title="Check updates automatically" description="Check at most every six hours while the app is running. Downloads and restart require your action."
       control={<Switch aria-label="Check desktop updates automatically" checked={update?.automatic ?? false} disabled={busy || !update?.available}

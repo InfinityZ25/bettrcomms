@@ -231,3 +231,30 @@ func TestConflictingActionsAreRejectedBeforeInstallingAHook(t *testing.T) {
 		t.Fatal("invalid shortcut installed a hook")
 	}
 }
+
+func TestBindingValidationDoesNotPromptOrInstallAnObserver(t *testing.T) {
+	if supported {
+		for _, binding := range []Binding{{Kind: KindKeyboard, Code: "ControlLeft"}, {Kind: KindMouse, Button: 4}} {
+			if err := ValidateBinding(binding); err != nil {
+				t.Fatalf("supported binding %+v: %v", binding, err)
+			}
+		}
+	}
+	if err := ValidateBinding(Binding{Kind: KindKeyboard, Code: "F13"}); err == nil {
+		t.Fatal("unmapped global key accepted")
+	}
+}
+
+func TestInvalidOptionalActionDoesNotStopTheCurrentNativeSession(t *testing.T) {
+	manager := NewManager()
+	previous := &session{id: "already-active"}
+	manager.current = previous
+	talk := Binding{Kind: KindKeyboard, Code: "ControlLeft"}
+	mute := Binding{Kind: KindKeyboard, Code: "F13"}
+	if _, err := manager.StartBindings(Bindings{Talk: &talk, Mute: &mute}, Options{}); err == nil {
+		t.Fatal("invalid action accepted")
+	}
+	if manager.current != previous {
+		t.Fatal("invalid configuration stopped a current observer")
+	}
+}

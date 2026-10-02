@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NativePushToTalk } from './nativePushToTalk';
 
-const mocks = vi.hoisted(() => ({ invoke: vi.fn(), listen: vi.fn(), unlisten: vi.fn() }));
+const mocks = vi.hoisted(() => ({ invoke: vi.fn(), listen: vi.fn(), unlisten: vi.fn(), supported: vi.fn() }));
 vi.mock('../desktop/nativeMedia', () => ({
   hasNativeMediaHost: () => true,
   nativeInputCapabilities: () => mocks.invoke('push_to_talk_capabilities'),
+  nativeShortcutSupported: (binding: unknown) => mocks.supported(binding),
   startNativeInput: (binding: unknown) => mocks.invoke('push_to_talk_start', { binding }),
   startNativeShortcuts: (bindings: unknown) => mocks.invoke('call_shortcuts_start', { bindings }),
   heartbeatNativeInput: (sessionId: string) => mocks.invoke('push_to_talk_heartbeat', { sessionId }),
@@ -20,6 +21,7 @@ describe('native push-to-talk registration', () => {
   beforeEach(() => {
     vi.useFakeTimers(); vi.clearAllMocks();
     mocks.listen.mockResolvedValue(mocks.unlisten);
+    mocks.supported.mockResolvedValue(true);
     mocks.invoke.mockImplementation(async (command: string) => {
       if (command === 'push_to_talk_capabilities') return { available: true, detail: '' };
       if (command === 'push_to_talk_start' || command === 'call_shortcuts_start' || command === 'push_to_talk_heartbeat') return snapshot();
@@ -97,5 +99,34 @@ describe('native push-to-talk registration', () => {
     expect(action).toHaveBeenLastCalledWith('deafen', false);
     event({ ...snapshot(4, false, false), muteCount: 99 });
     expect(action).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps valid global PTT when an optional shortcut has no native platform mapping', async () => {
+    mocks.supported.mockImplementation(async binding => binding.code !== 'F13');
+    await input.start({ kind: 'keyboard', code: 'ControlLeft' }, { mute: { kind: 'keyboard', code: 'F13' } });
+    expect(mocks.invoke).toHaveBeenCalledWith('push_to_talk_start', { binding: { kind: 'keyboard', code: 'ControlLeft' } });
+    expect(status).toHaveBeenLastCalledWith('active', expect.stringContaining('mute uses foreground input only'));
+    event(snapshot(1, true));
+    expect(pressed).toHaveBeenLastCalledWith(true, false);
+  });
+
+  it('allows unsupported PTT in the foreground while supported toggle bindings stay global', async () => {
+    input.dispose();
+    const action = vi.fn();
+    input = new NativePushToTalk(pressed, status, action);
+    mocks.supported.mockImplementation(async binding => binding.code !== 'F13');
+    await input.start({ kind: 'keyboard', code: 'F13' }, { mute: { kind: 'keyboard', code: 'KeyM' } });
+    expect(mocks.invoke).toHaveBeenCalledWith('call_shortcuts_start', { bindings: { mute: { kind: 'keyboard', code: 'KeyM' } } });
+    expect(status).toHaveBeenLastCalledWith('foreground', expect.stringContaining('Push-to-talk uses foreground input only'));
+    event({ ...snapshot(1, true), muteCount: 1 });
+    expect(action).toHaveBeenCalledExactlyOnceWith('mute', false);
+    expect(pressed).not.toHaveBeenCalledWith(true, expect.anything());
+  });
+
+  it('does not install an observer when every selected binding is foreground-only', async () => {
+    mocks.supported.mockResolvedValue(false);
+    await input.start({ kind: 'keyboard', code: 'F13' });
+    expect(status).toHaveBeenLastCalledWith('foreground', expect.stringContaining('unsupported globally'));
+    expect(mocks.listen).not.toHaveBeenCalled();
   });
 });

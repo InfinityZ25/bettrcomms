@@ -6,6 +6,10 @@ import "errors"
 
 const supported = false
 
+func validatePlatformInput(input) error {
+	return errors.New("Native call shortcuts are unavailable on this platform")
+}
+
 // worker has nothing to own off Windows.
 type worker struct{}
 

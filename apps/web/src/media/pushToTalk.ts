@@ -168,7 +168,7 @@ export class CallMicrophone {
     if (this.state.active && !event.repeat && !event.isComposing && !document.hidden && !this.blocksInput(event.target)) {
       const seen: TalkBinding = { kind: 'keyboard', code: event.code };
       if (sameShortcut(seen, actions.mute) || sameShortcut(seen, actions.deafen)) {
-        event.preventDefault();
+        if (!isEditing(event.target)) event.preventDefault();
         if (sameShortcut(seen, actions.mute)) this.toggleMute(); else this.toggleDeafen();
         return;
       }
@@ -188,10 +188,10 @@ export class CallMicrophone {
   };
   private mouseDown = (event: MouseEvent) => {
     const actions = this.shortcuts;
-    if (this.state.active && !document.hidden && !this.blocksInput(event.target) && !isInteractive(event.target)) {
+    if (this.state.active && !document.hidden && !this.blocksInput(event.target) && !(event.button === 0 && isInteractive(event.target))) {
       const seen: TalkBinding = { kind: 'mouse', button: event.button };
       if (sameShortcut(seen, actions.mute) || sameShortcut(seen, actions.deafen)) {
-        event.preventDefault();
+        if (!isEditing(event.target)) event.preventDefault();
         if (sameShortcut(seen, actions.mute)) this.toggleMute(); else this.toggleDeafen();
         return;
       }

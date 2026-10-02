@@ -51,7 +51,8 @@ type NativeMediaService struct {
 	window *application.WebviewWindow
 	// gate is how a native call proves it came from a document this host
 	// served. It gates native calls to the served page.
-	gate *desktop.PageGate
+	gate       *desktop.PageGate
+	inputFocus callInputFocus
 }
 
 // NewNativeMediaService wires the native stack together.
@@ -91,6 +92,7 @@ func (s *NativeMediaService) attach(app *application.App, window *application.We
 	s.app = app
 	s.window = window
 	s.gate = gate
+	s.inputFocus.attach(window.OnWindowEvent)
 	s.screen.SetEndedHandler(func(sessionID, reason string) {
 		window.EmitEvent("native-screen-ended", map[string]string{"sessionId": sessionID, "reason": reason})
 	})
@@ -99,6 +101,7 @@ func (s *NativeMediaService) attach(app *application.App, window *application.We
 // ServiceShutdown releases every native resource. Wails calls it on shutdown,
 // so no encoder, muxer, or input hook outlives the process.
 func (s *NativeMediaService) ServiceShutdown() error {
+	s.inputFocus.close()
 	s.streams.Close()
 	s.talk.Close()
 	s.screen.Close()
@@ -318,6 +321,15 @@ func (s *NativeMediaService) CallShortcutRequestPermission(hostToken string) (pu
 	return pushtotalk.RequestPermission(), nil
 }
 
+// CallShortcutSupported validates the physical mapping without OS registration
+// or permission requests, so settings never accept an unusable global binding.
+func (s *NativeMediaService) CallShortcutSupported(hostToken string, binding pushtotalk.Binding) (bool, error) {
+	if err := s.authorise(hostToken); err != nil {
+		return false, err
+	}
+	return pushtotalk.ValidateBinding(binding) == nil, nil
+}
+
 func (s *NativeMediaService) CallShortcutsStart(hostToken string, bindings pushtotalk.Bindings) (pushtotalk.Snapshot, error) {
 	if err := s.authorise(hostToken); err != nil {
 		return pushtotalk.Snapshot{}, err
@@ -337,14 +349,14 @@ func (s *NativeMediaService) PushToTalkStart(hostToken string, binding pushtotal
 func (s *NativeMediaService) inputOptions() pushtotalk.Options {
 	return pushtotalk.Options{
 		Emit: func(snapshot pushtotalk.Snapshot) {
-			if s.window != nil {
+			if s.window != nil && !s.inputFocus.closed.Load() {
 				s.window.EmitEvent(pushtotalk.Event, snapshot)
 			}
 		},
-		Focused: func() bool { return s.window != nil && s.window.IsFocused() },
+		Focused: s.inputFocus.isFocused,
 		// The lease's own liveness check. The call was authorised at Start; what
 		// this asks is whether the window is still there to hold a hook for.
-		Trusted: func() bool { return s.window != nil },
+		Trusted: func() bool { return s.window != nil && !s.inputFocus.closed.Load() },
 	}
 }
 

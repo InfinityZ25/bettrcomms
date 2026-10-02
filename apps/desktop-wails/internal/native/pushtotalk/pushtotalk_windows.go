@@ -15,6 +15,8 @@ import (
 
 const supported = true
 
+func validatePlatformInput(input) error { return nil }
+
 var (
 	user32                    = windows.NewLazySystemDLL("user32.dll")
 	procSetWindowsHookExW     = user32.NewProc("SetWindowsHookExW")

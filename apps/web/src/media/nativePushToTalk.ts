@@ -1,4 +1,4 @@
-import { nativeInputCapabilities, startNativeInput, startNativeShortcuts, heartbeatNativeInput, stopNativeInput, onNativeInput, type CallShortcuts } from '../desktop/nativeMedia';
+import { nativeInputCapabilities, nativeShortcutSupported, startNativeInput, startNativeShortcuts, heartbeatNativeInput, stopNativeInput, onNativeInput, type CallShortcuts } from '../desktop/nativeMedia';
 import { hasDesktopCapability, getDesktopCapabilities } from '../desktop/capabilities';
 import type { TalkBinding } from './pushToTalk';
 
@@ -22,6 +22,7 @@ export class NativePushToTalk {
   private polling = false;
   private muteCount = 0;
   private deafenCount = 0;
+  private watchesTalk = true;
 
   constructor(
     private readonly onPressed: (pressed: boolean, focused?: boolean) => void,
@@ -38,18 +39,32 @@ export class NativePushToTalk {
         this.onStatus('foreground', capability.detail);
         return;
       }
+      const requested = [['talk', binding], ['mute', actions?.mute], ['deafen', actions?.deafen]] as const;
+      const resolved = await Promise.all(requested.map(async ([name, value]) => ({
+        name, value, supported: !value || await nativeShortcutSupported(value),
+      })));
+      if (this.disposed) return;
+      const selected: CallShortcuts = {};
+      for (const entry of resolved) if (entry.value && entry.supported) selected[entry.name] = entry.value;
+      const skipped = resolved.filter(entry => entry.value && !entry.supported).map(entry => entry.name === 'talk' ? 'Push-to-talk' : entry.name);
+      const warning = skipped.length ? skipped.join(', ') + ' uses foreground input only; the assigned key is unsupported globally on this platform.' : '';
+      this.watchesTalk = Boolean(selected.talk);
+      if (!selected.talk && !selected.mute && !selected.deafen) {
+        this.onStatus('foreground', warning);
+        return;
+      }
       this.unlisten = await onNativeInput(snapshot => {
         if (this.disposed) return;
         if (!this.sessionId) this.pending = snapshot;
         else this.accept(snapshot);
       });
       if (this.disposed) { this.unlisten(); this.unlisten = undefined; return; }
-      const initial = actions?.mute || actions?.deafen
-        ? await startNativeShortcuts({ ...(binding ? { talk: binding } : {}), ...actions })
-        : binding ? await startNativeInput(binding) : (() => { throw new Error('Choose a call shortcut.'); })();
+      const initial = selected.mute || selected.deafen
+        ? await startNativeShortcuts(selected)
+        : await startNativeInput(selected.talk!);
       this.sessionId = initial.sessionId;
       if (this.disposed) { this.stopRegistration(); return; }
-      this.onStatus('active', 'Global push-to-talk · Works while another app is focused');
+      this.onStatus(binding && !selected.talk ? 'foreground' : 'active', 'Global call shortcuts · Works while another app is focused' + (warning ? '. ' + warning : ''));
       this.accept(initial);
       if (this.pending) this.accept(this.pending);
       this.pending = undefined;
@@ -72,7 +87,7 @@ export class NativePushToTalk {
       if ((counter - prior) % 2 === 1) this.onAction?.(action, value.focused !== false);
       if (action === 'mute') this.muteCount = counter; else this.deafenCount = counter;
     }
-    this.onPressed(value.pressed, value.focused !== false);
+    if (this.watchesTalk) this.onPressed(value.pressed, value.focused !== false);
   }
 
   private async heartbeat(): Promise<void> {

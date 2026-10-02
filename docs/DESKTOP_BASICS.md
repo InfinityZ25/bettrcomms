@@ -18,6 +18,18 @@ or adds an idle background observer. The existing lease, heartbeat and fail-clos
 PTT behavior remain in use. The DOM handles foreground input and the native
 observer handles background input, avoiding two toggles for one key press.
 Typing and shortcut assignment follow the existing in-app input preference.
+Buttons 1–4 follow that typing preference without consuming editor events.
+Left clicks on editable controls never toggle call actions.
+
+The host validates mappings for its actual platform without installing an
+observer or requesting OS consent. Settings reject unsupported global toggle
+bindings. Legacy bindings that no longer map are kept foreground-only with an
+explicit status; they cannot disable another valid global binding.
+
+Window focus comes from an atomic cache maintained by Wails' official focus and
+lost-focus events. Input workers never synchronously query the UI thread, including
+their final shutdown snapshot. Closing detaches those listeners and disables
+publication before workers are joined.
 
 Windows uses the existing low-level keyboard/mouse hook worker. macOS uses a
 listen-only CoreGraphics event tap on its own run loop, with events filtered to
@@ -53,6 +65,8 @@ configuration. Automatic checking is opt-in, checks after one minute and then at
 most every six hours while running. Download and restart always require a click.
 Calls, captures, recordings and exports block restart. A page activity lease
 covers browser-mediated calls; native managers independently report active work.
+Saving a stopped recording holds that lease until its IndexedDB transaction
+commits or fails, including after leaving the call.
 
 The feed is a signed envelope containing base64 JSON payload and its Ed25519
 signature. The manifest contains a separate Ed25519 signature over each artifact's

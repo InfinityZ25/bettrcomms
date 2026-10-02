@@ -37,6 +37,11 @@ export async function nativeShortcutPermission(request = false): Promise<{ avail
   return request ? api.CallShortcutRequestPermission(nativePageToken()) : api.CallShortcutPermission(nativePageToken());
 }
 
+/** This native mapping check neither prompts for consent nor installs hooks. */
+export async function nativeShortcutSupported(binding: TalkBinding): Promise<boolean> {
+  return (await service()).CallShortcutSupported(nativePageToken(), binding as Binding);
+}
+
 export async function nativeInputCapabilities(): Promise<{ available: boolean; detail: string }> {
   if (getDesktopRuntime() === 'wails') return (await service()).PushToTalkCapabilities();
   return { available: false, detail: 'Global push-to-talk requires a desktop host.' };

@@ -8,7 +8,7 @@ const mock = vi.hoisted(() => ({
   runtime: 'wails', token: 'test-page-token-not-a-real-secret',
   on: vi.fn(), off: vi.fn(),
   api: {
-    PushToTalkCapabilities: vi.fn(), PushToTalkStart: vi.fn(), PushToTalkHeartbeat: vi.fn(), PushToTalkStop: vi.fn(),
+    PushToTalkCapabilities: vi.fn(), CallShortcutSupported: vi.fn(), PushToTalkStart: vi.fn(), PushToTalkHeartbeat: vi.fn(), PushToTalkStop: vi.fn(),
     RecordingExportBegin: vi.fn(), RecordingConversionBegin: vi.fn(), RecordingExportAppend: vi.fn(),
     RecordingExportFinish: vi.fn(), RecordingExportAbort: vi.fn(), RecordingConversionCapabilities: vi.fn(),
   },
@@ -23,6 +23,7 @@ beforeEach(() => {
   mock.api.RecordingConversionBegin.mockResolvedValue({ exportId: 'export' });
   mock.api.RecordingExportFinish.mockResolvedValue({ fileName: 'track.wav', path: 'chosen-by-user' });
   mock.api.PushToTalkCapabilities.mockResolvedValue({ available: true, detail: '' });
+  mock.api.CallShortcutSupported.mockResolvedValue(true);
   mock.api.PushToTalkStart.mockResolvedValue({ sessionId: 'input', sequence: 0, pressed: false, healthy: true, focused: false });
   mock.on.mockReturnValue(mock.off);
 });
@@ -84,6 +85,7 @@ describe('Wails global input lifecycle', () => {
     const input = new NativePushToTalk(pressed, vi.fn());
     try {
       await input.start({ kind: 'keyboard', code: 'KeyV' });
+      expect(mock.api.CallShortcutSupported).toHaveBeenCalledWith(mock.token, { kind: 'keyboard', code: 'KeyV' });
       expect(mock.api.PushToTalkStart).toHaveBeenCalledWith(mock.token, { kind: 'keyboard', code: 'KeyV' });
       const callback = mock.on.mock.calls[0][1];
       callback({ data: { sessionId: 'input', sequence: 1, pressed: true, healthy: true, focused: false } });

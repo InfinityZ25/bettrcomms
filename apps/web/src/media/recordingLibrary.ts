@@ -1,4 +1,5 @@
 import type { RecordingManifest, RecordingResult } from './types';
+import { beginDesktopActivity } from '../desktop/desktopSettings';
 
 export interface SavedRecording {
   id: string;
@@ -29,6 +30,15 @@ const CHANGED_EVENT = 'bc-recordings-changed';
 let databasePromise: Promise<IDBDatabase> | undefined;
 
 export async function saveRecording(
+  result: RecordingResult,
+  metadata: { title: string; labels: Record<string, string> },
+): Promise<SavedRecording> {
+  const releaseActivity = beginDesktopActivity();
+  try { return await persistRecording(result, metadata); }
+  finally { releaseActivity(); }
+}
+
+async function persistRecording(
   result: RecordingResult,
   metadata: { title: string; labels: Record<string, string> },
 ): Promise<SavedRecording> {

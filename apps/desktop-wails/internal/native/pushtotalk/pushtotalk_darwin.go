@@ -58,6 +58,11 @@ func macInput(i input) (C.int, C.int, error) {
 	return -1, -1, ErrUnsupportedKey
 }
 
+func validatePlatformInput(i input) error {
+	_, _, err := macInput(i)
+	return err
+}
+
 type darwinSession struct {
 	observed      *observed
 	state         *shared
