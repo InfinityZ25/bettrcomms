@@ -112,6 +112,10 @@ func (s *NativeMediaService) ServiceShutdown() error {
 	return nil
 }
 
+func (s *NativeMediaService) busy() bool {
+	return s.screen.Busy() || s.recordings.Busy() || s.exports.Busy()
+}
+
 // authorise refuses a native call that did not come from this host's own page.
 //
 // The token is injected into every document the asset handler serves and
@@ -300,13 +304,38 @@ func (s *NativeMediaService) PushToTalkCapabilities() pushtotalk.Capabilities {
 	return pushtotalk.Describe()
 }
 
+func (s *NativeMediaService) CallShortcutPermission(hostToken string) (pushtotalk.PermissionStatus, error) {
+	if err := s.authorise(hostToken); err != nil {
+		return pushtotalk.PermissionStatus{}, err
+	}
+	return pushtotalk.Permission(), nil
+}
+
+func (s *NativeMediaService) CallShortcutRequestPermission(hostToken string) (pushtotalk.PermissionStatus, error) {
+	if err := s.authorise(hostToken); err != nil {
+		return pushtotalk.PermissionStatus{}, err
+	}
+	return pushtotalk.RequestPermission(), nil
+}
+
+func (s *NativeMediaService) CallShortcutsStart(hostToken string, bindings pushtotalk.Bindings) (pushtotalk.Snapshot, error) {
+	if err := s.authorise(hostToken); err != nil {
+		return pushtotalk.Snapshot{}, err
+	}
+	return s.talk.StartBindings(bindings, s.inputOptions())
+}
+
 // PushToTalkStart watches one key or mouse button while the app is in the
 // background.
 func (s *NativeMediaService) PushToTalkStart(hostToken string, binding pushtotalk.Binding) (pushtotalk.Snapshot, error) {
 	if err := s.authorise(hostToken); err != nil {
 		return pushtotalk.Snapshot{}, err
 	}
-	return s.talk.Start(binding, pushtotalk.Options{
+	return s.talk.Start(binding, s.inputOptions())
+}
+
+func (s *NativeMediaService) inputOptions() pushtotalk.Options {
+	return pushtotalk.Options{
 		Emit: func(snapshot pushtotalk.Snapshot) {
 			if s.window != nil {
 				s.window.EmitEvent(pushtotalk.Event, snapshot)
@@ -316,7 +345,7 @@ func (s *NativeMediaService) PushToTalkStart(hostToken string, binding pushtotal
 		// The lease's own liveness check. The call was authorised at Start; what
 		// this asks is whether the window is still there to hold a hook for.
 		Trusted: func() bool { return s.window != nil },
-	})
+	}
 }
 
 // PushToTalkHeartbeat renews the session lease.

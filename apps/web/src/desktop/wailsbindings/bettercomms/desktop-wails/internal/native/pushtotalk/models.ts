@@ -53,8 +53,41 @@ export enum BindingKind {
 };
 
 /**
- * Capabilities reports whether this platform has background push-to-talk.
+ * Bindings share one observer and one lease; no input outside these bindings
+ * leaves the operating-system callback.
  */
+export class Bindings {
+    "talk"?: Binding | null;
+    "mute"?: Binding | null;
+    "deafen"?: Binding | null;
+
+    /** Creates a new Bindings instance. */
+    constructor($$source: Partial<Bindings> = {}) {
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new Bindings instance from a string or object.
+     */
+    static createFrom($$source: any = {}): Bindings {
+        const $$createField0_0 = $$createType1;
+        const $$createField1_0 = $$createType1;
+        const $$createField2_0 = $$createType1;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("talk" in $$parsedSource) {
+            $$parsedSource["talk"] = $$createField0_0($$parsedSource["talk"]);
+        }
+        if ("mute" in $$parsedSource) {
+            $$parsedSource["mute"] = $$createField1_0($$parsedSource["mute"]);
+        }
+        if ("deafen" in $$parsedSource) {
+            $$parsedSource["deafen"] = $$createField2_0($$parsedSource["deafen"]);
+        }
+        return new Bindings($$parsedSource as Partial<Bindings>);
+    }
+}
+
 export class Capabilities {
     "available": boolean;
     "detail": string;
@@ -81,6 +114,38 @@ export class Capabilities {
 }
 
 /**
+ * Capabilities reports whether this platform has background push-to-talk.
+ */
+export class PermissionStatus {
+    "available": boolean;
+    "granted": boolean;
+    "detail": string;
+
+    /** Creates a new PermissionStatus instance. */
+    constructor($$source: Partial<PermissionStatus> = {}) {
+        if (!("available" in $$source)) {
+            this["available"] = false;
+        }
+        if (!("granted" in $$source)) {
+            this["granted"] = false;
+        }
+        if (!("detail" in $$source)) {
+            this["detail"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PermissionStatus instance from a string or object.
+     */
+    static createFrom($$source: any = {}): PermissionStatus {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new PermissionStatus($$parsedSource as Partial<PermissionStatus>);
+    }
+}
+
+/**
  * Snapshot is the state the page renders from.
  */
 export class Snapshot {
@@ -89,6 +154,8 @@ export class Snapshot {
     "pressed": boolean;
     "healthy": boolean;
     "focused": boolean;
+    "muteCount": number;
+    "deafenCount": number;
 
     /** Creates a new Snapshot instance. */
     constructor($$source: Partial<Snapshot> = {}) {
@@ -107,6 +174,12 @@ export class Snapshot {
         if (!("focused" in $$source)) {
             this["focused"] = false;
         }
+        if (!("muteCount" in $$source)) {
+            this["muteCount"] = 0;
+        }
+        if (!("deafenCount" in $$source)) {
+            this["deafenCount"] = 0;
+        }
 
         Object.assign(this, $$source);
     }
@@ -119,3 +192,7 @@ export class Snapshot {
         return new Snapshot($$parsedSource as Partial<Snapshot>);
     }
 }
+
+// Private type creation functions
+const $$createType0 = Binding.createFrom;
+const $$createType1 = $Create.Nullable($$createType0);

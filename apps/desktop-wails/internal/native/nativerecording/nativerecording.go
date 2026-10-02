@@ -111,6 +111,8 @@ type Store struct {
 	stagingRoot string
 }
 
+func (s *Store) Busy() bool { s.mu.Lock(); defer s.mu.Unlock(); return len(s.recorders) != 0 }
+
 // NewStore returns a store writing to dir.
 func NewStore(dir string) *Store {
 	return &Store{

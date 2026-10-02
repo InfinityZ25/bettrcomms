@@ -107,8 +107,8 @@ func TestTheOverlayIsExperimentalOnWindows(t *testing.T) {
 //   - localTrackRecording: internal/native/nativescreen recording test
 //   - globalInput: internal/native/pushtotalk hook tests
 //
-// Off Windows they must still report unavailable with a fallback, because none
-// of the three has an implementation there.
+// Off Windows media remains unavailable. macOS input is permission-gated and
+// experimental until physical packaged acceptance passes there.
 func TestPortedCapabilitiesAreImplementedOnWindows(t *testing.T) {
 	report := NewMediaCapabilities()
 
@@ -129,6 +129,12 @@ func TestPortedCapabilitiesAreImplementedOnWindows(t *testing.T) {
 			}
 			if capability.Fallback != "" {
 				t.Errorf("%s is implemented but advertises the fallback %q", name, capability.Fallback)
+			}
+			continue
+		}
+		if name == "globalInput" && runtime.GOOS == "darwin" {
+			if capability.State != Experimental || !strings.Contains(capability.Detail, "Input Monitoring") {
+				t.Fatalf("macOS global input missing permission boundary: %+v", capability)
 			}
 			continue
 		}

@@ -9,6 +9,7 @@ fi
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 app="$repo/apps/desktop-wails"
 version="$(node -p "require('$app/package.json').version")"
+update_flags="$(node "$repo/scripts/wails-update-build-flags.mjs")"
 case "$(uname -m)" in
   arm64) arch=arm64 ;;
   x86_64) arch=x64 ;;
@@ -30,7 +31,7 @@ mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
 (
   cd "$app"
   CGO_ENABLED=1 MACOSX_DEPLOYMENT_TARGET=15.0 go build -trimpath -tags production \
-    -ldflags '-X main.bakedAPIOrigin=https://app.bettrcomms.com' \
+    -ldflags "-X main.bakedAPIOrigin=https://app.bettrcomms.com $update_flags" \
     -o "$binary" .
 )
 "$binary" --print-build-info | node -e '

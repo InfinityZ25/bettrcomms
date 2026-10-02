@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Cable, Headphones, LogOut, Mic, MonitorUp, SlidersHorizontal, SunMoon, Shield } from 'lucide-react';
+import { Cable, Headphones, LogOut, Mic, MonitorUp, SlidersHorizontal, SunMoon, Shield, Monitor } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import {
@@ -9,6 +9,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import SettingsScreen, { type SettingsPage } from '@/features/settings/SettingsScreen';
 import type { User } from '@/api';
+import { getDesktopRuntime } from '@/desktop/runtime';
 
 const pages = [
   { id: 'audio', label: 'Audio', note: 'Quick call controls', icon: Mic },
@@ -18,6 +19,7 @@ const pages = [
   { id: 'connection', label: 'Connection', note: 'How calls reach your friends', icon: Cable },
   { id: 'appearance', label: 'Appearance', note: 'Theme and camera layout', icon: SunMoon },
   { id: 'account', label: 'Account', note: 'Signed-in devices and account deletion', icon: Shield },
+  { id: 'desktop', label: 'Desktop app', note: 'Startup and updates', icon: Monitor },
 ] as const satisfies ReadonlyArray<{ id: SettingsPage; label: string; note: string; icon: typeof Mic }>;
 
 export function SettingsDialog({ open, onOpenChange, user, noise, onNoiseChange, balanced, onBalancedChange, layout, onLayoutChange, signedIn, onSignOut }: {
@@ -34,7 +36,7 @@ export function SettingsDialog({ open, onOpenChange, user, noise, onNoiseChange,
   onSignOut: () => void;
 }) {
   const [page, setPage] = useState<SettingsPage>('audio');
-  const visiblePages = pages.filter((item) => (item.id !== 'account' || signedIn));
+  const visiblePages = pages.filter((item) => (item.id !== 'desktop' || getDesktopRuntime() === 'wails') && (item.id !== 'account' || signedIn));
   const current = pages.find((item) => item.id === page) ?? pages[0];
 
   return (

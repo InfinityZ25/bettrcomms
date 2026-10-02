@@ -126,7 +126,7 @@ export function useCallSession({
   });
 
   const [callMicrophone] = useState(
-    () => new CallMicrophone((enabled) => engine.current?.setMicrophoneEnabled(enabled)),
+    () => new CallMicrophone((enabled) => engine.current?.setMicrophoneEnabled(enabled), setCallPlaybackDeafened),
   );
   const microphoneState = useSyncExternalStore(
     callMicrophone.subscribe,

@@ -1,11 +1,14 @@
-import { nativeInputCapabilities, startNativeInput, heartbeatNativeInput, stopNativeInput, onNativeInput } from '../desktop/nativeMedia';
-import { hasDesktopCapability } from '../desktop/capabilities';
+import { nativeInputCapabilities, startNativeInput, startNativeShortcuts, heartbeatNativeInput, stopNativeInput, onNativeInput, type CallShortcuts } from '../desktop/nativeMedia';
+import { hasDesktopCapability, getDesktopCapabilities } from '../desktop/capabilities';
 import type { TalkBinding } from './pushToTalk';
 
 export type GlobalInputStatus = 'foreground' | 'connecting' | 'active' | 'unavailable';
-interface Snapshot { sessionId: string; sequence: number; pressed: boolean; healthy: boolean; focused: boolean }
+interface Snapshot { sessionId: string; sequence: number; pressed: boolean; healthy: boolean; focused: boolean; muteCount?: number; deafenCount?: number }
 
-export function isNativePushToTalk(): boolean { return hasDesktopCapability('globalInput'); }
+export function isNativePushToTalk(): boolean {
+  const capabilities = getDesktopCapabilities();
+  return hasDesktopCapability('globalInput') || capabilities.platform === 'darwin' && capabilities.globalInput.state === 'experimental';
+}
 
 /** One native registration per call. Never forwards unselected input or text. */
 export class NativePushToTalk {
@@ -17,13 +20,16 @@ export class NativePushToTalk {
   private timer?: ReturnType<typeof setInterval>;
   private watchdog?: ReturnType<typeof setTimeout>;
   private polling = false;
+  private muteCount = 0;
+  private deafenCount = 0;
 
   constructor(
     private readonly onPressed: (pressed: boolean, focused?: boolean) => void,
     private readonly onStatus: (status: GlobalInputStatus, message: string) => void,
+    private readonly onAction?: (action: 'mute' | 'deafen', focused: boolean) => void,
   ) {}
 
-  async start(binding: TalkBinding): Promise<void> {
+  async start(binding?: TalkBinding, actions?: Omit<CallShortcuts, 'talk'>): Promise<void> {
     this.onStatus('connecting', 'Starting global push-to-talk…');
     try {
       const capability = await nativeInputCapabilities();
@@ -38,7 +44,9 @@ export class NativePushToTalk {
         else this.accept(snapshot);
       });
       if (this.disposed) { this.unlisten(); this.unlisten = undefined; return; }
-      const initial = await startNativeInput(binding);
+      const initial = actions?.mute || actions?.deafen
+        ? await startNativeShortcuts({ ...(binding ? { talk: binding } : {}), ...actions })
+        : binding ? await startNativeInput(binding) : (() => { throw new Error('Choose a call shortcut.'); })();
       this.sessionId = initial.sessionId;
       if (this.disposed) { this.stopRegistration(); return; }
       this.onStatus('active', 'Global push-to-talk · Works while another app is focused');
@@ -57,6 +65,13 @@ export class NativePushToTalk {
     if (!value.healthy) { this.fail('Global push-to-talk stopped. Rejoin the call to reconnect.'); return; }
     if (value.sequence <= this.sequence) return;
     this.sequence = value.sequence;
+    for (const action of ['mute', 'deafen'] as const) {
+      const counter = value[action === 'mute' ? 'muteCount' : 'deafenCount'] ?? 0;
+      const prior = action === 'mute' ? this.muteCount : this.deafenCount;
+      if (!Number.isSafeInteger(counter) || counter < prior) continue;
+      if ((counter - prior) % 2 === 1) this.onAction?.(action, value.focused !== false);
+      if (action === 'mute') this.muteCount = counter; else this.deafenCount = counter;
+    }
     this.onPressed(value.pressed, value.focused !== false);
   }
 

@@ -17,6 +17,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -237,6 +238,8 @@ func (p *APIProxy) authorised(r *http.Request) bool {
 }
 
 func (p *APIProxy) direct(r *http.Request) {
+	platform := map[string]string{"windows": "Windows", "darwin": "Macintosh", "linux": "Linux", "ios": "iOS"}[runtime.GOOS]
+	r.Header.Set("User-Agent", "BetterComms Desktop ("+platform+")")
 	r.URL.Scheme = p.upstream.Scheme
 	r.URL.Host = p.upstream.Host
 	r.Host = p.upstream.Host

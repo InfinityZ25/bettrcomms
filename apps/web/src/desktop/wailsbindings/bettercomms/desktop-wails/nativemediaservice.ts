@@ -80,6 +80,24 @@ export function AudioStreamStop(hostToken: string, sessionID: string): $Cancella
     return $Call.ByID(4126532122, hostToken, sessionID);
 }
 
+export function CallShortcutPermission(hostToken: string): $CancellablePromise<pushtotalk$0.PermissionStatus> {
+    return $Call.ByID(2775794197, hostToken).then(($result: any) => {
+        return $$createType1($result);
+    });
+}
+
+export function CallShortcutRequestPermission(hostToken: string): $CancellablePromise<pushtotalk$0.PermissionStatus> {
+    return $Call.ByID(3711527152, hostToken).then(($result: any) => {
+        return $$createType1($result);
+    });
+}
+
+export function CallShortcutsStart(hostToken: string, bindings: pushtotalk$0.Bindings): $CancellablePromise<pushtotalk$0.Snapshot> {
+    return $Call.ByID(3097465457, hostToken, bindings).then(($result: any) => {
+        return $$createType2($result);
+    });
+}
+
 /**
  * CameraOverlayClose hides the overlay.
  */
@@ -103,7 +121,7 @@ export function CameraOverlayFrame(hostToken: string, overlayID: string, width: 
  */
 export function CameraOverlayOpen(hostToken: string, options: overlay$0.Options): $CancellablePromise<overlay$0.Info> {
     return $Call.ByID(980661433, hostToken, options).then(($result: any) => {
-        return $$createType1($result);
+        return $$createType3($result);
     });
 }
 
@@ -112,7 +130,7 @@ export function CameraOverlayOpen(hostToken: string, options: overlay$0.Options)
  */
 export function CameraOverlayUpdate(hostToken: string, overlayID: string, change: overlay$0.Update): $CancellablePromise<overlay$0.Info> {
     return $Call.ByID(2830156644, hostToken, overlayID, change).then(($result: any) => {
-        return $$createType1($result);
+        return $$createType3($result);
     });
 }
 
@@ -142,19 +160,19 @@ export function CopilotOverlayFrame(hostToken: string, frame: overlay$0.CopilotF
  */
 export function CopilotOverlaySync(hostToken: string, update: overlay$0.CopilotUpdate): $CancellablePromise<overlay$0.CopilotStatus> {
     return $Call.ByID(121351915, hostToken, update).then(($result: any) => {
-        return $$createType2($result);
+        return $$createType4($result);
     });
 }
 
 export function DeepfilterInstall(hostToken: string): $CancellablePromise<dspsetup$0.Result> {
     return $Call.ByID(833623355, hostToken).then(($result: any) => {
-        return $$createType3($result);
+        return $$createType5($result);
     });
 }
 
 export function DeepfilterInstallInfo(): $CancellablePromise<dspsetup$0.Info> {
     return $Call.ByID(2543425375).then(($result: any) => {
-        return $$createType4($result);
+        return $$createType6($result);
     });
 }
 
@@ -164,7 +182,7 @@ export function DeepfilterInstallInfo(): $CancellablePromise<dspsetup$0.Info> {
  */
 export function DeepfilterStatus(hostToken: string): $CancellablePromise<deepfilter$0.Status> {
     return $Call.ByID(2720805130, hostToken).then(($result: any) => {
-        return $$createType5($result);
+        return $$createType7($result);
     });
 }
 
@@ -173,7 +191,7 @@ export function DeepfilterStatus(hostToken: string): $CancellablePromise<deepfil
  */
 export function FfmpegInstall(hostToken: string): $CancellablePromise<ffmpegsetup$0.InstallResult> {
     return $Call.ByID(920664444, hostToken).then(($result: any) => {
-        return $$createType6($result);
+        return $$createType8($result);
     });
 }
 
@@ -182,7 +200,7 @@ export function FfmpegInstall(hostToken: string): $CancellablePromise<ffmpegsetu
  */
 export function FfmpegInstallInfo(): $CancellablePromise<ffmpegsetup$0.InstallInfo> {
     return $Call.ByID(3471164480).then(($result: any) => {
-        return $$createType7($result);
+        return $$createType9($result);
     });
 }
 
@@ -191,7 +209,7 @@ export function FfmpegInstallInfo(): $CancellablePromise<ffmpegsetup$0.InstallIn
  */
 export function GpuAdapters(): $CancellablePromise<gpudevices$0.Adapter[]> {
     return $Call.ByID(3888399434).then(($result: any) => {
-        return $$createType9($result);
+        return $$createType11($result);
     });
 }
 
@@ -205,7 +223,7 @@ export function GpuAdapters(): $CancellablePromise<gpudevices$0.Adapter[]> {
  */
 export function MediaPermission(kind: string): $CancellablePromise<desktop$0.MediaPermissionPolicy> {
     return $Call.ByID(3965183451, kind).then(($result: any) => {
-        return $$createType10($result);
+        return $$createType12($result);
     });
 }
 
@@ -225,7 +243,7 @@ export function MediaPermissionOpenSettings(hostToken: string, kind: string): $C
  */
 export function NativeScreenCapabilities(): $CancellablePromise<nativescreen$0.Capabilities> {
     return $Call.ByID(1992205581).then(($result: any) => {
-        return $$createType11($result);
+        return $$createType13($result);
     });
 }
 
@@ -234,7 +252,7 @@ export function NativeScreenCapabilities(): $CancellablePromise<nativescreen$0.C
  */
 export function NativeScreenDiagnostics(hostToken: string, sessionID: string): $CancellablePromise<$models.NativeScreenReport> {
     return $Call.ByID(2708561293, hostToken, sessionID).then(($result: any) => {
-        return $$createType12($result);
+        return $$createType14($result);
     });
 }
 
@@ -264,7 +282,7 @@ export function NativeScreenPeerCandidate(hostToken: string, sessionID: string, 
  */
 export function NativeScreenPeerOffer(hostToken: string, sessionID: string, peerID: string, iceServers: nativertc$0.IceServer[], directOnly: boolean): $CancellablePromise<nativertc$0.Offer> {
     return $Call.ByID(1196821571, hostToken, sessionID, peerID, iceServers, directOnly).then(($result: any) => {
-        return $$createType13($result);
+        return $$createType15($result);
     });
 }
 
@@ -297,7 +315,7 @@ export function NativeScreenRecordingRelease(hostToken: string, assetID: string)
  */
 export function NativeScreenRecordingStart(hostToken: string, sessionID: string): $CancellablePromise<nativerecording$0.Started> {
     return $Call.ByID(3237331130, hostToken, sessionID).then(($result: any) => {
-        return $$createType14($result);
+        return $$createType16($result);
     });
 }
 
@@ -306,7 +324,7 @@ export function NativeScreenRecordingStart(hostToken: string, sessionID: string)
  */
 export function NativeScreenRecordingStop(hostToken: string, recordingID: string): $CancellablePromise<nativerecording$0.Asset> {
     return $Call.ByID(291776154, hostToken, recordingID).then(($result: any) => {
-        return $$createType15($result);
+        return $$createType17($result);
     });
 }
 
@@ -315,7 +333,7 @@ export function NativeScreenRecordingStop(hostToken: string, recordingID: string
  */
 export function NativeScreenSources(hostToken: string): $CancellablePromise<nativescreen$0.Source[]> {
     return $Call.ByID(2824837235, hostToken).then(($result: any) => {
-        return $$createType17($result);
+        return $$createType19($result);
     });
 }
 
@@ -324,7 +342,7 @@ export function NativeScreenSources(hostToken: string): $CancellablePromise<nati
  */
 export function NativeScreenStart(hostToken: string, options: nativescreen$0.StartOptions): $CancellablePromise<nativescreen$0.Started> {
     return $Call.ByID(281183853, hostToken, options).then(($result: any) => {
-        return $$createType18($result);
+        return $$createType20($result);
     });
 }
 
@@ -346,7 +364,7 @@ export function NativeScreenThumbnail(hostToken: string, sourceID: string): $Can
  */
 export function NativeSystemAudioCapabilities(): $CancellablePromise<systemaudio$0.Capabilities> {
     return $Call.ByID(2687899754).then(($result: any) => {
-        return $$createType19($result);
+        return $$createType21($result);
     });
 }
 
@@ -368,7 +386,7 @@ export function NativeSystemAudioRead(hostToken: string, sessionID: string): $Ca
  */
 export function NativeSystemAudioStart(hostToken: string, options: systemaudio$0.StartOptions): $CancellablePromise<systemaudio$0.Started> {
     return $Call.ByID(961568448, hostToken, options).then(($result: any) => {
-        return $$createType20($result);
+        return $$createType22($result);
     });
 }
 
@@ -381,7 +399,7 @@ export function NativeSystemAudioStop(hostToken: string, sessionID: string): $Ca
 
 export function NvidiaInstall(hostToken: string): $CancellablePromise<dspsetup$0.Result> {
     return $Call.ByID(4119064850, hostToken).then(($result: any) => {
-        return $$createType3($result);
+        return $$createType5($result);
     });
 }
 
@@ -395,7 +413,7 @@ export function NvidiaInstall(hostToken: string): $CancellablePromise<dspsetup$0
  */
 export function NvidiaInstallInfo(): $CancellablePromise<dspsetup$0.Info> {
     return $Call.ByID(631349290).then(($result: any) => {
-        return $$createType4($result);
+        return $$createType6($result);
     });
 }
 
@@ -405,7 +423,7 @@ export function NvidiaInstallInfo(): $CancellablePromise<dspsetup$0.Info> {
  */
 export function NvidiaStatus(hostToken: string): $CancellablePromise<nvidiaaudio$0.Status> {
     return $Call.ByID(260844949, hostToken).then(($result: any) => {
-        return $$createType21($result);
+        return $$createType23($result);
     });
 }
 
@@ -414,7 +432,7 @@ export function NvidiaStatus(hostToken: string): $CancellablePromise<nvidiaaudio
  */
 export function PushToTalkCapabilities(): $CancellablePromise<pushtotalk$0.Capabilities> {
     return $Call.ByID(3053704157).then(($result: any) => {
-        return $$createType22($result);
+        return $$createType24($result);
     });
 }
 
@@ -423,7 +441,7 @@ export function PushToTalkCapabilities(): $CancellablePromise<pushtotalk$0.Capab
  */
 export function PushToTalkHeartbeat(hostToken: string, sessionID: string): $CancellablePromise<pushtotalk$0.Snapshot> {
     return $Call.ByID(2695015501, hostToken, sessionID).then(($result: any) => {
-        return $$createType23($result);
+        return $$createType2($result);
     });
 }
 
@@ -433,7 +451,7 @@ export function PushToTalkHeartbeat(hostToken: string, sessionID: string): $Canc
  */
 export function PushToTalkStart(hostToken: string, binding: pushtotalk$0.Binding): $CancellablePromise<pushtotalk$0.Snapshot> {
     return $Call.ByID(1948783421, hostToken, binding).then(($result: any) => {
-        return $$createType23($result);
+        return $$createType2($result);
     });
 }
 
@@ -449,7 +467,7 @@ export function PushToTalkStop(hostToken: string, sessionID: string): $Cancellab
  */
 export function RecordingConversionBegin(hostToken: string, fileName: string, sizeBytes: number, format: string): $CancellablePromise<recordingexport$0.Grant | null> {
     return $Call.ByID(2857434476, hostToken, fileName, sizeBytes, format).then(($result: any) => {
-        return $$createType25($result);
+        return $$createType26($result);
     });
 }
 
@@ -459,7 +477,7 @@ export function RecordingConversionBegin(hostToken: string, fileName: string, si
  */
 export function RecordingConversionCapabilities(): $CancellablePromise<recordingexport$0.Capabilities> {
     return $Call.ByID(3760024825).then(($result: any) => {
-        return $$createType26($result);
+        return $$createType27($result);
     });
 }
 
@@ -483,7 +501,7 @@ export function RecordingExportAppend(hostToken: string, exportID: string, offse
  */
 export function RecordingExportBegin(hostToken: string, fileName: string, sizeBytes: number): $CancellablePromise<recordingexport$0.Grant | null> {
     return $Call.ByID(2606681434, hostToken, fileName, sizeBytes).then(($result: any) => {
-        return $$createType25($result);
+        return $$createType26($result);
     });
 }
 
@@ -492,36 +510,37 @@ export function RecordingExportBegin(hostToken: string, fileName: string, sizeBy
  */
 export function RecordingExportFinish(hostToken: string, exportID: string): $CancellablePromise<recordingexport$0.Result> {
     return $Call.ByID(3602689054, hostToken, exportID).then(($result: any) => {
-        return $$createType27($result);
+        return $$createType28($result);
     });
 }
 
 // Private type creation functions
 const $$createType0 = audiostream$0.Grant.createFrom;
-const $$createType1 = overlay$0.Info.createFrom;
-const $$createType2 = overlay$0.CopilotStatus.createFrom;
-const $$createType3 = dspsetup$0.Result.createFrom;
-const $$createType4 = dspsetup$0.Info.createFrom;
-const $$createType5 = deepfilter$0.Status.createFrom;
-const $$createType6 = ffmpegsetup$0.InstallResult.createFrom;
-const $$createType7 = ffmpegsetup$0.InstallInfo.createFrom;
-const $$createType8 = gpudevices$0.Adapter.createFrom;
-const $$createType9 = $Create.Array($$createType8);
-const $$createType10 = desktop$0.MediaPermissionPolicy.createFrom;
-const $$createType11 = nativescreen$0.Capabilities.createFrom;
-const $$createType12 = $models.NativeScreenReport.createFrom;
-const $$createType13 = nativertc$0.Offer.createFrom;
-const $$createType14 = nativerecording$0.Started.createFrom;
-const $$createType15 = nativerecording$0.Asset.createFrom;
-const $$createType16 = nativescreen$0.Source.createFrom;
-const $$createType17 = $Create.Array($$createType16);
-const $$createType18 = nativescreen$0.Started.createFrom;
-const $$createType19 = systemaudio$0.Capabilities.createFrom;
-const $$createType20 = systemaudio$0.Started.createFrom;
-const $$createType21 = nvidiaaudio$0.Status.createFrom;
-const $$createType22 = pushtotalk$0.Capabilities.createFrom;
-const $$createType23 = pushtotalk$0.Snapshot.createFrom;
-const $$createType24 = recordingexport$0.Grant.createFrom;
-const $$createType25 = $Create.Nullable($$createType24);
-const $$createType26 = recordingexport$0.Capabilities.createFrom;
-const $$createType27 = recordingexport$0.Result.createFrom;
+const $$createType1 = pushtotalk$0.PermissionStatus.createFrom;
+const $$createType2 = pushtotalk$0.Snapshot.createFrom;
+const $$createType3 = overlay$0.Info.createFrom;
+const $$createType4 = overlay$0.CopilotStatus.createFrom;
+const $$createType5 = dspsetup$0.Result.createFrom;
+const $$createType6 = dspsetup$0.Info.createFrom;
+const $$createType7 = deepfilter$0.Status.createFrom;
+const $$createType8 = ffmpegsetup$0.InstallResult.createFrom;
+const $$createType9 = ffmpegsetup$0.InstallInfo.createFrom;
+const $$createType10 = gpudevices$0.Adapter.createFrom;
+const $$createType11 = $Create.Array($$createType10);
+const $$createType12 = desktop$0.MediaPermissionPolicy.createFrom;
+const $$createType13 = nativescreen$0.Capabilities.createFrom;
+const $$createType14 = $models.NativeScreenReport.createFrom;
+const $$createType15 = nativertc$0.Offer.createFrom;
+const $$createType16 = nativerecording$0.Started.createFrom;
+const $$createType17 = nativerecording$0.Asset.createFrom;
+const $$createType18 = nativescreen$0.Source.createFrom;
+const $$createType19 = $Create.Array($$createType18);
+const $$createType20 = nativescreen$0.Started.createFrom;
+const $$createType21 = systemaudio$0.Capabilities.createFrom;
+const $$createType22 = systemaudio$0.Started.createFrom;
+const $$createType23 = nvidiaaudio$0.Status.createFrom;
+const $$createType24 = pushtotalk$0.Capabilities.createFrom;
+const $$createType25 = recordingexport$0.Grant.createFrom;
+const $$createType26 = $Create.Nullable($$createType25);
+const $$createType27 = recordingexport$0.Capabilities.createFrom;
+const $$createType28 = recordingexport$0.Result.createFrom;

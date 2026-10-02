@@ -1,4 +1,5 @@
 import type { Conversion, DiscardedTrack, StreamTargetChunk } from 'mediabunny';
+import { beginDesktopActivity } from '../desktop/desktopSettings';
 
 const MAX_BYTES = 512 * 1024 * 1024;
 
@@ -63,6 +64,7 @@ export async function convertBrowserRecording(
   let completed = false;
   const cancel = () => { if (conversion) void conversion.cancel().catch(() => undefined); };
   signal?.addEventListener('abort', cancel, { once: true });
+  const releaseDesktopActivity = beginDesktopActivity();
   try {
     conversion = await media.Conversion.init({
       input,
@@ -103,6 +105,7 @@ export async function convertBrowserRecording(
     signal?.removeEventListener('abort', cancel);
     if (conversion && !completed) await conversion.cancel().catch(() => undefined);
     input.dispose();
+    releaseDesktopActivity();
   }
 
   segments.sort((a, b) => a.position - b.position);

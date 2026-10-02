@@ -6,6 +6,7 @@ vi.mock('../desktop/nativeMedia', () => ({
   hasNativeMediaHost: () => true,
   nativeInputCapabilities: () => mocks.invoke('push_to_talk_capabilities'),
   startNativeInput: (binding: unknown) => mocks.invoke('push_to_talk_start', { binding }),
+  startNativeShortcuts: (bindings: unknown) => mocks.invoke('call_shortcuts_start', { bindings }),
   heartbeatNativeInput: (sessionId: string) => mocks.invoke('push_to_talk_heartbeat', { sessionId }),
   stopNativeInput: (sessionId: string) => mocks.invoke('push_to_talk_stop', { sessionId }),
   onNativeInput: (handler: unknown) => mocks.listen(handler),
@@ -15,13 +16,13 @@ describe('native push-to-talk registration', () => {
   let input: NativePushToTalk;
   const pressed = vi.fn(), status = vi.fn();
   const snapshot = (sequence = 0, down = false, healthy = true) => ({ sessionId: 'test-session', sequence, pressed: down, healthy, focused: false });
-  const event = (value: ReturnType<typeof snapshot>) => mocks.listen.mock.calls[0][0](value);
+  const event = (value: ReturnType<typeof snapshot> & { muteCount?: number; deafenCount?: number }) => mocks.listen.mock.calls[0][0](value);
   beforeEach(() => {
     vi.useFakeTimers(); vi.clearAllMocks();
     mocks.listen.mockResolvedValue(mocks.unlisten);
     mocks.invoke.mockImplementation(async (command: string) => {
       if (command === 'push_to_talk_capabilities') return { available: true, detail: '' };
-      if (command === 'push_to_talk_start' || command === 'push_to_talk_heartbeat') return snapshot();
+      if (command === 'push_to_talk_start' || command === 'call_shortcuts_start' || command === 'push_to_talk_heartbeat') return snapshot();
     });
     input = new NativePushToTalk(pressed, status);
   });
@@ -80,5 +81,21 @@ describe('native push-to-talk registration', () => {
     expect(status).toHaveBeenLastCalledWith('foreground', 'Foreground only');
     expect(mocks.listen).not.toHaveBeenCalled();
     expect(mocks.invoke).not.toHaveBeenCalledWith('push_to_talk_start', expect.anything());
+  });
+  it('shares a registration for toggles and reconciles action counters without replaying repeats', async () => {
+    input.dispose();
+    const action = vi.fn();
+    input = new NativePushToTalk(pressed, status, action);
+    await input.start(undefined, { mute: { kind: 'keyboard', code: 'KeyM' }, deafen: { kind: 'mouse', button: 3 } });
+    expect(mocks.invoke).toHaveBeenCalledWith('call_shortcuts_start', { bindings: { mute: { kind: 'keyboard', code: 'KeyM' }, deafen: { kind: 'mouse', button: 3 } } });
+    event({ ...snapshot(1), muteCount: 1 });
+    event({ ...snapshot(1), muteCount: 1 });
+    expect(action).toHaveBeenCalledExactlyOnceWith('mute', false);
+    event({ ...snapshot(2), muteCount: 1, deafenCount: 2 });
+    expect(action).toHaveBeenCalledTimes(1);
+    event({ ...snapshot(3), muteCount: 1, deafenCount: 3 });
+    expect(action).toHaveBeenLastCalledWith('deafen', false);
+    event({ ...snapshot(4, false, false), muteCount: 99 });
+    expect(action).toHaveBeenCalledTimes(2);
   });
 });

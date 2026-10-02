@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { getDesktopCapabilities } from '@/desktop/capabilities';
 import { getDesktopRuntime, readDesktopBootReport } from '@/desktop/runtime';
 import { canBindKey, readTalkSettings, talkBindingLabel, writeTalkSettings, type TalkBinding, type TalkSettings } from '@/media/pushToTalk';
+import { readCallShortcuts, sameShortcut } from '@/media/callShortcutSettings';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 
@@ -20,6 +21,8 @@ export default function PushToTalkSettings() {
     } catch { setError('Could not save push-to-talk. Allow local storage and try again.'); }
   }
   function assign(next: TalkBinding) {
+    const shortcuts = readCallShortcuts();
+    if (sameShortcut(next, shortcuts.mute) || sameShortcut(next, shortcuts.deafen)) { setError('Push-to-talk, mute and deafen need different shortcuts.'); setBinding(false); return; }
     save({ ...settings, binding: next });
     setBinding(false);
   }
@@ -75,7 +78,7 @@ export default function PushToTalkSettings() {
         {binding ? 'Press a key or mouse button here…' : `Shortcut: ${talkBindingLabel(settings.binding)}`}
       </Button>
       <p role="status">{binding ? 'Press Escape to cancel.' : desktop && globalInput.state === 'implemented'
-        ? 'Windows desktop: the native shortcut starts when you join a call. Check for “Global” beside the call controls before using it in another app.'
+        ? 'Desktop: the native shortcut starts when you join a call. Check for “Global” beside the call controls. macOS requires Input Monitoring permission in Desktop settings.'
         : desktop
           ? 'This desktop platform currently supports the shortcut only while BetterComms is focused.'
           : 'Browser: keep this tab focused to use the shortcut.'}</p>
