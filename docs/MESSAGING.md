@@ -88,8 +88,10 @@ after quitting the native app.
 Room members can report another member's message; room owners can dismiss a
 report or remove its message, with an audit record.
 
-This work does not add nested reply threads or edit revision archives. It does
-not change native media or clear the desktop capture/auth acceptance gates.
+Independent reply threads and pinned messages are described in
+[MESSAGE_THREADS.md](MESSAGE_THREADS.md). Edit revision archives remain
+outside this delivery. These changes do not alter native media or clear the
+desktop capture/auth acceptance gates.
 
 ## Local development
 

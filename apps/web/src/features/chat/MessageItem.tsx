@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState } from 'react';
-import { Flag, MoreHorizontal, Pencil, Reply, ShieldX, Smile, Trash2 } from 'lucide-react';
+import { Flag, MoreHorizontal, Pencil, Reply, ShieldX, Smile, Trash2, Pin, PinOff, MessagesSquare } from 'lucide-react';
 import { api, type Message } from '@/api';
 import { Avatar } from '@/components/avatar';
 import { Button } from '@/components/ui/button';
@@ -30,6 +30,9 @@ export default function MessageItem({
   onModerate,
   canModerate,
   onError,
+  onThread,
+  onPin,
+  canPin = false,
 }: {
   message: Message;
   userId: string;
@@ -48,6 +51,9 @@ export default function MessageItem({
   onModerate: (message: Message, reason: string) => Promise<boolean>;
   canModerate: boolean;
   onError: (message: string) => void;
+  onThread?: (message: Message) => void;
+  onPin?: (message: Message, remove: boolean) => Promise<boolean>;
+  canPin?: boolean;
 }) {
   const [reacting, setReacting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -101,6 +107,7 @@ export default function MessageItem({
               </span>
             )}
           </div>
+          {message.pinned_at && <span className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground"><Pin size={12} /> Pinned</span>}
           {message.reply && (
             <button
               className="my-1 block w-full truncate border-l-2 border-primary/50 pl-2 text-left text-xs text-muted-foreground"
@@ -178,6 +185,7 @@ export default function MessageItem({
                 >
                   <Smile size={14} />
                 </Button>
+                {canPin && onPin && <Button variant="ghost" size="icon-sm" aria-label={message.pinned_at ? 'Unpin message' : 'Pin message'} disabled={busy} onClick={() => void onPin(message, Boolean(message.pinned_at))}>{message.pinned_at ? <PinOff size={14} /> : <Pin size={14} />}</Button>}
                 {message.author.id === userId && (
                   <>
                     <Button
@@ -214,6 +222,7 @@ export default function MessageItem({
                   <DropdownMenuContent align="end" className="min-w-52 [&_[data-slot=dropdown-menu-item]]:min-h-11">
                     <DropdownMenuItem onClick={() => onReply(message)}><Reply /> Reply</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setReacting(true)}><Smile /> Add reaction</DropdownMenuItem>
+                    {canPin && onPin && <DropdownMenuItem onClick={() => void onPin(message, Boolean(message.pinned_at))}><Pin /> {message.pinned_at ? 'Unpin message' : 'Pin message'}</DropdownMenuItem>}
                     {message.author.id === userId ? <>
                       <DropdownMenuItem onClick={() => onEdit(message)}><Pencil /> Edit message</DropdownMenuItem>
                       <DropdownMenuItem variant="destructive" onClick={() => setConfirmDelete(true)}><Trash2 /> Delete message</DropdownMenuItem>
@@ -278,6 +287,7 @@ export default function MessageItem({
               )}
             </>
           )}
+          {onThread && !message.thread_root_id && (!message.deleted_at || (message.thread_reply_count ?? 0) > 0) && <Button variant="ghost" size="sm" aria-label="Open thread" className="mt-1 gap-1 text-xs" disabled={busy} onClick={() => onThread(message)}><MessagesSquare size={14} />{message.thread_reply_count ? `${message.thread_reply_count} replies` : 'Start thread'}</Button>}
         </div>
       </div>
     </article>

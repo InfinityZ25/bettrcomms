@@ -51,11 +51,17 @@ export interface Message {
   reply?: { id: string; name: string; body: string; deleted: boolean };
   reactions?: { emoji: string; users: string[] }[];
   attachments?: MessageAttachment[];
+  thread_root_id?: string;
+  thread_reply_count?: number;
+  thread_unread_count?: number;
+  pinned_at?: string;
+  pinned_by?: string;
 }
 export interface MessagePage {
   messages: Message[];
   before_id?: string;
   read_sequence?: number;
+  root?: Message;
 }
 export interface RoomUnread {
   room_id: string;
@@ -107,6 +113,7 @@ export async function api<T>(
 export async function uploadMessageAttachment(
   roomId: string,
   file: File,
+  signal?: AbortSignal,
 ): Promise<MessageAttachment> {
   const body = new FormData();
   body.append('file', file);
@@ -114,6 +121,7 @@ export async function uploadMessageAttachment(
     apiHttpUrl(`/api/v1/rooms/${roomId}/attachments`),
     {
       method: 'POST',
+      signal,
       credentials: apiCredentials(),
       headers: apiAuthHeaders(),
       body,

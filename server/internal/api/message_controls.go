@@ -59,6 +59,9 @@ func (s *PostgresStore) ModerateMessage(room, actor, id, reason string) (Message
 		return Message{}, err
 	}
 	defer tx.Rollback(ctx)
+	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::uuid::text,0))`, room); err != nil {
+		return Message{}, err
+	}
 	var owner string
 	if err = tx.QueryRow(ctx, `SELECT owner_id::text FROM rooms WHERE id=$1 AND kind='channel' FOR SHARE`, room).Scan(&owner); err != nil {
 		return Message{}, norm(err)
@@ -71,6 +74,12 @@ func (s *PostgresStore) ModerateMessage(room, actor, id, reason string) (Message
 		return Message{}, norm(err)
 	}
 	if _, err = tx.Exec(ctx, `UPDATE messages SET body='',deleted_at=clock_timestamp(),version=version+1 WHERE id=$1`, id); err != nil {
+		return Message{}, err
+	}
+	if _, err = tx.Exec(ctx, `DELETE FROM message_pins WHERE message_id=$1`, id); err != nil {
+		return Message{}, err
+	}
+	if _, err = tx.Exec(ctx, `UPDATE messages SET version=version+1 WHERE id=(SELECT thread_root_id FROM messages WHERE id=$1)`, id); err != nil {
 		return Message{}, err
 	}
 	if _, err = tx.Exec(ctx, `UPDATE message_attachments SET deleted_at=clock_timestamp() WHERE message_id=$1 AND deleted_at IS NULL`, id); err != nil {

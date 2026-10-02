@@ -13,6 +13,8 @@ export function useMessageViewport(
   onError: (message: string) => void,
   targetId: string | undefined,
   setHighlight: (id: string) => void,
+  root?: string,
+  onNavigateThread?: (message: import('@/api').Message) => void,
 ) {
   const viewport = useRef<HTMLDivElement>(null);
   const end = useRef<HTMLDivElement>(null);
@@ -23,7 +25,8 @@ export function useMessageViewport(
     nearBottom.current = false;
     navigating.current = true;
     try {
-      await jumpToMessage(roomId, id);
+      const message = await jumpToMessage(roomId, id, root);
+      if (message && message.thread_root_id !== root && !(root && message.id === root)) { onNavigateThread?.(message); navigating.current = false; return; }
       setHighlight(id);
       requestAnimationFrame(() => {
         const node = viewport.current;
@@ -52,10 +55,10 @@ export function useMessageViewport(
         !document.hasFocus()
       )
         return;
-      const state = conversationSnapshot(roomId);
+      const state = conversationSnapshot(roomId, root);
       const latest = state.messages.at(-1);
       if (!state.loading && latest)
-        void markRead(roomId, latest).catch((error) =>
+        void markRead(roomId, latest, root).catch((error) =>
           onError(
             error instanceof Error
               ? error.message
@@ -78,7 +81,7 @@ export function useMessageViewport(
       update();
     });
     if (viewport.current) resize.observe(viewport.current);
-    const unsubscribe = subscribeConversation(roomId, update);
+    const unsubscribe = subscribeConversation(roomId, update, root);
     const observer = new IntersectionObserver(
       ([entry]) => {
         nearBottom.current = entry.isIntersecting;
@@ -90,7 +93,7 @@ export function useMessageViewport(
     if (end.current) observer.observe(end.current);
     window.addEventListener('focus', read);
     document.addEventListener('visibilitychange', read);
-    void loadConversation(roomId).then(() => {
+    void loadConversation(roomId, false, root).then(() => {
       if (!stopped && targetId) void jump(targetId);
     });
     return () => {
@@ -107,7 +110,7 @@ export function useMessageViewport(
     const height = viewport.current?.scrollHeight ?? 0;
     const top = viewport.current?.scrollTop ?? 0;
     nearBottom.current = false;
-    await loadConversation(roomId, true);
+    await loadConversation(roomId, true, root);
     requestAnimationFrame(() => {
       if (viewport.current)
         viewport.current.scrollTop =

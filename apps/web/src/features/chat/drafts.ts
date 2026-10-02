@@ -8,12 +8,12 @@ export type SavedDraft = {
   fingerprint?: string;
 };
 
-const key = (user: string, room: string) => `bettercomms:draft:${user}:${room}`;
+const key = (user: string, room: string, root?: string) => `bettercomms:draft:${user}:${room}${root ? `:thread:${root}` : ''}`;
 const attachmentLifetime = 24 * 60 * 60 * 1000;
 
-export function readDraft(user: string, room: string): SavedDraft {
+export function readDraft(user: string, room: string, root?: string): SavedDraft {
   try {
-    const value = JSON.parse(localStorage.getItem(key(user, room)) ?? '{}') as Partial<SavedDraft> & { savedAt?: number };
+    const value = JSON.parse(localStorage.getItem(key(user, room, root)) ?? '{}') as Partial<SavedDraft> & { savedAt?: number };
     return {
       body: typeof value.body === 'string' ? value.body.slice(0, 4000) : '',
       attachments: typeof value.savedAt === 'number' && Date.now() - value.savedAt < attachmentLifetime && Array.isArray(value.attachments)
@@ -27,10 +27,10 @@ export function readDraft(user: string, room: string): SavedDraft {
   }
 }
 
-export function saveDraft(user: string, room: string, draft: SavedDraft) {
+export function saveDraft(user: string, room: string, draft: SavedDraft, root?: string) {
   try {
     localStorage.setItem(
-      key(user, room),
+      key(user, room, root),
       JSON.stringify({
         ...draft,
         savedAt: Date.now(),
@@ -42,9 +42,9 @@ export function saveDraft(user: string, room: string, draft: SavedDraft) {
   }
 }
 
-export function clearDraft(user: string, room: string) {
+export function clearDraft(user: string, room: string, root?: string) {
   try {
-    localStorage.removeItem(key(user, room));
+    localStorage.removeItem(key(user, room, root));
   } catch {
     // The sent message is already saved on the server.
   }

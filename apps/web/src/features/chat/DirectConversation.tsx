@@ -155,6 +155,7 @@ export default function DirectConversation({
           user={user}
           label={name}
           compactHeader
+          canPin={room.kind === 'direct' || room.owner_id === user.id}
           targetId={targetId}
           onError={onError}
         />

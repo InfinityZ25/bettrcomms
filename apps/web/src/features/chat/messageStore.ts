@@ -10,6 +10,11 @@ import {
 export type ConversationState = {
   messages: Message[];
   anchor?: Message;
+  root?: Message;
+  pins?: Message[];
+  pinUpdates?: Record<string, Message>;
+  threads?: Message[];
+  threadBefore?: string;
   members: User[];
   before?: string;
   unreadBoundary?: number;
@@ -27,6 +32,7 @@ const emptyConversation: ConversationState = {
 const conversations = new Map<string, ConversationState>();
 const subscribers = new Map<string, Set<() => void>>();
 const pending = new Map<string, AbortController>();
+const listPending = new Map<string, AbortController>();
 const unreadListeners = new Set<() => void>();
 const activityListeners = new Set<() => void>();
 let unread: Record<string, RoomUnread> = {};
@@ -67,9 +73,13 @@ export function mergeMessages(...groups: Message[][]) {
     );
 }
 
-export const conversationSnapshot = (room: string) =>
-  conversations.get(room) ?? emptyConversation;
-export function subscribeConversation(room: string, listener: () => void) {
+export const conversationKey = (room: string, root?: string) => root ? `${room}|${root}` : room;
+const scopeParts = (key: string) => { const [room, root] = key.split('|'); return { room, root }; };
+const messagePath = (room: string, root?: string) => root ? `/rooms/${room}/threads/${root}/messages` : `/rooms/${room}/messages`;
+export const conversationSnapshot = (room: string, root?: string) =>
+  conversations.get(conversationKey(room, root)) ?? emptyConversation;
+export function subscribeConversation(room: string, listener: () => void, root?: string) {
+  room = conversationKey(room, root);
   let listeners = subscribers.get(room);
   if (!listeners) {
     listeners = new Set();
@@ -78,7 +88,18 @@ export function subscribeConversation(room: string, listener: () => void) {
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
-    if (!listeners.size) subscribers.delete(room);
+    if (!listeners.size) {
+      subscribers.delete(room);
+      pending.get(room)?.abort();
+      pending.delete(room);
+      const scope = scopeParts(room);
+      if (!scope.root) for (const suffix of ['#pins', '#threads']) {
+        listPending.get(scope.room + suffix)?.abort();
+        listPending.delete(scope.room + suffix);
+      }
+      const state = conversations.get(room);
+      if (state?.loading || state?.loadingOlder) put(room, { loading: false, loadingOlder: false });
+    }
   };
 }
 function put(room: string, patch: Partial<ConversationState>) {
@@ -146,6 +167,8 @@ export function startMessagingSession(id: string) {
     userId = undefined;
     for (const request of pending.values()) request.abort();
     pending.clear();
+    for (const request of listPending.values()) request.abort();
+    listPending.clear();
     conversations.clear();
     if (unreadTimer !== undefined) clearTimeout(unreadTimer);
     unreadTimer = undefined;
@@ -155,7 +178,8 @@ export function startMessagingSession(id: string) {
   };
 }
 
-export async function loadConversation(room: string, older = false) {
+export async function loadConversation(roomId: string, older = false, root?: string) {
+  const room = conversationKey(roomId, root);
   if (!userId || pending.has(room)) return;
   const snapshot = conversationSnapshot(room);
   if (older && !snapshot.before) return;
@@ -172,7 +196,7 @@ export async function loadConversation(room: string, older = false) {
       : '';
     const [page, members] = await Promise.all([
       api<MessagePage>(
-        `/rooms/${room}/messages${cursor}`,
+        messagePath(roomId, root) + cursor,
         undefined,
         undefined,
         controller.signal,
@@ -180,7 +204,7 @@ export async function loadConversation(room: string, older = false) {
       older || snapshot.members.length
         ? Promise.resolve(snapshot.members)
         : api<{ members: { user: User }[] }>(
-            `/rooms/${room}/members`,
+            `/rooms/${roomId}/members`,
             undefined,
             undefined,
             controller.signal,
@@ -193,6 +217,7 @@ export async function loadConversation(room: string, older = false) {
         page.messages,
       ),
       members,
+      root: (conversationSnapshot(room).root?.version ?? 0) > (page.root?.version ?? 0) ? conversationSnapshot(room).root : page.root,
       before:
         older || !snapshot.messages.length ? page.before_id : snapshot.before,
       unreadBoundary: older ? snapshot.unreadBoundary : (snapshot.unreadBoundary ?? page.read_sequence),
@@ -224,22 +249,34 @@ export function receiveMessage(id: string, message: Message) {
   }
   // Only opened conversations retain history; the app's existing socket keeps
   // its bounded notification backlog independently.
-  if (conversations.has(message.room_id)) {
-    const state = conversationSnapshot(message.room_id);
+  const key = conversationKey(message.room_id, message.thread_root_id);
+  if (conversations.has(key)) {
+    const state = conversationSnapshot(key);
     const first = state.messages[0]?.sequence ?? 0;
-    const inRange =
-      (message.sequence ?? 0) >= first ||
-      state.messages.some((item) => item.id === message.id);
-    put(message.room_id, {
-      messages: mergeMessages(state.messages, [message]).filter(
-        (item) => inRange || item.id !== message.id,
-      ),
-      anchor: state.anchor
-        ? mergeMessages([state.anchor], state.messages, [message]).find(
-            (item) => item.id === state.anchor?.id,
-          )
-        : undefined,
+    const inRange = (message.sequence ?? 0) >= first || state.messages.some((item) => item.id === message.id);
+    put(key, {
+      messages: mergeMessages(state.messages, [message]).filter((item) => inRange || item.id !== message.id),
+      anchor: state.anchor ? mergeMessages([state.anchor], state.messages, [message]).find((item) => item.id === state.anchor?.id) : undefined,
     });
+  }
+  // Root edits/deletion/counts arrive as normal chat.updated events.
+  const threadKey = conversationKey(message.room_id, message.id);
+  const thread = conversations.get(threadKey);
+  if (thread && (message.version ?? 0) >= (thread.root?.version ?? 0)) put(threadKey, { root: message });
+  const main = conversations.get(message.room_id);
+  if (main?.threads && !message.thread_root_id) {
+    const known = main.threads.some((item) => item.id === message.id);
+    put(message.room_id, { threads: !known && message.thread_reply_count ? [message, ...main.threads] : main.threads.map((item) => item.id === message.id && (message.version ?? 0) >= (item.version ?? 0) ? { ...message, thread_unread_count: item.thread_unread_count } : item) });
+  }
+  if (main?.pins) {
+    const update = main.pinUpdates?.[message.id];
+    if (update && (update.version ?? 0) > (message.version ?? 0)) { scheduleUnread(); return; }
+    const pinUpdates = { ...main.pinUpdates, [message.id]: message };
+    for (const id of Object.keys(pinUpdates).slice(0, Math.max(0, Object.keys(pinUpdates).length - 100))) delete pinUpdates[id];
+    const pins = mergeMessages(main.pins, message.pinned_at && !message.deleted_at ? [message] : [])
+      .filter((item) => item.id !== message.id || Boolean(message.pinned_at && !message.deleted_at))
+      .sort((a, b) => Date.parse(b.pinned_at ?? '') - Date.parse(a.pinned_at ?? ''));
+    put(message.room_id, { pins, pinUpdates });
   }
   scheduleUnread();
 }
@@ -253,15 +290,18 @@ export function reconcileMessaging(id: string, reset = false) {
   for (const room of subscribers.keys()) {
     if (reset || !conversationSnapshot(room).messages.length) {
       put(room, { ...emptyConversation });
-      void loadConversation(room);
+      void loadConversation(scopeParts(room).room, false, scopeParts(room).root);
     } else void catchUpConversation(room);
+    const scope = scopeParts(room);
+    if (!scope.root && conversationSnapshot(room).pins) void loadPins(scope.room).catch(() => {});
+    if (!scope.root && conversationSnapshot(room).threads) void loadThreads(scope.room).catch(() => {});
   }
 }
 
 async function catchUpConversation(room: string) {
   if (!userId || pending.has(room)) return;
   const first = conversationSnapshot(room).messages[0];
-  if (!first?.sequence) { void loadConversation(room); return; }
+  if (!first?.sequence) { void loadConversation(scopeParts(room).room, false, scopeParts(room).root); return; }
   const currentGeneration = generation;
   const controller = new AbortController();
   pending.set(room, controller);
@@ -270,16 +310,17 @@ async function catchUpConversation(room: string) {
     // reactions and deletions keep their original sequence.
     let cursor = first.sequence - 1;
     for (;;) {
-      const page = await api<MessagePage>(`/rooms/${room}/messages?after_sequence=${cursor}&limit=100`, undefined, undefined, controller.signal);
+      const page = await api<MessagePage>(messagePath(scopeParts(room).room, scopeParts(room).root) + `?after_sequence=${cursor}&limit=100`, undefined, undefined, controller.signal);
       if (controller.signal.aborted || generation !== currentGeneration) return;
       if (!page.messages.length) break;
-      put(room, { messages: mergeMessages(conversationSnapshot(room).messages, page.messages) });
+      put(room, { messages: mergeMessages(conversationSnapshot(room).messages, page.messages), root: page.root });
       cursor = page.messages.at(-1)!.sequence ?? cursor;
       if (!page.before_id) break;
     }
+    const { room: roomId } = scopeParts(room);
     const anchor = conversationSnapshot(room).anchor;
     if (anchor && (anchor.sequence ?? 0) < first.sequence) {
-      const result = await api<{ message: Message }>(`/rooms/${room}/messages/${anchor.id}`, undefined, undefined, controller.signal);
+      const result = await api<{ message: Message }>(`/rooms/${roomId}/messages/${anchor.id}`, undefined, undefined, controller.signal);
       if (!controller.signal.aborted && generation === currentGeneration)
         put(room, { anchor: result.message });
     }
@@ -291,18 +332,19 @@ async function catchUpConversation(room: string) {
   }
 }
 const reading = new Map<string, number>();
-export async function markRead(room: string, message: Message) {
+export async function markRead(roomId: string, message: Message, root?: string) {
+  const room = conversationKey(roomId, root);
   const sequence = message.sequence ?? 0;
   if (
     !userId ||
-    sequence <= (unread[room]?.read_sequence ?? 0) ||
+    sequence <= (root ? conversationSnapshot(room).unreadBoundary ?? 0 : unread[roomId]?.read_sequence ?? 0) ||
     sequence <= (reading.get(room) ?? 0)
   )
     return;
   const currentGeneration = generation;
   reading.set(room, sequence);
   try {
-    await api(`/rooms/${room}/read`, { message_id: message.id }, 'PUT');
+    await api(root ? `/rooms/${roomId}/threads/${root}/read` : `/rooms/${roomId}/read`, { message_id: message.id }, 'PUT');
     if (generation === currentGeneration) {
       if (conversations.has(room))
         put(room, { unreadBoundary: Math.max(conversationSnapshot(room).unreadBoundary ?? 0, sequence) });
@@ -319,11 +361,12 @@ export async function writeMessage(
   id?: string,
   attachmentIDs: string[] = [],
   nonce?: string,
+  root?: string,
 ) {
   const currentGeneration = generation;
   const result = await api<{ message: Message }>(
     `/rooms/${room}/messages${id ? `/${id}` : ''}`,
-    { body, reply_to_id: reply, attachment_ids: attachmentIDs, client_nonce: nonce },
+    { body, reply_to_id: reply, attachment_ids: attachmentIDs, client_nonce: nonce, ...(root && !id ? { thread_root_id: root } : {}) },
     id ? 'PATCH' : 'POST',
   );
   if (generation === currentGeneration && userId)
@@ -355,12 +398,14 @@ export async function reactMessage(
   if (generation === currentGeneration && userId)
     receiveMessage(userId, result.message);
 }
-export async function jumpToMessage(room: string, id: string) {
+export async function jumpToMessage(roomId: string, id: string, root?: string) {
+  const room = conversationKey(roomId, root);
   const currentGeneration = generation;
   const result = await api<{ message: Message }>(
-    `/rooms/${room}/messages/${id}`,
+    `/rooms/${roomId}/messages/${id}`,
   );
   if (generation !== currentGeneration) return;
+  if ((result.message.thread_root_id ?? undefined) !== root) return result.message;
   const state = conversationSnapshot(room);
   if (state.messages.some((message) => message.id === id)) {
     put(room, {
@@ -372,4 +417,37 @@ export async function jumpToMessage(room: string, id: string) {
     put(room, { anchor: result.message });
   }
   return result.message;
+}
+
+export async function loadPins(room: string) {
+  const revision = generation;
+  const key = `${room}#pins`;
+  listPending.get(key)?.abort();
+  const controller = new AbortController(); listPending.set(key, controller);
+  if (!conversationSnapshot(room).pins) put(room, { pins: [], pinUpdates: {} });
+  try {
+    const result = await api<{ messages: Message[] }>(`/rooms/${room}/pins`, undefined, undefined, controller.signal);
+    if (revision !== generation || controller.signal.aborted) return;
+    const updates = conversationSnapshot(room).pinUpdates ?? {};
+    const byId = new Map(result.messages.map((item) => [item.id, item]));
+    for (const update of Object.values(updates)) if ((update.version ?? 0) >= (byId.get(update.id)?.version ?? 0)) byId.set(update.id, update);
+    put(room, { pins: [...byId.values()].filter((item) => item.pinned_at && !item.deleted_at).sort((a, b) => Date.parse(b.pinned_at!) - Date.parse(a.pinned_at!)) });
+  } finally { if (listPending.get(key) === controller) listPending.delete(key); }
+}
+export async function loadThreads(room: string, older = false) {
+  const revision = generation;
+  const key = `${room}#threads`;
+  listPending.get(key)?.abort();
+  const controller = new AbortController(); listPending.set(key, controller);
+  const previous = conversationSnapshot(room);
+  try {
+    const cursor = older && previous.threadBefore ? `?before_id=${encodeURIComponent(previous.threadBefore)}` : '';
+    const result = await api<MessagePage>(`/rooms/${room}/threads${cursor}`, undefined, undefined, controller.signal);
+    if (revision === generation && !controller.signal.aborted) put(room, { threads: older ? [...(previous.threads ?? []), ...result.messages] : result.messages, threadBefore: result.before_id });
+  } finally { if (listPending.get(key) === controller) listPending.delete(key); }
+}
+export async function pinMessage(room: string, id: string, remove: boolean) {
+  const revision = generation;
+  const result = await api<{ message: Message }>(`/rooms/${room}/messages/${id}/pin`, undefined, remove ? 'DELETE' : 'PUT');
+  if (revision === generation && userId) receiveMessage(userId, result.message);
 }

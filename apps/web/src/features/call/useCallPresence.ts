@@ -120,8 +120,8 @@ export function useCallPresence(userId?: string) {
           } else if (message.type === 'chat.read') {
             void refreshUnread();
           } else if (message.type === 'chat.typing') {
-            const value = message.payload as { room_id?: string; user_id?: string; typing?: boolean };
-            if (value?.room_id && value.user_id && value.user_id !== userId && typeof value.typing === 'boolean') receiveTyping(value.room_id, value.user_id, value.typing);
+            const value = message.payload as { room_id?: string; user_id?: string; typing?: boolean; thread_root_id?: string };
+            if (value?.room_id && value.user_id && value.user_id !== userId && typeof value.typing === 'boolean') receiveTyping(value.room_id, value.user_id, value.typing, value.thread_root_id);
           } else if (message.type === 'chat.message') {
             const value = message.payload as Message;
             if (!value?.id || !value.room_id) return;

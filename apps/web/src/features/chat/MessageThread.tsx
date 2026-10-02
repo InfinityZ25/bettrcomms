@@ -5,16 +5,21 @@ import {
   useSyncExternalStore,
   type FormEvent,
 } from 'react';
-import { ArrowDown, CheckCheck, ChevronLeft, Search } from 'lucide-react';
+import { ArrowDown, CheckCheck, ChevronLeft, Search, Pin, MessagesSquare } from 'lucide-react';
 import type { Message, User } from '@/api';
 import { api, uploadMessageAttachment } from '@/api';
 import MessageItem from './MessageItem';
 import MessageComposer from './MessageComposer';
+import { MessageBody } from './MessageItem';
+import { formatMessagePreview } from './messageFormatting';
 import { Button } from '@/components/ui/button';
 import {
   conversationSnapshot,
   deleteMessage,
   loadConversation,
+  loadPins,
+  loadThreads,
+  pinMessage,
   markRead,
   reactMessage,
   subscribeConversation,
@@ -27,15 +32,18 @@ import { clearDraft, readDraft, saveDraft, type PendingAttachment, type SavedDra
 import { publishTyping, subscribeTyping, typingSnapshot } from './typingStore';
 import { useMountEffect } from '@/hooks/useMountEffect';
 
-export default function MessageThread({
+function MessageTimeline({
   roomId,
   user,
   label,
   onError,
   targetId,
   canModerate = false,
+  canPin = canModerate,
   compactHeader = false,
   onClose,
+  threadRootId,
+  onOpenThread,
 }: {
   roomId: string;
   user: User;
@@ -43,13 +51,21 @@ export default function MessageThread({
   onError: (message: string) => void;
   targetId?: string;
   canModerate?: boolean;
+  canPin?: boolean;
+  threadRootId?: string;
+  onOpenThread: (message: Message) => void;
   compactHeader?: boolean;
   /** Offered on phones, where the thread covers the button that opened it. */
   onClose?: () => void;
 }) {
+  const lifetime = useRef(new AbortController());
+  useMountEffect(() => {
+    lifetime.current = new AbortController();
+    return () => lifetime.current.abort();
+  });
   const chat = useSyncExternalStore(
-    (listener) => subscribeConversation(roomId, listener),
-    () => conversationSnapshot(roomId),
+    (listener) => subscribeConversation(roomId, listener, threadRootId),
+    () => conversationSnapshot(roomId, threadRootId),
   );
   const anchor =
     chat.anchor &&
@@ -57,7 +73,7 @@ export default function MessageThread({
       ? chat.anchor
       : undefined;
   const messages = anchor ? [anchor, ...chat.messages] : chat.messages;
-  const [savedDraft] = useState(() => readDraft(user.id, roomId));
+  const [savedDraft] = useState(() => readDraft(user.id, roomId, threadRootId));
   const [draft, setDraft] = useState(savedDraft.body);
   const [attachments, setAttachments] = useState<PendingAttachment[]>(savedDraft.attachments);
   const [reply, setReply] = useState<Message | null>(null);
@@ -65,6 +81,10 @@ export default function MessageThread({
   const [busy, setBusy] = useState(false);
   const [highlight, setHighlight] = useState<string | undefined>(targetId);
   const [suggestion, setSuggestion] = useState(0);
+  const [pinsOpen, setPinsOpen] = useState(false);
+  const [pinsLoading, setPinsLoading] = useState(false);
+  const [threadsOpen, setThreadsOpen] = useState(false);
+  const [threadsLoading, setThreadsLoading] = useState(false);
   const mentions = useRef(new Map<string, string>());
   const nonce = useRef<{ fingerprint: string; id: string } | null>(
     savedDraft.nonce && savedDraft.fingerprint
@@ -75,16 +95,16 @@ export default function MessageThread({
   const typingTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const lastTyping = useRef(0);
   const typing = useSyncExternalStore(
-    (listener) => subscribeTyping(roomId, listener),
-    () => typingSnapshot(roomId),
+    (listener) => subscribeTyping(roomId, listener, threadRootId),
+    () => typingSnapshot(roomId, threadRootId),
   );
   const input = useRef<HTMLTextAreaElement>(null);
   const { viewport, end, nearBottom, awayFromBottom, jump, older } =
-    useMessageViewport(roomId, onError, targetId, setHighlight);
+    useMessageViewport(roomId, onError, targetId, setHighlight, threadRootId, onOpenThread);
   const stopTyping = () => {
     if (typingTimeout.current) clearTimeout(typingTimeout.current);
     typingTimeout.current = undefined;
-    if (lastTyping.current) publishTyping(user.id, roomId, false);
+    if (lastTyping.current) publishTyping(user.id, roomId, false, threadRootId);
     lastTyping.current = 0;
   };
   useMountEffect(() => () => stopTyping());
@@ -92,10 +112,10 @@ export default function MessageThread({
     setDraft(value);
     if (!editing) {
       nonce.current = null;
-      saveDraft(user.id, roomId, { body: value, attachments });
+      saveDraft(user.id, roomId, { body: value, attachments }, threadRootId);
       if (value.trim()) {
         if (Date.now() - lastTyping.current > 2000) {
-          publishTyping(user.id, roomId, true);
+          publishTyping(user.id, roomId, true, threadRootId);
           lastTyping.current = Date.now();
         }
         if (typingTimeout.current) clearTimeout(typingTimeout.current);
@@ -113,13 +133,13 @@ export default function MessageThread({
     const next: PendingAttachment[] = [...attachments, ...selected.map((file) => ({ id: '', localId: crypto.randomUUID(), filename: file.name, content_type: file.type, size_bytes: file.size, file }))];
     setAttachments(next);
     nonce.current = null;
-    saveDraft(user.id, roomId, { body: draft, attachments: next });
+    saveDraft(user.id, roomId, { body: draft, attachments: next }, threadRootId);
   };
   const removeFile = (index: number) => {
     const next = attachments.filter((_, position) => position !== index);
     setAttachments(next);
     nonce.current = null;
-    saveDraft(user.id, roomId, { body: draft, attachments: next });
+    saveDraft(user.id, roomId, { body: draft, attachments: next }, threadRootId);
   };
   const runMessageAction = async (action: () => Promise<unknown>) => {
     if (busy) return false;
@@ -128,10 +148,11 @@ export default function MessageThread({
       await action();
       return true;
     } catch (error) {
+      if (lifetime.current.signal.aborted) return false;
       onError(error instanceof Error ? error.message : 'Message action failed');
       return false;
     } finally {
-      setBusy(false);
+      if (!lifetime.current.signal.aborted) setBusy(false);
     }
   };
   const send = (event?: FormEvent) => {
@@ -141,6 +162,7 @@ export default function MessageThread({
     const submitMessage = async () => {
       if (editing) {
         await writeMessage(roomId, body, undefined, editing.id);
+        if (lifetime.current.signal.aborted) return;
         const saved = beforeEdit.current;
         setDraft(saved?.body ?? '');
         beforeEdit.current = null;
@@ -149,19 +171,21 @@ export default function MessageThread({
         for (let index = 0; index < ready.length; index++) {
           if (ready[index].id) continue;
           if (!ready[index].file) throw new Error('Choose the file again before sending.');
-          ready[index] = await uploadMessageAttachment(roomId, ready[index].file!);
+          ready[index] = await uploadMessageAttachment(roomId, ready[index].file!, lifetime.current.signal);
+          if (lifetime.current.signal.aborted) return;
           setAttachments([...ready]);
-          saveDraft(user.id, roomId, { body: draft, attachments: ready });
+          saveDraft(user.id, roomId, { body: draft, attachments: ready }, threadRootId);
         }
         const ids = ready.map((item) => item.id);
-        const fingerprint = JSON.stringify([body, reply?.id ?? '', ids]);
+        const fingerprint = JSON.stringify([body, reply?.id ?? '', ids, threadRootId ?? '']);
         if (nonce.current?.fingerprint !== fingerprint) nonce.current = { fingerprint, id: crypto.randomUUID() };
-        saveDraft(user.id, roomId, { body: draft, attachments: ready, nonce: nonce.current.id, fingerprint });
-        await writeMessage(roomId, body, reply?.id, undefined, ids, nonce.current.id);
+        saveDraft(user.id, roomId, { body: draft, attachments: ready, nonce: nonce.current.id, fingerprint }, threadRootId);
+        await writeMessage(roomId, body, reply?.id, undefined, ids, nonce.current.id, threadRootId);
+        if (lifetime.current.signal.aborted) return;
         nonce.current = null;
         setAttachments([]);
         setDraft('');
-        clearDraft(user.id, roomId);
+        clearDraft(user.id, roomId, threadRootId);
       }
       setReply(null);
       setEditing(null);
@@ -216,21 +240,29 @@ export default function MessageThread({
   return (
     <div
       className="message-thread relative flex min-h-0 flex-1 flex-col select-text"
-      aria-label="Conversation messages"
+      aria-label={threadRootId ? "Thread messages" : "Conversation messages"}
     >
-      <div className={compactHeader ? "thread-tools flex shrink-0 items-center justify-end phone:hidden gap-1 border-b px-3 py-1 text-xs" : "thread-tools flex shrink-0 items-center justify-between gap-2 border-b px-3 py-2 text-xs"}>
+      <div className={compactHeader ? "thread-tools flex shrink-0 items-center justify-end gap-1 border-b px-3 py-1 text-xs" : "thread-tools flex shrink-0 items-center justify-between gap-2 border-b px-3 py-2 text-xs"}>
         {onClose && (
           <Button
             variant="ghost"
             size="icon"
-            className="-ml-1 hidden shrink-0 phone:inline-flex phone:size-11"
-            aria-label="Close room messages"
+            className={threadRootId ? "shrink-0" : "-ml-1 hidden shrink-0 phone:inline-flex phone:size-11"}
+            aria-label={threadRootId ? "Close thread" : "Close room messages"}
             onClick={onClose}
           >
             <ChevronLeft size={20} />
           </Button>
         )}
         {!compactHeader && <span className="min-w-0 flex-1 truncate phone:text-sm phone:font-semibold">{label}</span>}
+        {!threadRootId && <Button variant="ghost" size="icon-sm" className="phone:size-11" aria-label="Conversation threads" disabled={threadsLoading} onClick={() => {
+          setThreadsOpen(!threadsOpen); setPinsOpen(false);
+          if (!threadsOpen) { setThreadsLoading(true); void loadThreads(roomId).catch((error) => { if (!lifetime.current.signal.aborted) onError(error instanceof Error ? error.message : 'Could not load threads'); }).finally(() => { if (!lifetime.current.signal.aborted) setThreadsLoading(false); }); }
+        }}><MessagesSquare size={14} /></Button>}
+        {!threadRootId && <Button variant="ghost" size="icon-sm" className="phone:size-11" aria-label="Pinned messages" disabled={pinsLoading} onClick={() => {
+          setPinsOpen(!pinsOpen); setThreadsOpen(false);
+          if (!pinsOpen) { setPinsLoading(true); void loadPins(roomId).catch((error) => { if (!lifetime.current.signal.aborted) onError(error instanceof Error ? error.message : 'Could not load pins'); }).finally(() => { if (!lifetime.current.signal.aborted) setPinsLoading(false); }); }
+        }}><Pin size={14} /></Button>}
         <Button
           variant="ghost"
           size="icon-sm"
@@ -250,7 +282,7 @@ export default function MessageThread({
           onClick={() => {
             const last = chat.messages.at(-1);
             if (last)
-              void markRead(roomId, last).catch((error) =>
+              void markRead(roomId, last, threadRootId).catch((error) =>
                 onError(
                   error instanceof Error
                     ? error.message
@@ -263,11 +295,21 @@ export default function MessageThread({
           <span className="phone:hidden">Mark as read</span>
         </Button>
       </div>
+      {threadsOpen && !threadRootId && <section className="max-h-56 shrink-0 overflow-auto border-b p-3" aria-label="Conversation threads">
+        {!chat.threads?.length && <p className="text-xs text-muted-foreground">{threadsLoading ? 'Loading threads…' : 'No threads yet. Open a thread from a message.'}</p>}
+        {chat.threads?.map((message) => <button key={message.id} type="button" className="mb-2 block w-full rounded-lg border p-2 text-left text-xs hover:bg-accent" onClick={() => { setThreadsOpen(false); onOpenThread(message); }}><strong>{message.author.name}</strong><span className="ml-2 line-clamp-2 whitespace-pre-wrap">{message.deleted_at ? 'Message deleted' : formatMessagePreview(message.body) || '[attachment]'}</span><span className="mt-1 block text-muted-foreground">{message.thread_reply_count ?? 0} replies{message.thread_unread_count ? ` · ${message.thread_unread_count} unread` : ''}</span></button>)}
+        {chat.threadBefore && <Button variant="outline" size="sm" disabled={threadsLoading} onClick={() => { setThreadsLoading(true); void loadThreads(roomId, true).catch((error) => { if (!lifetime.current.signal.aborted) onError(error instanceof Error ? error.message : 'Could not load threads'); }).finally(() => { if (!lifetime.current.signal.aborted) setThreadsLoading(false); }); }}>More threads</Button>}
+      </section>}
+      {pinsOpen && !threadRootId && <section className="max-h-48 shrink-0 overflow-auto border-b p-3" aria-label="Pinned messages">
+        {!chat.pins?.length && <p className="text-xs text-muted-foreground">{pinsLoading ? 'Loading pins…' : 'No pinned messages.'}</p>}
+        {chat.pins?.map((message) => <button key={message.id} type="button" className="mb-2 block w-full rounded-lg border p-2 text-left text-xs hover:bg-accent" onClick={() => { setPinsOpen(false); if (message.thread_root_id) onOpenThread(message); else void jump(message.id); }}><strong>{message.author.name}</strong><span className="ml-2 line-clamp-2 whitespace-pre-wrap">{formatMessagePreview(message.body) || '[attachment]'}</span></button>)}
+      </section>}
+      {threadRootId && chat.root && <div className="max-h-40 shrink-0 overflow-auto border-b bg-muted/30 p-3 text-sm" aria-label="Thread original message"><strong className="block text-xs">{chat.root.author.name}</strong>{chat.root.deleted_at ? <span className="italic text-muted-foreground">Message deleted</span> : <MessageBody message={chat.root} />}</div>}
       <div
         ref={viewport}
         className="message-log min-h-0 flex-1 overflow-auto overscroll-contain p-3 phone:px-2 phone:py-3"
         role="log"
-        aria-label="Messages"
+        aria-label={threadRootId ? "Thread replies" : "Messages"}
         aria-live="polite"
         aria-relevant="additions text"
         onScroll={() => {
@@ -300,7 +342,7 @@ export default function MessageThread({
             {chat.error}
             <Button
               variant="ghost"
-              onClick={() => void loadConversation(roomId)}
+              onClick={() => void loadConversation(roomId, false, threadRootId)}
             >
               Retry
             </Button>
@@ -338,6 +380,9 @@ export default function MessageThread({
                 input.current?.focus();
               }}
               onEdit={startEdit}
+              onThread={!threadRootId ? onOpenThread : undefined}
+              canPin={canPin}
+              onPin={(message, remove) => runMessageAction(() => pinMessage(roomId, message.id, remove))}
               onReact={(message, emoji, remove) =>
                 runMessageAction(() =>
                   reactMessage(roomId, message.id, emoji, remove),
@@ -347,7 +392,7 @@ export default function MessageThread({
                 runMessageAction(() => removeMessage(message))
               }
               onReport={(message, reason) => runMessageAction(() => api(`/rooms/${roomId}/messages/${message.id}/reports`, { reason }))}
-              onModerate={(message, reason) => runMessageAction(() => api(`/rooms/${roomId}/messages/${message.id}/moderation`, { reason }, 'DELETE').then(() => loadConversation(roomId)))}
+              onModerate={(message, reason) => runMessageAction(() => api(`/rooms/${roomId}/messages/${message.id}/moderation`, { reason }, 'DELETE').then(() => loadConversation(roomId, false, threadRootId)))}
               canModerate={canModerate}
               onError={onError}
             />
@@ -407,4 +452,22 @@ export default function MessageThread({
       />
     </div>
   );
+}
+
+export default function MessageThread(props: {
+  roomId: string; user: User; label: string; onError: (message: string) => void;
+  targetId?: string; canModerate?: boolean; canPin?: boolean; compactHeader?: boolean; onClose?: () => void;
+}) {
+  const [thread, setThread] = useState<{ root: string; target?: string } | null>(null);
+  const openThread = (message: Message) => {
+    setThread({ root: message.thread_root_id ?? message.id, target: message.thread_root_id ? message.id : undefined });
+  };
+  return <div className="@container/message-conversation flex min-h-0 min-w-0 flex-1 overflow-hidden">
+    <div className={`${thread ? '@max-[650px]/message-conversation:hidden ' : ''}flex min-h-0 min-w-0 flex-1 flex-col`}>
+      <MessageTimeline key={`${props.user.id}:${props.roomId}:${props.targetId ?? ''}`} {...props} onOpenThread={openThread} />
+    </div>
+    {thread && <aside className="flex min-h-0 min-w-0 flex-1 flex-col border-l bg-background @min-[650px]/message-conversation:max-w-lg" aria-label="Message thread">
+      <MessageTimeline key={`${props.user.id}:${props.roomId}:${thread.root}:${thread.target ?? ''}`} {...props} label="Thread replies" compactHeader={false} threadRootId={thread.root} targetId={thread.target} onClose={() => setThread(null)} onOpenThread={openThread} />
+    </aside>}
+  </div>;
 }

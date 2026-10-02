@@ -429,6 +429,10 @@ func (a *API) room(w http.ResponseWriter, r *http.Request, u User, p []string) {
 		a.fail(w, 403, "not_a_member", "room membership required")
 		return
 	}
+	if len(p) >= 3 && (p[2] == "pins" || p[2] == "threads" || (len(p) == 5 && p[2] == "messages" && p[4] == "pin")) {
+		a.conversationControls(w, r, u, p)
+		return
+	}
 	if len(p) == 3 && p[2] == "attachments" && r.Method == "POST" {
 		a.uploadAttachment(w, r, u, rid)
 		return

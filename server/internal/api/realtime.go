@@ -320,8 +320,9 @@ func (a *API) realtimeWebsocket(w http.ResponseWriter, r *http.Request, user Use
 		}
 		if message.Type == "chat.typing" {
 			var value struct {
-				RoomID string `json:"room_id"`
-				Typing bool   `json:"typing"`
+				RoomID       string `json:"room_id"`
+				Typing       bool   `json:"typing"`
+				ThreadRootID string `json:"thread_root_id,omitempty"`
 			}
 			if json.Unmarshal(message.Payload, &value) != nil || !uuidPattern.MatchString(value.RoomID) || !a.Realtime.canPublishRoom(client, value.RoomID) {
 				enqueueRealtime(client, wire{Type: "error", Error: &apiError{Code: "forbidden", Message: "room membership required"}})
@@ -330,7 +331,17 @@ func (a *API) realtimeWebsocket(w http.ResponseWriter, r *http.Request, user Use
 			if !a.limiter.allow("chat-typing:"+user.ID+":"+value.RoomID, 60, time.Minute) {
 				continue
 			}
-			payload, _ := json.Marshal(map[string]any{"room_id": value.RoomID, "user_id": user.ID, "typing": value.Typing})
+			if value.ThreadRootID != "" {
+				store, ok := a.Store.(*PostgresStore)
+				if !ok || !uuidPattern.MatchString(value.ThreadRootID) {
+					continue
+				}
+				var valid bool
+				if err := store.DB.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM messages WHERE id=$1 AND room_id=$2 AND thread_root_id IS NULL AND deleted_at IS NULL)`, value.ThreadRootID, value.RoomID).Scan(&valid); err != nil || !valid {
+					continue
+				}
+			}
+			payload, _ := json.Marshal(map[string]any{"room_id": value.RoomID, "user_id": user.ID, "typing": value.Typing, "thread_root_id": value.ThreadRootID})
 			a.Realtime.publishRoom(value.RoomID, wire{Type: "chat.typing", From: user.ID, Payload: payload})
 			continue
 		}
