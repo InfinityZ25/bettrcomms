@@ -361,8 +361,8 @@ export default function App() {
         navigate('share');
       }}
     >
-      {user && <MessagingSession key={user.id} userId={user.id} />}
-      {user && <PresenceSession key={user.id} user={user} />}
+      {user && <MessagingSession key={`messaging:${user.id}`} userId={user.id} />}
+      {user && <PresenceSession key={`presence:${user.id}`} user={user} />}
       {user && (
         <MessageSearch
           user={user}

@@ -3,6 +3,9 @@ import { openMobileFriends, swipe } from './mobile-touch';
 import { expect, test, type BrowserContext } from '@playwright/test';
 
 const baseURL = process.env.E2E_BASE_URL ?? 'http://127.0.0.1:5173';
+// A translated ancestor can give getBoundingClientRect() a few millionths of
+// a pixel of subtraction error even when the button's CSS size is 44px.
+const layoutPixels = (value: number) => Math.round(value * 1_000) / 1_000;
 const headers = { Origin: new URL(baseURL).origin };
 async function post(context: BrowserContext, path: string, data: unknown) {
   const deadline = Date.now() + 65_000;
@@ -301,8 +304,8 @@ test('mobile conversation navigation, actions and keyboard preserve usable scree
         const button = (await conversation
           .getByRole('button', { name, exact: true })
           .boundingBox())!;
-        expect(button.height).toBeGreaterThanOrEqual(44);
-        expect(button.width).toBeGreaterThanOrEqual(44);
+        expect(layoutPixels(button.height)).toBeGreaterThanOrEqual(44);
+        expect(layoutPixels(button.width)).toBeGreaterThanOrEqual(44);
       }
     }
     await openMobileFriends(page);
@@ -312,7 +315,7 @@ test('mobile conversation navigation, actions and keyboard preserve usable scree
       .getByRole('button', { name: 'Close' })
       .boundingBox())!;
     expect(close.x + close.width).toBeLessThanOrEqual(874 - (cdp ? 59 : 0));
-    expect(close.height).toBeGreaterThanOrEqual(44);
+    expect(layoutPixels(close.height)).toBeGreaterThanOrEqual(44);
     await friends.getByRole('button', { name: 'Close' }).click();
     await page
       .getByRole('button', { name: 'Mobile Writer and account options' })

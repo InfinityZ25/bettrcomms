@@ -31,7 +31,10 @@ test('pins and independent threads synchronize, preserve drafts and open search 
     await expect(peerPage.locator(`[data-message-id="${root.id}"]`).getByText('Pinned', { exact: true })).toBeVisible();
     await peerPage.getByRole('button', { name: 'Pinned messages', exact: true }).click();
     await expect(peerPage.getByRole('region', { name: 'Pinned messages' })).toContainText('Original project discussion');
-    await peerPage.getByRole('region', { name: 'Pinned messages' }).getByRole('button').click();
+    const pinnedMessages = peerPage.getByRole('region', { name: 'Pinned messages', exact: true });
+    await pinnedMessages.getByRole('button', { name: 'Thread Owner Original project discussion', exact: true }).click();
+    await expect(pinnedMessages).toBeHidden();
+    await expect(peerPage.locator(`[data-message-id="${root.id}"]`)).toBeInViewport();
 
     const mainDraft = ownerPage.getByRole('textbox', { name: 'Message Thread Peer', exact: true });
     await mainDraft.fill('Main draft stays separate');
@@ -71,7 +74,7 @@ test('pins and independent threads synchronize, preserve drafts and open search 
     expect(pins.messages).toEqual([]);
     expect(owner.id).toBeTruthy();
   } finally {
-    if (roomId) await ownerContext.request.delete(`/api/v1/rooms/${roomId}`, { headers });
-    await ownerContext.close(); await peerContext.close();
+    if (roomId) await Promise.allSettled([ownerContext.request.delete(`/api/v1/rooms/${roomId}`, { headers, timeout: 5000 })]);
+    await Promise.allSettled([ownerContext.close(), peerContext.close()]);
   }
 });
