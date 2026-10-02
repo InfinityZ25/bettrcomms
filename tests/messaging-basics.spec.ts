@@ -214,7 +214,7 @@ test('unread mentions, older history, search and message actions work across two
     await ownerPage
       .getByRole('button', { name: 'Save message', exact: true })
       .click();
-    await expect(guestMessage.locator('p')).toHaveText('edited message needle');
+    await expect(guestMessage.locator('[data-message-body]')).toHaveText('edited message needle');
     await expect(guestMessage).toContainText('edited');
     expect(historyReads).toBe(0);
     await guestMessage

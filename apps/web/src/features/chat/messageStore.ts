@@ -34,6 +34,7 @@ const conversations = new Map<string, ConversationState>();
 const subscribers = new Map<string, Set<() => void>>();
 const pending = new Map<string, AbortController>();
 const listPending = new Map<string, AbortController>();
+const jumpPending = new Map<string, Set<AbortController>>();
 const unreadListeners = new Set<() => void>();
 const activityListeners = new Set<() => void>();
 let unread: Record<string, RoomUnread> = {};
@@ -119,6 +120,7 @@ export function subscribeConversation(room: string, listener: () => void, root?:
       subscribers.delete(room);
       pending.get(room)?.abort();
       pending.delete(room);
+      cancelJumps((key) => key === room);
       const scope = scopeParts(room);
       if (!scope.root) for (const suffix of ['#pins', '#threads']) {
         listPending.get(scope.room + suffix)?.abort();
@@ -158,9 +160,16 @@ function put(room: string, patch: Partial<ConversationState>) {
 function accessDenied(error: unknown) {
   return error instanceof ApiRequestError && [401, 403].includes(error.status);
 }
+function cancelJumps(matches: (key: string) => boolean = () => true) {
+  for (const [key, requests] of jumpPending) if (matches(key)) {
+    for (const request of requests) request.abort();
+    jumpPending.delete(key);
+  }
+}
 /** Cached previews share the room ACL; drafts live outside this cache. */
 function discardRoomAccess(room: string, error: unknown) {
   for (const [key, request] of pending) if (scopeParts(key).room === room) { request.abort(); pending.delete(key); }
+  cancelJumps((key) => scopeParts(key).room === room);
   for (const suffix of ['#pins', '#threads']) { listPending.get(room + suffix)?.abort(); listPending.delete(room + suffix); }
   const keys = new Set([...conversations.keys(), ...subscribers.keys(), room]);
   for (const key of keys) if (scopeParts(key).room === room) {
@@ -213,6 +222,7 @@ function scheduleUnread() {
 export function startMessagingSession(id: string) {
   generation += 1;
   userId = id;
+  cancelJumps();
   conversations.clear();
   reading.clear();
   putUnread({});
@@ -225,6 +235,7 @@ export function startMessagingSession(id: string) {
     pending.clear();
     for (const request of listPending.values()) request.abort();
     listPending.clear();
+    cancelJumps();
     conversations.clear();
     if (unreadTimer !== undefined) clearTimeout(unreadTimer);
     unreadTimer = undefined;
@@ -343,6 +354,7 @@ export function reconcileMessaging(id: string, reset = false) {
   pending.clear();
   for (const request of listPending.values()) request.abort();
   listPending.clear();
+  cancelJumps();
   const openedLists = new Map([...conversations].map(([room, value]) => [room, { pins: Boolean(value.pins), threads: Boolean(value.threads) }]));
   if (reset) conversations.clear();
   else for (const room of conversations.keys()) if (!subscribers.has(room)) conversations.delete(room);
@@ -463,25 +475,35 @@ export async function reactMessage(
 export async function jumpToMessage(roomId: string, id: string, root?: string) {
   const room = conversationKey(roomId, root);
   const currentGeneration = generation;
-  const result = await api<{ message: Message }>(
-    `/rooms/${roomId}/messages/${id}`,
-  ).catch((error: unknown) => {
-    if (generation === currentGeneration && accessDenied(error)) discardRoomAccess(roomId, error);
+  const controller = new AbortController();
+  const requests = jumpPending.get(room) ?? new Set<AbortController>();
+  requests.add(controller);
+  jumpPending.set(room, requests);
+  try {
+    const result = await api<{ message: Message }>(
+      `/rooms/${roomId}/messages/${id}`, undefined, undefined, controller.signal,
+    );
+    if (generation !== currentGeneration || controller.signal.aborted) return;
+    if ((result.message.thread_root_id ?? undefined) !== root) return result.message;
+    const state = conversationSnapshot(room);
+    if (state.messages.some((message) => message.id === id)) {
+      put(room, {
+        messages: mergeMessages(state.messages, [result.message]),
+        anchor: undefined,
+      });
+    } else {
+      // A distant search hit is a separate preview, never a fake contiguous page.
+      put(room, { anchor: result.message });
+    }
+    return result.message;
+  } catch (error) {
+    if (generation !== currentGeneration || controller.signal.aborted) return;
+    if (accessDenied(error)) discardRoomAccess(roomId, error);
     throw error;
-  });
-  if (generation !== currentGeneration) return;
-  if ((result.message.thread_root_id ?? undefined) !== root) return result.message;
-  const state = conversationSnapshot(room);
-  if (state.messages.some((message) => message.id === id)) {
-    put(room, {
-      messages: mergeMessages(state.messages, [result.message]),
-      anchor: undefined,
-    });
-  } else {
-    // A distant search hit is a separate preview, never a fake contiguous page.
-    put(room, { anchor: result.message });
+  } finally {
+    requests.delete(controller);
+    if (!requests.size && jumpPending.get(room) === requests) jumpPending.delete(room);
   }
-  return result.message;
 }
 
 export async function loadPins(room: string) {

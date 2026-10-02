@@ -121,7 +121,7 @@ export default function MessageItem({
                 : formatMessagePreview(message.reply.body)}
             </button>
           )}
-          <div className="mt-1 text-sm leading-6 phone:text-base [overflow-wrap:anywhere] [&>p+p]:mt-2">
+          <div data-message-body className="mt-1 text-sm leading-6 phone:text-base [overflow-wrap:anywhere] [&>p+p]:mt-2">
             {message.deleted_at ? (
               <span className="italic text-muted-foreground">
                 Message deleted

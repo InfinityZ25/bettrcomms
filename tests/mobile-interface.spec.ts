@@ -24,6 +24,72 @@ async function post(context: BrowserContext, path: string, data: unknown) {
   }
 }
 
+test('mobile conversation menu opens pins and threads without adding a header or losing drafts', async ({ browser }) => {
+  const phone = await browser.newContext({ baseURL, viewport: { width: 375, height: 667 }, hasTouch: true, isMobile: true });
+  const friend = await browser.newContext({ baseURL });
+  try {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    await post(phone, '/auth/dev', { name: 'Panel Writer', email: `panel-writer-${suffix}@example.test` });
+    const { user: other } = await post(friend, '/auth/dev', { name: 'Panel Friend', email: `panel-friend-${suffix}@example.test` });
+    const { request } = await post(phone, '/friends/requests', { user_id: other.id });
+    await post(friend, `/friends/requests/${request.id}/accept`, {});
+    const { room } = await post(phone, '/rooms/direct', { user_id: other.id });
+    const { message: root } = await post(phone, `/rooms/${room.id}/messages`, { body: 'Pinned discussion for the mobile menu' });
+    await post(friend, `/rooms/${room.id}/messages`, { body: 'Independent mobile reply', thread_root_id: root.id });
+    const pinned = await phone.request.put(`/api/v1/rooms/${room.id}/messages/${root.id}/pin`, { headers });
+    expect(pinned.ok(), await pinned.text()).toBeTruthy();
+    const page = await phone.newPage();
+    await page.goto('/');
+    const conversation = page.getByRole('region', { name: 'Conversation with Panel Friend', exact: true });
+    await expect(conversation).toBeVisible();
+    const composer = conversation.getByRole('textbox', { name: 'Message Panel Friend', exact: true });
+    await composer.fill('Keep this main draft while browsing');
+    const menu = conversation.getByRole('button', { name: 'Conversation options', exact: true });
+    const toolbar = conversation.locator('.thread-tools');
+    const pins = conversation.getByRole('region', { name: 'Pinned messages', exact: true });
+    const threads = conversation.getByRole('region', { name: 'Conversation threads', exact: true });
+    await expect(toolbar).toBeHidden();
+    await expect(conversation.locator('.conversation-header')).toHaveCount(1);
+    await menu.tap();
+    await page.getByRole('menuitem', { name: 'Pinned messages', exact: true }).click();
+    await expect(pins).toBeVisible();
+    await expect(pins).toContainText('Pinned discussion for the mobile menu');
+    await expect(toolbar).toBeHidden();
+    await expect(composer).toHaveValue('Keep this main draft while browsing');
+    await pins.getByRole('button', { name: 'Close pinned messages', exact: true }).tap();
+    await expect(pins).toBeHidden();
+    await menu.tap();
+    await page.getByRole('menuitem', { name: 'Conversation threads', exact: true }).click();
+    await expect(threads).toBeVisible();
+    await expect(threads).toContainText('1 replies');
+    await expect(toolbar).toBeHidden();
+    await threads.getByRole('button', { name: 'Close conversation threads', exact: true }).tap();
+    await expect(threads).toBeHidden();
+    await expect(composer).toHaveValue('Keep this main draft while browsing');
+
+    await menu.tap();
+    await page.getByRole('menuitem', { name: 'Conversation threads', exact: true }).click();
+    await threads.getByRole('button', { name: /Pinned discussion for the mobile menu/ }).tap();
+    const thread = conversation.getByRole('complementary', { name: 'Message thread', exact: true });
+    await expect(thread).toBeVisible();
+    const threadComposer = thread.getByRole('textbox', { name: 'Message Thread replies', exact: true });
+    await threadComposer.fill('Keep this independent thread draft');
+    await menu.tap();
+    await page.getByRole('menuitem', { name: 'Pinned messages', exact: true }).click();
+    await expect(thread).toBeHidden();
+    await expect(pins).toBeVisible();
+    await expect(composer).toHaveValue('Keep this main draft while browsing');
+    await pins.getByRole('button', { name: 'Close pinned messages', exact: true }).tap();
+    await menu.tap();
+    await page.getByRole('menuitem', { name: 'Conversation threads', exact: true }).click();
+    await threads.getByRole('button', { name: /Pinned discussion for the mobile menu/ }).tap();
+    await expect(threadComposer).toHaveValue('Keep this independent thread draft');
+  } finally {
+    await phone.close();
+    await friend.close();
+  }
+});
+
 test('mobile conversation navigation, actions and keyboard preserve usable screen space', async ({
   browser,
 }) => {

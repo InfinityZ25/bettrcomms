@@ -1,8 +1,10 @@
 # Message pins and threads
 
 Open **Conversation threads** above a conversation to browse its threads,
-including threads whose original message is outside loaded history. Threads
-show reply counts and unread counts. **Open thread** on a message starts an
+including threads whose original message is outside loaded history. On phones,
+find **Conversation threads** and **Pinned messages** in **Conversation options**,
+keeping one conversation header. Close either list to return to the same draft.
+Threads show reply counts and unread counts. **Open thread** on a message starts an
 independent discussion; ordinary **Reply** still sends a quote in the current
 conversation. Desktop shows the thread beside the main history. On phones,
 the thread replaces that view until **Close thread** is pressed.

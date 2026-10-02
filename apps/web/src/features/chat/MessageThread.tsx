@@ -5,7 +5,7 @@ import {
   useSyncExternalStore,
   type FormEvent,
 } from 'react';
-import { ArrowDown, CheckCheck, ChevronLeft, Search, Pin, MessagesSquare } from 'lucide-react';
+import { ArrowDown, CheckCheck, ChevronLeft, Search, Pin, MessagesSquare, X } from 'lucide-react';
 import type { Message, User } from '@/api';
 import { api, ApiRequestError, uploadMessageAttachment } from '@/api';
 import MessageItem from './MessageItem';
@@ -33,6 +33,7 @@ import { publishTyping, subscribeTyping, typingSnapshot } from './typingStore';
 import { useMountEffect } from '@/hooks/useMountEffect';
 import { useLifetimeSignal } from '@/hooks/useLifetimeSignal';
 import { usePostingState } from './usePostingState';
+import { subscribeConversationPanels, type ConversationPanel } from './conversationPanels';
 
 function MessageTimeline({
   roomId,
@@ -84,6 +85,19 @@ function MessageTimeline({
   const [pinsLoading, setPinsLoading] = useState(false);
   const [threadsOpen, setThreadsOpen] = useState(false);
   const [threadsLoading, setThreadsLoading] = useState(false);
+  const showPanel = (panel: ConversationPanel) => {
+    setPinsOpen(panel === 'pins');
+    setThreadsOpen(panel === 'threads');
+    const setLoading = panel === 'pins' ? setPinsLoading : setThreadsLoading;
+    setLoading(true);
+    void (panel === 'pins' ? loadPins(roomId) : loadThreads(roomId))
+      .catch((error) => {
+        if (!lifetime().aborted && !(error instanceof DOMException && error.name === 'AbortError'))
+          onError(error instanceof Error ? error.message : `Could not load ${panel}`);
+      })
+      .finally(() => { if (!lifetime().aborted) setLoading(false); });
+  };
+  useMountEffect(() => threadRootId ? undefined : subscribeConversationPanels(roomId, showPanel));
   const mentions = useRef(new Map<string, string>());
   const nonce = useRef<{ fingerprint: string; id: string } | null>(
     savedDraft.nonce && savedDraft.fingerprint
@@ -243,7 +257,7 @@ function MessageTimeline({
       className="message-thread relative flex min-h-0 flex-1 flex-col select-text"
       aria-label={threadRootId ? "Thread messages" : "Conversation messages"}
     >
-      <div className={compactHeader ? "thread-tools flex shrink-0 items-center justify-end gap-1 border-b px-3 py-1 text-xs" : "thread-tools flex shrink-0 items-center justify-between gap-2 border-b px-3 py-2 text-xs"}>
+      <div className={compactHeader ? "thread-tools flex shrink-0 items-center justify-end gap-1 border-b px-3 py-1 text-xs phone:hidden" : "thread-tools flex shrink-0 items-center justify-between gap-2 border-b px-3 py-2 text-xs"}>
         {onClose && (
           <Button
             variant="ghost"
@@ -257,12 +271,10 @@ function MessageTimeline({
         )}
         {!compactHeader && <span className="min-w-0 flex-1 truncate phone:text-sm phone:font-semibold">{label}</span>}
         {!threadRootId && <Button variant="ghost" size="icon-sm" className="phone:size-11" aria-label="Conversation threads" disabled={threadsLoading} onClick={() => {
-          setThreadsOpen(!threadsOpen); setPinsOpen(false);
-          if (!threadsOpen) { setThreadsLoading(true); void loadThreads(roomId).catch((error) => { if (!lifetime().aborted) onError(error instanceof Error ? error.message : 'Could not load threads'); }).finally(() => { if (!lifetime().aborted) setThreadsLoading(false); }); }
+          if (threadsOpen) setThreadsOpen(false); else showPanel('threads');
         }}><MessagesSquare size={14} /></Button>}
         {!threadRootId && <Button variant="ghost" size="icon-sm" className="phone:size-11" aria-label="Pinned messages" disabled={pinsLoading} onClick={() => {
-          setPinsOpen(!pinsOpen); setThreadsOpen(false);
-          if (!pinsOpen) { setPinsLoading(true); void loadPins(roomId).catch((error) => { if (!lifetime().aborted) onError(error instanceof Error ? error.message : 'Could not load pins'); }).finally(() => { if (!lifetime().aborted) setPinsLoading(false); }); }
+          if (pinsOpen) setPinsOpen(false); else showPanel('pins');
         }}><Pin size={14} /></Button>}
         <Button
           variant="ghost"
@@ -297,11 +309,13 @@ function MessageTimeline({
         </Button>
       </div>
       {threadsOpen && !threadRootId && <section className="max-h-56 shrink-0 overflow-auto border-b p-3" aria-label="Conversation threads">
+        <div className="mb-2 flex items-center justify-between gap-2"><strong className="text-xs">Conversation threads</strong><Button variant="ghost" size="icon-sm" className="phone:size-11" aria-label="Close conversation threads" onClick={() => setThreadsOpen(false)}><X size={16} /></Button></div>
         {!chat.threads?.length && <p className="text-xs text-muted-foreground">{threadsLoading ? 'Loading threads…' : 'No threads yet. Open a thread from a message.'}</p>}
         {chat.threads?.map((message) => <button key={message.id} type="button" className="mb-2 block w-full rounded-lg border p-2 text-left text-xs hover:bg-accent" onClick={() => { setThreadsOpen(false); onOpenThread(message); }}><strong>{message.author.name}</strong><span className="ml-2 line-clamp-2 whitespace-pre-wrap">{message.deleted_at ? 'Message deleted' : formatMessagePreview(message.body) || '[attachment]'}</span><span className="mt-1 block text-muted-foreground">{message.thread_reply_count ?? 0} replies{message.thread_unread_count ? ` · ${message.thread_unread_count} unread` : ''}</span></button>)}
         {chat.threadBefore && <Button variant="outline" size="sm" disabled={threadsLoading} onClick={() => { setThreadsLoading(true); void loadThreads(roomId, true).catch((error) => { if (!lifetime().aborted) onError(error instanceof Error ? error.message : 'Could not load threads'); }).finally(() => { if (!lifetime().aborted) setThreadsLoading(false); }); }}>More threads</Button>}
       </section>}
       {pinsOpen && !threadRootId && <section className="max-h-48 shrink-0 overflow-auto border-b p-3" aria-label="Pinned messages">
+        <div className="mb-2 flex items-center justify-between gap-2"><strong className="text-xs">Pinned messages</strong><Button variant="ghost" size="icon-sm" className="phone:size-11" aria-label="Close pinned messages" onClick={() => setPinsOpen(false)}><X size={16} /></Button></div>
         {!chat.pins?.length && <p className="text-xs text-muted-foreground">{pinsLoading ? 'Loading pins…' : 'No pinned messages.'}</p>}
         {chat.pins?.map((message) => <button key={message.id} type="button" className="mb-2 block w-full rounded-lg border p-2 text-left text-xs hover:bg-accent" onClick={() => { setPinsOpen(false); if (message.thread_root_id) onOpenThread(message); else void jump(message.id); }}><strong>{message.author.name}</strong><span className="ml-2 line-clamp-2 whitespace-pre-wrap">{formatMessagePreview(message.body) || '[attachment]'}</span></button>)}
       </section>}
@@ -464,6 +478,7 @@ export default function MessageThread(props: {
   targetId?: string; canModerate?: boolean; canPin?: boolean; compactHeader?: boolean; onClose?: () => void;
 }) {
   const [thread, setThread] = useState<{ root: string; target?: string } | null>(null);
+  useMountEffect(() => subscribeConversationPanels(props.roomId, () => setThread(null)));
   const openThread = (message: Message) => {
     setThread({ root: message.thread_root_id ?? message.id, target: message.thread_root_id ? message.id : undefined });
   };

@@ -33,7 +33,7 @@ test('channel controls synchronize posting restrictions, slow mode and bans', as
     const draft = peerPage.getByRole('textbox', { name: 'Message Moderation acceptance', exact: true });
     await draft.fill('Preserve this draft');
     await controls.getByRole('button', { name: 'Restrict posting', exact: true }).click();
-    await expect(peerPage.getByText('Posting is temporarily restricted in this channel.', { exact: true })).toBeVisible();
+    await expect(peerPage.getByRole('status').filter({ hasText: 'Posting is temporarily restricted in this channel.' })).toBeVisible();
     await expect(peerPage.getByRole('button', { name: 'Send message', exact: true })).toBeDisabled();
     await expect(draft).toHaveValue('Preserve this draft');
     const restricted = await peer.request.post(`/api/v1/rooms/${roomId}/messages`, { headers, data: { body: 'Forbidden bypass' } });
@@ -44,7 +44,7 @@ test('channel controls synchronize posting restrictions, slow mode and bans', as
     await controls.getByRole('button', { name: 'Save slow mode', exact: true }).click();
     await peerPage.getByRole('button', { name: 'Send message', exact: true }).click();
     await expect(peerPage.getByRole('log', { name: 'Messages', exact: true })).toContainText('Preserve this draft');
-    await expect(peerPage.getByText('Slow mode: wait before sending another message.', { exact: true })).toBeVisible();
+    await expect(peerPage.getByRole('status').filter({ hasText: 'Slow mode: wait before sending another message.' })).toBeVisible();
     const slow = await peer.request.post(`/api/v1/rooms/${roomId}/messages`, { headers, data: { body: 'Cooldown bypass' } });
     expect(slow.status()).toBe(429);
     await controls.getByRole('combobox', { name: 'Moderation action' }).selectOption('ban');

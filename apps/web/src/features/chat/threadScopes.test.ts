@@ -107,6 +107,28 @@ describe('independent thread scopes', () => {
     expect(conversationSnapshot('room', 'root').root).toBeUndefined();
   });
 
+  it('cancels an authorized jump whose response arrives after another read revokes room access', async () => {
+    vi.mocked(api).mockResolvedValueOnce({ rooms: [] }); stop = startMessagingSession('user');
+    vi.mocked(api).mockResolvedValueOnce({ messages: [message('main')] }).mockResolvedValueOnce({ members: [] });
+    await loadConversation('room');
+    let finish!: (value: unknown) => void;
+    let signal: AbortSignal | undefined;
+    vi.mocked(api).mockImplementationOnce((_path, _body, _method, requestSignal) => {
+      signal = requestSignal;
+      return new Promise((resolve) => { finish = resolve; });
+    });
+    const jumping = jumpToMessage('room', 'distant');
+    const denied = new ApiRequestError('Access revoked', 403);
+    vi.mocked(api).mockRejectedValueOnce(denied);
+    await expect(loadPins('room')).rejects.toBe(denied);
+    expect(signal?.aborted).toBe(true);
+    // Even a mock or queued response that ignores cancellation cannot restore data.
+    finish({ message: message('distant') });
+    expect(await jumping).toBeUndefined();
+    expect(conversationSnapshot('room').anchor).toBeUndefined();
+    expect(conversationSnapshot('room').messages).toEqual([]);
+  });
+
   it('does not resurrect a pin removed while its HTTP list was in flight', async () => {
     vi.mocked(api).mockResolvedValueOnce({ rooms: [] }); stop = startMessagingSession('user');
     let resolve!: (value: unknown) => void;

@@ -3,7 +3,9 @@ import {
   ChevronLeft,
   MoreHorizontal,
   Phone,
+  Pin,
   Search,
+  MessagesSquare,
   Users,
 } from 'lucide-react';
 import { type Message, type Room, type User } from '@/api';
@@ -15,6 +17,7 @@ import { cn } from '@/lib/utils';
 import MessageThread from './MessageThread';
 import { openMessageSearch } from './searchEvents';
 import { conversationSnapshot, markRead } from './messageStore';
+import { openConversationPanel } from './conversationPanels';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -131,6 +134,12 @@ export default function DirectConversation({
               onClick={() => openMessageSearch(room.id)}
             >
               <Search /> Search this conversation
+            </DropdownMenuItem>
+            <DropdownMenuItem className="min-h-11" onClick={() => openConversationPanel(room.id, 'pins')}>
+              <Pin /> Pinned messages
+            </DropdownMenuItem>
+            <DropdownMenuItem className="min-h-11" onClick={() => openConversationPanel(room.id, 'threads')}>
+              <MessagesSquare /> Conversation threads
             </DropdownMenuItem>
             <DropdownMenuItem
               className="min-h-11"
