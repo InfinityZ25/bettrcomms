@@ -8,9 +8,14 @@ export interface User {
   id: string;
   name: string;
   email: string;
+  username?: string | null;
+  bio?: string;
+  profile_version?: number;
+  /** Desired account status; the API only includes this on your own profile. */
+  presence_status?: 'online' | 'idle' | 'dnd' | 'invisible';
   /**
-   * The profile picture WorkOS supplied, its own or a provider's, or null when
-   * the account has none. The API has always carried it; nothing rendered it.
+   * A WorkOS picture or a versioned authenticated avatar resource, never image
+   * bytes repeated in message events. Null when the account has no picture.
    */
   avatar_url?: string | null;
 }
@@ -19,7 +24,7 @@ export interface Room {
   name: string;
   owner_id: string;
   created_at: string;
-  kind?: 'channel' | 'direct';
+  kind?: 'channel' | 'direct' | 'group';
   role?: string;
   display_name?: string;
   activity_at?: string;

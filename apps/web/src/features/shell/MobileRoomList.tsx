@@ -13,7 +13,7 @@ import {
 import { openMessageSearch } from '@/features/chat/searchEvents';
 import RoomContextMenu from '@/features/rooms/RoomContextMenu';
 import { roomLabel } from '@/features/rooms/RoomNavigation';
-import type { Section } from './sections';
+import { isConversationRoom, type Section } from './sections';
 
 export default function MobileRoomList({
   section,
@@ -24,6 +24,8 @@ export default function MobileRoomList({
   onSelect,
   onCreate,
   onFriends,
+  onCreateGroup,
+  onJoinInvitation,
   onSettings,
   onInvite,
   onChanged,
@@ -37,6 +39,8 @@ export default function MobileRoomList({
   onSelect: (room: Room) => void;
   onCreate: () => void;
   onFriends: () => void;
+  onCreateGroup: () => void;
+  onJoinInvitation: () => void;
   onSettings: (room: Room) => void;
   onInvite: (room: Room) => void;
   onChanged: () => void;
@@ -47,7 +51,7 @@ export default function MobileRoomList({
   const activity = useSyncExternalStore(subscribeActivity, activitySnapshot);
   const messages = section === 'messages';
   const all = rooms.filter(
-    (room) => (room.kind ?? 'channel') === (messages ? 'direct' : 'channel'),
+    (room) => messages ? isConversationRoom(room.kind) : !isConversationRoom(room.kind),
   );
   const filtered = all
     .filter((room) =>
@@ -90,6 +94,7 @@ export default function MobileRoomList({
           </Button>
         )}
       </header>
+      {user && <div className="mx-4 mb-3"><Button variant="secondary" className="h-11 w-full" onClick={messages ? onCreateGroup : onJoinInvitation}>{messages ? 'New group message' : 'Join with invitation'}</Button></div>}
       <label className="relative mx-4 mb-3 block shrink-0">
         <Search
           className="pointer-events-none absolute top-3 left-3 text-muted-foreground"
@@ -147,7 +152,7 @@ export default function MobileRoomList({
                               the call
                             </>
                           ) : messages ? (
-                            'Direct message'
+                            room.kind === 'group' ? 'Group message' : 'Direct message'
                           ) : (
                             'Open room'
                           )}

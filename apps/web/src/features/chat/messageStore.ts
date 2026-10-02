@@ -6,6 +6,7 @@ import {
   type RoomUnread,
   type User,
 } from '@/api';
+import { profileSnapshot } from '@/features/settings/profileStore';
 
 export type ConversationState = {
   messages: Message[];
@@ -67,6 +68,27 @@ export function mergeMessages(...groups: Message[][]) {
     );
 }
 
+/** A profile event updates loaded histories without refetching every room. */
+export function refreshCachedProfiles() {
+  const profiles = profileSnapshot();
+  for (const [room, conversation] of conversations) {
+    let changed = false;
+    const updatedUser = (user: User) => {
+      const profile = profiles[user.id];
+      if (!profile || (user.name === profile.name && user.avatar_url === profile.avatar_url && user.username === profile.username && user.bio === profile.bio)) return user;
+      changed = true;
+      return { ...user, ...profile };
+    };
+    const messages = conversation.messages.map((message) => {
+      const author = updatedUser(message.author);
+      return author === message.author ? message : { ...message, author };
+    });
+    const members = conversation.members.map(updatedUser);
+    const anchor = conversation.anchor && { ...conversation.anchor, author: updatedUser(conversation.anchor.author) };
+    if (changed) put(room, { messages: mergeMessages(messages), members, anchor });
+  }
+}
+
 export const conversationSnapshot = (room: string) =>
   conversations.get(room) ?? emptyConversation;
 export function subscribeConversation(room: string, listener: () => void) {
@@ -82,7 +104,16 @@ export function subscribeConversation(room: string, listener: () => void) {
   };
 }
 function put(room: string, patch: Partial<ConversationState>) {
-  conversations.set(room, { ...conversationSnapshot(room), ...patch });
+  const profiles = profileSnapshot();
+  const currentProfile = (user: User) => {
+    const cached = profiles[user.id];
+    return cached && (cached.profile_version ?? 0) > (user.profile_version ?? 0) ? { ...user, ...cached } : user;
+  };
+  const normalized = { ...patch };
+  if (patch.messages) normalized.messages = mergeMessages(patch.messages.map((message) => ({ ...message, author: currentProfile(message.author) })));
+  if (patch.members) normalized.members = patch.members.map(currentProfile);
+  if (patch.anchor) normalized.anchor = { ...patch.anchor, author: currentProfile(patch.anchor.author) };
+  conversations.set(room, { ...conversationSnapshot(room), ...normalized });
   // Keep at most twelve inactive histories; evicted rooms reload on demand.
   const inactive = [...conversations.keys()].filter(
     (id) => !subscribers.has(id),

@@ -147,8 +147,9 @@ for (const route of ['automatic', 'relay']) {
           localStorage.setItem('bc-connection-mode', 'automatic');
           localStorage.setItem('bc-voice-route', route);
           const loaded = performance.getEntriesByType('resource').find(entry => /\/src\/media\/engine\.ts(?:\?|$)/.test(entry.name));
-          if (!loaded) throw new Error('Call engine module was not loaded');
-          const { MediaEngine } = await import(loaded.name);
+          // Large Vite module graphs can exhaust the Resource Timing buffer.
+          // Import the existing development module directly when its entry was evicted.
+          const { MediaEngine } = await import(loaded?.name ?? '/src/media/engine.ts');
           const original = MediaEngine.prototype.setMicrophoneEnabled;
           MediaEngine.prototype.setMicrophoneEnabled = function (enabled: boolean) {
             (window as any).pttEngine = this;

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Cable, Headphones, LogOut, Mic, MonitorUp, SlidersHorizontal, SunMoon } from 'lucide-react';
+import { Cable, Headphones, LogOut, Mic, MonitorUp, SlidersHorizontal, SunMoon, UserRound } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import {
@@ -11,6 +11,7 @@ import SettingsScreen, { type SettingsPage } from '@/features/settings/SettingsS
 import type { User } from '@/api';
 
 const pages = [
+  { id: 'profile', label: 'Profile', note: 'Your identity and availability', icon: UserRound },
   { id: 'audio', label: 'Audio', note: 'Quick call controls', icon: Mic },
   { id: 'voice', label: 'Voice & devices', note: 'Microphone, speakers and camera', icon: Headphones },
   { id: 'recording', label: 'Recording', note: 'Saved video quality', icon: MonitorUp },

@@ -1,3 +1,65 @@
+## Unreleased — social basics
+
+Profiles now support an editable display name, unique lowercase username,
+160-character bio and custom PNG/JPEG photo. Photos are cropped/compressed on
+the client and decoded, bounded and normalized again on the server. They are
+stored in PostgreSQL independently of attachment S3 configuration, served only
+to authorized contacts/members, and fetched with the desktop API credentials
+through a bounded, deduplicated blob cache. Profile versions prevent older
+events or HTTP reads from replacing newer edits. WorkOS/dev sign-in preserves
+the edited identity and an explicitly removed photo.
+
+Account availability supports Online, Away, Do not disturb and Invisible.
+It persists across sign-in and synchronizes between connected devices through
+the existing events socket. Invisible appears offline to contacts; calls and
+shared-room activity remain visible to their participants. Account DND stops
+message/call alerts and queued Web Push deliveries without overwriting a
+device's separate quiet preference. Away is a manual choice; desktop focus
+does not incorrectly mark someone playing in another application as absent.
+
+Messages now includes private groups of two to ten people. Owners can rename
+groups, add accepted friends and remove members; everyone can leave. Owner
+departure transfers ownership deterministically, and an empty group is removed.
+Messages, history, search, read cursors, notifications and the existing call
+flow use the same membership checks as other conversations. Group creation
+and additions reject blocked member pairs. Blocking someone leaves their
+shared group DMs, transfers ownership if necessary and removes live access;
+shared channel membership retains its existing semantics. Group size does not
+raise the existing media transport limits.
+
+Channel owners can create shareable invitation links with expiry, use limits
+and revocation in Room settings. Opening a link requires sign-in followed by
+explicit acceptance; desktop users can paste it under Calls → Join with link.
+Links use the configured APP_URL, with the random token in its fragment. Only
+its hash is stored; the raw link is shown once. Default validity is seven days
+and 100 joins, with explicit unlimited options. Redemption is atomic and an
+existing member does not spend another use. Rooms have at most 20 active links,
+which are always listed before historical links so they remain revocable.
+Pending invitation intent remains
+in session storage for up to two hours while signing in.
+
+Migration `009_social_basics.sql` preserves existing profiles, conversations
+and memberships. Browser checks exercise the real local API/PostgreSQL with
+separate accounts; they do not validate packaged WorkOS authentication,
+physical macOS/Windows notifications or cross-network media.
+
+Validation: web production build and 390 unit tests passed. The 22 targeted
+browser checks passed across serial runs, covering the new social flows,
+group calls, messaging/history/privacy, realtime availability, mobile
+navigation and microphone push-to-talk over automatic/relay audio. Backend
+`go test ./...` with the local Docker database in an isolated test schema and
+`go vet ./...` passed, including concurrent invite redemption/active-link caps,
+large-channel membership cost and a socket-registration/removal race.
+
+A manual Windows Wails development smoke check also passed: profile username
+validation and draft discard, account availability saved through the native API
+proxy, the group composer with accepted-friend selection, and invitation review
+followed by explicit acceptance and room navigation. The temporary invitation
+room was removed and the original account status restored. Full group creation,
+profile photo editing and cross-device synchronization remain covered by the
+browser/API tests above; this smoke check does not establish packaged desktop
+authentication or macOS acceptance.
+
 ## Unreleased — combined review follow-up
 
 Native screen and glasses senders now receive renewed TURN configuration,

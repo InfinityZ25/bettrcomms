@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useState, useSyncExternalStore } from 'react';
 import { Blobatar } from '@blobatar/react';
 import { thinking } from 'blobatar/expression';
 import { PresenceAvatar, type PresenceState } from '@/components/ui/presence-avatar';
 import { blobatarFor } from '@/features/settings/blobatarIdentity';
 import { cn } from '@/lib/utils';
+import { avatarApiPath, avatarSnapshot, subscribeAvatar } from '@/features/settings/avatarCache';
 
 /** "Ada Lovelace" → "AL". Used wherever a full name is known. */
 export const initials = (name: string) =>
@@ -49,7 +50,21 @@ export function trustedAvatar(url: string | null | undefined): string | undefine
  * entirely for everybody with a Google account would make the room half as
  * recognisable. `prefer` swaps which of the two is large.
  */
-export function Avatar({
+export type AvatarProps = {
+  name: string;
+  id?: string | null;
+  src?: string | null;
+  size?: 'sm' | 'lg';
+  prefer?: 'photo' | 'face';
+  presence?: PresenceState;
+  speaking?: boolean;
+  className?: string;
+};
+export function Avatar(props: AvatarProps) {
+  // Changing an image resets its failure state without synchronizing React state.
+  return <AvatarContent key={props.src ?? ''} {...props} />;
+}
+function AvatarContent({
   name,
   id,
   src,
@@ -58,41 +73,15 @@ export function Avatar({
   presence,
   speaking = false,
   className,
-}: {
-  name: string;
-  /**
-   * The account this face belongs to, when it is known. A blobatar is drawn
-   * from the string it is given, so an id keeps somebody's face theirs when
-   * they change their display name.
-   */
-  id?: string | null;
-  /** The profile picture the identity provider supplied, if there is one. */
-  src?: string | null;
-  size?: 'sm' | 'lg';
-  /** Which of the two is the big one. Only matters when there is a photo. */
-  prefer?: 'photo' | 'face';
-  /**
-   * Whether they are around, where the surrounding UI actually knows. Left out
-   * everywhere else: a dot that is always green is not presence, it is
-   * decoration that looks like presence.
-   */
-  presence?: PresenceState;
-  /**
-   * Talking right now.
-   *
-   * The face wears the library's `thinking` pose while it lasts — the eyes go
-   * up and away, which is what somebody mid-sentence looks like. It is the
-   * expression alone: the three-dot indicator that presence-avatar pairs with
-   * its own thinking *state* means "a task is running", which this is not.
-   */
-  speaking?: boolean;
-  className?: string;
-}) {
-  const source = trustedAvatar(src);
+}: AvatarProps) {
+  const path = avatarApiPath(src);
+  const subscribe = useCallback((listener: () => void) => path ? subscribeAvatar(path, listener) : () => {}, [path]);
+  const snapshot = useCallback(() => path ? avatarSnapshot(path) : undefined, [path]);
+  const cached = useSyncExternalStore(subscribe, snapshot, () => undefined);
+  const source = path ? cached : trustedAvatar(src);
   // A picture that will not load must not leave a blank square where a name
   // should be, so failure falls back to the face underneath.
   const [broken, setBroken] = useState(false);
-  useEffect(() => setBroken(false), [source]);
 
   const face = blobatarFor(id ?? name);
   const photo = source && !broken;

@@ -26,6 +26,7 @@ type RealtimeHub struct {
 	users    map[string]map[*realtimeClient]struct{}
 	rooms    map[string]map[*realtimeClient]struct{}
 	watchers map[string]map[*realtimeClient]struct{}
+	desired  map[string]string
 }
 
 func NewRealtimeHub() *RealtimeHub {
@@ -33,6 +34,7 @@ func NewRealtimeHub() *RealtimeHub {
 		users:    map[string]map[*realtimeClient]struct{}{},
 		rooms:    map[string]map[*realtimeClient]struct{}{},
 		watchers: map[string]map[*realtimeClient]struct{}{},
+		desired:  map[string]string{},
 	}
 }
 
@@ -99,7 +101,13 @@ func (h *RealtimeHub) remove(c *realtimeClient) bool {
 		delete(h.watchers[contact], c)
 		if len(h.watchers[contact]) == 0 {
 			delete(h.watchers, contact)
+			if len(h.users[contact]) == 0 {
+				delete(h.desired, contact)
+			}
 		}
+	}
+	if len(h.users[c.user]) == 0 && len(h.watchers[c.user]) == 0 {
+		delete(h.desired, c.user)
 	}
 	return becameOffline
 }
@@ -168,7 +176,7 @@ func (h *RealtimeHub) onlineContacts(c *realtimeClient) []string {
 	defer h.mu.RUnlock()
 	result := make([]string, 0, len(c.contacts))
 	for contact := range c.contacts {
-		if len(h.users[contact]) > 0 {
+		if len(h.users[contact]) > 0 && h.desired[contact] != "invisible" {
 			result = append(result, contact)
 		}
 	}
@@ -176,7 +184,6 @@ func (h *RealtimeHub) onlineContacts(c *realtimeClient) []string {
 }
 
 func (h *RealtimeHub) publishOnline(user string, online bool) {
-	payload, _ := json.Marshal(map[string]any{"user_id": user, "online": online})
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	// A reconnect can overlap the old socket's cleanup. Suppress a stale
@@ -184,6 +191,8 @@ func (h *RealtimeHub) publishOnline(user string, online bool) {
 	if (len(h.users[user]) > 0) != online {
 		return
 	}
+	status := h.effectivePresenceLocked(user)
+	payload, _ := json.Marshal(map[string]any{"user_id": user, "online": status != "offline", "status": status})
 	for c := range h.watchers[user] {
 		enqueueRealtime(c, wire{Type: "user.presence", Payload: payload})
 	}
@@ -191,10 +200,77 @@ func (h *RealtimeHub) publishOnline(user string, online bool) {
 
 func (h *RealtimeHub) publishContactState(user, contact string) {
 	h.mu.RLock()
-	online := len(h.users[contact]) > 0
+	status := h.effectivePresenceLocked(contact)
 	h.mu.RUnlock()
-	payload, _ := json.Marshal(map[string]any{"user_id": contact, "online": online})
+	payload, _ := json.Marshal(map[string]any{"user_id": contact, "online": status != "offline", "status": status})
 	h.publishUser(user, wire{Type: "user.presence", Payload: payload})
+}
+
+func (h *RealtimeHub) effectivePresenceLocked(user string) string {
+	if len(h.users[user]) == 0 || h.desired[user] == "invisible" {
+		return "offline"
+	}
+	if status := h.desired[user]; status != "" {
+		return status
+	}
+	return "online"
+}
+func (h *RealtimeHub) desiredPresence(user string) string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if s := h.desired[user]; s != "" {
+		return s
+	}
+	return "online"
+}
+func (h *RealtimeHub) setPresence(user, status string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.desired[user] = status
+	effective := h.effectivePresenceLocked(user)
+	public, _ := json.Marshal(map[string]any{"user_id": user, "online": effective != "offline", "status": effective})
+	own, _ := json.Marshal(map[string]any{"user_id": user, "online": effective != "offline", "status": effective, "desired_status": status})
+	for c := range h.watchers[user] {
+		enqueueRealtime(c, wire{Type: "user.presence", Payload: public})
+	}
+	for c := range h.users[user] {
+		enqueueRealtime(c, wire{Type: "user.presence", Payload: own})
+	}
+}
+func (h *RealtimeHub) contactSnapshot(c *realtimeClient) []map[string]any {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	out := make([]map[string]any, 0, len(c.contacts))
+	for id := range c.contacts {
+		status := h.effectivePresenceLocked(id)
+		out = append(out, map[string]any{"user_id": id, "online": status != "offline", "status": status})
+	}
+	return out
+}
+func (h *RealtimeHub) publishProfile(user User, rooms []Room) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	public, _ := json.Marshal(map[string]any{"user": user})
+	ownUser := user
+	ownUser.PresenceStatus = h.desired[user.ID]
+	own, _ := json.Marshal(map[string]any{"user": ownUser})
+	recipients := map[*realtimeClient]struct{}{}
+	for c := range h.watchers[user.ID] {
+		recipients[c] = struct{}{}
+	}
+	for _, room := range rooms {
+		for peer := range h.rooms[room.ID] {
+			recipients[peer] = struct{}{}
+		}
+	}
+	for c := range recipients {
+		if c.user != user.ID {
+			enqueueRealtime(c, wire{Type: "user.profile", Payload: public})
+		}
+	}
+	for c := range h.users[user.ID] {
+		enqueueRealtime(c, wire{Type: "user.profile", Payload: own})
+	}
 }
 
 func (h *RealtimeHub) publishRoom(room string, message wire) {
@@ -255,6 +331,13 @@ func (a *API) realtimeWebsocket(w http.ResponseWriter, r *http.Request, user Use
 		a.fail(w, http.StatusForbidden, "origin_not_allowed", "WebSocket origin is not allowed")
 		return
 	}
+	a.membershipMu.RLock()
+	registering := true
+	defer func() {
+		if registering {
+			a.membershipMu.RUnlock()
+		}
+	}()
 	rooms, err := a.Store.ListRooms(user.ID)
 	if err != nil {
 		a.result(w, nil, err)
@@ -271,7 +354,26 @@ func (a *API) realtimeWebsocket(w http.ResponseWriter, r *http.Request, user Use
 	}
 	conn.SetReadLimit(8 << 10)
 	client := &realtimeClient{user: user.ID, conn: conn, send: make(chan wire, 128), rooms: map[string]struct{}{}, contacts: map[string]struct{}{}}
+	a.presenceMu.Lock()
+	if store, ok := a.Store.(ProfileStore); ok {
+		ids := []string{user.ID}
+		for _, friend := range friends {
+			ids = append(ids, friend.ID)
+		}
+		values, loadErr := store.ContactPresence(ids)
+		if loadErr != nil {
+			a.presenceMu.Unlock()
+			conn.CloseNow()
+			return
+		}
+		a.Realtime.mu.Lock()
+		for id, status := range values {
+			a.Realtime.desired[id] = status
+		}
+		a.Realtime.mu.Unlock()
+	}
 	becameOnline := a.Realtime.add(client, rooms, friends)
+	a.presenceMu.Unlock()
 	defer func() {
 		if a.Realtime.remove(client) {
 			a.Realtime.publishOnline(user.ID, false)
@@ -283,13 +385,18 @@ func (a *API) realtimeWebsocket(w http.ResponseWriter, r *http.Request, user Use
 	for _, room := range rooms {
 		presence = append(presence, RoomCallPresence{RoomID: room.ID, Participants: a.Hub.callPresence(room.ID)})
 	}
-	payload, _ := json.Marshal(map[string]any{"presence": presence, "online_user_ids": a.Realtime.onlineContacts(client)})
-	if err = wsjsonWrite(r.Context(), conn, wire{Type: "app.ready", Payload: payload}); err != nil {
+	payload, _ := json.Marshal(map[string]any{"presence": presence, "online_user_ids": a.Realtime.onlineContacts(client), "contact_presence": a.Realtime.contactSnapshot(client), "own_presence": map[string]string{"status": a.Realtime.desiredPresence(user.ID)}})
+	readyContext, readyCancel := context.WithTimeout(r.Context(), 5*time.Second)
+	err = wsjsonWrite(readyContext, conn, wire{Type: "app.ready", Payload: payload})
+	readyCancel()
+	if err != nil {
 		return
 	}
 	if becameOnline {
 		a.Realtime.publishOnline(user.ID, true)
 	}
+	a.membershipMu.RUnlock()
+	registering = false
 
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()

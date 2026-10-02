@@ -392,6 +392,13 @@ func (h *Hub) disconnectUser(user string) {
 	}
 }
 func (a *API) websocket(w http.ResponseWriter, r *http.Request, u User, room string) {
+	a.membershipMu.RLock()
+	registering := true
+	defer func() {
+		if registering {
+			a.membershipMu.RUnlock()
+		}
+	}()
 	if _, e := a.Store.RoomForMember(room, u.ID); e != nil {
 		a.fail(w, http.StatusForbidden, "not_a_member", "room membership required")
 		return
@@ -424,10 +431,15 @@ func (a *API) websocket(w http.ResponseWriter, r *http.Request, u User, room str
 	a.publishCallPresence(room)
 	defer func() { a.Hub.remove(room, c); a.publishCallPresence(room); conn.CloseNow() }()
 	peers, _ := json.Marshal(map[string]any{"peers": initialPeers, "identities": identities})
-	if e = wsjsonWrite(r.Context(), conn, wire{Type: "peers", Payload: peers}); e != nil {
+	readyContext, readyCancel := context.WithTimeout(r.Context(), 5*time.Second)
+	e = wsjsonWrite(readyContext, conn, wire{Type: "peers", Payload: peers})
+	readyCancel()
+	if e != nil {
 		conn.CloseNow()
 		return
 	}
+	a.membershipMu.RUnlock()
+	registering = false
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	go func() {
