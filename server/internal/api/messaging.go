@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -282,6 +283,10 @@ func (a *API) messagingRoom(w http.ResponseWriter, r *http.Request, u User, p []
 		data, _ := json.Marshal(message)
 		a.Hub.broadcast(room, nil, wire{Type: event, From: u.ID, Payload: data})
 		a.Realtime.publishRoom(room, wire{Type: event, From: u.ID, Payload: data})
+	}
+	if errors.Is(err, ErrReactionLimit) {
+		a.fail(w, 400, "reaction_limit", "Use up to ten reactions per person and twenty different emojis per message.")
+		return
 	}
 	a.resultStatus(w, map[string]any{"message": message}, err, status)
 }

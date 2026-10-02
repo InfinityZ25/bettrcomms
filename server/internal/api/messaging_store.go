@@ -25,7 +25,6 @@ type MessagingStore interface {
 }
 
 var mentionPattern = regexp.MustCompile(`<@([0-9a-fA-F-]{36})>`)
-var reactionChoices = map[string]bool{"👍": true, "❤️": true, "😂": true, "🎉": true, "😮": true, "😢": true, "👀": true, "✅": true}
 
 const messageSelect = `SELECT m.id::text,m.room_id::text,m.body,m.created_at,m.sequence,m.version,m.edited_at,m.deleted_at,
  u.id::text,u.email,u.name,u.avatar_url,u.created_at,
@@ -373,6 +372,11 @@ func (s *PostgresStore) ReactMessage(room, user, id, emoji string, remove bool) 
 	err = tx.QueryRow(ctx, `SELECT m.id::text FROM messages m JOIN room_members rm ON rm.room_id=m.room_id AND rm.user_id=$3 WHERE m.room_id=$1 AND m.id=$2 AND m.deleted_at IS NULL FOR UPDATE OF m`, room, id, user).Scan(&found)
 	if err != nil {
 		return Message{}, norm(err)
+	}
+	if !remove {
+		if err = checkReactionCapacity(ctx, tx, id, user, emoji); err != nil {
+			return Message{}, err
+		}
 	}
 	if remove {
 		_, err = tx.Exec(ctx, `DELETE FROM message_reactions WHERE message_id=$1 AND user_id=$2 AND emoji=$3`, id, user, emoji)

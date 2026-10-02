@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { Flag, MoreHorizontal, Pencil, Reply, ShieldX, Smile, Trash2 } from 'lucide-react';
 import { api, type Message } from '@/api';
 import { Avatar } from '@/components/avatar';
@@ -6,60 +6,14 @@ import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import MessageAttachmentPreview from './MessageAttachmentPreview';
-const reactions = ['👍', '❤️', '😂', '🎉', '😮', '😢', '👀', '✅'];
-const linkPattern = /https?:\/\/[^\s<>"']+/gi;
-function linkedText(text: string, offset: number) {
-  const result: React.ReactNode[] = [];
-  let last = 0;
-  for (const match of text.matchAll(linkPattern)) {
-    const start = match.index;
-    const raw = match[0];
-    let url = raw.replace(/[.,!?;:]+$/, '');
-    const brackets: Record<string, string> = { ')': '(', ']': '[', '}': '{' };
-    while (url.length && brackets[url.at(-1)!]) {
-      const closing = url.at(-1)!;
-      if (url.split(closing).length <= url.split(brackets[closing]).length) break;
-      url = url.slice(0, -1);
-    }
-    url = url.replace(/[.,!?;:]+$/, '');
-    if (start > last) result.push(text.slice(last, start));
-    try {
-      const parsed = new URL(url);
-      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error('Invalid URL');
-      result.push(<a key={offset + start} href={parsed.href} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" className="text-primary underline underline-offset-2 hover:no-underline">{url}</a>);
-    } catch {
-      result.push(url);
-    }
-    result.push(raw.slice(url.length));
-    last = start + raw.length;
-  }
-  result.push(text.slice(last));
-  return result;
-}
+import PlainMessage from './PlainMessage';
+import EmojiDialog from './EmojiDialog';
+import { formatMessagePreview, needsMessageFormatting } from './messageFormatting';
+
+const FormattedMessage = lazy(() => import('./FormattedMessage'));
 export function MessageBody({ message }: { message: Message }) {
-  const people = new Map(
-    message.mentions?.map((person) => [person.id.toLowerCase(), person.name]),
-  );
-  let offset = 0;
-  return (
-    <>
-      {message.body.split(/(<@[0-9a-f-]{36}>)/i).map((part) => {
-        const key = offset;
-        offset += part.length;
-        const name = people.get(part.slice(2, -1).toLowerCase());
-        return name ? (
-          <span
-            key={key}
-            className="rounded bg-primary/15 px-0.5 font-medium text-primary"
-          >
-            @{name}
-          </span>
-        ) : (
-          linkedText(part, key)
-        );
-      })}
-    </>
-  );
+  if (!needsMessageFormatting(message.body)) return <PlainMessage message={message} />;
+  return <Suspense fallback={<span className="text-muted-foreground">Loading formatted message…</span>}><FormattedMessage message={message} /></Suspense>;
 }
 
 export default function MessageItem({
@@ -157,10 +111,10 @@ export default function MessageItem({
               {message.reply.name}:{' '}
               {message.reply.deleted
                 ? 'Message deleted'
-                : message.reply.body.replace(/<@[0-9a-f-]{36}>/gi, '@member')}
+                : formatMessagePreview(message.reply.body)}
             </button>
           )}
-          <p className="mt-1 whitespace-pre-wrap text-sm leading-6 phone:text-base [overflow-wrap:anywhere]">
+          <div className="mt-1 text-sm leading-6 phone:text-base [overflow-wrap:anywhere] [&>p+p]:mt-2">
             {message.deleted_at ? (
               <span className="italic text-muted-foreground">
                 Message deleted
@@ -168,7 +122,7 @@ export default function MessageItem({
             ) : (
               <MessageBody message={message} />
             )}
-          </p>
+          </div>
           {!message.deleted_at && !!message.attachments?.length && (
             <div className="mt-2 grid max-w-lg gap-2" aria-label="Attachments">
               {message.attachments.map((attachment) => (
@@ -268,28 +222,9 @@ export default function MessageItem({
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
-              {reacting && (
-                <div
-                  className="my-1 flex flex-wrap gap-1 rounded-xl border bg-card p-1"
-                  aria-label="Choose reaction"
-                >
-                  {reactions.map((emoji) => (
-                    <Button
-                      key={emoji}
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={`Add ${emoji} reaction`}
-                      disabled={busy}
-                      onClick={() => {
-                        void onReact(message, emoji, false);
-                        setReacting(false);
-                      }}
-                    >
-                      {emoji}
-                    </Button>
-                  ))}
-                </div>
-              )}
+              {reacting && <EmojiDialog onClose={() => setReacting(false)} onSelect={(emoji) => {
+                void onReact(message, emoji, message.reactions?.some((reaction) => reaction.emoji === emoji && reaction.users.includes(userId)) ?? false).then((done) => { if (done) setReacting(false); });
+              }} />}
               {confirmDelete && (
                 <div
                   className="flex flex-wrap items-center gap-2 rounded-lg border border-destructive/40 p-2 text-xs"

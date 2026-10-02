@@ -1,10 +1,13 @@
-import { useEffect, useRef, type FormEvent, type RefObject, type Dispatch, type SetStateAction } from 'react';
-import { AtSign, Check, Paperclip, Send, X } from 'lucide-react';
+import { useRef, useState, type FormEvent, type RefObject, type Dispatch, type SetStateAction } from 'react';
+import { AtSign, Bold, Check, Code, Italic, Paperclip, Quote, Send, X, EyeOff, Smile } from 'lucide-react';
 import type { Message, User } from '@/api';
 import type { PendingAttachment } from './drafts';
 import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
+import { formatMessagePreview, formatSelection, type FormatKind } from './messageFormatting';
+import EmojiDialog from './EmojiDialog';
+import { insertEmoji } from './emojiCatalog';
 export default function MessageComposer({
   draft,
   onDraft,
@@ -23,6 +26,10 @@ export default function MessageComposer({
   onFiles,
   onRemoveFile,
   onTypingStop,
+  blocked = false,
+  blockedReason,
+  blockedUntil,
+  attachmentsBlocked = blocked,
 }: {
   draft: string;
   onDraft: (value: string) => void;
@@ -41,24 +48,33 @@ export default function MessageComposer({
   onFiles: (files: FileList | null) => void;
   onRemoveFile: (index: number) => void;
   onTypingStop: () => void;
+  blocked?: boolean;
+  blockedReason?: string;
+  blockedUntil?: string;
+  attachmentsBlocked?: boolean;
 }) {
   const phone = useIsMobile();
-  useEffect(() => {
-    const input = inputRef.current;
-    if (!input) return;
-    input.style.height = 'auto';
-    input.style.height = `${Math.min(144, Math.max(phone ? 44 : 48, input.scrollHeight))}px`;
-  }, [draft, inputRef, phone]);
   const fileInput = useRef<HTMLInputElement>(null);
+  const [choosingEmoji, setChoosingEmoji] = useState(false);
+  const [formatError, setFormatError] = useState('');
+  const emojiSelection = useRef({ start: 0, end: 0 });
+  const format = (kind: FormatKind) => {
+    const field = inputRef.current;
+    const result = formatSelection(draft, field?.selectionStart ?? draft.length, field?.selectionEnd ?? draft.length, kind);
+    if (result.value.length > 4000) { setFormatError('The message limit is 4,000 characters.'); return; }
+    setFormatError('');
+    onDraft(result.value);
+    requestAnimationFrame(() => { inputRef.current?.focus(); inputRef.current?.setSelectionRange(result.start, result.end); });
+  };
   return (
     <form
       className="message-composer relative m-3 shrink-0 rounded-2xl border bg-muted/60 p-2 phone:m-2 phone:p-1 focus-within:ring-2 focus-within:ring-ring/40"
-      onSubmit={onSend}
+      onSubmit={(event) => { if (blocked) event.preventDefault(); else onSend(event); }}
       onDragOver={(event) => { if (!editing) event.preventDefault(); }}
       onDrop={(event) => {
         if (editing) return;
         event.preventDefault();
-        if (!busy) onFiles(event.dataTransfer.files);
+        if (!busy && !attachmentsBlocked) onFiles(event.dataTransfer.files);
       }}
     >
       {(editing || reply) && (
@@ -66,7 +82,7 @@ export default function MessageComposer({
           <span className="min-w-0 flex-1 truncate">
             {editing
               ? 'Editing your message'
-              : `Replying to ${reply?.author.name}: ${reply?.body}`}
+              : `Replying to ${reply?.author.name}: ${formatMessagePreview(reply?.body ?? '')}`}
           </span>
           <Button
             variant="ghost"
@@ -115,15 +131,37 @@ export default function MessageComposer({
           ))}
         </div>
       )}
+      {choosingEmoji && <EmojiDialog onClose={() => { setChoosingEmoji(false); inputRef.current?.focus(); }} onSelect={(emoji) => {
+        const selected = emojiSelection.current;
+        const next = insertEmoji(draft, emoji, selected.start, selected.end);
+        if (next.value.length <= 4000) {
+          setFormatError('');
+          onDraft(next.value);
+          setChoosingEmoji(false);
+          requestAnimationFrame(() => { inputRef.current?.focus(); inputRef.current?.setSelectionRange(next.cursor, next.cursor); });
+        } else { setFormatError('The message limit is 4,000 characters.'); setChoosingEmoji(false); }
+      }} />}
+      {formatError && <p role="alert" className="mb-1 px-2 text-xs text-destructive">{formatError}</p>}
+      {blocked && <p role="status" className="mb-1 px-2 text-xs text-muted-foreground">{blockedReason}{blockedUntil && <> Available after {new Date(blockedUntil).toLocaleTimeString()}.</>}</p>}
+      <div className="mb-1 flex gap-0.5" aria-label="Message formatting">
+        {([['bold', Bold], ['italic', Italic], ['code', Code], ['quote', Quote], ['spoiler', EyeOff]] as const).map(([kind, Icon]) => <Button key={kind} variant="ghost" size="icon-sm" type="button" aria-label={`Format ${kind}`} disabled={busy} onMouseDown={(event) => event.preventDefault()} onClick={() => format(kind)}><Icon size={14} /></Button>)}
+      </div>
       <div className="flex items-end gap-1">
+        <Button variant="ghost" size="icon" className="phone:size-11" type="button" aria-label="Insert emoji" disabled={busy || draft.length >= 4000} onMouseDown={(event) => event.preventDefault()} onClick={() => {
+          emojiSelection.current = { start: inputRef.current?.selectionStart ?? draft.length, end: inputRef.current?.selectionEnd ?? draft.length };
+          setChoosingEmoji(true);
+        }}><Smile size={17} /></Button>
         {!editing && (
           <>
-            <input ref={fileInput} type="file" multiple className="sr-only" aria-label="Choose attachments" onChange={(event) => { onFiles(event.target.files); event.target.value = ''; }} />
-            <Button variant="ghost" size="icon" className="phone:size-11" type="button" disabled={busy || attachments.length >= 4} aria-label="Attach files" onClick={() => fileInput.current?.click()}><Paperclip size={17} /></Button>
+            <input ref={fileInput} type="file" multiple disabled={busy || attachmentsBlocked} className="sr-only" aria-label="Choose attachments" onChange={(event) => { if (!busy && !attachmentsBlocked) onFiles(event.target.files); event.target.value = ''; }} />
+            <Button variant="ghost" size="icon" className="phone:size-11" type="button" disabled={busy || attachmentsBlocked || attachments.length >= 4} aria-label="Attach files" onClick={() => fileInput.current?.click()}><Paperclip size={17} /></Button>
           </>
         )}
         <textarea
-          ref={inputRef}
+          ref={(node) => {
+            inputRef.current = node;
+            if (node) { node.style.height = 'auto'; node.style.height = `${Math.min(144, Math.max(phone ? 44 : 48, node.scrollHeight))}px`; }
+          }}
           rows={1}
           enterKeyHint={phone ? 'send' : undefined}
           maxLength={4000}
@@ -136,10 +174,11 @@ export default function MessageComposer({
           onPaste={(event) => {
             if (!editing && event.clipboardData.files.length) {
               event.preventDefault();
-              onFiles(event.clipboardData.files);
+              if (!attachmentsBlocked && !busy) onFiles(event.clipboardData.files);
             }
           }}
           onChange={(event) => {
+            setFormatError('');
             onDraft(event.target.value);
             onSuggestion(0);
           }}
@@ -167,7 +206,7 @@ export default function MessageComposer({
                 );
             } else if (event.key === 'Enter' && !event.shiftKey) {
               event.preventDefault();
-              onSend();
+              if (!blocked) onSend();
             }
           }}
         />
@@ -176,7 +215,7 @@ export default function MessageComposer({
           size="icon"
           type="submit"
           className="phone:size-11 phone:rounded-full phone:bg-primary phone:text-primary-foreground"
-          disabled={(!draft.trim() && (editing || attachments.length === 0)) || busy}
+          disabled={(!draft.trim() && (editing || attachments.length === 0)) || busy || blocked}
           aria-label={editing ? 'Save message' : 'Send message'}
         >
           {editing ? <Check size={17} /> : <Send size={17} />}
