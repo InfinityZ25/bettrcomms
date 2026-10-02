@@ -6,6 +6,7 @@ import {
   type RoomUnread,
   type User,
 } from '@/api';
+import { profileSnapshot } from '@/features/settings/profileStore';
 
 export type ConversationState = {
   messages: Message[];
@@ -73,6 +74,32 @@ export function mergeMessages(...groups: Message[][]) {
     );
 }
 
+/** A profile event updates every loaded message surface without refetching rooms. */
+export function refreshCachedProfiles() {
+  const profiles = profileSnapshot();
+  for (const [room, conversation] of conversations) {
+    let changed = false;
+    const updatedUser = (user: User) => {
+      const profile = profiles[user.id];
+      if (!profile || (profile.profile_version ?? 0) < (user.profile_version ?? 0) ||
+        (user.name === profile.name && user.avatar_url === profile.avatar_url && user.username === profile.username && user.bio === profile.bio && user.profile_version === profile.profile_version)) return user;
+      changed = true;
+      return { ...user, ...profile };
+    };
+    const updatedMessage = (message: Message) => {
+      const author = updatedUser(message.author);
+      return author === message.author ? message : { ...message, author };
+    };
+    const messages = conversation.messages.map(updatedMessage);
+    const members = conversation.members.map(updatedUser);
+    const anchor = conversation.anchor && updatedMessage(conversation.anchor);
+    const root = conversation.root && updatedMessage(conversation.root);
+    const pins = conversation.pins?.map(updatedMessage);
+    const threads = conversation.threads?.map(updatedMessage);
+    if (changed) put(room, { messages: mergeMessages(messages), members, anchor, root, pins, threads });
+  }
+}
+
 export const conversationKey = (room: string, root?: string) => root ? `${room}|${root}` : room;
 const scopeParts = (key: string) => { const [room, root] = key.split('|'); return { room, root }; };
 const messagePath = (room: string, root?: string) => root ? `/rooms/${room}/threads/${root}/messages` : `/rooms/${room}/messages`;
@@ -103,7 +130,20 @@ export function subscribeConversation(room: string, listener: () => void, root?:
   };
 }
 function put(room: string, patch: Partial<ConversationState>) {
-  conversations.set(room, { ...conversationSnapshot(room), ...patch });
+  const profiles = profileSnapshot();
+  const currentProfile = (user: User) => {
+    const cached = profiles[user.id];
+    return cached && (cached.profile_version ?? 0) > (user.profile_version ?? 0) ? { ...user, ...cached } : user;
+  };
+  const normalized = { ...patch };
+  const currentMessage = (message: Message) => ({ ...message, author: currentProfile(message.author) });
+  if (patch.messages) normalized.messages = mergeMessages(patch.messages.map(currentMessage));
+  if (patch.members) normalized.members = patch.members.map(currentProfile);
+  if (patch.anchor) normalized.anchor = currentMessage(patch.anchor);
+  if (patch.root) normalized.root = currentMessage(patch.root);
+  if (patch.pins) normalized.pins = patch.pins.map(currentMessage);
+  if (patch.threads) normalized.threads = patch.threads.map(currentMessage);
+  conversations.set(room, { ...conversationSnapshot(room), ...normalized });
   // Keep at most twelve inactive histories; evicted rooms reload on demand.
   const inactive = [...conversations.keys()].filter(
     (id) => !subscribers.has(id),
@@ -114,6 +154,22 @@ function put(room: string, patch: Partial<ConversationState>) {
     conversations.delete(id);
   }
   for (const listener of subscribers.get(room) ?? []) listener();
+}
+function accessDenied(error: unknown) {
+  return error instanceof ApiRequestError && [401, 403].includes(error.status);
+}
+/** Cached previews share the room ACL; drafts live outside this cache. */
+function discardRoomAccess(room: string, error: unknown) {
+  for (const [key, request] of pending) if (scopeParts(key).room === room) { request.abort(); pending.delete(key); }
+  for (const suffix of ['#pins', '#threads']) { listPending.get(room + suffix)?.abort(); listPending.delete(room + suffix); }
+  const keys = new Set([...conversations.keys(), ...subscribers.keys(), room]);
+  for (const key of keys) if (scopeParts(key).room === room) {
+    conversations.set(key, { ...emptyConversation, error: error instanceof Error ? error.message : 'Conversation is unavailable' });
+    for (const listener of subscribers.get(key) ?? []) listener();
+  }
+  for (const key of reading.keys()) if (scopeParts(key).room === room) reading.delete(key);
+  if (unread[room]) { const next = { ...unread }; delete next[room]; putUnread(next); }
+  if (activity[room]) { activity = { ...activity }; delete activity[room]; for (const listener of activityListeners) listener(); }
 }
 export const unreadSnapshot = () => unread;
 export const activitySnapshot = () => activity;
@@ -223,12 +279,12 @@ export async function loadConversation(roomId: string, older = false, root?: str
       unreadBoundary: older ? snapshot.unreadBoundary : (snapshot.unreadBoundary ?? page.read_sequence),
     });
   } catch (error) {
-    if (
-      error instanceof ApiRequestError &&
-      [403, 404].includes(error.status) &&
-      generation === currentGeneration
-    )
-      put(room, { messages: [], members: [], before: undefined });
+    if (generation === currentGeneration && !controller.signal.aborted) {
+      if (accessDenied(error)) discardRoomAccess(roomId, error);
+      else if (error instanceof ApiRequestError && error.status === 404) {
+        conversations.set(room, { ...emptyConversation });
+      }
+    }
     if (!controller.signal.aborted && generation === currentGeneration)
       put(room, {
         error:
@@ -285,11 +341,15 @@ export function reconcileMessaging(id: string, reset = false) {
   void refreshUnread();
   for (const request of pending.values()) request.abort();
   pending.clear();
+  for (const request of listPending.values()) request.abort();
+  listPending.clear();
+  const openedLists = new Map([...conversations].map(([room, value]) => [room, { pins: Boolean(value.pins), threads: Boolean(value.threads) }]));
   if (reset) conversations.clear();
   else for (const room of conversations.keys()) if (!subscribers.has(room)) conversations.delete(room);
   for (const room of subscribers.keys()) {
     if (reset || !conversationSnapshot(room).messages.length) {
-      put(room, { ...emptyConversation });
+      const lists = openedLists.get(room);
+      put(room, { ...emptyConversation, ...(lists?.pins ? { pins: [], pinUpdates: {} } : {}), ...(lists?.threads ? { threads: [], threadBefore: undefined } : {}) });
       void loadConversation(scopeParts(room).room, false, scopeParts(room).root);
     } else void catchUpConversation(room);
     const scope = scopeParts(room);
@@ -325,8 +385,10 @@ async function catchUpConversation(room: string) {
         put(room, { anchor: result.message });
     }
   } catch (error) {
-    if (!controller.signal.aborted && generation === currentGeneration)
-      put(room, { error: error instanceof Error ? error.message : 'Could not reconcile messages' });
+    if (!controller.signal.aborted && generation === currentGeneration) {
+      if (accessDenied(error)) discardRoomAccess(scopeParts(room).room, error);
+      else put(room, { error: error instanceof Error ? error.message : 'Could not reconcile messages' });
+    }
   } finally {
     if (pending.get(room) === controller) pending.delete(room);
   }
@@ -403,7 +465,10 @@ export async function jumpToMessage(roomId: string, id: string, root?: string) {
   const currentGeneration = generation;
   const result = await api<{ message: Message }>(
     `/rooms/${roomId}/messages/${id}`,
-  );
+  ).catch((error: unknown) => {
+    if (generation === currentGeneration && accessDenied(error)) discardRoomAccess(roomId, error);
+    throw error;
+  });
   if (generation !== currentGeneration) return;
   if ((result.message.thread_root_id ?? undefined) !== root) return result.message;
   const state = conversationSnapshot(room);
@@ -432,6 +497,9 @@ export async function loadPins(room: string) {
     const byId = new Map(result.messages.map((item) => [item.id, item]));
     for (const update of Object.values(updates)) if ((update.version ?? 0) >= (byId.get(update.id)?.version ?? 0)) byId.set(update.id, update);
     put(room, { pins: [...byId.values()].filter((item) => item.pinned_at && !item.deleted_at).sort((a, b) => Date.parse(b.pinned_at!) - Date.parse(a.pinned_at!)) });
+  } catch (error) {
+    if (revision === generation && !controller.signal.aborted && accessDenied(error)) discardRoomAccess(room, error);
+    throw error;
   } finally { if (listPending.get(key) === controller) listPending.delete(key); }
 }
 export async function loadThreads(room: string, older = false) {
@@ -444,6 +512,9 @@ export async function loadThreads(room: string, older = false) {
     const cursor = older && previous.threadBefore ? `?before_id=${encodeURIComponent(previous.threadBefore)}` : '';
     const result = await api<MessagePage>(`/rooms/${room}/threads${cursor}`, undefined, undefined, controller.signal);
     if (revision === generation && !controller.signal.aborted) put(room, { threads: older ? [...(previous.threads ?? []), ...result.messages] : result.messages, threadBefore: result.before_id });
+  } catch (error) {
+    if (revision === generation && !controller.signal.aborted && accessDenied(error)) discardRoomAccess(room, error);
+    throw error;
   } finally { if (listPending.get(key) === controller) listPending.delete(key); }
 }
 export async function pinMessage(room: string, id: string, remove: boolean) {

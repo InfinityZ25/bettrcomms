@@ -31,6 +31,7 @@ import { editableMessage, encodeMentions, mentionLabel } from './mentions';
 import { clearDraft, readDraft, saveDraft, type PendingAttachment, type SavedDraft } from './drafts';
 import { publishTyping, subscribeTyping, typingSnapshot } from './typingStore';
 import { useMountEffect } from '@/hooks/useMountEffect';
+import { useLifetimeSignal } from '@/hooks/useLifetimeSignal';
 import { usePostingState } from './usePostingState';
 
 function MessageTimeline({
@@ -60,11 +61,7 @@ function MessageTimeline({
   onClose?: () => void;
 }) {
   const posting = usePostingState(roomId);
-  const lifetime = useRef(new AbortController());
-  useMountEffect(() => {
-    lifetime.current = new AbortController();
-    return () => lifetime.current.abort();
-  });
+  const lifetime = useLifetimeSignal();
   const chat = useSyncExternalStore(
     (listener) => subscribeConversation(roomId, listener, threadRootId),
     () => conversationSnapshot(roomId, threadRootId),
@@ -150,12 +147,12 @@ function MessageTimeline({
       await action();
       return true;
     } catch (error) {
-      if (lifetime.current.signal.aborted) return false;
+      if (lifetime().aborted) return false;
       if (error instanceof ApiRequestError && ['posting_restricted', 'slow_mode'].includes(error.code ?? '')) void posting.refresh();
       onError(error instanceof Error ? error.message : 'Message action failed');
       return false;
     } finally {
-      if (!lifetime.current.signal.aborted) setBusy(false);
+      if (!lifetime().aborted) setBusy(false);
     }
   };
   const send = (event?: FormEvent) => {
@@ -165,7 +162,7 @@ function MessageTimeline({
     const submitMessage = async () => {
       if (editing) {
         await writeMessage(roomId, body, undefined, editing.id);
-        if (lifetime.current.signal.aborted) return;
+        if (lifetime().aborted) return;
         const saved = beforeEdit.current;
         setDraft(saved?.body ?? '');
         beforeEdit.current = null;
@@ -174,8 +171,8 @@ function MessageTimeline({
         for (let index = 0; index < ready.length; index++) {
           if (ready[index].id) continue;
           if (!ready[index].file) throw new Error('Choose the file again before sending.');
-          ready[index] = await uploadMessageAttachment(roomId, ready[index].file!, lifetime.current.signal);
-          if (lifetime.current.signal.aborted) return;
+          ready[index] = await uploadMessageAttachment(roomId, ready[index].file!, lifetime());
+          if (lifetime().aborted) return;
           setAttachments([...ready]);
           saveDraft(user.id, roomId, { body: draft, attachments: ready }, threadRootId);
         }
@@ -184,7 +181,7 @@ function MessageTimeline({
         if (nonce.current?.fingerprint !== fingerprint) nonce.current = { fingerprint, id: crypto.randomUUID() };
         saveDraft(user.id, roomId, { body: draft, attachments: ready, nonce: nonce.current.id, fingerprint }, threadRootId);
         await writeMessage(roomId, body, reply?.id, undefined, ids, nonce.current.id, threadRootId);
-        if (lifetime.current.signal.aborted) return;
+        if (lifetime().aborted) return;
         nonce.current = null;
         setAttachments([]);
         setDraft('');
@@ -261,11 +258,11 @@ function MessageTimeline({
         {!compactHeader && <span className="min-w-0 flex-1 truncate phone:text-sm phone:font-semibold">{label}</span>}
         {!threadRootId && <Button variant="ghost" size="icon-sm" className="phone:size-11" aria-label="Conversation threads" disabled={threadsLoading} onClick={() => {
           setThreadsOpen(!threadsOpen); setPinsOpen(false);
-          if (!threadsOpen) { setThreadsLoading(true); void loadThreads(roomId).catch((error) => { if (!lifetime.current.signal.aborted) onError(error instanceof Error ? error.message : 'Could not load threads'); }).finally(() => { if (!lifetime.current.signal.aborted) setThreadsLoading(false); }); }
+          if (!threadsOpen) { setThreadsLoading(true); void loadThreads(roomId).catch((error) => { if (!lifetime().aborted) onError(error instanceof Error ? error.message : 'Could not load threads'); }).finally(() => { if (!lifetime().aborted) setThreadsLoading(false); }); }
         }}><MessagesSquare size={14} /></Button>}
         {!threadRootId && <Button variant="ghost" size="icon-sm" className="phone:size-11" aria-label="Pinned messages" disabled={pinsLoading} onClick={() => {
           setPinsOpen(!pinsOpen); setThreadsOpen(false);
-          if (!pinsOpen) { setPinsLoading(true); void loadPins(roomId).catch((error) => { if (!lifetime.current.signal.aborted) onError(error instanceof Error ? error.message : 'Could not load pins'); }).finally(() => { if (!lifetime.current.signal.aborted) setPinsLoading(false); }); }
+          if (!pinsOpen) { setPinsLoading(true); void loadPins(roomId).catch((error) => { if (!lifetime().aborted) onError(error instanceof Error ? error.message : 'Could not load pins'); }).finally(() => { if (!lifetime().aborted) setPinsLoading(false); }); }
         }}><Pin size={14} /></Button>}
         <Button
           variant="ghost"
@@ -302,7 +299,7 @@ function MessageTimeline({
       {threadsOpen && !threadRootId && <section className="max-h-56 shrink-0 overflow-auto border-b p-3" aria-label="Conversation threads">
         {!chat.threads?.length && <p className="text-xs text-muted-foreground">{threadsLoading ? 'Loading threads…' : 'No threads yet. Open a thread from a message.'}</p>}
         {chat.threads?.map((message) => <button key={message.id} type="button" className="mb-2 block w-full rounded-lg border p-2 text-left text-xs hover:bg-accent" onClick={() => { setThreadsOpen(false); onOpenThread(message); }}><strong>{message.author.name}</strong><span className="ml-2 line-clamp-2 whitespace-pre-wrap">{message.deleted_at ? 'Message deleted' : formatMessagePreview(message.body) || '[attachment]'}</span><span className="mt-1 block text-muted-foreground">{message.thread_reply_count ?? 0} replies{message.thread_unread_count ? ` · ${message.thread_unread_count} unread` : ''}</span></button>)}
-        {chat.threadBefore && <Button variant="outline" size="sm" disabled={threadsLoading} onClick={() => { setThreadsLoading(true); void loadThreads(roomId, true).catch((error) => { if (!lifetime.current.signal.aborted) onError(error instanceof Error ? error.message : 'Could not load threads'); }).finally(() => { if (!lifetime.current.signal.aborted) setThreadsLoading(false); }); }}>More threads</Button>}
+        {chat.threadBefore && <Button variant="outline" size="sm" disabled={threadsLoading} onClick={() => { setThreadsLoading(true); void loadThreads(roomId, true).catch((error) => { if (!lifetime().aborted) onError(error instanceof Error ? error.message : 'Could not load threads'); }).finally(() => { if (!lifetime().aborted) setThreadsLoading(false); }); }}>More threads</Button>}
       </section>}
       {pinsOpen && !threadRootId && <section className="max-h-48 shrink-0 overflow-auto border-b p-3" aria-label="Pinned messages">
         {!chat.pins?.length && <p className="text-xs text-muted-foreground">{pinsLoading ? 'Loading pins…' : 'No pinned messages.'}</p>}

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Cable, Headphones, LogOut, Mic, MonitorUp, SlidersHorizontal, SunMoon, Shield, Monitor } from 'lucide-react';
+import { Cable, Headphones, LogOut, Mic, MonitorUp, SlidersHorizontal, SunMoon, Shield, Monitor, UserRound } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import {
@@ -12,6 +12,7 @@ import type { User } from '@/api';
 import { getDesktopRuntime } from '@/desktop/runtime';
 
 const pages = [
+  { id: 'profile', label: 'Profile', note: 'Your identity and availability', icon: UserRound },
   { id: 'audio', label: 'Audio', note: 'Quick call controls', icon: Mic },
   { id: 'voice', label: 'Voice & devices', note: 'Microphone, speakers and camera', icon: Headphones },
   { id: 'recording', label: 'Recording', note: 'Saved video quality', icon: MonitorUp },
@@ -36,7 +37,7 @@ export function SettingsDialog({ open, onOpenChange, user, noise, onNoiseChange,
   onSignOut: () => void;
 }) {
   const [page, setPage] = useState<SettingsPage>('audio');
-  const visiblePages = pages.filter((item) => (item.id !== 'desktop' || getDesktopRuntime() === 'wails') && (item.id !== 'account' || signedIn));
+  const visiblePages = pages.filter((item) => (item.id !== 'desktop' || getDesktopRuntime() === 'wails') && (!['account', 'profile'].includes(item.id) || signedIn));
   const current = pages.find((item) => item.id === page) ?? pages[0];
 
   return (

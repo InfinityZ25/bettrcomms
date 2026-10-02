@@ -80,9 +80,10 @@ test('chat, call activity, and friend availability update without polling', asyn
     expect(presencePolls).toBe(0);
 
     await ownerPage.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Friends' }).click();
-    await expect(ownerPage.getByText(`Online · ${guest.email}`)).toBeVisible({ timeout: 2_000 });
+    const contact = ownerPage.getByRole('dialog').getByRole('group', { name: `Friend ${guest.name}`, exact: true });
+    await expect(contact.getByText('Online', { exact: true })).toBeVisible({ timeout: 2_000 });
     await guestContext.close();
-    await expect(ownerPage.getByText(`Offline · ${guest.email}`)).toBeVisible({ timeout: 5_000 });
+    await expect(contact.getByText('Offline', { exact: true })).toBeVisible({ timeout: 5_000 });
   } finally {
     await Promise.allSettled([ownerContext.close(), guestContext.close()]);
   }

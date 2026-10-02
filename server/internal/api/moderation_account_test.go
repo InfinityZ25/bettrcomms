@@ -191,6 +191,21 @@ func TestModerationControlsIntegration(t *testing.T) {
 	if err = s.AcceptFriendRequest(friend.ID, member.ID); err != nil {
 		t.Fatal(err)
 	}
+	inviteToken := "moderation-banned-member-fixture"
+	invite, err := s.CreateInvite(room.ID, owner.ID, inviteToken, nil, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.PreviewInvite(inviteToken, member.ID); !errors.Is(err, ErrInviteUnavailable) {
+		t.Fatal("banned member could preview an invitation")
+	}
+	if _, _, err = s.RedeemInvite(inviteToken, member.ID); !errors.Is(err, ErrForbidden) {
+		t.Fatal("invitation restored banned membership")
+	}
+	var uses int
+	if err = s.DB.QueryRow(ctx, `SELECT uses FROM room_invites WHERE id=$1`, invite.ID).Scan(&uses); err != nil || uses != 0 {
+		t.Fatal("rejected invitation consumed a use")
+	}
 	if err = s.AddRoomMember(room.ID, owner.ID, member.ID); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("banned member rejoined: %v", err)
 	}
@@ -367,12 +382,33 @@ func TestAccountDeletionIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	username, bio := "delete_me", "Personal biography"
+	if _, err = s.UpdateProfile(owner.ID, ProfileUpdate{Username: &username, Bio: &bio}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.SetAvatar(owner.ID, []byte("avatar fixture")); err != nil {
+		t.Fatal(err)
+	}
+	friend, err := s.CreateFriendRequest(owner.ID, peer.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.AcceptFriendRequest(friend.ID, peer.ID); err != nil {
+		t.Fatal(err)
+	}
+	group, err := s.CreateGroup(owner.ID, "Keep group", []string{peer.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
 	room, err := s.CreateRoom(owner.ID, "Keep channel")
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, err = s.DB.Exec(ctx, `INSERT INTO room_members(room_id,user_id) VALUES($1,$2)`, room.ID, peer.ID)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.CreateInvite(room.ID, owner.ID, "deletion-invitation-fixture", nil, 10); err != nil {
 		t.Fatal(err)
 	}
 	message, err := s.WriteMessage(room.ID, owner.ID, "", "Personal text", "")
@@ -401,7 +437,7 @@ func TestAccountDeletionIntegration(t *testing.T) {
 		t.Fatalf("remaining history unavailable: %v", err)
 	}
 	deleted := history.Messages[0]
-	if deleted.ID != message.ID || deleted.DeletedAt == nil || deleted.Body != "" || deleted.Author.Name != "Deleted account" || deleted.Author.AvatarURL != nil {
+	if deleted.ID != message.ID || deleted.DeletedAt == nil || deleted.Body != "" || deleted.Author.Name != "Deleted account" || deleted.Author.AvatarURL != nil || deleted.Author.Username != nil || deleted.Author.Bio != "" {
 		t.Fatal("personal content or identity retained")
 	}
 	if _, _, err = s.AttachmentForMember(room.ID, peer.ID, attachment.ID); err == nil {
@@ -413,6 +449,20 @@ func TestAccountDeletionIntegration(t *testing.T) {
 	}
 	if _, err = s.CreateRoom(owner.ID, "After deletion"); err == nil {
 		t.Fatal("deleted account created new room")
+	}
+	var privateRows int
+	if err = s.DB.QueryRow(ctx, `SELECT (SELECT count(*) FROM user_avatars WHERE user_id=$1)+(SELECT count(*) FROM room_invites WHERE creator_id=$1)`, owner.ID).Scan(&privateRows); err != nil || privateRows != 0 {
+		t.Fatal("deleted account retained avatar bytes or invitations")
+	}
+	remainingGroup, err := s.RoomForMember(group.ID, peer.ID)
+	if err != nil || remainingGroup.OwnerID != peer.ID || remainingGroup.Role != "owner" {
+		t.Fatal("account deletion did not transfer group ownership")
+	}
+	if err = s.CreateSession(ctx, []byte("revive-deleted-session"), owner.ID, time.Now().Add(time.Hour)); !errors.Is(err, ErrForbidden) {
+		t.Fatal("legacy session creation resurrected a deleted account")
+	}
+	if _, err = s.SetAvatar(owner.ID, []byte("resurrect-avatar")); !errors.Is(err, ErrNotFound) {
+		t.Fatal("deleted account wrote avatar bytes")
 	}
 	replacement, err := s.UpsertDevUser("delete@example.test", "New account")
 	if err != nil || replacement.ID == owner.ID {

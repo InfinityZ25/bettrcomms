@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Phone, PhoneOff } from 'lucide-react';
 import type { CallParticipant, Room, User } from '@/api';
 import { Avatar } from '@/components/avatar';
 import { Button } from '@/components/ui/button';
 import { clearDesktopNotification, notifyDesktop } from '@/desktop/notifications';
-import { notificationSnapshot } from '@/features/chat/notificationSettings';
+import { notificationSnapshot, subscribeNotifications } from '@/features/chat/notificationSettings';
+import { isConversationRoom } from '@/features/shell/sections';
 import { loopSound, stopSound } from '@/media/sounds';
 import { roomLabel } from '@/features/rooms/RoomNavigation';
 import { useActiveCall } from './CallSessionContext';
@@ -40,6 +41,7 @@ export default function IncomingCall({
 }) {
   const call = useActiveCall();
   const { joined } = call;
+  const notifications = useSyncExternalStore(subscribeNotifications, notificationSnapshot);
   const [ringing, setRinging] = useState<Room | null>(null);
   const [answering, setAnswering] = useState<string | null>(null);
   // Rooms whose current call has already been dealt with: declined, answered,
@@ -48,7 +50,10 @@ export default function IncomingCall({
   const busy = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    const direct = rooms.filter((room) => (room.kind ?? 'channel') === 'direct');
+    const direct = rooms.filter((room) => isConversationRoom(room.kind));
+    const visible = new Set(direct.map((room) => room.id));
+    for (const id of busy.current) if (!visible.has(id)) busy.current.delete(id);
+    for (const id of settled.current) if (!visible.has(id)) settled.current.delete(id);
     let started: Room | null = null;
 
     for (const room of direct) {
@@ -62,30 +67,33 @@ export default function IncomingCall({
       }
       const wasBusy = busy.current.has(room.id);
       busy.current.add(room.id);
-      if (!wasBusy && !settled.current.has(room.id)) started = room;
+      if (!wasBusy && !settled.current.has(room.id)) {
+        if (notifications.dnd || notifications.rooms[room.id] === 'mute') settled.current.add(room.id);
+        else started = room;
+      }
     }
 
     // Your own call is never an incoming one, and neither is a room you left.
-    if (joined || !user) {
+    if (joined || !user || notifications.dnd) {
       setRinging(null);
       return;
     }
     if (started) setRinging(started);
     else
       setRinging((current) =>
-        current && busy.current.has(current.id) ? current : null,
+        current && busy.current.has(current.id) && notifications.rooms[current.id] !== 'mute' ? current : null,
       );
-  }, [rooms, presence, joined, user?.id]);
+  }, [rooms, presence, joined, user?.id, notifications.dnd, notifications.rooms]);
 
   // The sound and the toast belong to the ring, so they start and stop with it.
   useEffect(() => {
-    if (!ringing) {
+    if (!ringing || notifications.dnd) {
       stopSound('ringtone');
       return;
     }
     loopSound('ringtone');
     const name = roomLabel(ringing);
-    if (notificationSnapshot().alerts && (document.hidden || !document.hasFocus()))
+    if (notifications.alerts && (document.hidden || !document.hasFocus()))
       void notifyDesktop({
         id: `call:${ringing.id}`,
         title: `${name} is calling`,
@@ -101,7 +109,7 @@ export default function IncomingCall({
       stopSound('ringtone');
       void clearDesktopNotification(`call:${ringing.id}`);
     };
-  }, [ringing?.id]);
+  }, [ringing, notifications.dnd, notifications.alerts]);
 
   /*
     Answering is two steps: the call joins whichever room is open, so the room

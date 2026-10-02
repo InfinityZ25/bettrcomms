@@ -62,6 +62,7 @@ type API struct {
 	accessMu      sync.RWMutex
 	sfuMu         sync.Mutex
 	sfuLeases     map[*sfuLease]struct{}
+	presenceMu    sync.Mutex
 }
 type apiError struct {
 	Code    string `json:"code"`
@@ -251,7 +252,7 @@ func (a *API) authed(w http.ResponseWriter, r *http.Request) {
 			}
 			r.Body = io.NopCloser(bytes.NewReader(body))
 		}
-		if lifecycleMutation(r.Method, p) {
+		if lifecycleMutation(r.Method, p) || membershipMutation(r.Method, p) {
 			a.accessMu.Lock()
 			defer a.accessMu.Unlock()
 		} else {
@@ -268,7 +269,21 @@ func (a *API) authed(w http.ResponseWriter, r *http.Request) {
 	case p == "me/account" || p == "me/sessions" || strings.HasPrefix(p, "me/sessions/"):
 		a.account(w, r, u, p)
 	case r.Method == "GET" && p == "me":
+		if store, ok := a.Store.(ProfileStore); ok {
+			u.PresenceStatus, _ = store.Presence(u.ID)
+		}
 		a.json(w, 200, map[string]any{"user": u})
+	case p == "me" || p == "me/avatar" || p == "me/presence":
+		a.profile(w, r, u, p)
+	case strings.HasPrefix(p, "users/") && strings.HasSuffix(p, "/avatar"):
+		parts := strings.Split(p, "/")
+		if len(parts) == 3 {
+			a.avatar(w, r, u, parts[1])
+		} else {
+			a.fail(w, 404, "not_found", "avatar not found")
+		}
+	case strings.HasPrefix(p, "invites/"):
+		a.invite(w, r, u, strings.Split(p, "/"))
 	case r.Method == "GET" && p == "ice":
 		a.ice(w, u)
 	case r.Method == "GET" && p == "call-presence":
@@ -297,6 +312,8 @@ func (a *API) authed(w http.ResponseWriter, r *http.Request) {
 		a.result(w, map[string]any{"users": v}, e)
 	case p == "rooms":
 		a.rooms(w, r, u)
+	case p == "rooms/group" && r.Method == http.MethodPost:
+		a.createGroup(w, r, u)
 	case p == "rooms/direct" && r.Method == "POST":
 		var in struct {
 			UserID string `json:"user_id"`
@@ -304,6 +321,7 @@ func (a *API) authed(w http.ResponseWriter, r *http.Request) {
 		if !a.decode(w, r, &in) {
 			return
 		}
+		in.UserID = strings.ToLower(in.UserID)
 		v, e := a.Store.CreateDirectRoom(u.ID, in.UserID)
 		if e == nil {
 			a.Realtime.subscribeUser(v.ID, u.ID)
@@ -318,9 +336,9 @@ func (a *API) authed(w http.ResponseWriter, r *http.Request) {
 		a.friends(w, r, u)
 	case p == "friends/requests":
 		a.friendRequest(w, r, u)
-	case strings.HasPrefix(p, "friends/requests/") && strings.HasSuffix(p, "/accept"):
+	case r.Method == http.MethodPost && strings.HasPrefix(p, "friends/requests/") && strings.HasSuffix(p, "/accept"):
 		parts := strings.Split(p, "/")
-		requestID := parts[2]
+		requestID := strings.ToLower(parts[2])
 		_, requests, lookupErr := a.Store.ListFriends(u.ID)
 		if lookupErr != nil {
 			a.result(w, nil, lookupErr)
@@ -345,7 +363,7 @@ func (a *API) authed(w http.ResponseWriter, r *http.Request) {
 		}
 		a.result(w, map[string]bool{"ok": true}, e)
 	case strings.HasPrefix(p, "friends/") && r.Method == "DELETE":
-		otherID := strings.TrimPrefix(p, "friends/")
+		otherID := strings.ToLower(strings.TrimPrefix(p, "friends/"))
 		room, e := a.Store.DeleteFriendship(u.ID, otherID)
 		if e == nil {
 			a.Realtime.publishUser(u.ID, wire{Type: "friends.changed"})
@@ -356,6 +374,8 @@ func (a *API) authed(w http.ResponseWriter, r *http.Request) {
 				a.Realtime.unsubscribeUser(room, otherID)
 				a.Hub.disconnectRoomUser(room, u.ID)
 				a.Hub.disconnectRoomUser(room, otherID)
+				a.revokeSFU(room, u.ID, "")
+				a.revokeSFU(room, otherID, "")
 				a.Realtime.publishUser(u.ID, wire{Type: "rooms.changed"})
 				a.Realtime.publishUser(otherID, wire{Type: "rooms.changed"})
 			}
@@ -364,6 +384,29 @@ func (a *API) authed(w http.ResponseWriter, r *http.Request) {
 	default:
 		a.fail(w, 404, "not_found", "route not found")
 	}
+}
+
+// Socket registration shares this boundary until ACL changes commit and evict
+// stale subscriptions. Reads, message writes and live media do not take it.
+func membershipMutation(method, path string) bool {
+	if method == http.MethodPost {
+		if path == "rooms" || path == "rooms/group" || path == "rooms/direct" {
+			return true
+		}
+		if strings.HasPrefix(path, "privacy/blocks/") || strings.HasPrefix(path, "friends/requests/") && strings.HasSuffix(path, "/accept") || strings.HasPrefix(path, "dm-requests/") && strings.HasSuffix(path, "/accept") || strings.HasPrefix(path, "invites/") && strings.HasSuffix(path, "/join") {
+			return true
+		}
+		parts := strings.Split(path, "/")
+		return len(parts) == 3 && parts[0] == "rooms" && parts[2] == "members"
+	}
+	if method == http.MethodDelete {
+		if strings.HasPrefix(path, "privacy/blocks/") || strings.HasPrefix(path, "friends/") {
+			return true
+		}
+		parts := strings.Split(path, "/")
+		return len(parts) == 2 && parts[0] == "rooms" || len(parts) == 4 && parts[0] == "rooms" && parts[2] == "members"
+	}
+	return false
 }
 
 func (a *API) callPresence(w http.ResponseWriter, u User) {
@@ -488,6 +531,10 @@ func (a *API) room(w http.ResponseWriter, r *http.Request, u User, p []string) {
 		a.transferOwner(w, r, u, rid)
 		return
 	}
+	if len(p) >= 3 && p[2] == "invites" {
+		a.roomInvites(w, r, u, p)
+		return
+	}
 	if len(p) == 3 && p[2] == "attachments" && r.Method == "POST" {
 		a.uploadAttachment(w, r, u, rid)
 		return
@@ -584,16 +631,17 @@ func (a *API) room(w http.ResponseWriter, r *http.Request, u User, p []string) {
 		if !a.decode(w, r, &in) {
 			return
 		}
+		in.UserID = strings.ToLower(in.UserID)
 		e := a.Store.AddRoomMember(rid, u.ID, in.UserID)
 		if e == nil {
 			a.Realtime.subscribeUser(rid, in.UserID)
 			a.Realtime.publishRoom(rid, wire{Type: "rooms.changed"})
 		}
-		a.resultStatus(w, map[string]bool{"ok": true}, e, 201)
+		a.socialResult(w, map[string]bool{"ok": true}, e, 201)
 		return
 	}
 	if len(p) == 4 && p[2] == "members" && r.Method == "DELETE" {
-		target := p[3]
+		target := strings.ToLower(p[3])
 		e := a.Store.RemoveRoomMember(rid, u.ID, target)
 		if e == nil {
 			a.Realtime.publishRoom(rid, wire{Type: "rooms.changed"})
@@ -618,7 +666,11 @@ func (a *API) friendRequest(w http.ResponseWriter, r *http.Request, u User) {
 	var in struct {
 		UserID string `json:"user_id"`
 	}
-	if !a.decode(w, r, &in) || in.UserID == u.ID {
+	if !a.decode(w, r, &in) {
+		return
+	}
+	in.UserID = strings.ToLower(in.UserID)
+	if in.UserID == u.ID {
 		a.fail(w, 400, "invalid_user", "choose another user")
 		return
 	}

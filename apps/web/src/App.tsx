@@ -19,7 +19,7 @@ import CallDock from '@/features/call/CallDock';
 import CallAlerts from '@/features/call/CallAlerts';
 import IncomingCall from '@/features/call/IncomingCall';
 import RecordingNotice from '@/features/call/RecordingNotice';
-import { useCallPresence } from '@/features/call/useCallPresence';
+import { PresenceSession, useCallPresence } from '@/features/call/useCallPresence';
 import { onDesktopNotificationClick } from '@/desktop/notifications';
 import MessageThread from '@/features/chat/MessageThread';
 import MessageSearch from '@/features/chat/MessageSearch';
@@ -30,6 +30,10 @@ import FriendsDialog from '@/features/friends/FriendsDialog';
 import RecordingsLibrary from '@/features/recordings/RecordingsLibrary';
 import CreateRoomDialog from '@/features/rooms/CreateRoomDialog';
 import RoomSettings from '@/features/rooms/RoomSettings';
+import GroupConversationDialog from '@/features/rooms/GroupConversationDialog';
+import GroupMembersDialog from '@/features/rooms/GroupMembersDialog';
+import JoinInvitation, { EnterInvitation } from '@/features/rooms/JoinInvitation';
+import { useInvitation } from '@/features/rooms/useInvitation';
 import { useRooms } from '@/features/rooms/useRooms';
 import { SettingsDialog } from '@/components/settings-dialog';
 import { useCallPreferences } from '@/features/settings/useCallPreferences';
@@ -39,7 +43,7 @@ import RoomSidebar from '@/features/shell/RoomSidebar';
 import MobileRoomList from '@/features/shell/MobileRoomList';
 import { useAppViewport } from '@/hooks/useAppViewport';
 import { useMobileSwipeNavigation } from '@/hooks/useMobileSwipeNavigation';
-import { sectionForRoom, type Section } from '@/features/shell/sections';
+import { isConversationRoom, sectionForRoom, type Section } from '@/features/shell/sections';
 import SpacesRail from '@/features/shell/SpacesRail';
 import HomeScreen from '@/features/shell/HomeScreen';
 import WorkspaceScreen from '@/features/shell/WorkspaceScreen';
@@ -63,6 +67,9 @@ export default function App() {
     backToCall();
     setSettingsOpen(false);
     setFriendsOpen(false);
+    setCreateOpen(false);
+    setCreateGroupOpen(false);
+    setEnterInvitationOpen(false);
     setInviteRoom(null);
     setSettingsRoom(null);
     setMessageTarget(null);
@@ -78,11 +85,15 @@ export default function App() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
+  const [createGroupOpen, setCreateGroupOpen] = useState(false);
+  const [enterInvitationOpen, setEnterInvitationOpen] = useState(false);
+  const { invitation, chooseInvitation } = useInvitation();
   const [friendsOpen, setFriendsOpen] = useState(false);
   const [mobileBackRevision, markMobileBack] = useState(0);
   const returningOnMobile = () => markMobileBack((value) => value + 1);
   const [settingsRoom, setSettingsRoom] = useState<Room | null>(null);
   const [inviteRoom, setInviteRoom] = useState<Room | null>(null);
+  const currentSettingsRoom = rooms.find((candidate) => candidate.id === settingsRoom?.id);
   // Chrome only. The call itself is owned by CallSessionProvider below, which
   // outlives every screen; this is what the shell lays itself out against.
   const [call, setCall] = useState<CallChrome>({
@@ -198,7 +209,7 @@ export default function App() {
     wasInCall.current = callJoined;
   }, [callJoined]);
 
-  const inDirectRoom = Boolean(room && (room.kind ?? 'channel') === 'direct');
+  const inDirectRoom = Boolean(room && isConversationRoom(room.kind));
   /*
     A direct room has two shapes: the conversation with the whole canvas, and
     the call with the conversation beside it. The call never takes the whole
@@ -351,6 +362,7 @@ export default function App() {
       }}
     >
       {user && <MessagingSession key={user.id} userId={user.id} />}
+      {user && <PresenceSession key={user.id} user={user} />}
       {user && (
         <MessageSearch
           user={user}
@@ -506,6 +518,7 @@ export default function App() {
                         }
                         onCall={() => setCallOpen(true)}
                         onError={setError}
+                        onGroupInfo={() => setSettingsRoom(room)}
                       />
                     ) : (
                       user && (
@@ -536,6 +549,8 @@ export default function App() {
                   </div>
                 )}
                 {!user && (
+                  <div className="space-y-3">
+                  {invitation && <p className="rounded-xl border p-3 text-sm">Sign in to review your room invitation. <Button variant="ghost" size="sm" onClick={() => chooseInvitation(null)}>Dismiss invitation</Button></p>}
                   <SignInPanel
                     devAuth={devAuth}
                     busy={busy}
@@ -548,6 +563,7 @@ export default function App() {
                     onCancelSignIn={signIn.cancel}
                     signInStatus={signIn.status}
                   />
+                  </div>
                 )}
               </section>
             </main>
@@ -581,6 +597,7 @@ export default function App() {
                     }
                     onCall={() => setCallOpen(true)}
                     onError={setError}
+                    onGroupInfo={() => setSettingsRoom(room)}
                   />
                 </motion.div>
               )}
@@ -599,6 +616,8 @@ export default function App() {
                     onSelect={selectRoom}
                     onCreate={() => setCreateOpen(true)}
                     onFriends={() => setFriendsOpen(true)}
+                    onCreateGroup={() => setCreateGroupOpen(true)}
+                    onJoinInvitation={() => setEnterInvitationOpen(true)}
                     onSettings={setSettingsRoom}
                     onInvite={(next) => {
                       setInviteRoom(next);
@@ -676,6 +695,8 @@ export default function App() {
           hidden={immersive}
           onSelectRoom={selectRoom}
           onCreateRoom={() => setCreateOpen(true)}
+          onCreateGroup={() => setCreateGroupOpen(true)}
+          onJoinInvitation={() => setEnterInvitationOpen(true)}
           onRoomSettings={setSettingsRoom}
           onInviteToRoom={(next) => {
             setInviteRoom(next);
@@ -706,9 +727,9 @@ export default function App() {
           )}
         </AnimatePresence>
         <RoomSettings
-          room={settingsRoom}
+          room={settingsRoom?.kind === 'group' ? null : settingsRoom}
           user={user}
-          open={settingsRoom !== null}
+          open={settingsRoom !== null && settingsRoom.kind !== 'group'}
           onOpenChange={(next) => {
             if (!next) setSettingsRoom(null);
           }}
@@ -716,6 +737,14 @@ export default function App() {
           onError={setError}
           refreshRevision={presence.roomsRevision + presence.syncRevision}
         />
+        {user && currentSettingsRoom?.kind === 'group' && <GroupMembersDialog
+          key={`${user.id}:${currentSettingsRoom.id}:${currentSettingsRoom.owner_id}`}
+          room={currentSettingsRoom}
+          user={user} onClose={() => setSettingsRoom(null)} onChanged={refresh}
+        />}
+        {user && createGroupOpen && <GroupConversationDialog key={user.id} onClose={() => setCreateGroupOpen(false)} onCreated={async (created) => { openRoom(created); selectRoom(created); refresh(); }} />}
+        {user && enterInvitationOpen && <EnterInvitation onClose={() => setEnterInvitationOpen(false)} onChoose={(token) => { chooseInvitation(token); setEnterInvitationOpen(false); }} />}
+        {user && invitation && <JoinInvitation key={`${user.id}:${invitation}`} token={invitation} onClose={() => chooseInvitation(null)} onJoined={async (joined) => { openRoom(joined); selectRoom(joined); chooseInvitation(null); refresh(); }} />}
         <CreateRoomDialog
           open={createOpen}
           onOpenChange={setCreateOpen}
@@ -760,6 +789,7 @@ export default function App() {
           room={inviteRoom ?? room}
           callPresence={presence.rooms}
           onlineUsers={presence.onlineUsers}
+          contactStatuses={presence.contactStatuses}
           refreshRevision={presence.friendsRevision + presence.syncRevision}
           onError={setError}
           onOpenRoom={(next) => {

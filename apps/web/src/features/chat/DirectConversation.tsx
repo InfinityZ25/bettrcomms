@@ -4,6 +4,7 @@ import {
   MoreHorizontal,
   Phone,
   Search,
+  Users,
 } from 'lucide-react';
 import { type Message, type Room, type User } from '@/api';
 import { Avatar } from '@/components/avatar';
@@ -40,6 +41,7 @@ export default function DirectConversation({
   onBack,
   targetId,
   onError,
+  onGroupInfo,
 }: {
   room: Room;
   user: User | null;
@@ -54,6 +56,7 @@ export default function DirectConversation({
   onClose?: () => void;
   onBack?: () => void;
   onError: (message: string) => void;
+  onGroupInfo?: () => void;
   targetId?: string;
 }) {
   const call = useActiveCall();
@@ -89,7 +92,7 @@ export default function DirectConversation({
             {name}
           </strong>
           <span className="text-[0.65rem] text-muted-foreground phone:text-xs">
-            {inThisCall ? 'In a call with you' : 'Direct message'}
+            {inThisCall ? 'In a call with you' : room.kind === 'group' ? 'Group message' : 'Direct message'}
           </span>
         </div>
         {/* The one place the conversation reaches for the call: pressing this
@@ -108,6 +111,7 @@ export default function DirectConversation({
             <Phone size={15} /> Call
           </Button>
         )}
+        {room.kind === 'group' && onGroupInfo && <Button variant="ghost" size="icon" aria-label="Group info" onClick={onGroupInfo}><Users size={18} /></Button>}
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
@@ -155,7 +159,8 @@ export default function DirectConversation({
           user={user}
           label={name}
           compactHeader
-          canPin={room.kind === 'direct' || room.owner_id === user.id}
+          canPin={room.kind !== 'channel' || room.owner_id === user.id}
+          canModerate={room.kind === 'group' && room.owner_id === user.id}
           targetId={targetId}
           onError={onError}
         />

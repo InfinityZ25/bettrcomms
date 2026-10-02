@@ -5,6 +5,7 @@ import {
   notifyBrowser,
   setSystemNotifications,
   setDoNotDisturb,
+  setAccountDoNotDisturb,
   setRoomNotificationMode,
   startNotificationSession,
 } from './notificationSettings';
@@ -18,6 +19,7 @@ vi.mock('@/desktop/notifications', () => ({
 
 let stop: (() => void) | undefined;
 afterEach(() => {
+  setAccountDoNotDisturb('user', false);
   stop?.();
   stop = undefined;
   vi.useRealTimers();
@@ -28,6 +30,23 @@ afterEach(() => {
 });
 
 describe('notification preferences', () => {
+  it('combines account DND with device quiet mode without overwriting its saved setting', () => {
+    const saved = new Map<string, string>();
+    vi.stubGlobal('localStorage', { getItem: (key: string) => saved.get(key) ?? null, setItem: (key: string, value: string) => { saved.set(key, value); } });
+    vi.mocked(api).mockResolvedValue({ rooms: {} });
+    setAccountDoNotDisturb('user', true);
+    stop = startNotificationSession('user');
+    expect(notificationSnapshot()).toMatchObject({ dnd: true, localDnd: false, accountDnd: true });
+    expect(saved.size).toBe(0);
+    setDoNotDisturb(true);
+    setAccountDoNotDisturb('user', false);
+    expect(notificationSnapshot()).toMatchObject({ dnd: true, localDnd: true, accountDnd: false });
+    setDoNotDisturb(false);
+    expect(notificationSnapshot().dnd).toBe(false);
+    stop();
+    stop = startNotificationSession('other');
+    expect(notificationSnapshot()).toMatchObject({ dnd: false, localDnd: false, accountDnd: false });
+  });
   it('keeps a saved mode when an older preference request finishes later', async () => {
     let finishLoad!: (value: { rooms: Record<string, 'all' | 'mentions' | 'mute'> }) => void;
     vi.mocked(api).mockImplementation((_path, _body, method) =>

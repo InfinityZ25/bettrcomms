@@ -1,6 +1,6 @@
 import { openMessageSearch } from '@/features/chat/searchEvents';
 import { useEffect } from 'react';
-import { Headphones, Plus, Search, X } from 'lucide-react';
+import { Headphones, Link, Plus, Search, X } from 'lucide-react';
 import { Avatar } from '@/components/avatar';
 import { Mascot } from '@/components/mascot';
 import { Button } from '@/components/ui/button';
@@ -21,7 +21,7 @@ import {
 import RoomNavigation, { roomLabel } from '@/features/rooms/RoomNavigation';
 import type { CallParticipant, Room, User } from '@/api';
 import type { Screen } from './useScreenRoute';
-import type { Section } from './sections';
+import { isConversationRoom, type Section } from './sections';
 import { motion } from 'motion/react';
 import { softSpring } from '@/lib/motion';
 
@@ -45,6 +45,8 @@ export default function RoomSidebar({
   hidden,
   onSelectRoom,
   onCreateRoom,
+  onCreateGroup,
+  onJoinInvitation,
   onRoomSettings,
   onInviteToRoom,
   onRoomsChanged,
@@ -60,6 +62,8 @@ export default function RoomSidebar({
   hidden: boolean;
   onSelectRoom: (room: Room) => void;
   onCreateRoom: () => void;
+  onCreateGroup: () => void;
+  onJoinInvitation: () => void;
   onRoomSettings: (room: Room) => void;
   onInviteToRoom: (room: Room) => void;
   onRoomsChanged: () => void;
@@ -78,12 +82,12 @@ export default function RoomSidebar({
   const messages = section === 'messages';
   const listed = rooms.filter(
     (candidate) =>
-      (candidate.kind ?? 'channel') === (messages ? 'direct' : 'channel'),
+      messages ? isConversationRoom(candidate.kind) : !isConversationRoom(candidate.kind),
   );
   // The profile belongs to the conversation you are in, not to whatever is
   // selected elsewhere: a room selected in Calls is not a person.
   const conversation =
-    messages && room && (room.kind ?? 'channel') === 'direct' ? room : null;
+    messages && room && isConversationRoom(room.kind) ? room : null;
 
   const sidebarContent = (
     <>
@@ -107,9 +111,12 @@ export default function RoomSidebar({
         </h2>
         <p className="text-[0.65rem] leading-4 text-muted-foreground">
           {messages
-            ? 'Your direct conversations.'
+            ? 'Your private conversations.'
             : 'Rooms you and your friends call in.'}
         </p>
+        {user && <Button variant="ghost" size="sm" aria-label={messages ? 'New group message' : 'Join with invitation'} onClick={() => { setOpenMobile(false); if (messages) onCreateGroup(); else onJoinInvitation(); }}>
+          {messages ? <Plus size={14} /> : <Link size={14} />}{messages ? 'New group' : 'Join with link'}
+        </Button>}
       </SidebarHeader>
 
       <SidebarContent className="px-1">
@@ -252,7 +259,7 @@ function ConversationProfile({
         </Badge>
       ) : (
         <span className="mt-1 block text-[0.65rem] text-muted-foreground">
-          Direct message
+          {room.kind === 'group' ? 'Group message' : 'Direct message'}
         </span>
       )}
     </section>

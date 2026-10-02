@@ -6,16 +6,10 @@ import { thinking } from "blobatar/expression";
 import { cn } from "@/lib/utils";
 
 /**
- * Four states, and no `busy`.
- *
- * `busy` was here and is gone on purpose. Against `thinking` it was the same
- * claim in a different colour — both mean "this person or agent is occupied
- * right now" — and a status vocabulary whose two middle values need a legend
- * to tell apart is a vocabulary with one value too many. What is left is three
- * facts about availability and one about activity, which is a distinction
- * somebody can actually read off a badge.
+ * Availability and the separate transient thinking indicator.
+ * Do not disturb represents an account notification preference, not activity.
  */
-export type PresenceState = "online" | "away" | "offline" | "thinking";
+export type PresenceState = "online" | "away" | "idle" | "dnd" | "offline" | "thinking";
 
 /**
  * What each state looks like and what it is called.
@@ -32,6 +26,8 @@ export type PresenceState = "online" | "away" | "offline" | "thinking";
 const PRESENCE: Record<PresenceState, { dot?: string; label: string }> = {
   online: { dot: "bg-emerald-500", label: "online" },
   away: { dot: "bg-amber-500", label: "away" },
+  idle: { dot: "bg-amber-500", label: "away" },
+  dnd: { dot: "bg-red-500", label: "do not disturb" },
   offline: { dot: "bg-zinc-600", label: "offline" },
   thinking: { label: "thinking" },
 };

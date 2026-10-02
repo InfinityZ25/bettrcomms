@@ -107,6 +107,9 @@ func (s *PostgresStore) DeleteAccount(ctx context.Context, user string) ([]strin
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
+	if err = lockGroupMembership(ctx, tx); err != nil {
+		return nil, err
+	}
 	var id string
 	if err = tx.QueryRow(ctx, `SELECT id::text FROM users WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, user).Scan(&id); err != nil {
 		return nil, norm(err)
@@ -136,10 +139,23 @@ func (s *PostgresStore) DeleteAccount(ctx context.Context, user string) ([]strin
 	if err != nil {
 		return nil, err
 	}
+	for _, room := range rooms {
+		var kind string
+		if err = tx.QueryRow(ctx, `SELECT kind FROM rooms WHERE id=$1`, room).Scan(&kind); err != nil {
+			return nil, err
+		}
+		if kind == "group" {
+			if err = removeMemberTx(ctx, tx, room, user, user); err != nil {
+				return nil, err
+			}
+		}
+	}
 	// Keep anonymous author/audit references. Personal content and device access
 	// disappear atomically; S3 object keys survive for the bounded cleanup worker.
 	for _, sql := range []string{
-		`UPDATE users SET deleted_at=clock_timestamp(),workos_user_id=NULL,email='deleted-'||id::text||'@invalid.local',name='Deleted account',avatar_url=NULL,updated_at=clock_timestamp() WHERE id=$1`,
+		`UPDATE users SET deleted_at=clock_timestamp(),workos_user_id=NULL,email='deleted-'||id::text||'@invalid.local',name='Deleted account',username=NULL,bio='',avatar_url=NULL,profile_edited=true,avatar_edited=true,profile_version=profile_version+1,avatar_version=avatar_version+1,presence_status='invisible',allow_dm_requests=false,updated_at=clock_timestamp() WHERE id=$1`,
+		`DELETE FROM user_avatars WHERE user_id=$1`,
+		`DELETE FROM room_invites WHERE creator_id=$1`,
 		`DELETE FROM sessions WHERE user_id=$1`,
 		`UPDATE messages SET body='',deleted_at=COALESCE(deleted_at,clock_timestamp()),version=version+1 WHERE author_id=$1`,
 		`UPDATE message_attachments SET deleted_at=clock_timestamp(),uploader_id=NULL WHERE uploader_id=$1`,

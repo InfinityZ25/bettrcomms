@@ -1,7 +1,7 @@
 # Bettercomms server protocol (v1)
 
 All API responses are JSON. Errors use `{ "error": { "code": "...", "message": "..." } }`.
-Mutating requests require `Content-Type: application/json`. Authentication uses an opaque, `HttpOnly`, `SameSite=Lax` session cookie whose SHA-256 hash and expiry are stored in PostgreSQL. Production sessions are issued only after a WorkOS OAuth callback. `DEV_AUTH=true` enables `POST /api/v1/auth/dev` only when the request host and remote address are loopback.
+Mutating requests require `Content-Type: application/json`, except avatar/attachment uploads, which use multipart form data. Authentication uses an opaque, `HttpOnly`, `SameSite=Lax` session cookie whose SHA-256 hash and expiry are stored in PostgreSQL. Production sessions are issued only after a WorkOS OAuth callback. `DEV_AUTH=true` enables `POST /api/v1/auth/dev` only when the request host and remote address are loopback.
 
 Browser mutation origins must match `APP_URL`; requests marked cross-site are rejected. Native clients without an `Origin` header authenticate through the same cookie contract. WebSocket handshakes accept configured local application origins and still require room membership.
 
@@ -14,7 +14,15 @@ Browser mutation origins must match `APP_URL`; requests marked cross-site are re
 - `POST /api/v1/auth/logout` clears the session.
 - `GET /api/v1/config` is public and returns `{ "dev_auth": boolean, "ice_servers": [{ "urls": [...] }] }`; it never returns ICE credentials or server secrets.
 - `GET /api/v1/ice` is authenticated and returns STUN plus short-lived coturn REST credentials as `{ "ice_servers": [...], "ttl_seconds": 600 }`.
-- `GET /api/v1/users?q=alice` searches users by email or display name for friend discovery.
+- `GET /api/v1/users?q=alice` searches users by email, display name or username for friend discovery.
+
+### Profile and account presence
+
+- `PATCH /api/v1/me` accepts any of `{name,username,bio}` and returns `{user}`. Names are trimmed, 1–80 characters. Usernames are normalized to lowercase and use 3–32 ASCII letters, digits or underscores; duplicate names return `409 username_taken`. Bios allow 160 characters. An edited profile survives later identity-provider and development sign-ins. Each explicit profile/avatar mutation increments `user.profile_version`; clients discard lower-version mutation responses/events so concurrent device edits cannot restore a stale profile.
+- `POST /api/v1/me/avatar` accepts multipart `file`, a PNG/JPEG up to 256 KiB and four million decoded pixels. The server crops/scales to at most 256×256 and re-encodes PNG, discarding source metadata. `{user}` contains a versioned relative `/api/v1/users/{id}/avatar?version=N` URL; no arbitrary upload URL or data URI is accepted. `DELETE /api/v1/me/avatar` removes the image and returns `{user}`. Explicit removal survives provider refreshes.
+- `GET /api/v1/users/{id}/avatar` requires authentication plus own-account, friend/request, or authorized shared-room access, with blocks respected. This binary PNG endpoint has `Cache-Control: no-store`; clients may retain bounded, account-scoped blob caches and must release them at logout/version change.
+- `GET /api/v1/me/presence` returns `{status}`. `PUT` accepts `{status: "online"|"idle"|"dnd"|"invisible"}`. This is a manual account preference persisted across devices; it does not poll other applications. Account DND clears queued push and prevents new push, regardless of device subscription settings. Message history and realtime synchronization continue during DND.
+- Effective contact presence aggregates all event sockets: the last disconnect becomes `offline`; invisible appears offline to contacts. The desired preference is disclosed only to the account's own devices, not in public user payloads. Closing one of several connected windows does not mark the account offline.
 
 ### Desktop sign-in hand-off
 
@@ -30,14 +38,34 @@ A packaged desktop client cannot host the provider's UI in its own webview, so i
 - `GET /api/v1/rooms` lists rooms the caller belongs to.
 - `POST /api/v1/rooms` with `{ "name": "Friday night" }` creates a room and makes the caller its owner.
 - `POST /api/v1/rooms/direct` with `{ "user_id": "..." }` returns an idempotent direct-message room for an accepted friend pair.
+- `POST /api/v1/rooms/group` with `{ "name": "Friends", "user_ids": ["..."] }` creates a private group DM with one to nine invited friends and the creator (ten people maximum). The creator must be friends with each invitee and no pair may have a block. Group identity is separate from two-person direct-room keys.
 - `GET /api/v1/rooms/{room_id}` returns a room to members only.
-- `PATCH /api/v1/rooms/{room_id}` with `{ "name": "..." }` renames a channel; owner only.
+- `PATCH /api/v1/rooms/{room_id}` with `{ "name": "..." }` renames a channel or group DM; owner only.
 - `DELETE /api/v1/rooms/{room_id}` deletes a room; owner only.
 - `GET /api/v1/rooms/{room_id}/members` returns `{ "members": [{ "user": {...}, "role": "owner|member", "joined_at": "..." }] }` to room members only.
 - `POST /api/v1/rooms/{room_id}/members` with `{ "user_id": "..." }` adds an accepted friend; owner only.
-- `DELETE /api/v1/rooms/{room_id}/members/{user_id}` removes a member; the owner may remove members and a member may remove themself. The owner cannot be removed without deleting the room.
+- `DELETE /api/v1/rooms/{room_id}/members/{user_id}` removes a member; the owner may remove members and a member may remove themself. Channel owners must delete their room instead. Group owners may leave; ownership transfers to the earliest joined remaining member, breaking ties by UUID. An empty group is deleted. Blocking someone automatically leaves any shared group DMs, transfers ownership if needed, and evicts the blocker from live subscriptions/calls. Friend removal alone does not undo an explicit group invitation.
 - `GET /api/v1/rooms/{room_id}/messages?before=<RFC3339>&limit=50` returns newest messages in ascending presentation order.
 - `POST /api/v1/rooms/{room_id}/messages` with `{ "body": "..." }` persists and broadcasts a chat message.
+
+### Channel invitation links
+
+Channel owners manage these links; direct and group DMs use their own invitation rules.
+
+- `GET /api/v1/rooms/{id}/invites` returns `{invites:[{id,room_id,created_at,expires_at,max_uses,uses,revoked_at}]}` with active links first, then history, up to 100 records. Tokens are never included in the list. Each room permits at most 20 active links; atomic creation returns `409 invite_limit` until one is revoked, exhausted or expired. Historical links cannot hide a still-active link from revocation.
+- `POST /api/v1/rooms/{id}/invites` accepts optional `{expires_in_seconds,max_uses}`. Defaults are seven days and 100 uses; zero means unlimited. Maximums are 30 days and 1000 uses. Returns `201 {invite,token,url}` once, where `url` uses the configured application origin and `#/?invite=<token>` fragment. The 256-bit random token is stored only as SHA-256.
+- `DELETE /api/v1/rooms/{id}/invites/{invite_id}` revokes the link. Removing the room also deletes its links.
+- `GET /api/v1/invites/{token}` requires sign-in and returns minimal `{invite:{room_id,room_name,expires_at,remaining_uses,already_member}}`; unlimited remaining uses are `null`. It exposes no roster/history. Expired, revoked or exhausted links return `404 invite_unavailable`. A member can preview an exhausted link while it remains unrevoked/unexpired.
+- `POST /api/v1/invites/{token}/join` returns `{room}`. A successful new membership consumes one use atomically; simultaneous joins cannot overspend a use limit and repeat joins by an existing member consume none. A block between the owner and joining user prevents redemption. This grants channel membership without creating a friendship.
+- The app must retain a pending invitation locally through sign-in, ask the authenticated person to join, and remove the token from the address bar after handling it. Do not log tokens or put them in query strings/referrers.
+
+## App-wide realtime stream
+
+`GET /api/v1/events` retains the existing authenticated socket and room-derived subscriptions. `app.ready` includes existing call `presence` and `online_user_ids`, plus `contact_presence: [{user_id,online,status}]` and `own_presence:{status}`. Contact status is effective `online|idle|dnd|offline`; own status also allows `invisible`.
+
+`user.presence` has `{user_id,online,status}` and includes `desired_status` only for the user's own sockets. `user.profile` carries `{user}` to authorized subscribed contacts, room members and all own sockets after a committed edit; public user objects omit `presence_status`. Clients invalidate/update profile, friendship and room-member caches without additional presence polling. Room membership changes keep using `rooms.changed`.
+
+Within the current single API process, realtime/call socket ACL snapshots, registration and their bounded initial write share a registration boundary with membership/contact mutations through their live revocation. A removal cannot complete and then be undone by an older handshake registering stale subscriptions. Body upload occurs before acquiring this boundary. Message/media processing has no per-event authorization polling or global membership lock.
 
 ## Friends
 
@@ -74,7 +102,7 @@ Server frames:
 
 `offer`, `answer`, `ice-candidate`, and `track-metadata` are relayed unchanged except that the server supplies the authenticated device peer as `from`. A legacy `signal` envelope is also accepted. Signals are ephemeral and relayed only to a currently connected target in the same room. Presence is ephemeral, grouped by account for room rosters, and includes `device_count`; media routing remains per device. Messages, membership, and friendships are persisted in PostgreSQL. Older clients that omit `peer_id` retain the single-device replacement behavior.
 
-In v1, a `channel` room is the conversation container that future community/server channels will reference. Communities themselves are outside the current protocol. A `direct` room is a persistent, unique conversation for one accepted friend pair.
+In v1, a `channel` room is the conversation container that future community/server channels will reference. Communities themselves are outside the current protocol. A `direct` room is a persistent, unique conversation for one authorized pair. A `group` room is a private conversation with explicit owner-managed invitations and at most ten people.
 
 Successful REST envelopes use the resource name: `{ "user": ... }`, `{ "users": [...] }`, `{ "room": ... }`, `{ "rooms": [...] }`, `{ "message": ... }`, `{ "messages": [...] }`, `{ "request": ... }`, or `{ "friends": [...], "requests": [...] }`. Action-only responses use `{ "ok": true }`.
 

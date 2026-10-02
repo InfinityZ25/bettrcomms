@@ -28,7 +28,7 @@ func (s *PostgresStore) ReportMessage(room, user, id, reason string) error {
 
 func (s *PostgresStore) ListMessageReports(room, user string) ([]MessageReport, error) {
 	var owner string
-	if err := s.DB.QueryRow(context.Background(), `SELECT owner_id::text FROM rooms WHERE id=$1 AND kind='channel'`, room).Scan(&owner); err != nil {
+	if err := s.DB.QueryRow(context.Background(), `SELECT owner_id::text FROM rooms WHERE id=$1 AND kind IN('channel','group')`, room).Scan(&owner); err != nil {
 		return nil, norm(err)
 	}
 	if owner != user {
@@ -63,7 +63,7 @@ func (s *PostgresStore) ModerateMessage(room, actor, id, reason string) (Message
 		return Message{}, err
 	}
 	var owner string
-	if err = tx.QueryRow(ctx, `SELECT owner_id::text FROM rooms WHERE id=$1 AND kind='channel' FOR SHARE`, room).Scan(&owner); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT owner_id::text FROM rooms WHERE id=$1 AND kind IN('channel','group') FOR SHARE`, room).Scan(&owner); err != nil {
 		return Message{}, norm(err)
 	}
 	if owner != actor {
@@ -110,7 +110,7 @@ func (s *PostgresStore) DismissMessageReport(room, actor, reportID string) error
 	}
 	defer tx.Rollback(ctx)
 	var owner string
-	if err = tx.QueryRow(ctx, `SELECT owner_id::text FROM rooms WHERE id=$1 AND kind='channel' FOR SHARE`, room).Scan(&owner); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT owner_id::text FROM rooms WHERE id=$1 AND kind IN('channel','group') FOR SHARE`, room).Scan(&owner); err != nil {
 		return norm(err)
 	}
 	if owner != actor {

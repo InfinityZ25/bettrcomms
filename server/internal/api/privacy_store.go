@@ -32,7 +32,7 @@ func (s *PostgresStore) DMPrivacy(user string) (bool, []User, error) {
 	if err := s.DB.QueryRow(ctx, `SELECT allow_dm_requests FROM users WHERE id=$1`, user).Scan(&allow); err != nil {
 		return false, nil, norm(err)
 	}
-	rows, err := s.DB.Query(ctx, `SELECT u.id::text,u.email,u.name,u.avatar_url,u.created_at FROM user_blocks b JOIN users u ON u.id=b.blocked_id WHERE b.blocker_id=$1 ORDER BY u.name`, user)
+	rows, err := s.DB.Query(ctx, `SELECT u.id::text,u.email,u.name,u.avatar_url,u.created_at,u.username,u.bio,u.profile_version FROM user_blocks b JOIN users u ON u.id=b.blocked_id WHERE b.blocker_id=$1 ORDER BY u.name`, user)
 	if err != nil {
 		return false, nil, err
 	}
@@ -40,7 +40,7 @@ func (s *PostgresStore) DMPrivacy(user string) (bool, []User, error) {
 	blocked := []User{}
 	for rows.Next() {
 		var item User
-		if err = rows.Scan(&item.ID, &item.Email, &item.Name, &item.AvatarURL, &item.CreatedAt); err != nil {
+		if err = rows.Scan(&item.ID, &item.Email, &item.Name, &item.AvatarURL, &item.CreatedAt, &item.Username, &item.Bio, &item.ProfileVersion); err != nil {
 			return false, nil, err
 		}
 		blocked = append(blocked, item)
@@ -54,40 +54,72 @@ func (s *PostgresStore) SetDMRequestsAllowed(user string, allowed bool) error {
 }
 
 func (s *PostgresStore) BlockUser(user, target string) (string, error) {
+	room, _, err := s.BlockUserWithGroups(user, target)
+	return room, err
+}
+
+func (s *PostgresStore) BlockUserWithGroups(user, target string) (string, []string, error) {
+	user, target = strings.ToLower(user), strings.ToLower(target)
 	if user == target {
-		return "", ErrForbidden
+		return "", nil, ErrForbidden
 	}
 	ctx := context.Background()
 	tx, err := s.DB.Begin(ctx)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	defer tx.Rollback(ctx)
+	if err = lockGroupMembership(ctx, tx); err != nil {
+		return "", nil, err
+	}
 	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,1))`, directPairKey(user, target)); err != nil {
-		return "", err
+		return "", nil, err
 	}
 	var exists bool
 	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE id=$1)`, target).Scan(&exists); err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if !exists {
-		return "", ErrNotFound
+		return "", nil, ErrNotFound
 	}
 	if _, err = tx.Exec(ctx, `INSERT INTO user_blocks(blocker_id,blocked_id) VALUES($1,$2) ON CONFLICT DO NOTHING`, user, target); err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if _, err = tx.Exec(ctx, `DELETE FROM friend_requests WHERE (sender_id=$1 AND receiver_id=$2) OR (sender_id=$2 AND receiver_id=$1)`, user, target); err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if _, err = tx.Exec(ctx, `UPDATE dm_requests SET status='declined',updated_at=now() WHERE status IN ('pending','accepted') AND ((sender_id=$1 AND receiver_id=$2) OR (sender_id=$2 AND receiver_id=$1))`, user, target); err != nil {
-		return "", err
+		return "", nil, err
+	}
+	groups, err := tx.Query(ctx, `SELECT mine.room_id::text FROM room_members mine JOIN room_members theirs ON theirs.room_id=mine.room_id JOIN rooms r ON r.id=mine.room_id WHERE mine.user_id=$1 AND theirs.user_id=$2 AND r.kind='group' ORDER BY mine.room_id`, user, target)
+	if err != nil {
+		return "", nil, err
+	}
+	groupIDs := []string{}
+	for groups.Next() {
+		var id string
+		if err = groups.Scan(&id); err != nil {
+			groups.Close()
+			return "", nil, err
+		}
+		groupIDs = append(groupIDs, id)
+	}
+	err = groups.Err()
+	groups.Close()
+	if err != nil {
+		return "", nil, err
+	}
+	for _, id := range groupIDs {
+		if err = removeMemberTx(ctx, tx, id, user, user); err != nil {
+			return "", nil, err
+		}
 	}
 	var room string
 	err = tx.QueryRow(ctx, `SELECT id::text FROM rooms WHERE direct_key=$1`, directPairKey(user, target)).Scan(&room)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return "", err
+		return "", nil, err
 	}
-	return room, tx.Commit(ctx)
+	return room, groupIDs, tx.Commit(ctx)
 }
 
 func (s *PostgresStore) UnblockUser(user, target string) error {

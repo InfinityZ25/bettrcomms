@@ -27,7 +27,7 @@ type MessagingStore interface {
 var mentionPattern = regexp.MustCompile(`<@([0-9a-fA-F-]{36})>`)
 
 const messageSelect = `SELECT m.id::text,m.room_id::text,m.body,m.created_at,m.sequence,m.version,m.edited_at,m.deleted_at,
- u.id::text,u.email,u.name,u.avatar_url,u.created_at,
+ u.id::text,u.email,u.name,u.avatar_url,u.created_at,u.username,u.bio,u.profile_version,
  CASE WHEN parent.id IS NOT NULL THEN jsonb_build_object('id',parent.id,'name',pu.name,'body',left(parent.body,400),'deleted',parent.deleted_at IS NOT NULL) END,
  COALESCE((SELECT jsonb_agg(jsonb_build_object('id',mu.id,'name',mu.name) ORDER BY mu.id) FROM message_mentions mm JOIN users mu ON mu.id=mm.user_id WHERE mm.message_id=m.id),'[]'),
  COALESCE((SELECT jsonb_agg(jsonb_build_object('emoji',r.emoji,'users',r.users) ORDER BY r.emoji) FROM (SELECT emoji,jsonb_agg(user_id::text ORDER BY user_id) users FROM message_reactions WHERE message_id=m.id GROUP BY emoji) r),'[]'),
@@ -40,7 +40,7 @@ func scanMessage(row pgx.Row) (Message, error) {
 	var m Message
 	var reply, mentions, reactions, attachments []byte
 	err := row.Scan(&m.ID, &m.RoomID, &m.Body, &m.CreatedAt, &m.Sequence, &m.Version, &m.EditedAt, &m.DeletedAt,
-		&m.Author.ID, &m.Author.Email, &m.Author.Name, &m.Author.AvatarURL, &m.Author.CreatedAt, &reply, &mentions, &reactions, &attachments,
+		&m.Author.ID, &m.Author.Email, &m.Author.Name, &m.Author.AvatarURL, &m.Author.CreatedAt, &m.Author.Username, &m.Author.Bio, &m.Author.ProfileVersion, &reply, &mentions, &reactions, &attachments,
 		&m.ThreadRootID, &m.ThreadReplyCount, &m.PinnedAt, &m.PinnedBy)
 	if err != nil {
 		return m, norm(err)
@@ -322,6 +322,7 @@ func (s *PostgresStore) writeMessage(room, user, id, body, replyID, nonce string
 			SELECT $1, ps.id FROM room_members rm
 			JOIN push_subscriptions ps ON ps.user_id=rm.user_id
 			WHERE rm.room_id=$2 AND rm.user_id<>$3 AND NOT ps.dnd
+			AND EXISTS(SELECT 1 FROM users recipient WHERE recipient.id=rm.user_id AND recipient.presence_status<>'dnd')
 			ON CONFLICT DO NOTHING`, id, room, user)
 		if err != nil {
 			return Message{}, false, err

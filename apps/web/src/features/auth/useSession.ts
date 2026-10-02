@@ -3,6 +3,7 @@ import { api, type User } from '@/api';
 import { useWorkOSSignIn } from './useWorkOSSignIn';
 import { useMountEffect } from '@/hooks/useMountEffect';
 import { setSessionIdentity, subscribeSessionExpiry } from './sessionEvents';
+import { profileRevision, profileSnapshot, reconcileProfile, subscribeProfiles } from '@/features/settings/profileStore';
 
 const unwrap = (result: User | { user: User }) => 'user' in result ? result.user : result;
 
@@ -27,14 +28,24 @@ export function useSession(onExpired?: () => void) {
     request.current?.abort();
     const controller = new AbortController();
     request.current = controller;
+    const revisions = new Map(Object.keys(profileSnapshot()).map((id) => [id, profileRevision(id)]));
     try {
       const result = unwrap(await api<User | { user: User }>('/me', undefined, undefined, controller.signal));
-      if (!controller.signal.aborted && operation === revision.current) { currentUser.current = result; setSessionIdentity(result.id); setUserState(result); }
+      if (!controller.signal.aborted && operation === revision.current) {
+        const profile = reconcileProfile(result, revisions.get(result.id) ?? 0);
+        currentUser.current = profile;
+        setSessionIdentity(profile.id);
+        setUserState(profile);
+      }
     } catch { /* Authentication errors invalidate the session centrally. */ }
   }, []);
   const signIn = useWorkOSSignIn(refresh);
   useMountEffect(() => {
     let stopped = false;
+    const stopProfiles = subscribeProfiles(() => {
+      const profile = currentUser.current && profileSnapshot()[currentUser.current.id];
+      if (profile) { currentUser.current = profile; setUserState(profile); }
+    });
     const stopExpiry = subscribeSessionExpiry(() => {
       revision.current += 1;
       request.current?.abort();
@@ -46,7 +57,7 @@ export function useSession(onExpired?: () => void) {
       .then((config) => { if (!stopped) setDevAuth(config.dev_auth); })
       .catch(() => {});
     refresh().finally(() => { if (!stopped) setLoading(false); });
-    return () => { stopped = true; revision.current += 1; request.current?.abort(); stopExpiry(); };
+    return () => { stopped = true; revision.current += 1; request.current?.abort(); stopProfiles(); stopExpiry(); };
   });
   return { user, setUser, devAuth, loading, unwrap, signIn };
 }

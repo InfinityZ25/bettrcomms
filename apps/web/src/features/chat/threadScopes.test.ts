@@ -1,12 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { api, type Message } from '@/api';
-import { conversationSnapshot, loadConversation, loadPins, markRead, receiveMessage, startMessagingSession } from './messageStore';
+import { api, ApiRequestError, type Message } from '@/api';
+import { conversationSnapshot, jumpToMessage, loadConversation, loadPins, loadThreads, markRead, receiveMessage, refreshCachedProfiles, startMessagingSession } from './messageStore';
 import { clearDraft, readDraft, saveDraft } from './drafts';
 import { clearTyping, receiveTyping, subscribeTyping, typingSnapshot } from './typingStore';
+import { clearProfiles, receiveProfile } from '@/features/settings/profileStore';
 
 vi.mock('@/api', async (importOriginal) => ({ ...(await importOriginal<typeof import('@/api')>()), api: vi.fn() }));
 let stop: (() => void) | undefined;
-afterEach(() => { stop?.(); stop = undefined; vi.mocked(api).mockReset(); vi.unstubAllGlobals(); clearTyping(); });
+afterEach(() => { stop?.(); stop = undefined; vi.mocked(api).mockReset(); vi.unstubAllGlobals(); clearTyping(); clearProfiles(); });
 const message = (id: string, root?: string, version = 1): Message => ({ id, room_id: 'room', body: id, sequence: 3, version, created_at: '2026-10-01T00:00:00Z', author: { id: 'peer', name: 'Peer', email: 'peer@example.test' }, thread_root_id: root });
 
 describe('independent thread scopes', () => {
@@ -47,6 +48,63 @@ describe('independent thread scopes', () => {
     receiveTyping('room', 'peer', true, 'root');
     expect(listener).toHaveBeenCalledOnce(); expect(typingSnapshot('room')).toEqual([]); expect(typingSnapshot('room', 'root')).toEqual(['peer']);
     unsubscribe();
+  });
+
+  it('applies profile updates to thread roots, pins and the thread index without changing scopes', async () => {
+    vi.mocked(api).mockResolvedValueOnce({ rooms: [] }); stop = startMessagingSession('user');
+    vi.mocked(api).mockResolvedValueOnce({ messages: [message('reply', 'root')], root: message('root') }).mockResolvedValueOnce({ members: [] });
+    await loadConversation('room', false, 'root');
+    vi.mocked(api).mockResolvedValueOnce({ messages: [{ ...message('root'), pinned_at: '2026-10-01T00:00:00Z' }] });
+    await loadPins('room');
+    vi.mocked(api).mockResolvedValueOnce({ messages: [message('root')] });
+    await loadThreads('room');
+    receiveProfile({ id: 'peer', name: 'Updated', email: '', username: 'updated', bio: 'About', profile_version: 2 });
+    refreshCachedProfiles();
+    expect(conversationSnapshot('room', 'root').root?.author.name).toBe('Updated');
+    expect(conversationSnapshot('room', 'root').messages[0].author.name).toBe('Updated');
+    expect(conversationSnapshot('room').pins?.[0].author.name).toBe('Updated');
+    expect(conversationSnapshot('room').threads?.[0].author.name).toBe('Updated');
+    expect(conversationSnapshot('room').messages).toEqual([]);
+  });
+
+  it.each([[401, 'pins'], [403, 'jump']] as const)('discards every cached room surface after HTTP %i from %s, retaining thread drafts', async (status, source) => {
+    const values = new Map<string, string>();
+    vi.stubGlobal('localStorage', { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value), removeItem: (key: string) => values.delete(key) });
+    saveDraft('user', 'room', { body: 'Keep this thread draft', attachments: [] }, 'root');
+    vi.mocked(api).mockResolvedValueOnce({ rooms: [] }); stop = startMessagingSession('user');
+    vi.mocked(api).mockResolvedValueOnce({ messages: [message('main')] }).mockResolvedValueOnce({ members: [] });
+    await loadConversation('room');
+    vi.mocked(api).mockResolvedValueOnce({ message: message('distant') });
+    await jumpToMessage('room', 'distant');
+    vi.mocked(api).mockResolvedValueOnce({ messages: [message('reply', 'root')], root: message('root') }).mockResolvedValueOnce({ members: [] });
+    await loadConversation('room', false, 'root');
+    vi.mocked(api).mockResolvedValueOnce({ messages: [{ ...message('main'), pinned_at: '2026-10-01T00:00:00Z' }] });
+    await loadPins('room');
+    vi.mocked(api).mockResolvedValueOnce({ messages: [message('root')] });
+    await loadThreads('room');
+    const failure = new ApiRequestError('Access revoked', status);
+    vi.mocked(api).mockRejectedValueOnce(failure);
+    await expect(source === 'pins' ? loadPins('room') : jumpToMessage('room', 'distant')).rejects.toBe(failure);
+    expect(conversationSnapshot('room')).toMatchObject({ messages: [], members: [] });
+    expect(conversationSnapshot('room').anchor).toBeUndefined();
+    expect(conversationSnapshot('room').pins).toBeUndefined();
+    expect(conversationSnapshot('room').threads).toBeUndefined();
+    expect(conversationSnapshot('room', 'root').messages).toEqual([]);
+    expect(conversationSnapshot('room', 'root').root).toBeUndefined();
+    expect(readDraft('user', 'room', 'root').body).toBe('Keep this thread draft');
+  });
+
+  it('prevents an in-flight pins response from restoring previews after a thread loses access', async () => {
+    vi.mocked(api).mockResolvedValueOnce({ rooms: [] }); stop = startMessagingSession('user');
+    let finish!: (value: unknown) => void;
+    vi.mocked(api).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const pins = loadPins('room');
+    vi.mocked(api).mockRejectedValueOnce(new ApiRequestError('Access revoked', 403)).mockResolvedValueOnce({ members: [] });
+    await loadConversation('room', false, 'root');
+    finish({ messages: [{ ...message('root'), pinned_at: '2026-10-01T00:00:00Z' }] });
+    await pins;
+    expect(conversationSnapshot('room').pins).toBeUndefined();
+    expect(conversationSnapshot('room', 'root').root).toBeUndefined();
   });
 
   it('does not resurrect a pin removed while its HTTP list was in flight', async () => {

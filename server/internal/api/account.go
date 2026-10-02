@@ -24,7 +24,6 @@ func (a *API) account(w http.ResponseWriter, r *http.Request, u User, path strin
 	}
 	current, err := a.Sessions.Resolve(r)
 	if err != nil {
-		a.Sessions.Clear(w)
 		a.fail(w, 401, "unauthenticated", "sign in required")
 		return
 	}
