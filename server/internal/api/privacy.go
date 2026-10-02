@@ -32,14 +32,14 @@ func (a *API) privacy(w http.ResponseWriter, r *http.Request, user User, path st
 		}
 		return
 	}
-	target := strings.TrimPrefix(path, "privacy/blocks/")
+	target := strings.ToLower(strings.TrimPrefix(path, "privacy/blocks/"))
 	if !uuidPattern.MatchString(target) || target == user.ID {
 		a.fail(w, 400, "invalid_user", "choose another user")
 		return
 	}
 	switch r.Method {
 	case http.MethodPost:
-		room, err := store.BlockUser(user.ID, target)
+		room, groups, err := store.BlockUserWithGroups(user.ID, target)
 		if err != nil {
 			a.result(w, nil, err)
 			return
@@ -56,6 +56,14 @@ func (a *API) privacy(w http.ResponseWriter, r *http.Request, user User, path st
 			a.Realtime.unsubscribeUser(room, target)
 			a.Hub.disconnectRoomUser(room, user.ID)
 			a.Hub.disconnectRoomUser(room, target)
+			a.revokeSFU(room, user.ID, "")
+			a.revokeSFU(room, target, "")
+		}
+		for _, group := range groups {
+			a.Realtime.publishRoom(group, wire{Type: "rooms.changed"})
+			a.Realtime.unsubscribeUser(group, user.ID)
+			a.Hub.disconnectRoomUser(group, user.ID)
+			a.revokeSFU(group, user.ID, "")
 		}
 		a.result(w, map[string]bool{"ok": true}, nil)
 	case http.MethodDelete:

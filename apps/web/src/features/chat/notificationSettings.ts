@@ -2,10 +2,11 @@ import { api } from '@/api';
 import { desktopNotificationsAvailable, requestDesktopNotificationAuthorization } from '@/desktop/notifications';
 
 export type NotificationMode = 'all' | 'mentions' | 'mute';
-type NotificationState = { rooms: Record<string, NotificationMode>; dnd: boolean; alerts: boolean; background: boolean; error: string; ready: boolean };
+type NotificationState = { rooms: Record<string, NotificationMode>; dnd: boolean; localDnd: boolean; accountDnd: boolean; alerts: boolean; background: boolean; error: string; ready: boolean };
 const listeners = new Set<() => void>();
 let currentUser: string | undefined;
-let state: NotificationState = { rooms: {}, dnd: false, alerts: false, background: false, error: '', ready: false };
+let state: NotificationState = { rooms: {}, dnd: false, localDnd: false, accountDnd: false, alerts: false, background: false, error: '', ready: false };
+let accountDnd: { user: string; enabled: boolean } | undefined;
 let sessionRevision = 0;
 let pushOperation: Promise<void> = Promise.resolve();
 let retryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -65,7 +66,7 @@ function syncPush() {
       await api('/push/subscription', {
         endpoint: subscription.endpoint,
         keys: { p256dh: serialized.keys.p256dh, auth: serialized.keys.auth },
-        dnd: state.dnd,
+        dnd: state.localDnd,
       }, 'POST');
       if (revision === sessionRevision && state.alerts) update({ background: true, error: '' });
     } catch {
@@ -98,7 +99,8 @@ export function startNotificationSession(user: string) {
   roomOverrides = {};
   const savedDND = stored(user, 'dnd');
   const savedAlerts = storedAlerts(user);
-  update({ rooms: {}, dnd: savedDND, alerts: savedAlerts, background: false, error: '', ready: false });
+  const ownDnd = accountDnd?.user === user && accountDnd.enabled;
+  update({ rooms: {}, dnd: savedDND || ownDnd, localDnd: savedDND, accountDnd: ownDnd, alerts: savedAlerts, background: false, error: '', ready: false });
   if (savedAlerts && pushSupported()) void syncPush();
   let retryDelay = 2000;
   const load = () => {
@@ -121,7 +123,7 @@ export function startNotificationSession(user: string) {
     retryTimer = undefined;
     currentUser = undefined;
     roomOverrides = {};
-    update({ rooms: {}, dnd: false, alerts: false, background: false, error: '', ready: false });
+    update({ rooms: {}, dnd: false, localDnd: false, accountDnd: false, alerts: false, background: false, error: '', ready: false });
   };
 }
 export async function setRoomNotificationMode(room: string, mode: NotificationMode) {
@@ -137,8 +139,13 @@ export async function setRoomNotificationMode(room: string, mode: NotificationMo
 export function setDoNotDisturb(enabled: boolean) {
   if (!currentUser) return;
   persist(currentUser, 'dnd', enabled);
-  update({ dnd: enabled });
+  update({ localDnd: enabled, dnd: enabled || state.accountDnd });
   if (state.alerts && pushSupported()) void syncPush();
+}
+/** Account status never overwrites this device's independent quiet preference. */
+export function setAccountDoNotDisturb(user: string, enabled: boolean) {
+  accountDnd = { user, enabled };
+  if (currentUser === user) update({ accountDnd: enabled, dnd: enabled || state.localDnd });
 }
 export async function setSystemNotifications(enabled: boolean): Promise<boolean> {
   const user = currentUser;
@@ -168,8 +175,8 @@ export async function setSystemNotifications(enabled: boolean): Promise<boolean>
 export async function notifyBrowser(title: string, body: string, onClick: () => void, roomId?: string) {
   const user = currentUser;
   const revision = sessionRevision;
-  if (!user || !state.alerts || !('Notification' in window) || Notification.permission !== 'granted') return;
-  const stillCurrent = () => user === currentUser && revision === sessionRevision && state.alerts && Notification.permission === 'granted';
+  if (!user || !state.alerts || state.dnd || !('Notification' in window) || Notification.permission !== 'granted') return;
+  const stillCurrent = () => user === currentUser && revision === sessionRevision && state.alerts && !state.dnd && Notification.permission === 'granted';
   const tag = roomId ? `message:${roomId}` : undefined;
   if (roomId && 'serviceWorker' in navigator) {
     try {

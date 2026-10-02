@@ -119,8 +119,9 @@ func TestSessionIDsAreUniqueAndOpaque(t *testing.T) {
 
 func TestDescribeMatchesThePlatform(t *testing.T) {
 	got := Describe()
-	if got.Available != supported {
-		t.Errorf("Available = %v, want %v", got.Available, supported)
+	expected := supported && Permission().Granted
+	if got.Available != expected {
+		t.Errorf("Available = %v, want %v", got.Available, expected)
 	}
 	if got.Detail == "" {
 		t.Error("Describe carries no explanation")
@@ -188,5 +189,72 @@ func TestOptionsTolerateMissingCallbacks(t *testing.T) {
 	}
 	if !options.trusted() {
 		t.Error("trust defaults to false without a callback")
+	}
+}
+
+func TestCallActionsShareOneStateAndIgnoreRepeatsAndInitialHold(t *testing.T) {
+	talk, _ := (Binding{Kind: KindKeyboard, Code: "KeyV"}).resolve()
+	mute, _ := (Binding{Kind: KindKeyboard, Code: "KeyM"}).resolve()
+	deafen, _ := (Binding{Kind: KindMouse, Button: 3}).resolve()
+	observed := newObserved([]watch{{talk, "talk"}, {mute, "mute"}, {deafen, "deafen"}}, func(i input) bool { return i == mute })
+	if observed.change(mute, true) || observed.mute != 0 {
+		t.Fatal("initial hold toggled mute")
+	}
+	observed.change(mute, false)
+	observed.change(mute, true)
+	observed.change(mute, true)
+	if observed.mute != 1 {
+		t.Fatal("repeat toggled mute twice")
+	}
+	observed.change(talk, true)
+	state := &shared{snapshot: Snapshot{SessionID: "fixture"}}
+	var snapshot Snapshot
+	observed.publish(state, Options{Emit: func(value Snapshot) { snapshot = value }}, true)
+	if !snapshot.Pressed || snapshot.MuteCount != 1 {
+		t.Fatalf("mixed inputs %+v", snapshot)
+	}
+	observed.change(deafen, true)
+	observed.change(deafen, true)
+	observed.change(deafen, false)
+	observed.publish(state, Options{Emit: func(value Snapshot) { snapshot = value }}, false)
+	if snapshot.Pressed || snapshot.DeafenCount != 1 || snapshot.Healthy {
+		t.Fatalf("unhealthy inputs %+v", snapshot)
+	}
+}
+func TestConflictingActionsAreRejectedBeforeInstallingAHook(t *testing.T) {
+	binding := Binding{Kind: KindKeyboard, Code: "KeyV"}
+	manager := NewManager()
+	if _, err := manager.StartBindings(Bindings{Talk: &binding, Mute: &binding}, Options{}); err == nil {
+		t.Fatal("duplicate binding accepted")
+	}
+	if manager.current != nil {
+		t.Fatal("invalid shortcut installed a hook")
+	}
+}
+
+func TestBindingValidationDoesNotPromptOrInstallAnObserver(t *testing.T) {
+	if supported {
+		for _, binding := range []Binding{{Kind: KindKeyboard, Code: "ControlLeft"}, {Kind: KindMouse, Button: 4}} {
+			if err := ValidateBinding(binding); err != nil {
+				t.Fatalf("supported binding %+v: %v", binding, err)
+			}
+		}
+	}
+	if err := ValidateBinding(Binding{Kind: KindKeyboard, Code: "F13"}); err == nil {
+		t.Fatal("unmapped global key accepted")
+	}
+}
+
+func TestInvalidOptionalActionDoesNotStopTheCurrentNativeSession(t *testing.T) {
+	manager := NewManager()
+	previous := &session{id: "already-active"}
+	manager.current = previous
+	talk := Binding{Kind: KindKeyboard, Code: "ControlLeft"}
+	mute := Binding{Kind: KindKeyboard, Code: "F13"}
+	if _, err := manager.StartBindings(Bindings{Talk: &talk, Mute: &mute}, Options{}); err == nil {
+		t.Fatal("invalid action accepted")
+	}
+	if manager.current != previous {
+		t.Fatal("invalid configuration stopped a current observer")
 	}
 }

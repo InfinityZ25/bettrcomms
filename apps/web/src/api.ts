@@ -3,23 +3,30 @@ import {
   apiCredentials,
   apiHttpUrl,
 } from '@/desktop/apiTransport';
+import { sessionExpired, sessionGeneration } from '@/features/auth/sessionEvents';
 
 export interface User {
   id: string;
   name: string;
   email: string;
+  username?: string | null;
+  bio?: string;
+  profile_version?: number;
+  /** Desired account status; the API only includes this on your own profile. */
+  presence_status?: 'online' | 'idle' | 'dnd' | 'invisible';
   /**
-   * The profile picture WorkOS supplied, its own or a provider's, or null when
-   * the account has none. The API has always carried it; nothing rendered it.
+   * A WorkOS picture or a versioned authenticated avatar resource, never image
+   * bytes repeated in message events. Null when the account has no picture.
    */
   avatar_url?: string | null;
 }
 export interface Room {
+  slow_mode_seconds?: number;
   id: string;
   name: string;
   owner_id: string;
   created_at: string;
-  kind?: 'channel' | 'direct';
+  kind?: 'channel' | 'direct' | 'group';
   role?: string;
   display_name?: string;
   activity_at?: string;
@@ -51,11 +58,17 @@ export interface Message {
   reply?: { id: string; name: string; body: string; deleted: boolean };
   reactions?: { emoji: string; users: string[] }[];
   attachments?: MessageAttachment[];
+  thread_root_id?: string;
+  thread_reply_count?: number;
+  thread_unread_count?: number;
+  pinned_at?: string;
+  pinned_by?: string;
 }
 export interface MessagePage {
   messages: Message[];
   before_id?: string;
   read_sequence?: number;
+  root?: Message;
 }
 export interface RoomUnread {
   room_id: string;
@@ -74,6 +87,8 @@ export class ApiRequestError extends Error {
   constructor(
     message: string,
     public status: number,
+    public code?: string,
+    public retryAfter?: number,
   ) {
     super(message);
   }
@@ -84,6 +99,7 @@ export async function api<T>(
   method?: string,
   signal?: AbortSignal,
 ): Promise<T> {
+  const generation = sessionGeneration();
   const response = await fetch(apiHttpUrl('/api/v1' + path), {
     signal,
     credentials: apiCredentials(),
@@ -96,9 +112,12 @@ export async function api<T>(
   });
   if (!response.ok) {
     const error = await response.json().catch(() => null);
+    if (response.status === 401 && !signal?.aborted) sessionExpired(generation);
     throw new ApiRequestError(
       error?.error?.message ?? `Request failed (${response.status})`,
       response.status,
+      error?.error?.code,
+      Number(response.headers.get('Retry-After')) || undefined,
     );
   }
   return response.status === 204 ? (undefined as T) : response.json();
@@ -107,13 +126,16 @@ export async function api<T>(
 export async function uploadMessageAttachment(
   roomId: string,
   file: File,
+  signal?: AbortSignal,
 ): Promise<MessageAttachment> {
+  const generation = sessionGeneration();
   const body = new FormData();
   body.append('file', file);
   const response = await fetch(
     apiHttpUrl(`/api/v1/rooms/${roomId}/attachments`),
     {
       method: 'POST',
+      signal,
       credentials: apiCredentials(),
       headers: apiAuthHeaders(),
       body,
@@ -121,9 +143,12 @@ export async function uploadMessageAttachment(
   );
   if (!response.ok) {
     const error = await response.json().catch(() => null);
+    if (response.status === 401 && !signal?.aborted) sessionExpired(generation);
     throw new ApiRequestError(
       error?.error?.message ?? `Upload failed (${response.status})`,
       response.status,
+      error?.error?.code,
+      Number(response.headers.get('Retry-After')) || undefined,
     );
   }
   return (await response.json()).attachment as MessageAttachment;

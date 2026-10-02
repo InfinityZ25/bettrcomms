@@ -96,6 +96,11 @@ func TestVoiceRelayHTTPAuthorizationPrecedesUpgrade(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			a := New(tc.store, newTestSessions(false), Config{})
 			r := httptest.NewRequest(http.MethodGet, "http://localhost/api/v1/rooms/room/voice-relay", nil)
+			issued := httptest.NewRecorder()
+			if err := a.Sessions.Set(r, issued, u.ID); err != nil {
+				t.Fatal(err)
+			}
+			r.AddCookie(issued.Result().Cookies()[0])
 			r.Header.Set("Origin", tc.origin)
 			w := httptest.NewRecorder()
 			a.voiceRelay(w, r, u, "room")

@@ -21,6 +21,25 @@ export interface InputSnapshot {
   pressed: boolean;
   healthy: boolean;
   focused: boolean;
+  muteCount?: number;
+  deafenCount?: number;
+}
+
+export interface CallShortcuts { talk?: TalkBinding; mute?: TalkBinding; deafen?: TalkBinding }
+
+export async function startNativeShortcuts(bindings: CallShortcuts): Promise<InputSnapshot> {
+  if (getDesktopRuntime() !== 'wails') throw new Error('Native call shortcuts require the desktop app.');
+  return (await service()).CallShortcutsStart(nativePageToken(), bindings as Parameters<Awaited<ReturnType<typeof service>>['CallShortcutsStart']>[1]);
+}
+
+export async function nativeShortcutPermission(request = false): Promise<{ available: boolean; granted: boolean; detail: string }> {
+  const api = await service();
+  return request ? api.CallShortcutRequestPermission(nativePageToken()) : api.CallShortcutPermission(nativePageToken());
+}
+
+/** This native mapping check neither prompts for consent nor installs hooks. */
+export async function nativeShortcutSupported(binding: TalkBinding): Promise<boolean> {
+  return (await service()).CallShortcutSupported(nativePageToken(), binding as Binding);
 }
 
 export async function nativeInputCapabilities(): Promise<{ available: boolean; detail: string }> {

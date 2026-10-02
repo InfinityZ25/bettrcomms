@@ -129,6 +129,11 @@ Section "Uninstall"
   Delete "$INSTDIR\ffmpeg\setup.json"
   RMDir "$INSTDIR\ffmpeg"
   Delete "$SMPROGRAMS\BetterComms (Wails).lnk"
+  ; Remove only this installation's opt-in login entry.
+  ReadRegStr $0 HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "BetterComms-Wails"
+  ${If} $0 == '$\"$INSTDIR\bettercomms-wails.exe$\"'
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "BetterComms-Wails"
+  ${EndIf}
   DeleteRegKey HKCU "${PRODUCT_KEY}"
   Delete "$INSTDIR\uninstall.exe"
   RMDir "$INSTDIR"

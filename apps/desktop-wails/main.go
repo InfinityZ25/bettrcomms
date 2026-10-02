@@ -20,6 +20,7 @@ import (
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/services/notifications"
+	"github.com/wailsapp/wails/v3/pkg/updater"
 )
 
 // hostVersion identifies the Wails native host in the boot report.
@@ -54,6 +55,7 @@ var frontendAssets embed.FS
 var appIcon []byte
 
 func main() {
+	updater.HandleHelperMode()
 	// Offline packaging verification: no window, credentials, proxy or GPU starts.
 	if len(os.Args) == 2 && os.Args[1] == "--print-build-info" {
 		origin, err := desktop.ResolveAPIOrigin(releaseAPIOrigin(), false)
@@ -129,6 +131,10 @@ func run() error {
 	// window back when one is clicked.
 	toasts := notifications.New()
 	tray := newTrayService(gate)
+	preferences := &DesktopPreferencesService{gate: gate, development: debug}
+	updateService := newDesktopUpdateService(gate, debug, func() bool {
+		return apiProxy != nil && apiProxy.CallSignalingOpen() || media != nil && media.busy()
+	})
 
 	boot := func() desktop.BootReport {
 		report := desktop.BootReport{
@@ -176,7 +182,7 @@ func run() error {
 		Assets: application.AssetOptions{
 			Handler: handler,
 		},
-		Services: services(&AuthService{signIn: signIn, gate: gate}, media, toasts, tray),
+		Services: append(services(&AuthService{signIn: signIn, gate: gate}, media, toasts, tray), application.NewService(preferences), application.NewService(updateService)),
 		Windows: application.WindowsOptions{
 			AdditionalBrowserArgs: []string{
 				"--autoplay-policy=no-user-gesture-required",
@@ -215,6 +221,7 @@ func run() error {
 	})
 	attachNotifications(toasts, window)
 	tray.attach(app, window)
+	updateService.attach(app, window)
 	if media != nil {
 		// The window is how push-to-talk reports focus and publishes snapshots;
 		// the gate is how a native call proves it came from this host's page.

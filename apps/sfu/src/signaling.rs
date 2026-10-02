@@ -37,8 +37,14 @@ pub struct WsQuery {
 // the large variant would only add an allocation to the cold path.
 #[allow(clippy::large_enum_variant)]
 enum ClientMessage {
-    Sdp { request_id: RequestId, sdp: RTCSessionDescription },
-    Ice { request_id: RequestId, candidate: RTCIceCandidateInit },
+    Sdp {
+        request_id: RequestId,
+        sdp: RTCSessionDescription,
+    },
+    Ice {
+        request_id: RequestId,
+        candidate: RTCIceCandidateInit,
+    },
     Leave,
 }
 
@@ -46,9 +52,18 @@ enum ClientMessage {
 #[serde(tag = "type", rename_all = "snake_case")]
 #[allow(clippy::large_enum_variant)]
 enum ServerMessage {
-    Sdp { request_id: RequestId, sdp: RTCSessionDescription },
-    Ice { request_id: RequestId, candidate: RTCIceCandidateInit },
-    Error { request_id: RequestId, reason: String },
+    Sdp {
+        request_id: RequestId,
+        sdp: RTCSessionDescription,
+    },
+    Ice {
+        request_id: RequestId,
+        candidate: RTCIceCandidateInit,
+    },
+    Error {
+        request_id: RequestId,
+        reason: String,
+    },
 }
 
 impl TryFrom<SFUEvent> for ServerMessage {
@@ -56,36 +71,89 @@ impl TryFrom<SFUEvent> for ServerMessage {
 
     fn try_from(event: SFUEvent) -> Result<ServerMessage, ()> {
         match event {
-            SFUEvent::SessionDescription { request_id, sdp, .. } => Ok(ServerMessage::Sdp { request_id, sdp }),
-            SFUEvent::IceCandidate { request_id, candidate, .. } => Ok(ServerMessage::Ice { request_id, candidate }),
-            SFUEvent::Err { request_id, reason, .. } => Ok(ServerMessage::Error { request_id, reason }),
+            SFUEvent::SessionDescription {
+                request_id, sdp, ..
+            } => Ok(ServerMessage::Sdp { request_id, sdp }),
+            SFUEvent::IceCandidate {
+                request_id,
+                candidate,
+                ..
+            } => Ok(ServerMessage::Ice {
+                request_id,
+                candidate,
+            }),
+            SFUEvent::Err {
+                request_id, reason, ..
+            } => Ok(ServerMessage::Error { request_id, reason }),
             // Join/Leave/Ok are engine-internal bookkeeping, not forwarded to the client.
             SFUEvent::Join { .. } | SFUEvent::Leave { .. } | SFUEvent::Ok { .. } => Err(()),
         }
     }
 }
 
-pub async fn handler(ws: WebSocketUpgrade, State(state): State<AppState>, Query(query): Query<WsQuery>) -> impl IntoResponse {
+pub async fn handler(
+    ws: WebSocketUpgrade,
+    State(state): State<AppState>,
+    Query(query): Query<WsQuery>,
+) -> impl IntoResponse {
     match token::verify(&query.token, &state.config.join_secret) {
-        Ok(claims) => ws.on_upgrade(move |socket| run(socket, state, claims)),
+        Ok(claims) => {
+            match crate::authorization::acquire(&state.config.auth_url, &query.token).await {
+                Ok(lease) => ws.on_upgrade(move |socket| run(socket, state, claims, lease)),
+                Err(_) => {
+                    // Neither the URL query nor the bearer token belongs in logs.
+                    warn!(
+                        "SFU admission denied: API authorization unavailable or revoked; check SFU_AUTH_URL"
+                    );
+                    (
+                        axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                        "live API authorization unavailable or revoked",
+                    )
+                        .into_response()
+                }
+            }
+        }
         Err(e) => {
             warn!(error = %e, "rejected sfu ws connection: bad join token");
-            (axum::http::StatusCode::UNAUTHORIZED, "invalid or expired join token").into_response()
+            (
+                axum::http::StatusCode::UNAUTHORIZED,
+                "invalid or expired join token",
+            )
+                .into_response()
         }
     }
 }
 
-async fn run(mut socket: WebSocket, state: AppState, claims: token::Claims) {
+async fn run(
+    mut socket: WebSocket,
+    state: AppState,
+    claims: token::Claims,
+    lease: crate::authorization::Lease,
+) {
     let room_id = claims.room_id;
     let client_id = token::client_id_for(claims.peer_id);
     info!(%room_id, client_id, user_id = %claims.user_id, "sfu client connected");
 
-    let mut events = state.engine.register(room_id, client_id);
-    state.engine.send(SFUEvent::Join { request_id: 0, room_id, client_id });
+    let Some(mut events) = state.engine.register(room_id, client_id) else {
+        warn!(%room_id, client_id, "SFU peer is already connected; retry after its socket closes");
+        return;
+    };
+    state.engine.send(SFUEvent::Join {
+        request_id: 0,
+        room_id,
+        client_id,
+    });
+    let authorization = crate::authorization::hold(lease);
+    tokio::pin!(authorization);
 
     loop {
         tokio::select! {
             biased;
+            _ = &mut authorization => {
+                // Drop the client socket after the engine leaves; a client
+                // refusing to drain TCP cannot hold its media authorization.
+                break;
+            }
 
             incoming = socket.recv() => {
                 let Some(incoming) = incoming else { break };
@@ -115,7 +183,7 @@ async fn run(mut socket: WebSocket, state: AppState, claims: token::Claims) {
                 let Some(event) = outgoing else { break };
                 if let Ok(message) = ServerMessage::try_from(event) {
                     let text = serde_json::to_string(&message).expect("ServerMessage always serializes");
-                    if socket.send(Message::Text(text.into())).await.is_err() {
+                    if !crate::authorization::send_with_lease(authorization.as_mut(), socket.send(Message::Text(text.into()))).await {
                         break;
                     }
                 }
@@ -123,7 +191,12 @@ async fn run(mut socket: WebSocket, state: AppState, claims: token::Claims) {
         }
     }
 
-    state.engine.send(SFUEvent::Leave { request_id: 0, room_id, client_id, reason: "signaling connection closed".to_string() });
+    state.engine.send(SFUEvent::Leave {
+        request_id: 0,
+        room_id,
+        client_id,
+        reason: "signaling connection closed".to_string(),
+    });
     state.engine.unregister(room_id, client_id);
     info!(%room_id, client_id, "sfu client disconnected");
 }

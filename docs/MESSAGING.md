@@ -1,6 +1,6 @@
 # Messaging
 
-Direct conversations and room chat share the same message controls. Open a
+Direct/group conversations and room chat share the same message controls. Open a
 direct conversation from Messages; open room chat with **Room messages** in
 the lobby or **Chat** in the call toolbar. Opening chat does not join or leave a call.
 
@@ -31,7 +31,36 @@ the lobby or **Chat** in the call toolbar. Opening chat does not join or leave a
   A request carries one text message; accepting opens a direct conversation
   with that message. Blocking removes friendship and requests and revokes the
   existing direct conversation for both people. Unblocking does not restore it.
-  Shared room membership is unaffected by a personal block.
+  Blocking leaves shared group DMs and removes live access. Shared channel
+  membership is unaffected by a personal block.
+
+## Profiles, availability, groups and invitations
+
+- **Settings → Profile** edits display name, a unique username, bio and photo.
+  PNG/JPEG photos up to 2 MB and four million pixels are cropped/resized to
+  256 px before upload; the API accepts up to 256 KiB and revalidates the image.
+  Profile photos use authenticated PostgreSQL-backed storage, so they do not
+  require S3 credentials. Changes update contacts, loaded authors and account
+  sessions through versioned realtime events.
+- **Account status** in the account menu or Profile settings selects Online,
+  Away, Do not disturb or Invisible on every device. Away is manual. Invisible
+  hides online presence, not participation in shared calls. DND silences alerts
+  and Web Push while retaining message delivery and unread counts. The device
+  quiet toggle remains independent.
+- **Messages → New group** selects one to nine accepted friends. Owners rename,
+  add and remove people in **Group info**; members have access to its history
+  and calls. Leaving as owner transfers ownership to the earliest remaining
+  member. Removing/blocking a member revokes HTTP and live access. Blocking
+  someone leaves groups shared with that person; unblocking does not rejoin.
+- **Room settings → Invitation links** is available to channel owners. Set
+  expiry (up to 30 days, or never) and maximum joins (up to 1000, or unlimited).
+  Copy the new link before closing; existing links show metadata and revocation
+  only, as the server keeps hashes rather than reusable plaintext tokens.
+  A room can have up to 20 active links; active links remain visible before
+  the bounded history of revoked/expired links.
+  Anyone with a valid link can sign in, review and explicitly join that room,
+  including its history. **Calls → Join with link** supports pasted links in
+  both browser and desktop. Existing members do not consume additional uses.
 
 ## Implementation and limits
 
@@ -88,8 +117,10 @@ after quitting the native app.
 Room members can report another member's message; room owners can dismiss a
 report or remove its message, with an audit record.
 
-This work does not add nested reply threads or edit revision archives. It does
-not change native media or clear the desktop capture/auth acceptance gates.
+Independent reply threads and pinned messages are described in
+[MESSAGE_THREADS.md](MESSAGE_THREADS.md). Edit revision archives remain
+outside this delivery. These changes do not alter native media or clear the
+desktop capture/auth acceptance gates.
 
 ## Local development
 

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Cable, Headphones, LogOut, Mic, MonitorUp, SlidersHorizontal, SunMoon } from 'lucide-react';
+import { Cable, Headphones, LogOut, Mic, MonitorUp, SlidersHorizontal, SunMoon, Shield, Monitor, UserRound } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import {
@@ -9,14 +9,18 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import SettingsScreen, { type SettingsPage } from '@/features/settings/SettingsScreen';
 import type { User } from '@/api';
+import { getDesktopRuntime } from '@/desktop/runtime';
 
 const pages = [
+  { id: 'profile', label: 'Profile', note: 'Your identity and availability', icon: UserRound },
   { id: 'audio', label: 'Audio', note: 'Quick call controls', icon: Mic },
   { id: 'voice', label: 'Voice & devices', note: 'Microphone, speakers and camera', icon: Headphones },
   { id: 'recording', label: 'Recording', note: 'Saved video quality', icon: MonitorUp },
   { id: 'stream', label: 'Streaming', note: 'Quality while sharing', icon: SlidersHorizontal },
   { id: 'connection', label: 'Connection', note: 'How calls reach your friends', icon: Cable },
   { id: 'appearance', label: 'Appearance', note: 'Theme and camera layout', icon: SunMoon },
+  { id: 'account', label: 'Account', note: 'Signed-in devices and account deletion', icon: Shield },
+  { id: 'desktop', label: 'Desktop app', note: 'Startup and updates', icon: Monitor },
 ] as const satisfies ReadonlyArray<{ id: SettingsPage; label: string; note: string; icon: typeof Mic }>;
 
 export function SettingsDialog({ open, onOpenChange, user, noise, onNoiseChange, balanced, onBalancedChange, layout, onLayoutChange, signedIn, onSignOut }: {
@@ -33,6 +37,7 @@ export function SettingsDialog({ open, onOpenChange, user, noise, onNoiseChange,
   onSignOut: () => void;
 }) {
   const [page, setPage] = useState<SettingsPage>('audio');
+  const visiblePages = pages.filter((item) => (item.id !== 'desktop' || getDesktopRuntime() === 'wails') && (!['account', 'profile'].includes(item.id) || signedIn));
   const current = pages.find((item) => item.id === page) ?? pages[0];
 
   return (
@@ -56,7 +61,7 @@ export function SettingsDialog({ open, onOpenChange, user, noise, onNoiseChange,
                 <SidebarGroupLabel>Settings</SidebarGroupLabel>
                 <SidebarGroupContent>
                   <SidebarMenu>
-                    {pages.map(({ id, label, icon: Icon }) => (
+                    {visiblePages.map(({ id, label, icon: Icon }) => (
                       <SidebarMenuItem key={id}>
                         <SidebarMenuButton isActive={page === id} onClick={() => setPage(id)}>
                           <Icon />
@@ -83,7 +88,7 @@ export function SettingsDialog({ open, onOpenChange, user, noise, onNoiseChange,
                 <Select value={page} onValueChange={(value) => { if (value) setPage(value as SettingsPage); }}>
                   <SelectTrigger className="w-full" aria-label="Settings category"><SelectValue>{current.label}</SelectValue></SelectTrigger>
                   <SelectContent align="start">
-                    {pages.map(({ id, label }) => <SelectItem key={id} value={id}>{label}</SelectItem>)}
+                    {visiblePages.map(({ id, label }) => <SelectItem key={id} value={id}>{label}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>

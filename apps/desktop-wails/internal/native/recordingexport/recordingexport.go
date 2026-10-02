@@ -112,6 +112,12 @@ type Store struct {
 	now    func() time.Time
 }
 
+func (s *Store) Busy() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.exports) != 0 || s.conversions != 0
+}
+
 // NewStore returns a store that resolves its conversion runtime with ffmpeg.
 func NewStore(ffmpeg func() string) *Store {
 	return &Store{

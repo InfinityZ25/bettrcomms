@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CallMicrophone, writeTalkSettings } from './pushToTalk';
 import type { GlobalInputStatus } from './nativePushToTalk';
 import { playPushToTalkCue } from './sounds';
+import { writeCallShortcuts } from './callShortcutSettings';
 
 vi.mock('./sounds', () => ({ playPushToTalkCue: vi.fn() }));
 
@@ -9,12 +10,13 @@ const native = vi.hoisted(() => ({ registrations: [] as {
   pressed: (pressed: boolean, focused?: boolean) => void;
   status: (status: GlobalInputStatus, message: string) => void;
   dispose: ReturnType<typeof vi.fn>;
+  action?: (action: 'mute' | 'deafen', focused: boolean) => void;
 }[] }));
 vi.mock('./nativePushToTalk', () => ({
   isNativePushToTalk: () => true,
   NativePushToTalk: class {
     dispose = vi.fn();
-    constructor(public pressed: (pressed: boolean, focused?: boolean) => void, public status: (status: GlobalInputStatus, message: string) => void) {
+    constructor(public pressed: (pressed: boolean, focused?: boolean) => void, public status: (status: GlobalInputStatus, message: string) => void, public action?: (action: 'mute' | 'deafen', focused: boolean) => void) {
       native.registrations.push(this);
     }
     async start() { this.status('active', 'Global'); this.pressed(false); }
@@ -38,6 +40,62 @@ describe('native call microphone integration', () => {
     input = new CallMicrophone(enabled); unsubscribe = input.subscribe(() => {});
   });
   afterEach(() => { unsubscribe(); vi.unstubAllGlobals(); });
+  it('global toggles work with PTT disabled and deafen updates playback through the same call state', () => {
+    unsubscribe();
+    const playback = vi.fn();
+    writeCallShortcuts({ mute: { kind: 'keyboard', code: 'KeyM' }, deafen: { kind: 'keyboard', code: 'KeyD' } });
+    input = new CallMicrophone(enabled, playback);
+    unsubscribe = input.subscribe(() => {});
+    input.start();
+    current().action?.('mute', false);
+    expect(input.getSnapshot().manualMuted).toBe(true);
+    current().action?.('mute', true);
+    expect(input.getSnapshot().manualMuted).toBe(true);
+    current().action?.('deafen', false);
+    expect(input.getSnapshot().deafened).toBe(true);
+    expect(playback).toHaveBeenLastCalledWith(true);
+    input.stop();
+    expect(playback).toHaveBeenLastCalledWith(false);
+  });
+
+  it.each([1, 2, 3, 4])('mouse toggle %s follows the typing preference without consuming editing input', button => {
+    writeCallShortcuts({ mute: { kind: 'mouse', button } });
+    const editor = new Element();
+    const dispatch = () => {
+      const event = Object.assign(new Event('mousedown', { cancelable: true }), { button });
+      Object.defineProperty(event, 'target', { value: editor });
+      window.dispatchEvent(event);
+      return event;
+    };
+    input.start();
+    dispatch();
+    expect(input.getSnapshot().manualMuted).toBe(false);
+    writeTalkSettings({ enabled: false, binding: { kind: 'keyboard', code: 'KeyV' }, allowWhileTyping: true });
+    expect(dispatch().defaultPrevented).toBe(false);
+    expect(input.getSnapshot().manualMuted).toBe(true);
+  });
+
+  it('left clicks on editable controls never toggle mute even with typing enabled', () => {
+    writeCallShortcuts({ mute: { kind: 'mouse', button: 0 } });
+    writeTalkSettings({ enabled: false, binding: { kind: 'keyboard', code: 'KeyV' }, allowWhileTyping: true });
+    input.start();
+    const event = Object.assign(new Event('mousedown', { cancelable: true }), { button: 0 });
+    Object.defineProperty(event, 'target', { value: new Element() });
+    window.dispatchEvent(event);
+    expect(input.getSnapshot().manualMuted).toBe(false);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('keyboard toggles also preserve editor shortcuts when the typing option is enabled', () => {
+    writeCallShortcuts({ mute: { kind: 'keyboard', code: 'ControlLeft' } });
+    writeTalkSettings({ enabled: false, binding: { kind: 'keyboard', code: 'KeyV' }, allowWhileTyping: true });
+    input.start();
+    const event = Object.assign(new Event('keydown', { cancelable: true }), { code: 'ControlLeft', repeat: false });
+    Object.defineProperty(event, 'target', { value: new Element() });
+    window.dispatchEvent(event);
+    expect(input.getSnapshot().manualMuted).toBe(true);
+    expect(event.defaultPrevented).toBe(false);
+  });
 
   it.each(['ControlLeft', 'KeyV', 'Space', 'Enter'])('allows %s in editors only when opted in, without consuming editing events', code => {
     const editor = new Element();

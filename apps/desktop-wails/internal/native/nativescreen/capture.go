@@ -69,6 +69,8 @@ type Manager struct {
 // NewManager returns a manager with no capture running.
 func NewManager() *Manager { return &Manager{sources: map[string]Source{}} }
 
+func (m *Manager) Busy() bool { m.mu.Lock(); defer m.mu.Unlock(); return m.active != nil }
+
 // SetEndedHandler reports unexpected capture termination after native cleanup.
 func (m *Manager) SetEndedHandler(handler func(string, string)) {
 	m.mu.Lock()

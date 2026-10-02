@@ -7,6 +7,7 @@ import {
   MessageSquare,
   MicOff,
   Plus,
+  Users,
 } from 'lucide-react';
 import type { CallParticipant, Room, User } from '@/api';
 import RoomContextMenu from './RoomContextMenu';
@@ -111,7 +112,7 @@ export default function RoomNavigation({
                     title={roomLabel(room)}
                     aria-label={`${roomLabel(room)}${known && callers.length ? ` ${callers.length} in call` : ''}`}
                   >
-                    {kind === 'direct' ? (
+                    {room.kind === 'group' ? <Users size={18} /> : kind === 'direct' ? (
                       <MessageSquare size={18} />
                     ) : (
                       <Hash size={19} />

@@ -6,6 +6,7 @@ import type {
 } from './types';
 import { invokeNativeCapture as invoke } from '../desktop/capture';
 import { nativeScreenSessionForTrack } from './nativeCaptureRegistry';
+import { beginDesktopActivity } from '../desktop/desktopSettings';
 
 export interface RecordableTrack {
   peerId: string;
@@ -57,6 +58,7 @@ export class TrackRecordingSession {
   private readonly screenVideoBitsPerSecond: number;
   private readonly cameraVideoBitsPerSecond: number;
   private readonly audioBitsPerSecond: number;
+  private releaseDesktopActivity?: () => void;
 
   constructor(private readonly options: TrackRecordingOptions = {}) {
     this.maxBytes = options.maxBytes ?? 512 * 1024 * 1024;
@@ -98,6 +100,7 @@ export class TrackRecordingSession {
       )
     )
       return;
+    this.releaseDesktopActivity ??= beginDesktopActivity();
     const active: ActiveRecorder = {
       segmentId: this.active.some(item => item.descriptor.track.id === descriptor.track.id)
         ? crypto.randomUUID() : descriptor.track.id,
@@ -211,7 +214,10 @@ export class TrackRecordingSession {
 
   async stop(): Promise<RecordingResult> {
     if (this.stopPromise) return this.stopPromise;
-    this.stopPromise = this.finish();
+    this.stopPromise = this.finish().finally(() => {
+      this.releaseDesktopActivity?.();
+      this.releaseDesktopActivity = undefined;
+    });
     return this.stopPromise;
   }
 

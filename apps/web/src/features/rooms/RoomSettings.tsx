@@ -5,6 +5,8 @@ import { api, type Room, type User } from '@/api';
 import { Button } from '@/components/ui/button';
 import { AppDialog } from '@/components/app-dialog';
 import { Input } from '@/components/ui/input';
+import ModerationSettings from './ModerationSettings';
+import RoomInviteLinks from './RoomInviteLinks';
 
 type MessageReport = { id: string; message_id: string; reporter_name: string; author_name: string; excerpt: string; reason: string };
 
@@ -89,6 +91,7 @@ export default function RoomSettings({
       onOpenChange={onOpenChange}
       title="Room settings"
       description="Keep this little corner just how you like it."
+      className="max-h-[calc(100dvh-2rem)] overflow-y-auto"
     >
       {room && user && (
         <div className="mt-6 flex flex-col gap-5">
@@ -119,6 +122,7 @@ export default function RoomSettings({
               </Button>
             )}
           </form>
+          {owner && room.kind === 'channel' && <ModerationSettings key={`${room.id}:${room.owner_id}`} room={room} user={user} onChanged={onChanged} />}
           <div className="flex flex-col gap-4">
             <h3 className="text-sm font-semibold">People in this room</h3>
             {members.map((m) => (
@@ -156,6 +160,7 @@ export default function RoomSettings({
               </div>
             ))}
           </div>
+          {open && owner && room.kind !== 'direct' && room.kind !== 'group' && <RoomInviteLinks key={room.id} roomId={room.id} />}
           {owner && reports.length > 0 && (
             <div className="flex flex-col gap-2 border-t pt-4">
               <h3 className="text-sm font-semibold">Message reports</h3>

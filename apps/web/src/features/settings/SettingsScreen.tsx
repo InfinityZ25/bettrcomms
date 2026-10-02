@@ -24,8 +24,11 @@ import type { User } from '@/api';
 import { notificationSnapshot, setSystemNotifications, setDoNotDisturb, subscribeNotifications } from '@/features/chat/notificationSettings';
 import './SettingsScreen.css';
 import { getDesktopRuntime } from '@/desktop/runtime';
+import AccountSettings from './AccountSettings';
+import DesktopSettings from './DesktopSettings';
+import ProfileSettings from './ProfileSettings';
 
-export type SettingsPage = 'audio' | 'voice' | 'recording' | 'stream' | 'connection' | 'appearance';
+export type SettingsPage = 'profile' | 'audio' | 'voice' | 'recording' | 'stream' | 'connection' | 'appearance' | 'account' | 'desktop';
 
 export default function SettingsScreen({ page, user, noise, onNoiseChange, balanced, onBalancedChange, layout, onLayoutChange }: {
   page: SettingsPage;
@@ -48,6 +51,9 @@ export default function SettingsScreen({ page, user, noise, onNoiseChange, balan
     >,
   );
   const desktop = getDesktopRuntime() === 'wails';
+  if (page === 'account') return user ? <AccountSettings key={user.id} user={user} /> : <p className="text-sm text-muted-foreground">Sign in to manage your account.</p>;
+  if (page === 'desktop') return desktop ? <DesktopSettings /> : null;
+  if (page === 'profile') return user ? <ProfileSettings key={user.id} user={user} /> : <p className="text-sm text-muted-foreground">Sign in to edit your profile.</p>;
   if (page === 'audio') return (
     <SettingsSection id="settings-audio" title="Call audio">
       <SettingRow as="div" title="Noise suppression" description="Keep background sounds out of the conversation." control={<Switch aria-label="Noise suppression" checked={noise} onCheckedChange={onNoiseChange} />} />
@@ -104,7 +110,7 @@ export default function SettingsScreen({ page, user, noise, onNoiseChange, balan
       <SettingRow as="div" title="Theme" description="Light, dark, or match your system." control={<ModeToggle />} />
       {user && (
         <>
-          <SettingRow as="div" title="Do not disturb" description="Pause message sounds and notifications on this device." control={<Switch aria-label="Do not disturb" checked={messageNotifications.dnd} onCheckedChange={setDoNotDisturb} />} />
+          <SettingRow as="div" title="Quiet notifications on this device" description={messageNotifications.accountDnd ? 'Your account is also set to Do not disturb. Change your account status in Profile to resume alerts.' : 'Pause message sounds and notifications on this device. Account availability is configured in Profile.'} control={<Switch aria-label="Do not disturb" checked={messageNotifications.localDnd} onCheckedChange={setDoNotDisturb} />} />
           <SettingRow
             as="div"
             title={desktop ? 'Desktop notifications' : 'Browser notifications'}

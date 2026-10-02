@@ -51,6 +51,7 @@ export default function RoomContextMenu({
   const notifications = useSyncExternalStore(subscribeNotifications, notificationSnapshot);
 
   const channel = (room.kind ?? 'channel') === 'channel';
+  const group = room.kind === 'group';
   const owner = Boolean(user && room.owner_id === user.id);
   const label = roomLabel(room);
 
@@ -114,6 +115,7 @@ export default function RoomContextMenu({
               )}
             </>
           )}
+          {group && <><ContextMenuSeparator /><ContextMenuItem onClick={() => onSettings(room)}><Settings2 /> Group info…</ContextMenuItem><ContextMenuItem variant="destructive" onClick={() => setPending('leave')}><LogOut /> Leave group</ContextMenuItem></>}
         </ContextMenuContent>
       </ContextMenu>
 
@@ -125,12 +127,12 @@ export default function RoomContextMenu({
       <AppDialog
         open={pending !== null}
         onOpenChange={(next) => {
-          if (!next) setPending(null);
+          if (!next && !busy) setPending(null);
         }}
         title={pending === 'leave' ? 'Leave this room?' : 'Delete this room?'}
         description={
           pending === 'leave'
-            ? `You will leave ${label}. A friend has to invite you back.`
+            ? `You will leave ${label}. A friend has to invite you back.${group && owner ? ' Ownership passes to the next member.' : ''}`
             : `${label} and everything said in it goes for everyone. This cannot be undone.`
         }
       >

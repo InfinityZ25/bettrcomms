@@ -210,7 +210,14 @@ func localTrackRecording() Capability {
 // characters or suppressing input. Exercised by pushtotalk's hook installation
 // and lease tests.
 func globalInput() Capability {
-	if runtime.GOOS != "windows" {
+	if runtime.GOOS == "darwin" {
+		return Capability{
+			State:    Experimental,
+			Detail:   "Native call shortcuts require Input Monitoring permission. macOS key, mouse and packaged-permission acceptance must be verified on a real Mac.",
+			Fallback: "foreground call shortcuts using page key events",
+		}
+	}
+	if runtime.GOOS != "windows" && runtime.GOOS != "darwin" {
 		return Capability{
 			State:    Unavailable,
 			Detail:   "Global keyboard and mouse hooks are not available on this platform, so background push-to-talk does not work here.",
@@ -219,7 +226,7 @@ func globalInput() Capability {
 	}
 	return Capability{
 		State:  Implemented,
-		Detail: "A leased low-level hook watches one key or mouse button while the app is in the background. It captures no characters and suppresses no input, so games keep receiving the same events.",
+		Detail: "A leased native observer watches selected call keys or mouse buttons in the background. It captures no characters and suppresses no input.",
 	}
 }
 

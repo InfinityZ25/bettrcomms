@@ -127,6 +127,11 @@ func TestUnfriendRevokesLiveDirectRoomSubscriptions(t *testing.T) {
 	api.Realtime.add(alice, []Room{{ID: "direct"}}, []User{{ID: "bob"}})
 	api.Realtime.add(bob, []Room{{ID: "direct"}}, []User{{ID: "alice"}})
 	request := httptest.NewRequest(http.MethodDelete, "/api/v1/friends/bob", nil)
+	issued := httptest.NewRecorder()
+	if err := api.Sessions.Set(request, issued, "alice"); err != nil {
+		t.Fatal(err)
+	}
+	request.AddCookie(issued.Result().Cookies()[0])
 	request = request.WithContext(context.WithValue(request.Context(), userKey{}, User{ID: "alice"}))
 	response := httptest.NewRecorder()
 	api.authed(response, request)

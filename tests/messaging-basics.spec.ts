@@ -214,7 +214,7 @@ test('unread mentions, older history, search and message actions work across two
     await ownerPage
       .getByRole('button', { name: 'Save message', exact: true })
       .click();
-    await expect(guestMessage.locator('p')).toHaveText('edited message needle');
+    await expect(guestMessage.locator('[data-message-body]')).toHaveText('edited message needle');
     await expect(guestMessage).toContainText('edited');
     expect(historyReads).toBe(0);
     await guestMessage
@@ -232,9 +232,10 @@ test('unread mentions, older history, search and message actions work across two
     await ownerMessage
       .getByRole('button', { name: 'Add reaction', exact: true })
       .click();
-    await ownerMessage
-      .getByRole('button', { name: 'Add 👍 reaction', exact: true })
-      .click();
+    const picker = ownerPage.getByRole('dialog', { name: 'Choose emoji', exact: true });
+    await picker.getByRole('searchbox', { name: 'Search emojis', exact: true }).fill('thumbs up');
+    await picker.getByRole('button', { name: 'Emoji thumbs up', exact: true }).click();
+    await expect(picker).toBeHidden();
     await expect(
       guestMessage.getByRole('button', { name: 'React 👍, 1', exact: true }),
     ).toBeVisible();
@@ -314,14 +315,10 @@ test('unread mentions, older history, search and message actions work across two
       guestPage.locator(`[data-message-id="${sent.id}"]`),
     ).toContainText('Message deleted');
   } finally {
-    if (guestRoomId)
-      await guestContext.request.delete(`/api/v1/rooms/${guestRoomId}`, {
-        headers,
-      });
-    if (privateId)
-      await outsiderContext.request.delete(`/api/v1/rooms/${privateId}`, {
-        headers,
-      });
+    await Promise.allSettled([
+      ...(guestRoomId ? [guestContext.request.delete(`/api/v1/rooms/${guestRoomId}`, { headers, timeout: 5000 })] : []),
+      ...(privateId ? [outsiderContext.request.delete(`/api/v1/rooms/${privateId}`, { headers, timeout: 5000 })] : []),
+    ]);
     await Promise.allSettled([
       ownerContext.close(),
       guestContext.close(),

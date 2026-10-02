@@ -48,6 +48,19 @@ type Binding struct {
 	Button uint8 `json:"button,omitempty"`
 }
 
+// Bindings share one observer and one lease; no input outside these bindings
+// leaves the operating-system callback.
+type Bindings struct {
+	Talk   *Binding `json:"talk,omitempty"`
+	Mute   *Binding `json:"mute,omitempty"`
+	Deafen *Binding `json:"deafen,omitempty"`
+}
+
+type watch struct {
+	input  input
+	action string
+}
+
 // input is a binding resolved to what the operating system reports.
 type input struct {
 	keyboard bool
@@ -58,14 +71,22 @@ type input struct {
 
 // Snapshot is the state the page renders from.
 type Snapshot struct {
-	SessionID string `json:"sessionId"`
-	Sequence  uint32 `json:"sequence"`
-	Pressed   bool   `json:"pressed"`
-	Healthy   bool   `json:"healthy"`
-	Focused   bool   `json:"focused"`
+	SessionID   string `json:"sessionId"`
+	Sequence    uint32 `json:"sequence"`
+	Pressed     bool   `json:"pressed"`
+	Healthy     bool   `json:"healthy"`
+	Focused     bool   `json:"focused"`
+	MuteCount   uint32 `json:"muteCount"`
+	DeafenCount uint32 `json:"deafenCount"`
 }
 
 // Capabilities reports whether this platform has background push-to-talk.
+type PermissionStatus struct {
+	Available bool   `json:"available"`
+	Granted   bool   `json:"granted"`
+	Detail    string `json:"detail"`
+}
+
 type Capabilities struct {
 	Available bool   `json:"available"`
 	Detail    string `json:"detail"`
@@ -144,6 +165,16 @@ func (b Binding) resolve() (input, error) {
 	default:
 		return input{}, ErrUnsupportedButton
 	}
+}
+
+// ValidateBinding probes only the physical mapping; it requests no permissions
+// and installs no observer. Invalid optional actions must not disable valid PTT.
+func ValidateBinding(binding Binding) error {
+	resolved, err := binding.resolve()
+	if err != nil {
+		return err
+	}
+	return validatePlatformInput(resolved)
 }
 
 // inputState debounces a binding into open/closed transitions.
@@ -240,6 +271,67 @@ func (s *shared) publish(pressed bool, sequence uint32, healthy, focused bool) S
 	return s.snapshot
 }
 
+func (s *shared) actions(pressed bool, sequence, mute, deafen uint32, healthy, focused bool) Snapshot {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.snapshot.Pressed, s.snapshot.Sequence = pressed, sequence
+	s.snapshot.MuteCount, s.snapshot.DeafenCount = mute, deafen
+	s.snapshot.Healthy, s.snapshot.Focused = healthy, focused
+	return s.snapshot
+}
+
+// observed is shared by platform workers. Repeats and a binding held at join
+// produce no action; counters let heartbeats reconcile a missed event safely.
+type observed struct {
+	mu                     sync.Mutex
+	watches                []watch
+	states                 []*inputState
+	sequence, mute, deafen uint32
+}
+
+func newObserved(watches []watch, down func(input) bool) *observed {
+	o := &observed{watches: watches}
+	for _, watch := range watches {
+		o.states = append(o.states, newInputState(down(watch.input)))
+	}
+	return o
+}
+
+func (o *observed) change(seen input, down bool) bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	changed := false
+	for i, watch := range o.watches {
+		if watch.input != seen || !o.states[i].update(down) {
+			continue
+		}
+		o.sequence++
+		changed = true
+		if down {
+			if watch.action == "mute" {
+				o.mute++
+			}
+			if watch.action == "deafen" {
+				o.deafen++
+			}
+		}
+	}
+	return changed
+}
+
+func (o *observed) publish(state *shared, options Options, healthy bool) {
+	o.mu.Lock()
+	pressed := false
+	for i, watch := range o.watches {
+		if watch.action == "talk" {
+			pressed = o.states[i].pressed && healthy
+		}
+	}
+	snapshot := state.actions(pressed, o.sequence, o.mute, o.deafen, healthy, options.focused())
+	o.mu.Unlock()
+	options.emit(snapshot)
+}
+
 type session struct {
 	id     string
 	shared *shared
@@ -261,9 +353,12 @@ func NewManager() *Manager { return &Manager{} }
 // Describe reports whether background push-to-talk works on this platform.
 func Describe() Capabilities {
 	if supported {
+		if permission := Permission(); !permission.Granted {
+			return Capabilities{Detail: permission.Detail}
+		}
 		return Capabilities{
 			Available: true,
-			Detail:    "Global keyboard and mouse push-to-talk is available during calls on Windows.",
+			Detail:    "Native keyboard and mouse shortcuts are available during calls. macOS requires Input Monitoring permission.",
 		}
 	}
 	return Capabilities{
@@ -273,9 +368,34 @@ func Describe() Capabilities {
 
 // Start replaces any current session with one watching binding.
 func (m *Manager) Start(binding Binding, options Options) (Snapshot, error) {
-	resolved, err := binding.resolve()
-	if err != nil {
-		return Snapshot{}, err
+	return m.StartBindings(Bindings{Talk: &binding}, options)
+}
+
+func (m *Manager) StartBindings(bindings Bindings, options Options) (Snapshot, error) {
+	watches := make([]watch, 0, 3)
+	for _, entry := range []struct {
+		action  string
+		binding *Binding
+	}{{"talk", bindings.Talk}, {"mute", bindings.Mute}, {"deafen", bindings.Deafen}} {
+		if entry.binding == nil {
+			continue
+		}
+		resolved, err := entry.binding.resolve()
+		if err != nil {
+			return Snapshot{}, err
+		}
+		if err := validatePlatformInput(resolved); err != nil {
+			return Snapshot{}, err
+		}
+		for _, prior := range watches {
+			if prior.input == resolved {
+				return Snapshot{}, errors.New("Each call shortcut must use a different key or mouse button")
+			}
+		}
+		watches = append(watches, watch{resolved, entry.action})
+	}
+	if len(watches) == 0 {
+		return Snapshot{}, errors.New("Choose at least one call shortcut")
 	}
 
 	m.lifecycle.Lock()
@@ -290,7 +410,7 @@ func (m *Manager) Start(binding Binding, options Options) (Snapshot, error) {
 		snapshot:  Snapshot{SessionID: id, Healthy: true, Focused: options.focused()},
 		heartbeat: time.Now(),
 	}
-	started, err := startWorker(resolved, state, options)
+	started, err := startWorker(watches, state, options)
 	if err != nil {
 		return Snapshot{}, err
 	}

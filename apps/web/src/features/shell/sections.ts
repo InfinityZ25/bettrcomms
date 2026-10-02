@@ -7,6 +7,8 @@
  */
 export type Section = 'messages' | 'calls';
 
+export const isConversationRoom = (kind?: string) => kind === 'direct' || kind === 'group';
+
 /** Where a room belongs. Rooms without a kind are channels. */
 export const sectionForRoom = (kind?: string): Section =>
-  kind === 'direct' ? 'messages' : 'calls';
+  isConversationRoom(kind) ? 'messages' : 'calls';

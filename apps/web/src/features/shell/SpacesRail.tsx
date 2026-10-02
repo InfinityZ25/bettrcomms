@@ -9,6 +9,9 @@ import {
 } from 'lucide-react';
 import { Avatar } from '@/components/avatar';
 import { useOwnFace } from '@/features/settings/blobatarIdentity';
+import { useSyncExternalStore } from 'react';
+import AccountPresenceSelector from '@/features/settings/AccountPresenceSelector';
+import { ownPresenceSnapshot, subscribeOwnPresence } from '@/features/settings/presenceStore';
 import type { User } from '@/api';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -78,6 +81,7 @@ export default function SpacesRail({
   // A section button is current when the sidebar is showing it and no other
   // screen has taken over.
   const ownFace = useOwnFace();
+  const ownPresence = useSyncExternalStore(subscribeOwnPresence, ownPresenceSnapshot);
   const { isMobile } = useSidebar();
   const inSection = (candidate: Section) =>
     screen === 'call' &&
@@ -176,6 +180,7 @@ export default function SpacesRail({
                 id={user.id}
                 src={user.avatar_url}
                 prefer={ownFace}
+                presence={ownPresence.userId === user.id ? ownPresence.status === 'invisible' ? 'offline' : ownPresence.status === 'idle' ? 'away' : ownPresence.status : 'offline'}
               />
             ) : (
               <span className="size-2 rounded-full bg-primary" />
@@ -196,6 +201,7 @@ export default function SpacesRail({
               </DropdownMenuLabel>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
+            {user && <div className="px-2 py-2"><AccountPresenceSelector user={user} compact /></div>}
             <DropdownMenuItem
               onClick={onRecordings}
               className="hidden min-h-11 phone:flex"

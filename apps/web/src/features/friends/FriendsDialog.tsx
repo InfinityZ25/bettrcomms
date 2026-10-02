@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { AppDialog } from '@/components/app-dialog';
 import FriendsPanel from './FriendsPanel';
 import type { CallParticipant, Room, User } from '@/api';
+import type { ContactStatus } from '@/features/settings/presenceStore';
 
 export default function FriendsDialog({
   open,
@@ -12,6 +13,7 @@ export default function FriendsDialog({
   room,
   callPresence,
   onlineUsers,
+  contactStatuses,
   refreshRevision,
   onError,
   onOpenRoom,
@@ -23,6 +25,7 @@ export default function FriendsDialog({
   room: Room | null;
   callPresence: Record<string, CallParticipant[]>;
   onlineUsers: Record<string, boolean>;
+  contactStatuses?: Record<string, ContactStatus>;
   refreshRevision: number;
   onError: (message: string) => void;
   onOpenRoom: (room: Room) => void;
@@ -62,6 +65,7 @@ export default function FriendsDialog({
             <FriendsPanel
               callPresence={callPresence}
               onlineUsers={onlineUsers}
+              contactStatuses={contactStatuses}
               refreshRevision={refreshRevision}
               user={user}
               room={room}

@@ -10,7 +10,9 @@ import {
   reconcileMessaging,
   startMessagingSession,
   subscribeConversation,
+  refreshCachedProfiles,
 } from './messageStore';
+import { clearProfiles, receiveProfile } from '@/features/settings/profileStore';
 
 vi.mock('@/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/api')>()),
@@ -18,6 +20,7 @@ vi.mock('@/api', async (importOriginal) => ({
 }));
 let stop: (() => void) | undefined;
 afterEach(() => {
+  clearProfiles();
   stop?.();
   stop = undefined;
   vi.mocked(api).mockReset();
@@ -33,6 +36,20 @@ const message = (id: string, sequence: number, version = 1): Message => ({
   author: { id: 'user', name: 'Person', email: 'person@example.test' },
 });
 describe('message reconciliation', () => {
+  it('keeps a new author profile when an older HTTP history finishes after its event', async () => {
+    vi.mocked(api).mockResolvedValueOnce({ rooms: [] });
+    stop = startMessagingSession('user');
+    let finish!: (value: unknown) => void;
+    vi.mocked(api).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }))
+      .mockResolvedValueOnce({ members: [{ user: { id: 'user', name: 'Old', email: '', profile_version: 1 } }] });
+    const loading = loadConversation('room');
+    receiveProfile({ id: 'user', name: 'Current', email: '', profile_version: 2 });
+    refreshCachedProfiles();
+    finish({ messages: [{ ...message('old', 1), author: { id: 'user', name: 'Old', email: '', profile_version: 1 } }] });
+    await loading;
+    expect(conversationSnapshot('room').messages[0].author.name).toBe('Current');
+    expect(conversationSnapshot('room').members[0].name).toBe('Current');
+  });
   it('moves the unread divider after a successful read', async () => {
     vi.mocked(api).mockResolvedValueOnce({ rooms: [] });
     stop = startMessagingSession('user');

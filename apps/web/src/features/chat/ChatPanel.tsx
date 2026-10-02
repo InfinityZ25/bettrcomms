@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { motion } from 'motion/react';
 import { softSpring } from '@/lib/motion';
+import { MessageBody } from './MessageItem';
 
 const time = (value: string) =>
   new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -75,9 +76,7 @@ export default function ChatPanel({
                     {time(message.created_at)}
                   </time>
                 </div>
-                <p className="mt-1 [overflow-wrap:anywhere] whitespace-pre-wrap text-sm leading-6 text-foreground/80">
-                  {message.body}
-                </p>
+                <div className="mt-1 [overflow-wrap:anywhere] text-sm leading-6 text-foreground/80"><MessageBody message={message} /></div>
               </div>
             </div>
           ))

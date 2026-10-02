@@ -3,37 +3,47 @@ package api
 import "time"
 
 type User struct {
-	ID        string    `json:"id"`
-	WorkOSID  *string   `json:"-"`
-	Email     string    `json:"email"`
-	Name      string    `json:"name"`
-	AvatarURL *string   `json:"avatar_url"`
-	CreatedAt time.Time `json:"created_at"`
+	ProfileVersion int64     `json:"profile_version"`
+	ID             string    `json:"id"`
+	WorkOSID       *string   `json:"-"`
+	Email          string    `json:"email"`
+	Name           string    `json:"name"`
+	Username       *string   `json:"username"`
+	Bio            string    `json:"bio"`
+	PresenceStatus string    `json:"presence_status,omitempty"`
+	AvatarURL      *string   `json:"avatar_url"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 type Room struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	DisplayName *string   `json:"display_name,omitempty"`
-	OwnerID     string    `json:"owner_id"`
-	Role        string    `json:"role"`
-	Kind        string    `json:"kind"`
-	CreatedAt   time.Time `json:"created_at"`
-	ActivityAt  time.Time `json:"activity_at"`
+	SlowModeSeconds int       `json:"slow_mode_seconds"`
+	ID              string    `json:"id"`
+	Name            string    `json:"name"`
+	DisplayName     *string   `json:"display_name,omitempty"`
+	OwnerID         string    `json:"owner_id"`
+	Role            string    `json:"role"`
+	Kind            string    `json:"kind"`
+	CreatedAt       time.Time `json:"created_at"`
+	ActivityAt      time.Time `json:"activity_at"`
 }
 type Message struct {
-	ID          string              `json:"id"`
-	RoomID      string              `json:"room_id"`
-	Author      User                `json:"author"`
-	Body        string              `json:"body"`
-	CreatedAt   time.Time           `json:"created_at"`
-	Sequence    int64               `json:"sequence"`
-	Version     int64               `json:"version"`
-	EditedAt    *time.Time          `json:"edited_at,omitempty"`
-	DeletedAt   *time.Time          `json:"deleted_at,omitempty"`
-	Reply       *MessageReply       `json:"reply,omitempty"`
-	Mentions    []MessageMention    `json:"mentions"`
-	Reactions   []MessageReaction   `json:"reactions"`
-	Attachments []MessageAttachment `json:"attachments"`
+	ID                string              `json:"id"`
+	RoomID            string              `json:"room_id"`
+	Author            User                `json:"author"`
+	Body              string              `json:"body"`
+	CreatedAt         time.Time           `json:"created_at"`
+	Sequence          int64               `json:"sequence"`
+	Version           int64               `json:"version"`
+	EditedAt          *time.Time          `json:"edited_at,omitempty"`
+	DeletedAt         *time.Time          `json:"deleted_at,omitempty"`
+	Reply             *MessageReply       `json:"reply,omitempty"`
+	Mentions          []MessageMention    `json:"mentions"`
+	Reactions         []MessageReaction   `json:"reactions"`
+	Attachments       []MessageAttachment `json:"attachments"`
+	ThreadRootID      *string             `json:"thread_root_id,omitempty"`
+	ThreadReplyCount  int64               `json:"thread_reply_count,omitempty"`
+	ThreadUnreadCount int64               `json:"thread_unread_count,omitempty"`
+	PinnedAt          *time.Time          `json:"pinned_at,omitempty"`
+	PinnedBy          *string             `json:"pinned_by,omitempty"`
 }
 
 type MessageAttachment struct {
@@ -61,6 +71,7 @@ type MessagePage struct {
 	Messages     []Message `json:"messages"`
 	BeforeID     string    `json:"before_id,omitempty"`
 	ReadSequence int64     `json:"read_sequence"`
+	Root         *Message  `json:"root,omitempty"`
 }
 type RoomUnread struct {
 	RoomID       string `json:"room_id"`
@@ -76,9 +87,10 @@ type FriendRequest struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 type RoomMember struct {
-	User     User      `json:"user"`
-	Role     string    `json:"role"`
-	JoinedAt time.Time `json:"joined_at"`
+	RestrictedUntil *time.Time `json:"restricted_until,omitempty"`
+	User            User       `json:"user"`
+	Role            string     `json:"role"`
+	JoinedAt        time.Time  `json:"joined_at"`
 }
 
 type Store interface {

@@ -4,6 +4,8 @@
 export {
     Binding,
     BindingKind,
+    Bindings,
     Capabilities,
+    PermissionStatus,
     Snapshot
 } from "./models.js";

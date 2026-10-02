@@ -1,5 +1,7 @@
 import { isNativePushToTalk, NativePushToTalk, type GlobalInputStatus } from './nativePushToTalk';
 import { playPushToTalkCue } from './sounds';
+import { readCallShortcuts, sameShortcut, shortcutChangeEvent } from './callShortcutSettings';
+import { beginDesktopActivity } from '../desktop/desktopSettings';
 
 export type TalkBinding = { kind: 'keyboard'; code: string } | { kind: 'mouse'; button: number };
 export interface TalkSettings { enabled: boolean; binding: TalkBinding; allowWhileTyping?: boolean; playCues?: boolean }
@@ -51,9 +53,11 @@ export class CallMicrophone {
   private nativeInput?: NativePushToTalk;
   private nativeGeneration = 0;
   private foregroundHeld = false;
+  private releaseActivity?: () => void;
+  private shortcuts = readCallShortcuts();
   private state = { settings: readTalkSettings(), active: false, held: false, manualMuted: false, deafened: false, muted: false, transmitting: false, globalStatus: 'foreground' as GlobalInputStatus, globalMessage: '' };
 
-  constructor(private readonly setEnabled: (enabled: boolean) => void) {}
+  constructor(private readonly setEnabled: (enabled: boolean) => void, private readonly setDeafened?: (deafened: boolean) => void) {}
 
   getSnapshot = () => this.state;
 
@@ -69,17 +73,21 @@ export class CallMicrophone {
     if (!next.held) this.foregroundHeld = false;
     this.state = next;
     this.setEnabled(next.transmitting);
+    if (previous.deafened !== next.deafened) this.setDeafened?.(next.deafened);
     if (previous.active && next.active && previous.settings.enabled && next.settings.enabled && next.settings.playCues !== false && previous.transmitting !== next.transmitting)
       playPushToTalkCue(next.transmitting);
     for (const listener of this.listeners) listener();
   }
 
   start(): void {
+    this.releaseActivity?.();
+    this.releaseActivity = beginDesktopActivity();
     this.update({ settings: readTalkSettings(), active: true, held: false, manualMuted: false, deafened: false });
     this.configureNative();
   }
 
   stop(): void {
+    this.releaseActivity?.(); this.releaseActivity = undefined;
     ++this.nativeGeneration;
     this.nativeInput?.dispose();
     this.nativeInput = undefined;
@@ -90,7 +98,8 @@ export class CallMicrophone {
     const generation = ++this.nativeGeneration;
     this.nativeInput?.dispose();
     this.nativeInput = undefined;
-    if (!this.state.active || !this.state.settings.enabled || !isNativePushToTalk()) {
+    const actions = this.shortcuts = readCallShortcuts();
+    if (!this.state.active || (!this.state.settings.enabled && !actions.mute && !actions.deafen) || !isNativePushToTalk()) {
       this.update({ globalStatus: 'foreground', globalMessage: '', held: false });
       return;
     }
@@ -105,8 +114,11 @@ export class CallMicrophone {
       this.update({ held: pressed && !blocked });
     }, (globalStatus, globalMessage) => {
       if (generation === this.nativeGeneration) this.update({ globalStatus, globalMessage, held: false });
+    }, (action, focused) => {
+      if (generation !== this.nativeGeneration || focused || !this.state.active) return;
+      if (action === 'mute') this.toggleMute(); else this.toggleDeafen();
     });
-    void this.nativeInput.start(this.state.settings.binding);
+    void this.nativeInput.start(this.state.settings.enabled ? this.state.settings.binding : undefined, actions);
   }
 
   toggleMute(): void {
@@ -138,7 +150,9 @@ export class CallMicrophone {
   };
   private storageChanged = (event: StorageEvent) => {
     if (event.key === storageKey || event.key === null) this.settingsChanged();
+    if (event.key === 'bc-call-shortcuts' || event.key === null) this.configureNative();
   };
+  private shortcutSettingsChanged = () => this.configureNative();
 
   private press(event: KeyboardEvent | MouseEvent): void {
     const binding = this.state.settings.binding;
@@ -150,6 +164,15 @@ export class CallMicrophone {
     if (!this.state.held) this.update({ held: true });
   }
   private keyDown = (event: KeyboardEvent) => {
+    const actions = this.shortcuts;
+    if (this.state.active && !event.repeat && !event.isComposing && !document.hidden && !this.blocksInput(event.target)) {
+      const seen: TalkBinding = { kind: 'keyboard', code: event.code };
+      if (sameShortcut(seen, actions.mute) || sameShortcut(seen, actions.deafen)) {
+        if (!isEditing(event.target)) event.preventDefault();
+        if (sameShortcut(seen, actions.mute)) this.toggleMute(); else this.toggleDeafen();
+        return;
+      }
+    }
     const binding = this.state.settings.binding;
     if (binding.kind !== 'keyboard' || event.code !== binding.code || event.isComposing) return;
     // Space/Enter assigned to PTT must not also click the focused mute/leave button.
@@ -164,6 +187,15 @@ export class CallMicrophone {
     if (this.foregroundHeld || this.state.globalStatus === 'foreground') this.release();
   };
   private mouseDown = (event: MouseEvent) => {
+    const actions = this.shortcuts;
+    if (this.state.active && !document.hidden && !this.blocksInput(event.target) && !(event.button === 0 && isInteractive(event.target))) {
+      const seen: TalkBinding = { kind: 'mouse', button: event.button };
+      if (sameShortcut(seen, actions.mute) || sameShortcut(seen, actions.deafen)) {
+        if (!isEditing(event.target)) event.preventDefault();
+        if (sameShortcut(seen, actions.mute)) this.toggleMute(); else this.toggleDeafen();
+        return;
+      }
+    }
     const binding = this.state.settings.binding;
     if (binding.kind === 'mouse' && event.button === binding.button) this.press(event);
   };
@@ -193,6 +225,7 @@ export class CallMicrophone {
       window.addEventListener('focusin', this.focus);
       document.addEventListener('visibilitychange', this.visibility);
       window.addEventListener(changeEvent, this.settingsChanged);
+      window.addEventListener(shortcutChangeEvent, this.shortcutSettingsChanged);
       window.addEventListener('storage', this.storageChanged);
     }
     return () => {
@@ -209,6 +242,7 @@ export class CallMicrophone {
       window.removeEventListener('focusin', this.focus);
       document.removeEventListener('visibilitychange', this.visibility);
       window.removeEventListener(changeEvent, this.settingsChanged);
+      window.removeEventListener(shortcutChangeEvent, this.shortcutSettingsChanged);
       window.removeEventListener('storage', this.storageChanged);
       this.stop();
     };

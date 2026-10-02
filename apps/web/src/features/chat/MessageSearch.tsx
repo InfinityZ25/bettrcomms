@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/dialog';
 import { useMountEffect } from '@/hooks/useMountEffect';
 import { roomLabel } from '@/features/rooms/RoomNavigation';
-import { MessageBody } from './MessageItem';
+import { formatMessagePreview } from './messageFormatting';
 
 export default function MessageSearch({
   rooms,
@@ -332,7 +332,7 @@ function SearchResult({
         {new Date(message.created_at).toLocaleString()}
       </span>
       <span className="mt-1 block whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">
-        <MessageBody message={message} />
+        {formatMessagePreview(message.body)}
       </span>
       <span className="mt-1 block text-xs text-primary">Go to message</span>
     </button>

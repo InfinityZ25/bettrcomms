@@ -15,6 +15,8 @@ import (
 
 const supported = true
 
+func validatePlatformInput(input) error { return nil }
+
 var (
 	user32                    = windows.NewLazySystemDLL("user32.dll")
 	procSetWindowsHookExW     = user32.NewProc("SetWindowsHookExW")
@@ -95,9 +97,8 @@ type msg struct {
 // the same thread re-entrantly, so it is mutex-guarded rather than assumed.
 type hookSession struct {
 	mu       sync.Mutex
-	watching input
-	state    *inputState
-	vk       uint32
+	observed *observed
+	vks      map[input]uint32
 	threadID uint32
 }
 
@@ -121,11 +122,11 @@ func change(seen input, down bool, vk uint32) {
 	}
 	session.mu.Lock()
 	defer session.mu.Unlock()
-	if session.watching != seen {
+	if _, selected := session.vks[seen]; !selected {
 		return
 	}
-	session.vk = vk
-	if session.state.update(down) {
+	session.vks[seen] = vk
+	if session.observed.change(seen, down) {
 		postThreadMessage(session.threadID, wmChanged)
 	}
 }
@@ -220,12 +221,12 @@ func (w *worker) stop() {
 // The thread is locked to an OS thread for its whole life: a low-level hook is
 // owned by the thread that installed it, and its callback is delivered to that
 // thread's message queue, so Go must not migrate the goroutine.
-func startWorker(watching input, state *shared, options Options) (*worker, error) {
-	type registration struct {
+func startWorker(watches []watch, state *shared, options Options) (*worker, error) {
+	type registrationResult struct {
 		threadID uint32
 		err      error
 	}
-	ready := make(chan registration, 1)
+	ready := make(chan registrationResult, 1)
 	done := make(chan struct{})
 
 	go func() {
@@ -239,30 +240,37 @@ func startWorker(watching input, state *shared, options Options) (*worker, error
 		procPeekMessageW.Call(uintptr(unsafe.Pointer(&message)), 0, 0, 0, 0)
 
 		threadID, _, _ := procGetCurrentThreadIDNow.Call()
-		vk := virtualKey(watching)
 		session := &hookSession{
-			watching: watching,
-			state:    newInputState(asyncKeyDown(vk)),
-			vk:       vk,
-			threadID: uint32(threadID),
+			observed: newObserved(watches, func(i input) bool { return asyncKeyDown(virtualKey(i)) }),
+			vks:      make(map[input]uint32), threadID: uint32(threadID),
 		}
-
+		keyboard, mouse := false, false
+		for _, watch := range watches {
+			session.vks[watch.input] = virtualKey(watch.input)
+			keyboard = keyboard || watch.input.keyboard
+			mouse = mouse || !watch.input.keyboard
+		}
 		module, _, _ := procGetModuleHandleW.Call(0)
-		hookID := uintptr(whKeyboardLL)
-		callback := keyboardCallback
-		if !watching.keyboard {
-			hookID, callback = whMouseLL, mouseCallback
+		for _, registration := range []struct {
+			enabled      bool
+			id, callback uintptr
+		}{
+			{keyboard, whKeyboardLL, keyboardCallback}, {mouse, whMouseLL, mouseCallback},
+		} {
+			if !registration.enabled {
+				continue
+			}
+			hook, _, err := procSetWindowsHookExW.Call(registration.id, registration.callback, module, 0)
+			if hook == 0 {
+				ready <- registrationResult{err: wrap("Windows could not register global input", err)}
+				return
+			}
+			defer procUnhookWindowsHookEx.Call(hook)
 		}
-		hook, _, err := procSetWindowsHookExW.Call(hookID, callback, module, 0)
-		if hook == 0 {
-			ready <- registration{err: wrap("Windows could not register global input", err)}
-			return
-		}
-		defer procUnhookWindowsHookEx.Call(hook)
 
 		timer, _, err := procSetTimer.Call(0, 0, watchdogInterval, 0)
 		if timer == 0 {
-			ready <- registration{err: wrap("Global input watchdog could not start", err)}
+			ready <- registrationResult{err: wrap("Global input watchdog could not start", err)}
 			return
 		}
 		defer procKillTimer.Call(0, timer)
@@ -278,7 +286,7 @@ func startWorker(watching input, state *shared, options Options) (*worker, error
 			active.mu.Unlock()
 		}()
 
-		ready <- registration{threadID: uint32(threadID)}
+		ready <- registrationResult{threadID: uint32(threadID)}
 
 		for {
 			result, _, _ := procGetMessageW.Call(uintptr(unsafe.Pointer(&message)), 0, 0, 0)
@@ -294,11 +302,15 @@ func startWorker(watching input, state *shared, options Options) (*worker, error
 				// Done here rather than in the callback, which must return
 				// promptly.
 				session.mu.Lock()
-				if !asyncKeyDown(session.vk) && session.state.update(false) {
-					session.mu.Unlock()
+				changed := false
+				for seen, vk := range session.vks {
+					if !asyncKeyDown(vk) {
+						changed = session.observed.change(seen, false) || changed
+					}
+				}
+				session.mu.Unlock()
+				if changed {
 					publish(session, state, options, true)
-				} else {
-					session.mu.Unlock()
 				}
 			}
 			if message.Message == wmChanged {
@@ -308,9 +320,9 @@ func startWorker(watching input, state *shared, options Options) (*worker, error
 
 		// A worker that is going away reports the binding released, so the
 		// microphone cannot be left open by a session that ended mid-hold.
-		session.mu.Lock()
-		session.state.update(false)
-		session.mu.Unlock()
+		for _, watch := range watches {
+			session.observed.change(watch.input, false)
+		}
 		publish(session, state, options, false)
 	}()
 
@@ -327,10 +339,7 @@ func startWorker(watching input, state *shared, options Options) (*worker, error
 }
 
 func publish(session *hookSession, state *shared, options Options, healthy bool) {
-	session.mu.Lock()
-	pressed, sequence := session.state.pressed, session.state.sequence
-	session.mu.Unlock()
-	options.emit(state.publish(pressed, sequence, healthy, options.focused()))
+	session.observed.publish(state, options, healthy)
 }
 
 // virtualKey is the key the watchdog polls with GetAsyncKeyState. A scan code
@@ -354,3 +363,6 @@ func wrap(message string, err error) error {
 	}
 	return errors.New(message + ": " + err.Error())
 }
+
+func Permission() PermissionStatus        { return PermissionStatus{Available: true, Granted: true} }
+func RequestPermission() PermissionStatus { return Permission() }

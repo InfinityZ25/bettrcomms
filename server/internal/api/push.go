@@ -148,11 +148,12 @@ func (s *PostgresStore) DispatchPush(ctx context.Context, config Config) (int, e
 		}
 		var allowed bool
 		err = s.DB.QueryRow(ctx, `SELECT ps.endpoint,ps.p256dh,ps.auth,m.room_id::text,u.name,
-			can_access_room(m.room_id,ps.user_id) AND NOT ps.dnd AND
+			can_access_room(m.room_id,ps.user_id) AND NOT ps.dnd AND recipient.presence_status<>'dnd' AND
 			COALESCE(np.mode,'all')<>'mute' AND
 			(COALESCE(np.mode,'all')<>'mentions' OR EXISTS(SELECT 1 FROM message_mentions mm WHERE mm.message_id=m.id AND mm.user_id=ps.user_id))
 			FROM push_deliveries d JOIN push_subscriptions ps ON ps.id=d.subscription_id
 			JOIN messages m ON m.id=d.message_id JOIN users u ON u.id=m.author_id
+			JOIN users recipient ON recipient.id=ps.user_id
 			LEFT JOIN room_notification_preferences np ON np.room_id=m.room_id AND np.user_id=ps.user_id
 			WHERE d.message_id=$1 AND d.subscription_id=$2`, d.MessageID, d.SubscriptionID).Scan(
 			&d.Endpoint, &d.P256dh, &d.Auth, &d.RoomID, &d.Author, &allowed)

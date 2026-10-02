@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -220,6 +221,7 @@ func (a *API) messagingRoom(w http.ResponseWriter, r *http.Request, u User, p []
 		var in struct {
 			Body          string   `json:"body"`
 			ReplyID       string   `json:"reply_to_id"`
+			ThreadRootID  string   `json:"thread_root_id"`
 			ClientNonce   string   `json:"client_nonce"`
 			AttachmentIDs []string `json:"attachment_ids"`
 		}
@@ -231,7 +233,7 @@ func (a *API) messagingRoom(w http.ResponseWriter, r *http.Request, u User, p []
 			a.fail(w, 400, "invalid_body", "body must be 1–4000 characters, or include an attachment")
 			return
 		}
-		if len(p) == 4 && (in.ClientNonce != "" || len(in.AttachmentIDs) != 0) {
+		if len(p) == 4 && (in.ClientNonce != "" || len(in.AttachmentIDs) != 0 || in.ThreadRootID != "") {
 			a.fail(w, 400, "invalid_edit", "attachments cannot be changed while editing")
 			return
 		}
@@ -248,7 +250,20 @@ func (a *API) messagingRoom(w http.ResponseWriter, r *http.Request, u User, p []
 			id = p[3]
 		} else {
 			event = "chat.message"
-			message, publish, err = store.SendMessage(room, u.ID, in.Body, in.ReplyID, in.ClientNonce, in.AttachmentIDs)
+			if in.ThreadRootID != "" {
+				if !uuidPattern.MatchString(in.ThreadRootID) {
+					a.fail(w, 400, "invalid_thread", "choose a thread in this conversation")
+					return
+				}
+				threaded, ok := a.Store.(*PostgresStore)
+				if !ok {
+					a.fail(w, 503, "unavailable", "threads unavailable")
+					return
+				}
+				message, publish, err = threaded.SendThreadMessage(room, u.ID, in.Body, in.ReplyID, in.ClientNonce, in.AttachmentIDs, in.ThreadRootID)
+			} else {
+				message, publish, err = store.SendMessage(room, u.ID, in.Body, in.ReplyID, in.ClientNonce, in.AttachmentIDs)
+			}
 			if publish {
 				status = http.StatusCreated
 			}
@@ -282,6 +297,15 @@ func (a *API) messagingRoom(w http.ResponseWriter, r *http.Request, u User, p []
 		data, _ := json.Marshal(message)
 		a.Hub.broadcast(room, nil, wire{Type: event, From: u.ID, Payload: data})
 		a.Realtime.publishRoom(room, wire{Type: event, From: u.ID, Payload: data})
+		if message.ThreadRootID != nil {
+			if parent, parentErr := store.MessageByID(room, *message.ThreadRootID); parentErr == nil {
+				a.publishChatUpdate(parent)
+			}
+		}
+	}
+	if errors.Is(err, ErrReactionLimit) {
+		a.fail(w, 400, "reaction_limit", "Use up to ten reactions per person and twenty different emojis per message.")
+		return
 	}
 	a.resultStatus(w, map[string]any{"message": message}, err, status)
 }

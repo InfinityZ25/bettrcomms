@@ -12,6 +12,59 @@ import * as h264$0 from "./internal/native/h264/models.js";
 // @ts-ignore: Unused imports
 import * as nativertc$0 from "./internal/native/nativertc/models.js";
 
+export class DesktopUpdateStatus {
+    "available": boolean;
+    "state": string;
+    "currentVersion": string;
+    "version": string;
+    "detail": string;
+    "notes": string;
+    "automatic": boolean;
+    "lastChecked": string;
+    "progress": number;
+
+    /** Creates a new DesktopUpdateStatus instance. */
+    constructor($$source: Partial<DesktopUpdateStatus> = {}) {
+        if (!("available" in $$source)) {
+            this["available"] = false;
+        }
+        if (!("state" in $$source)) {
+            this["state"] = "";
+        }
+        if (!("currentVersion" in $$source)) {
+            this["currentVersion"] = "";
+        }
+        if (!("version" in $$source)) {
+            this["version"] = "";
+        }
+        if (!("detail" in $$source)) {
+            this["detail"] = "";
+        }
+        if (!("notes" in $$source)) {
+            this["notes"] = "";
+        }
+        if (!("automatic" in $$source)) {
+            this["automatic"] = false;
+        }
+        if (!("lastChecked" in $$source)) {
+            this["lastChecked"] = "";
+        }
+        if (!("progress" in $$source)) {
+            this["progress"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new DesktopUpdateStatus instance from a string or object.
+     */
+    static createFrom($$source: any = {}): DesktopUpdateStatus {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new DesktopUpdateStatus($$parsedSource as Partial<DesktopUpdateStatus>);
+    }
+}
+
 /**
  * NativeScreenReport is a capture's live state.
  */

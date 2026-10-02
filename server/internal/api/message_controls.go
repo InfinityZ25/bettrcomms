@@ -28,7 +28,7 @@ func (s *PostgresStore) ReportMessage(room, user, id, reason string) error {
 
 func (s *PostgresStore) ListMessageReports(room, user string) ([]MessageReport, error) {
 	var owner string
-	if err := s.DB.QueryRow(context.Background(), `SELECT owner_id::text FROM rooms WHERE id=$1 AND kind='channel'`, room).Scan(&owner); err != nil {
+	if err := s.DB.QueryRow(context.Background(), `SELECT owner_id::text FROM rooms WHERE id=$1 AND kind IN('channel','group')`, room).Scan(&owner); err != nil {
 		return nil, norm(err)
 	}
 	if owner != user {
@@ -59,8 +59,11 @@ func (s *PostgresStore) ModerateMessage(room, actor, id, reason string) (Message
 		return Message{}, err
 	}
 	defer tx.Rollback(ctx)
+	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::uuid::text,0))`, room); err != nil {
+		return Message{}, err
+	}
 	var owner string
-	if err = tx.QueryRow(ctx, `SELECT owner_id::text FROM rooms WHERE id=$1 AND kind='channel' FOR SHARE`, room).Scan(&owner); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT owner_id::text FROM rooms WHERE id=$1 AND kind IN('channel','group') FOR SHARE`, room).Scan(&owner); err != nil {
 		return Message{}, norm(err)
 	}
 	if owner != actor {
@@ -71,6 +74,12 @@ func (s *PostgresStore) ModerateMessage(room, actor, id, reason string) (Message
 		return Message{}, norm(err)
 	}
 	if _, err = tx.Exec(ctx, `UPDATE messages SET body='',deleted_at=clock_timestamp(),version=version+1 WHERE id=$1`, id); err != nil {
+		return Message{}, err
+	}
+	if _, err = tx.Exec(ctx, `DELETE FROM message_pins WHERE message_id=$1`, id); err != nil {
+		return Message{}, err
+	}
+	if _, err = tx.Exec(ctx, `UPDATE messages SET version=version+1 WHERE id=(SELECT thread_root_id FROM messages WHERE id=$1)`, id); err != nil {
 		return Message{}, err
 	}
 	if _, err = tx.Exec(ctx, `UPDATE message_attachments SET deleted_at=clock_timestamp() WHERE message_id=$1 AND deleted_at IS NULL`, id); err != nil {
@@ -101,7 +110,7 @@ func (s *PostgresStore) DismissMessageReport(room, actor, reportID string) error
 	}
 	defer tx.Rollback(ctx)
 	var owner string
-	if err = tx.QueryRow(ctx, `SELECT owner_id::text FROM rooms WHERE id=$1 AND kind='channel' FOR SHARE`, room).Scan(&owner); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT owner_id::text FROM rooms WHERE id=$1 AND kind IN('channel','group') FOR SHARE`, room).Scan(&owner); err != nil {
 		return norm(err)
 	}
 	if owner != actor {
