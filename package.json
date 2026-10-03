@@ -9,6 +9,7 @@
     "dev": "npm run dev -w apps/web",
     "dev:desktop-wails": "npm --prefix apps/desktop-wails run dev",
     "build:desktop-wails": "npm --prefix apps/desktop-wails run build",
+    "build:android": "bash scripts/package-desktop-wails-android.sh",
     "build:desktop-wails:macos": "bash scripts/package-desktop-wails-macos.sh",
     "build": "npm run build -w apps/web",
     "test:e2e": "playwright test",

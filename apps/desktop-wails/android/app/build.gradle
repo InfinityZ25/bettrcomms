@@ -1,0 +1,79 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+def hostPackage = new groovy.json.JsonSlurper().parse(file('../../package.json'))
+def nativeAbis = (System.getenv('ANDROID_ARCHS') ?: 'arm arm64').tokenize().collect {
+    def abi = [arm: 'armeabi-v7a', arm64: 'arm64-v8a', amd64: 'x86_64'][it]
+    if (!abi) throw new GradleException("Unsupported Android architecture: $it")
+    abi
+}
+android {
+    // Keep com.wails.app for Wails' pinned JNI symbol names; applicationId is
+    // the public install identity and must not be the Wails sample identity.
+    namespace 'com.wails.app'
+    compileSdk 36
+    ndkVersion '28.2.13676358'
+    defaultConfig {
+        applicationId 'com.bettrcomms.android'
+        minSdk 26 // Standard calls run on Android 8+; Meta DAT requires Android 12+.
+        targetSdk 36
+        versionName hostPackage.version
+        versionCode Integer.parseInt(System.getenv('ANDROID_VERSION_CODE') ?: '1')
+        manifestPlaceholders = [mwdat_application_id: System.getenv('BETTERCOMMS_META_ANDROID_APP_ID') ?: '',
+                                mwdat_client_token: System.getenv('BETTERCOMMS_META_ANDROID_CLIENT_TOKEN') ?: '']
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+        // Do not package SDK-only ABIs without our JNI host library.
+        ndk { abiFilters.addAll(nativeAbis) }
+    }
+    flavorDimensions += 'wearables'
+    productFlavors {
+        standard { dimension 'wearables'; buildConfigField 'boolean', 'META_CAMERA_SUPPORTED', 'false' }
+        meta { dimension 'wearables'; minSdk 31; buildConfigField 'boolean', 'META_CAMERA_SUPPORTED', 'true' }
+    }
+    buildFeatures { buildConfig = true }
+    signingConfigs {
+        release {
+            if (System.getenv('ANDROID_KEYSTORE_FILE')) {
+                storeFile file(System.getenv('ANDROID_KEYSTORE_FILE'))
+                storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('ANDROID_KEY_ALIAS')
+                keyPassword System.getenv('ANDROID_KEY_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        debug { debuggable true }
+        release {
+            minifyEnabled false
+            if (System.getenv('ANDROID_KEYSTORE_FILE')) signingConfig signingConfigs.release
+            // No implicit debug signing of production bundles. The script
+            // uses assembleDebug for sideloadable development builds.
+        }
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    kotlinOptions { jvmTarget = '17' }
+    sourceSets {
+        main {
+            java.srcDir '../generated/java'
+            res.srcDir '../generated/res'
+            jniLibs.srcDir '../generated/jniLibs'
+        }
+    }
+    packaging { jniLibs { useLegacyPackaging = false } }
+}
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.7.1'
+    implementation 'androidx.webkit:webkit:1.14.0'
+    implementation 'com.google.android.material:material:1.12.0'
+    implementation 'androidx.biometric:biometric:1.1.0'
+    implementation 'androidx.security:security-crypto:1.1.0'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.9.4'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2'
+    metaImplementation 'com.meta.wearable:mwdat-core:1.0.0'
+    metaImplementation 'com.meta.wearable:mwdat-camera:1.0.0'
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test:runner:1.6.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+    androidTestImplementation 'androidx.test.uiautomator:uiautomator:2.3.0'
+}

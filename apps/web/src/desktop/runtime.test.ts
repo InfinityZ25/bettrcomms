@@ -59,11 +59,11 @@ describe('desktop runtime detection', () => {
     expect(runtime.getDesktopApiOrigin()).toBe('http://127.0.0.1:8080');
   });
 
-  it('accepts the iOS host without desktop window controls', async () => {
+  it.each(['ios', 'android'])('accepts the %s host without desktop window controls', async (platform) => {
     const boot = validBoot();
-    boot.platform = 'ios';
+    boot.platform = platform;
     boot.windowControls = {
-      platform: 'ios', mode: 'native-frame', height: 0,
+      platform, mode: 'native-frame', height: 0,
       insetStart: 0, insetEnd: 0, buttons: [], buttonSide: 'end',
     };
     const runtime = await loadRuntime(boot);
@@ -172,4 +172,15 @@ describe('desktop boot report validation', () => {
       'required in production builds',
     );
   });
+});
+
+it('preserves the Android flavor capability and rejects malformed SDK reports', async () => {
+  const boot = validBoot();
+  boot.platform = 'android';
+  boot.capabilities = { ...(boot.capabilities as object), nativeMetaCamera: capability('experimental') };
+  let runtime = await loadRuntime(boot);
+  expect(runtime.readDesktopBootReport()?.capabilities.nativeMetaCamera?.state).toBe('experimental');
+  boot.capabilities = { ...(boot.capabilities as object), nativeMetaCamera: { state: 'pretend' } };
+  runtime = await loadRuntime(boot);
+  expect(runtime.readDesktopBootReport()).toBeNull();
 });

@@ -6,7 +6,7 @@ const bridge = vi.hoisted(() => ({
   unsubscribe: vi.fn(),
 }));
 
-vi.mock('./runtime', () => ({ getDesktopRuntime: () => 'wails' }));
+vi.mock('./runtime', () => ({ getDesktopRuntime: () => 'wails', readDesktopBootReport: () => ({ platform: 'windows' }) }));
 vi.mock('@wailsio/runtime', () => ({
   Events: {
     On: (_name: string, callback: (event: { data: unknown }) => void) => {
