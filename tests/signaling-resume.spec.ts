@@ -78,8 +78,8 @@ test('a signaling restart does not end an established peer-to-peer call', async 
     const secondPage = await secondContext.newPage();
     await Promise.all([firstPage.goto('/'), secondPage.goto('/')]);
     await Promise.all([
-      firstPage.getByRole('button', { name: room.name }).click(),
-      secondPage.getByRole('button', { name: room.name }).click(),
+      firstPage.getByRole('button', { name: room.name, exact: true }).click(),
+      secondPage.getByRole('button', { name: room.name, exact: true }).click(),
     ]);
 
     await firstPage.getByRole('button', { name: 'Join call' }).click();

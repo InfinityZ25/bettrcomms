@@ -5,20 +5,26 @@ import {
 } from '@/desktop/apiTransport';
 import { sessionExpired, sessionGeneration } from '@/features/auth/sessionEvents';
 
-export interface User {
+export interface CustomStatus {
+  text: string;
+  emoji: string;
+  expires_at?: string | null;
+}
+export interface PublicUser {
   id: string;
   name: string;
-  email: string;
   username?: string | null;
   bio?: string;
   profile_version?: number;
+  custom_status?: CustomStatus;
+  status_version?: number;
+  /** A trusted provider picture or a versioned authenticated API resource. */
+  avatar_url?: string | null;
+}
+export interface User extends PublicUser {
+  email: string;
   /** Desired account status; the API only includes this on your own profile. */
   presence_status?: 'online' | 'idle' | 'dnd' | 'invisible';
-  /**
-   * A WorkOS picture or a versioned authenticated avatar resource, never image
-   * bytes repeated in message events. Null when the account has no picture.
-   */
-  avatar_url?: string | null;
 }
 export interface Room {
   slow_mode_seconds?: number;
@@ -36,6 +42,8 @@ export interface MessageAttachment {
   filename: string;
   content_type: string;
   size_bytes: number;
+  voice_note?: boolean;
+  duration_ms?: number;
 }
 export interface CallParticipant {
   user_id: string;
@@ -127,10 +135,15 @@ export async function uploadMessageAttachment(
   roomId: string,
   file: File,
   signal?: AbortSignal,
+  options?: { voiceNote: boolean; durationMs: number },
 ): Promise<MessageAttachment> {
   const generation = sessionGeneration();
   const body = new FormData();
   body.append('file', file);
+  if (options?.voiceNote) {
+    body.append('voice_note', 'true');
+    body.append('duration_ms', String(options.durationMs));
+  }
   const response = await fetch(
     apiHttpUrl(`/api/v1/rooms/${roomId}/attachments`),
     {

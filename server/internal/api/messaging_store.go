@@ -31,7 +31,7 @@ const messageSelect = `SELECT m.id::text,m.room_id::text,m.body,m.created_at,m.s
  CASE WHEN parent.id IS NOT NULL THEN jsonb_build_object('id',parent.id,'name',pu.name,'body',left(parent.body,400),'deleted',parent.deleted_at IS NOT NULL) END,
  COALESCE((SELECT jsonb_agg(jsonb_build_object('id',mu.id,'name',mu.name) ORDER BY mu.id) FROM message_mentions mm JOIN users mu ON mu.id=mm.user_id WHERE mm.message_id=m.id),'[]'),
  COALESCE((SELECT jsonb_agg(jsonb_build_object('emoji',r.emoji,'users',r.users) ORDER BY r.emoji) FROM (SELECT emoji,jsonb_agg(user_id::text ORDER BY user_id) users FROM message_reactions WHERE message_id=m.id GROUP BY emoji) r),'[]'),
-	COALESCE((SELECT jsonb_agg(jsonb_build_object('id',a.id::text,'filename',a.filename,'content_type',a.content_type,'size_bytes',a.size_bytes) ORDER BY a.created_at) FROM message_attachments a WHERE a.message_id=m.id AND a.deleted_at IS NULL),'[]'),
+	COALESCE((SELECT jsonb_agg(jsonb_build_object('id',a.id::text,'filename',a.filename,'content_type',a.content_type,'size_bytes',a.size_bytes,'voice_note',a.voice_note,'duration_ms',a.duration_ms) ORDER BY a.created_at) FROM message_attachments a WHERE a.message_id=m.id AND a.deleted_at IS NULL),'[]'),
  m.thread_root_id::text,(SELECT count(*) FROM messages tr WHERE tr.thread_root_id=m.id AND tr.deleted_at IS NULL),
  (SELECT created_at FROM message_pins WHERE message_id=m.id),(SELECT pinned_by::text FROM message_pins WHERE message_id=m.id)
  FROM messages m JOIN users u ON u.id=m.author_id LEFT JOIN messages parent ON parent.id=m.reply_to_id LEFT JOIN users pu ON pu.id=parent.author_id `

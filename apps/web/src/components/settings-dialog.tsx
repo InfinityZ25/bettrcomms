@@ -23,7 +23,7 @@ const pages = [
   { id: 'desktop', label: 'Desktop app', note: 'Startup and updates', icon: Monitor },
 ] as const satisfies ReadonlyArray<{ id: SettingsPage; label: string; note: string; icon: typeof Mic }>;
 
-export function SettingsDialog({ open, onOpenChange, user, noise, onNoiseChange, balanced, onBalancedChange, layout, onLayoutChange, signedIn, onSignOut }: {
+export function SettingsDialog({ open, onOpenChange, user, noise, onNoiseChange, balanced, onBalancedChange, layout, onLayoutChange, signedIn, onSignOut, initialPage = 'audio' }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   user: User | null;
@@ -35,8 +35,9 @@ export function SettingsDialog({ open, onOpenChange, user, noise, onNoiseChange,
   onLayoutChange: (value: string) => void;
   signedIn: boolean;
   onSignOut: () => void;
+  initialPage?: SettingsPage;
 }) {
-  const [page, setPage] = useState<SettingsPage>('audio');
+  const [page, setPage] = useState<SettingsPage>(initialPage);
   const visiblePages = pages.filter((item) => (item.id !== 'desktop' || getDesktopRuntime() === 'wails') && (!['account', 'profile'].includes(item.id) || signedIn));
   const current = pages.find((item) => item.id === page) ?? pages[0];
 

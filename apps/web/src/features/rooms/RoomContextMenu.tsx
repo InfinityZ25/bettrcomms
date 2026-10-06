@@ -1,5 +1,5 @@
 import { useState, useSyncExternalStore } from 'react';
-import { Check, LogOut, Settings2, Trash2, UserPlus } from 'lucide-react';
+import { Archive, ArchiveRestore, Check, LogOut, Settings2, Star, StarOff, Trash2, UserPlus } from 'lucide-react';
 import { api, type Room, type User } from '@/api';
 import { errorMessage } from '@/lib/errors';
 import { AppDialog } from '@/components/app-dialog';
@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/context-menu';
 import { roomLabel } from './RoomNavigation';
 import { notificationSnapshot, setRoomNotificationMode, subscribeNotifications, type NotificationMode } from '@/features/chat/notificationSettings';
+import { conversationPreferencesSnapshot, setConversationPreference, subscribeConversationPreferences } from './conversationPreferences';
 
 /**
  * Right-click a room.
@@ -49,6 +50,8 @@ export default function RoomContextMenu({
   const [pending, setPending] = useState<'delete' | 'leave' | null>(null);
   const [busy, setBusy] = useState(false);
   const notifications = useSyncExternalStore(subscribeNotifications, notificationSnapshot);
+  const preferences = useSyncExternalStore(subscribeConversationPreferences, conversationPreferencesSnapshot);
+  const preference = preferences.userId === user?.id ? preferences.preferences[room.id] : undefined;
 
   const channel = (room.kind ?? 'channel') === 'channel';
   const group = room.kind === 'group';
@@ -91,6 +94,15 @@ export default function RoomContextMenu({
             <ContextMenuLabel className="truncate font-medium text-foreground">
               {label}
             </ContextMenuLabel>
+          </ContextMenuGroup>
+          <ContextMenuSeparator />
+          <ContextMenuGroup>
+            <ContextMenuItem disabled={!preferences.ready || preferences.busy[room.id]} onClick={() => {
+              void setConversationPreference(room, { favorite: !preference?.favorite }).catch((error) => onError(errorMessage(error)));
+            }}>{preference?.favorite ? <StarOff /> : <Star />}{preference?.favorite ? 'Remove from favorites' : 'Add to favorites'}</ContextMenuItem>
+            {!channel && <ContextMenuItem disabled={!preferences.ready || preferences.busy[room.id]} onClick={() => {
+              void setConversationPreference(room, { archived: !preference?.archived }).catch((error) => onError(errorMessage(error)));
+            }}>{preference?.archived ? <ArchiveRestore /> : <Archive />}{preference?.archived ? 'Restore conversation' : 'Archive conversation'}</ContextMenuItem>}
           </ContextMenuGroup>
           <ContextMenuSeparator />
           <ContextMenuGroup>

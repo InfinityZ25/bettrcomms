@@ -44,9 +44,9 @@ test('same account can add a device or move the call to a new device', async ({ 
     const replacementPage = await replacementContext.newPage();
     await Promise.all([firstPage.goto('/'), secondPage.goto('/'), replacementPage.goto('/')]);
     await Promise.all([
-      firstPage.getByRole('button', { name: room.name }).click(),
-      secondPage.getByRole('button', { name: room.name }).click(),
-      replacementPage.getByRole('button', { name: room.name }).click(),
+      firstPage.getByRole('button', { name: room.name, exact: true }).click(),
+      secondPage.getByRole('button', { name: room.name, exact: true }).click(),
+      replacementPage.getByRole('button', { name: room.name, exact: true }).click(),
     ]);
 
     await firstPage.getByRole('button', { name: 'Join call' }).click();

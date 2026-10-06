@@ -98,7 +98,7 @@ test('native copilot belongs to the call while navigating Home and text, and rel
     for (const page of [owner, viewer]) {
       await page.goto('/');
       await page.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Calls', exact: true }).click();
-      await page.getByRole('button', { name: room.name }).click();
+      await page.getByRole('button').and(page.getByTitle(room.name, { exact: true })).click();
       await page.getByRole('button', { name: 'Join call', exact: true }).click();
       await expect(page.getByRole('button', { name: 'Leave call', exact: true })).toBeVisible();
     }

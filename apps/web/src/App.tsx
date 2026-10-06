@@ -3,6 +3,8 @@ import {
   useEffect,
   useRef,
   useState,
+  lazy,
+  Suspense,
   type FormEvent,
 } from 'react';
 import { api, type Room, type User } from './api';
@@ -14,6 +16,7 @@ import CallStage, { type NativeShareActions } from '@/features/call/CallStage';
 import {
   CallSessionProvider,
   type CallChrome,
+  useActiveCall,
 } from '@/features/call/CallSessionContext';
 import CallDock from '@/features/call/CallDock';
 import CallAlerts from '@/features/call/CallAlerts';
@@ -53,6 +56,11 @@ import { useAsyncAction } from '@/hooks/useAsyncAction';
 import { cn } from '@/lib/utils';
 import { AnimatePresence, motion } from 'motion/react';
 import { softSpring } from '@/lib/motion';
+import { useMountEffect } from '@/hooks/useMountEffect';
+import ConversationPreferencesSession from '@/features/rooms/ConversationPreferencesSession';
+import { ProfileDialogHost } from '@/features/settings/ProfileDialog';
+import AccountPreferencesSession from '@/features/settings/AccountPreferencesSession';
+const ActivityCenter = lazy(() => import('@/features/chat/ActivityCenter'));
 
 export default function App() {
   useAppViewport();
@@ -73,6 +81,8 @@ export default function App() {
     setInviteRoom(null);
     setSettingsRoom(null);
     setMessageTarget(null);
+    setActivityOpen(false);
+    setProfileCall(null);
   });
   const presence = useCallPresence(user?.id);
   const { screen, setScreen, navigate } = useScreenRoute();
@@ -89,6 +99,8 @@ export default function App() {
   const [enterInvitationOpen, setEnterInvitationOpen] = useState(false);
   const { invitation, chooseInvitation } = useInvitation();
   const [friendsOpen, setFriendsOpen] = useState(false);
+  const [activityOpen, setActivityOpen] = useState(false);
+  const [profileCall, setProfileCall] = useState<Room | null>(null);
   const [mobileBackRevision, markMobileBack] = useState(0);
   const returningOnMobile = () => markMobileBack((value) => value + 1);
   const [settingsRoom, setSettingsRoom] = useState<Room | null>(null);
@@ -119,6 +131,7 @@ export default function App() {
     ((phone && mobileDestination === 'home') ||
       (!room && !callJoined && !mobileList));
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsEntry, setSettingsEntry] = useState({ page: 'audio' as 'audio' | 'profile', revision: 0 });
   const openSettings = () => setSettingsOpen(true);
   // Which list the sidebar is showing. Selecting a conversation moves the rail
   // with it, so the two never disagree about where you are.
@@ -285,6 +298,10 @@ export default function App() {
       await stopPushForThisBrowser();
       await api('/auth/logout', {}, 'POST');
       setUser(null);
+      setActivityOpen(false);
+      setProfileCall(null);
+      setSettingsOpen(false);
+      setFriendsOpen(false);
       clear();
       backToCall();
     });
@@ -363,6 +380,25 @@ export default function App() {
     >
       {user && <MessagingSession key={`messaging:${user.id}`} userId={user.id} />}
       {user && <PresenceSession key={`presence:${user.id}`} user={user} />}
+      {user && <ConversationPreferencesSession key={`conversations:${user.id}`} userId={user.id} />}
+      {user && <AccountPreferencesSession key={`preferences:${user.id}`} userId={user.id} />}
+      {user && <ProfileDialogHost key={`profiles:${user.id}`} user={user} onEditProfile={() => {
+        setSettingsEntry((entry) => ({ page: 'profile', revision: entry.revision + 1 }));
+        openSettings();
+      }} onOpenRoom={(next) => { openRoom(next); selectRoom(next); }} onCall={(next) => {
+        if (callJoined && callRoom?.id !== next.id) { setError('Leave your current call before starting another.'); return; }
+        openRoom(next);
+        selectRoom(next);
+        setCallOpen(true);
+        if (!callJoined) setProfileCall(next);
+      }} />}
+      {user && profileCall && room?.id === profileCall.id && !callJoined && <ProfileCallJoin key={`${user.id}:${profileCall.id}`} onSettled={() => setProfileCall(null)} />}
+      {user && activityOpen && <Suspense fallback={<p role="status" className="fixed top-4 right-4 z-50 rounded-xl border bg-background p-3 text-sm">Opening activity…</p>}><ActivityCenter key={`activity:${user.id}`} user={user} rooms={rooms} onClose={() => setActivityOpen(false)} onOpenRoom={(next) => { openRoom(next); selectRoom(next); }} onOpenMessage={(next, message) => {
+        selectRoom(next);
+        setMessageTarget({ room: next.id, id: message.id });
+        setChatColumn(true);
+        setChannelChat(true);
+      }} /></Suspense>}
       {user && (
         <MessageSearch
           user={user}
@@ -442,6 +478,7 @@ export default function App() {
                     onCreateRoom={() => setCreateOpen(true)}
                     onFriends={() => setFriendsOpen(true)}
                     onRecordings={openRecordings}
+                    onActivity={() => setActivityOpen(true)}
                   />
                 ) : null}
                 {phone && !atHome && !mobileList && !inDirectRoom && room && (
@@ -645,6 +682,8 @@ export default function App() {
               )}
             </AnimatePresence>
             <SettingsDialog
+              key={`settings:${user?.id ?? 'anonymous'}:${settingsEntry.revision}`}
+              initialPage={settingsEntry.page}
               open={settingsOpen}
               onOpenChange={(open) => {
                 setSettingsOpen(open);
@@ -720,6 +759,7 @@ export default function App() {
           onSettings={openSettings}
           onSignOut={signOut}
           onHome={openHome}
+          onActivity={() => setActivityOpen(true)}
         />
         <AnimatePresence>
           {error && (
@@ -804,4 +844,14 @@ export default function App() {
       </div>
     </CallSessionProvider>
   );
+}
+
+/** A profile action requests a join only after the provider renders that room. */
+function ProfileCallJoin({ onSettled }: { onSettled: () => void }) {
+  const call = useActiveCall();
+  useMountEffect(() => {
+    onSettled();
+    if (!call.joined && !call.busy) void call.join('replace');
+  });
+  return null;
 }

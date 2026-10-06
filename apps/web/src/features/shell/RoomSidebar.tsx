@@ -1,5 +1,5 @@
 import { openMessageSearch } from '@/features/chat/searchEvents';
-import { useEffect } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Headphones, Link, Plus, Search, X } from 'lucide-react';
 import { Avatar } from '@/components/avatar';
 import { Mascot } from '@/components/mascot';
@@ -24,6 +24,8 @@ import type { Screen } from './useScreenRoute';
 import { isConversationRoom, type Section } from './sections';
 import { motion } from 'motion/react';
 import { softSpring } from '@/lib/motion';
+import { conversationPreferencesSnapshot, refreshConversationPreferences, subscribeConversationPreferences } from '@/features/rooms/conversationPreferences';
+import ConversationArchiveFilter from '@/features/rooms/ConversationArchiveFilter';
 
 /**
  * The sidebar shows whichever section the rail has selected.
@@ -70,6 +72,9 @@ export default function RoomSidebar({
   onError: (message: string) => void;
 }) {
   const { open, openMobile, setOpenMobile, isMobile } = useSidebar();
+  const [archived, setArchived] = useState(false);
+  const preferenceState = useSyncExternalStore(subscribeConversationPreferences, conversationPreferencesSnapshot);
+  const preferences = preferenceState.userId === user?.id ? preferenceState.preferences : {};
   // Being in a call used to hide this outright. Whether the room list is on
   // screen is the reader's choice, made with the toggle, and a call is not a
   // reason to take it away from them; full-focus mode still hides everything,
@@ -82,7 +87,7 @@ export default function RoomSidebar({
   const messages = section === 'messages';
   const listed = rooms.filter(
     (candidate) =>
-      messages ? isConversationRoom(candidate.kind) : !isConversationRoom(candidate.kind),
+      messages ? isConversationRoom(candidate.kind) && Boolean(preferences[candidate.id]?.archived) === archived : !isConversationRoom(candidate.kind),
   );
   // The profile belongs to the conversation you are in, not to whatever is
   // selected elsewhere: a room selected in Calls is not a person.
@@ -117,6 +122,8 @@ export default function RoomSidebar({
         {user && <Button variant="ghost" size="sm" aria-label={messages ? 'New group message' : 'Join with invitation'} onClick={() => { setOpenMobile(false); if (messages) onCreateGroup(); else onJoinInvitation(); }}>
           {messages ? <Plus size={14} /> : <Link size={14} />}{messages ? 'New group' : 'Join with link'}
         </Button>}
+        {messages && user && <ConversationArchiveFilter archived={archived} count={rooms.filter((item) => isConversationRoom(item.kind) && preferences[item.id]?.archived).length} onChange={setArchived} />}
+        {preferenceState.error && <p role="alert" className="text-xs text-destructive">{preferenceState.error}<Button size="sm" variant="ghost" onClick={() => void refreshConversationPreferences()}>Retry</Button></p>}
       </SidebarHeader>
 
       <SidebarContent className="px-1">
@@ -154,7 +161,7 @@ export default function RoomSidebar({
             onRoomsChanged={onRoomsChanged}
             onError={onError}
           />
-        ) : (
+        ) : archived && messages ? <p className="p-4 text-xs text-muted-foreground">No archived conversations. Archiving keeps your membership and messages; it does not mute alerts.</p> : (
           <Empty
             messages={messages}
             onCreateRoom={() => {

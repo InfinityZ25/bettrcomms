@@ -9,6 +9,8 @@ import { normalizeProfile, prepareProfileAvatar, profileValidation, uploadProfil
 import { profileRevision, reconcileProfile } from './profileStore';
 import AccountPresenceSelector from './AccountPresenceSelector';
 import { SettingsSection } from './SettingsSection';
+import CustomStatusSettings from './CustomStatus';
+import { openUserProfile } from './ProfileDialog';
 
 const draftFor = (user: User): ProfileDraft => ({ name: user.name, username: user.username ?? '', bio: user.bio ?? '' });
 
@@ -66,6 +68,7 @@ export default function ProfileSettings({ user }: { user: User }) {
           <div className="min-w-0 flex-1 space-y-2">
             <div className="flex flex-wrap gap-2">
               <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => fileInput.current?.click()}><Camera size={15} /> Change photo</Button>
+              <Button type="button" size="sm" variant="ghost" onClick={() => openUserProfile(user.id)}>View my profile</Button>
               {user.avatar_url && <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => { void perform((signal) => api<{ user: User }>('/me/avatar', undefined, 'DELETE', signal).then((result) => result.user), 'Profile photo removed.'); }}>Remove photo</Button>}
             </div>
             <p className="text-xs leading-5 text-muted-foreground">PNG or JPEG, up to 2 MB and 4 million pixels. Resized to 256 pixels before upload.</p>
@@ -108,6 +111,7 @@ export default function ProfileSettings({ user }: { user: User }) {
         {feedback.success && <p className="mt-3 text-sm text-muted-foreground" role="status">{feedback.success}</p>}
       </SettingsSection>
       <SettingsSection id="settings-presence" title="Availability"><AccountPresenceSelector user={user} /></SettingsSection>
+      <SettingsSection id="settings-custom-status" title="Custom status"><CustomStatusSettings user={user} /></SettingsSection>
     </div>
   );
 }

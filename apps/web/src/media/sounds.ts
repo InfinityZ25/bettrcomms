@@ -1,4 +1,5 @@
 import { readStored, writeStored } from '@/lib/storage';
+import { publishPreferenceChange } from '@/features/settings/preferenceEvents';
 
 /**
  * The app's sounds.
@@ -59,8 +60,9 @@ export function soundsEnabled() {
 }
 
 export function soundEnabled(name: SoundName) {
-  return soundsEnabled() && readStored(soundKey(name)) !== 'off';
+  return soundsEnabled() && soundPreferenceEnabled(name);
 }
+export function soundPreferenceEnabled(name: SoundName) { return readStored(soundKey(name)) !== 'off'; }
 
 /** Loud enough to notice from the next room without startling anyone. */
 const DEFAULT_VOLUME = 0.45;
@@ -76,26 +78,42 @@ export function soundVolume() {
 }
 
 function announce() {
+  settingsSnapshot = readSoundSettings();
+  for (const listener of settingsListeners) listener();
   window.dispatchEvent(new Event('bc-sounds'));
+}
+function readSoundSettings() {
+  return { enabled: soundsEnabled(), volume: soundVolume(), each: Object.fromEntries(soundNames.map((name) => [name, soundPreferenceEnabled(name)])) as Record<SoundName, boolean> };
+}
+let settingsSnapshot: ReturnType<typeof readSoundSettings> | undefined;
+const settingsListeners = new Set<() => void>();
+export const soundSettingsSnapshot = () => settingsSnapshot ??= readSoundSettings();
+export function subscribeSoundSettings(listener: () => void) {
+  settingsListeners.add(listener);
+  return () => { settingsListeners.delete(listener); };
 }
 
 export function setSoundsEnabled(enabled: boolean) {
   writeStored(ENABLED_KEY, enabled ? 'on' : 'off');
   if (!enabled) stopSound('ringtone');
   announce();
+  publishPreferenceChange({ sounds_enabled: enabled });
 }
 
 export function setSoundEnabled(name: SoundName, enabled: boolean) {
   writeStored(soundKey(name), enabled ? 'on' : 'off');
   if (!enabled && name === 'ringtone') stopSound('ringtone');
   announce();
+  publishPreferenceChange({ sounds: { [name]: enabled } });
 }
 
 export function setSoundVolume(value: number) {
+  if (!Number.isFinite(value)) return;
   const level = Math.min(1, Math.max(0, value));
   writeStored(VOLUME_KEY, String(level));
   if (gain) gain.gain.value = level;
   announce();
+  publishPreferenceChange({ sound_volume: level });
 }
 
 let context: AudioContext | null = null;

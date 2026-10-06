@@ -24,8 +24,8 @@ test('pins and independent threads synchronize, preserve drafts and open search 
     await ownerPage.goto('/'); await peerPage.goto('/');
     await ownerPage.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Messages', exact: true }).click();
     await peerPage.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Messages', exact: true }).click();
-    await ownerPage.getByRole('region', { name: 'Direct messages' }).getByRole('button', { name: 'Thread Peer' }).click();
-    await peerPage.getByRole('region', { name: 'Direct messages' }).getByRole('button', { name: 'Thread Owner' }).click();
+    await ownerPage.getByRole('region', { name: 'Direct messages' }).getByRole('button', { name: 'Thread Peer', exact: true }).click();
+    await peerPage.getByRole('region', { name: 'Direct messages' }).getByRole('button', { name: 'Thread Owner', exact: true }).click();
     const original = ownerPage.locator(`[data-message-id="${root.id}"]`);
     await original.hover(); await original.getByRole('button', { name: 'Pin message', exact: true }).click();
     await expect(peerPage.locator(`[data-message-id="${root.id}"]`).getByText('Pinned', { exact: true })).toBeVisible();

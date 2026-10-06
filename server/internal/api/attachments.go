@@ -9,6 +9,7 @@ import (
 	"mime"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -148,7 +149,33 @@ func (a *API) uploadAttachment(w http.ResponseWriter, r *http.Request, user User
 		return
 	}
 	contentType := http.DetectContentType(head[:count])
-	if !allowedAttachment(name, contentType) {
+	voiceNote := r.FormValue("voice_note") == "true"
+	var duration *int
+	if voiceNote {
+		value, parseErr := strconv.Atoi(r.FormValue("duration_ms"))
+		if parseErr != nil {
+			a.fail(w, 400, "invalid_voice_note", "provide recording duration")
+			return
+		}
+		if _, err = file.Seek(0, io.SeekStart); err != nil {
+			a.fail(w, 400, "invalid_upload", "could not read file")
+			return
+		}
+		data, readErr := io.ReadAll(io.LimitReader(file, maxAttachmentBytes+1))
+		if readErr != nil {
+			a.fail(w, 400, "invalid_upload", "could not read file")
+			return
+		}
+		contentType, err = validateVoiceNote(data, value)
+		if err != nil {
+			a.fail(w, 415, "invalid_voice_note", "record an audio-only WebM or MP4 up to two minutes")
+			return
+		}
+		duration = &value
+	} else if r.FormValue("voice_note") != "" && r.FormValue("voice_note") != "false" || r.FormValue("duration_ms") != "" {
+		a.fail(w, 400, "invalid_voice_note", "invalid recording metadata")
+		return
+	} else if !allowedAttachment(name, contentType) {
 		a.fail(w, 415, "unsupported_file", "this file type is not supported")
 		return
 	}
@@ -167,7 +194,7 @@ func (a *API) uploadAttachment(w http.ResponseWriter, r *http.Request, user User
 		a.fail(w, 503, "unavailable", "attachments are unavailable")
 		return
 	}
-	attachment := MessageAttachment{ID: id, Filename: name, ContentType: contentType, SizeBytes: header.Size}
+	attachment := MessageAttachment{ID: id, Filename: name, ContentType: contentType, SizeBytes: header.Size, VoiceNote: voiceNote, DurationMS: duration}
 	a.accessMu.RLock()
 	session, authErr := a.Sessions.Resolve(r)
 	if authErr != nil || session.UserID != user.ID || session.ID != sessionFrom(r) {

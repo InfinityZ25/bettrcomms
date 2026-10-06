@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore } from 'react';
+import { useSyncExternalStore } from 'react';
 import { ModeToggle } from '@/components/mode-toggle';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
@@ -13,12 +13,10 @@ import {
   setSoundEnabled,
   setSoundVolume,
   setSoundsEnabled,
-  soundEnabled,
+  soundSettingsSnapshot,
+  subscribeSoundSettings,
   soundLabels,
   soundNames,
-  soundVolume,
-  soundsEnabled,
-  type SoundName,
 } from '@/media/sounds';
 import type { User } from '@/api';
 import { notificationSnapshot, setSystemNotifications, setDoNotDisturb, subscribeNotifications } from '@/features/chat/notificationSettings';
@@ -27,6 +25,7 @@ import { getDesktopRuntime } from '@/desktop/runtime';
 import AccountSettings from './AccountSettings';
 import DesktopSettings from './DesktopSettings';
 import ProfileSettings from './ProfileSettings';
+import PreferenceSyncSettings from './PreferenceSyncSettings';
 
 export type SettingsPage = 'profile' | 'audio' | 'voice' | 'recording' | 'stream' | 'connection' | 'appearance' | 'account' | 'desktop';
 
@@ -42,14 +41,7 @@ export default function SettingsScreen({ page, user, noise, onNoiseChange, balan
 }) {
   const face = useOwnFace();
   const messageNotifications = useSyncExternalStore(subscribeNotifications, notificationSnapshot);
-  const [sounds, setSounds] = useState(soundsEnabled);
-  const [volume, setVolume] = useState(soundVolume);
-  const [each, setEach] = useState(() =>
-    Object.fromEntries(soundNames.map((name) => [name, soundEnabled(name)])) as Record<
-      SoundName,
-      boolean
-    >,
-  );
+  const { enabled: sounds, volume, each } = useSyncExternalStore(subscribeSoundSettings, soundSettingsSnapshot);
   const desktop = getDesktopRuntime() === 'wails';
   if (page === 'account') return user ? <AccountSettings key={user.id} user={user} /> : <p className="text-sm text-muted-foreground">Sign in to manage your account.</p>;
   if (page === 'desktop') return desktop ? <DesktopSettings /> : null;
@@ -62,7 +54,7 @@ export default function SettingsScreen({ page, user, noise, onNoiseChange, balan
         as="div"
         title="Sounds"
         description="Everything the app plays at you, under one switch."
-        control={<Switch aria-label="Sounds" checked={sounds} onCheckedChange={(value) => { setSoundsEnabled(value); setSounds(value); }} />}
+        control={<Switch aria-label="Sounds" checked={sounds} onCheckedChange={setSoundsEnabled} />}
       />
       <SettingBlock
         title="Sound volume"
@@ -76,7 +68,6 @@ export default function SettingsScreen({ page, user, noise, onNoiseChange, balan
           max={1}
           step={0.05}
           onValueChange={(value) => {
-            setVolume(value);
             setSoundVolume(value);
           }}
         />
@@ -94,7 +85,6 @@ export default function SettingsScreen({ page, user, noise, onNoiseChange, balan
               checked={each[name]}
               onCheckedChange={(value) => {
                 setSoundEnabled(name, value);
-                setEach((current) => ({ ...current, [name]: value }));
                 // Turning one on is also the only sensible way to hear it.
                 if (value) previewSound(name);
               }}
@@ -108,6 +98,7 @@ export default function SettingsScreen({ page, user, noise, onNoiseChange, balan
   if (page === 'appearance') return (
     <SettingsSection id="settings-appearance" title="Look & feel">
       <SettingRow as="div" title="Theme" description="Light, dark, or match your system." control={<ModeToggle />} />
+      {user && <PreferenceSyncSettings userId={user.id} />}
       {user && (
         <>
           <SettingRow as="div" title="Quiet notifications on this device" description={messageNotifications.accountDnd ? 'Your account is also set to Do not disturb. Change your account status in Profile to resume alerts.' : 'Pause message sounds and notifications on this device. Account availability is configured in Profile.'} control={<Switch aria-label="Do not disturb" checked={messageNotifications.localDnd} onCheckedChange={setDoNotDisturb} />} />

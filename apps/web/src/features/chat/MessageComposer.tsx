@@ -1,5 +1,5 @@
 import { useRef, useState, type FormEvent, type RefObject, type Dispatch, type SetStateAction } from 'react';
-import { AtSign, Bold, Check, Code, Italic, Paperclip, Quote, Send, X, EyeOff, Smile } from 'lucide-react';
+import { AtSign, Bold, Check, Code, Italic, Mic, Paperclip, Quote, Send, X, EyeOff, Smile } from 'lucide-react';
 import type { Message, User } from '@/api';
 import type { PendingAttachment } from './drafts';
 import { Button } from '@/components/ui/button';
@@ -8,29 +8,10 @@ import { cn } from '@/lib/utils';
 import { formatMessagePreview, formatSelection, type FormatKind } from './messageFormatting';
 import EmojiDialog from './EmojiDialog';
 import { insertEmoji } from './emojiCatalog';
-export default function MessageComposer({
-  draft,
-  onDraft,
-  editing,
-  reply,
-  busy,
-  suggested,
-  suggestion,
-  onSuggestion,
-  onMention,
-  onSend,
-  onCancel,
-  inputRef,
-  label,
-  attachments,
-  onFiles,
-  onRemoveFile,
-  onTypingStop,
-  blocked = false,
-  blockedReason,
-  blockedUntil,
-  attachmentsBlocked = blocked,
-}: {
+import VoiceNoteComposer from './VoiceNoteComposer';
+import { voiceNoteTime } from './voiceNoteRecorder';
+
+type MessageComposerProps = {
   draft: string;
   onDraft: (value: string) => void;
   editing: boolean;
@@ -52,12 +33,54 @@ export default function MessageComposer({
   blockedReason?: string;
   blockedUntil?: string;
   attachmentsBlocked?: boolean;
-}) {
+  userId?: string;
+  recordingKey?: string;
+  onVoiceFile?: (file: File, durationMs: number) => boolean | void;
+};
+
+export default function MessageComposer(props: MessageComposerProps) {
+  return <ScopedMessageComposer key={`${props.userId ?? ''}:${props.recordingKey ?? ''}`} {...props} />;
+}
+
+function ScopedMessageComposer({
+  draft,
+  onDraft,
+  editing,
+  reply,
+  busy,
+  suggested,
+  suggestion,
+  onSuggestion,
+  onMention,
+  onSend,
+  onCancel,
+  inputRef,
+  label,
+  attachments,
+  onFiles,
+  onRemoveFile,
+  onTypingStop,
+  blocked = false,
+  blockedReason,
+  blockedUntil,
+  attachmentsBlocked = blocked,
+  userId,
+  onVoiceFile,
+}: MessageComposerProps) {
   const phone = useIsMobile();
   const fileInput = useRef<HTMLInputElement>(null);
   const [choosingEmoji, setChoosingEmoji] = useState(false);
+  const [recording, setRecording] = useState(false);
   const [formatError, setFormatError] = useState('');
   const emojiSelection = useRef({ start: 0, end: 0 });
+  const voiceAllowed = !editing && !blocked && !attachmentsBlocked && !busy && attachments.length < 4 && Boolean(onVoiceFile);
+  const voiceOpen = recording;
+  const voiceUnavailableReason = attachmentsBlocked ? blockedReason || 'Posting permission is restricted in this conversation.'
+    : busy ? 'Your voice note stays here while the current message action finishes.'
+      : editing ? 'Finish or cancel editing before attaching your voice note.'
+        : attachments.length >= 4 ? 'Remove an attachment before attaching your voice note.'
+          : blocked ? blockedReason || 'Wait until sending is available before attaching your voice note.'
+            : !onVoiceFile ? 'Voice notes are unavailable in this conversation.' : undefined;
   const format = (kind: FormatKind) => {
     const field = inputRef.current;
     const result = formatSelection(draft, field?.selectionStart ?? draft.length, field?.selectionEnd ?? draft.length, kind);
@@ -69,7 +92,7 @@ export default function MessageComposer({
   return (
     <form
       className="message-composer relative m-3 shrink-0 rounded-2xl border bg-muted/60 p-2 phone:m-2 phone:p-1 focus-within:ring-2 focus-within:ring-ring/40"
-      onSubmit={(event) => { if (blocked) event.preventDefault(); else onSend(event); }}
+      onSubmit={(event) => { if (busy || blocked || voiceOpen) event.preventDefault(); else onSend(event); }}
       onDragOver={(event) => { if (!editing) event.preventDefault(); }}
       onDrop={(event) => {
         if (editing) return;
@@ -125,13 +148,13 @@ export default function MessageComposer({
         <div className="mb-2 flex flex-wrap gap-1" aria-label="Files to attach">
           {attachments.map((attachment, index) => (
             <span key={attachment.id || attachment.localId} className="flex max-w-full items-center gap-1 rounded-lg border bg-background px-2 py-1 text-xs">
-              <span className="truncate">{attachment.filename}</span>
+              <span className="truncate">{attachment.voice_note ? `Voice note · ${voiceNoteTime(attachment.duration_ms ?? 0)}` : attachment.filename}</span>
               <button type="button" aria-label={`Remove ${attachment.filename}`} disabled={busy} onClick={() => onRemoveFile(index)}><X size={13} /></button>
             </span>
           ))}
         </div>
       )}
-      {choosingEmoji && <EmojiDialog onClose={() => { setChoosingEmoji(false); inputRef.current?.focus(); }} onSelect={(emoji) => {
+      {choosingEmoji && <EmojiDialog userId={userId} onClose={() => { setChoosingEmoji(false); inputRef.current?.focus(); }} onSelect={(emoji) => {
         const selected = emojiSelection.current;
         const next = insertEmoji(draft, emoji, selected.start, selected.end);
         if (next.value.length <= 4000) {
@@ -143,6 +166,14 @@ export default function MessageComposer({
       }} />}
       {formatError && <p role="alert" className="mb-1 px-2 text-xs text-destructive">{formatError}</p>}
       {blocked && <p role="status" className="mb-1 px-2 text-xs text-muted-foreground">{blockedReason}{blockedUntil && <> Available after {new Date(blockedUntil).toLocaleTimeString()}.</>}</p>}
+      {voiceOpen && <VoiceNoteComposer
+        onAttach={(file, durationMs) => onVoiceFile ? onVoiceFile(file, durationMs) : false}
+        onClose={() => setRecording(false)}
+        canStart={voiceAllowed}
+        canAttach={voiceAllowed}
+        captureRestricted={attachmentsBlocked}
+        unavailableReason={voiceUnavailableReason}
+      />}
       <div className="mb-1 flex gap-0.5" aria-label="Message formatting">
         {([['bold', Bold], ['italic', Italic], ['code', Code], ['quote', Quote], ['spoiler', EyeOff]] as const).map(([kind, Icon]) => <Button key={kind} variant="ghost" size="icon-sm" type="button" aria-label={`Format ${kind}`} disabled={busy} onMouseDown={(event) => event.preventDefault()} onClick={() => format(kind)}><Icon size={14} /></Button>)}
       </div>
@@ -155,6 +186,7 @@ export default function MessageComposer({
           <>
             <input ref={fileInput} type="file" multiple disabled={busy || attachmentsBlocked} className="sr-only" aria-label="Choose attachments" onChange={(event) => { if (!busy && !attachmentsBlocked) onFiles(event.target.files); event.target.value = ''; }} />
             <Button variant="ghost" size="icon" className="phone:size-11" type="button" disabled={busy || attachmentsBlocked || attachments.length >= 4} aria-label="Attach files" onClick={() => fileInput.current?.click()}><Paperclip size={17} /></Button>
+            {onVoiceFile && <Button variant="ghost" size="icon" className="phone:size-11" type="button" disabled={!voiceAllowed || voiceOpen} aria-label="Record voice note" onClick={() => setRecording(true)}><Mic size={17} /></Button>}
           </>
         )}
         <textarea
@@ -206,7 +238,7 @@ export default function MessageComposer({
                 );
             } else if (event.key === 'Enter' && !event.shiftKey) {
               event.preventDefault();
-              if (!blocked) onSend();
+              if (!busy && !blocked && !voiceOpen) onSend();
             }
           }}
         />
@@ -215,7 +247,7 @@ export default function MessageComposer({
           size="icon"
           type="submit"
           className="phone:size-11 phone:rounded-full phone:bg-primary phone:text-primary-foreground"
-          disabled={(!draft.trim() && (editing || attachments.length === 0)) || busy || blocked}
+          disabled={(!draft.trim() && (editing || attachments.length === 0)) || busy || blocked || voiceOpen}
           aria-label={editing ? 'Save message' : 'Send message'}
         >
           {editing ? <Check size={17} /> : <Send size={17} />}
