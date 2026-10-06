@@ -48,10 +48,10 @@ test('direct rooms use the other friend name and share call presence', async ({ 
       await page.getByRole('button', { name: 'Messages', exact: true }).click();
       await expect(page.getByRole('region', { name: 'Direct messages' })).toBeVisible();
     }
-    await expect(adaPage.getByRole('button', { name: 'Direct Grace' })).toBeVisible();
-    await expect(gracePage.getByRole('button', { name: 'Direct Ada' })).toBeVisible();
-    await adaPage.getByRole('button', { name: 'Direct Grace' }).click();
-    await gracePage.getByRole('button', { name: 'Direct Ada' }).click();
+    await expect(adaPage.getByRole('button', { name: 'Direct Grace', exact: true })).toBeVisible();
+    await expect(gracePage.getByRole('button', { name: 'Direct Ada', exact: true })).toBeVisible();
+    await adaPage.getByRole('button', { name: 'Direct Grace', exact: true }).click();
+    await gracePage.getByRole('button', { name: 'Direct Ada', exact: true }).click();
     const adaConversation = adaPage.getByRole('region', { name: 'Conversation with Direct Grace', exact: true });
     const graceConversation = gracePage.getByRole('region', { name: 'Conversation with Direct Ada', exact: true });
     await expect(adaConversation.locator('header')).toContainText('Direct Grace');

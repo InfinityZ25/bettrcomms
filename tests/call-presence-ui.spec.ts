@@ -43,8 +43,8 @@ test('lobby and navigation show live mute and deafen presence', async ({ browser
     const guestPage = await guestContext.newPage();
     await Promise.all([ownerPage.goto('/'), guestPage.goto('/')]);
     await Promise.all([
-      ownerPage.getByRole('button', { name: created.room.name }).click(),
-      guestPage.getByRole('button', { name: created.room.name }).click(),
+      ownerPage.getByRole('button', { name: created.room.name, exact: true }).click(),
+      guestPage.getByRole('button', { name: created.room.name, exact: true }).click(),
     ]);
     await expect(guestPage.getByRole('region', { name: 'Call lobby' })).toBeVisible();
     await expect(guestPage.getByRole('heading', { name: created.room.name })).toBeVisible();

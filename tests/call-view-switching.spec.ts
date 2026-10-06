@@ -62,7 +62,7 @@ test('the call survives every screen change', async ({ browser }) => {
 
     const page = await context.newPage();
     await page.goto('/');
-    await page.getByRole('button', { name: room.name }).click();
+    await page.getByRole('button', { name: room.name, exact: true }).click();
     await page.getByRole('button', { name: 'Join call' }).click();
     await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
 
@@ -99,13 +99,13 @@ test('browsing another room leaves the call in the room it started in', async ({
 
     const page = await context.newPage();
     await page.goto('/');
-    await page.getByRole('button', { name: room.name }).click();
+    await page.getByRole('button', { name: room.name, exact: true }).click();
     await page.getByRole('button', { name: 'Join call' }).click();
     await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
     await page.getByRole('button', { name: 'Mute microphone' }).click();
     await expect(page.getByRole('button', { name: 'Unmute microphone' })).toBeVisible();
 
-    await page.getByRole('button', { name: otherRoom.name }).click();
+    await page.getByRole('button', { name: otherRoom.name, exact: true }).click();
     await expect(page.getByRole('button', { name: otherRoom.name, exact: true })).toHaveAttribute('aria-current', 'page');
     await expect(page.getByRole('list', { name: `${room.name} call participants`, exact: true })).toContainText('Views Ada');
     await expect(page.getByRole('list', { name: `${otherRoom.name} call participants`, exact: true })).toHaveCount(0);
@@ -151,8 +151,8 @@ test('remote voice playback stays mounted while browsing Messages', async ({ bro
       guestPage.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Calls' }).click(),
     ]);
     await Promise.all([
-      ownerPage.getByRole('button', { name: room.name }).click(),
-      guestPage.getByRole('button', { name: room.name }).click(),
+      ownerPage.getByRole('button', { name: room.name, exact: true }).click(),
+      guestPage.getByRole('button', { name: room.name, exact: true }).click(),
     ]);
     await ownerPage.getByRole('button', { name: 'Join call' }).click();
     await guestPage.getByRole('button', { name: 'Join call' }).click();

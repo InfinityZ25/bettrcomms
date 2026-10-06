@@ -63,11 +63,11 @@ test('camera dock resizes, snaps, focuses, and preserves the active share', asyn
     const page = await context.newPage();
     page.setDefaultTimeout(15_000);
     await page.goto('/');
-    await page.getByRole('button', { name: room.name }).click();
+    await page.getByRole('button', { name: room.name, exact: true }).click();
     await page.getByRole('button', { name: 'Join call' }).click();
     await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
 
-    await page.getByRole('button', { name: otherRoom.name }).click();
+    await page.getByRole('button', { name: otherRoom.name, exact: true }).click();
     await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
     await expect(page.getByRole('button', { name: otherRoom.name, exact: true })).toHaveAttribute('aria-current', 'page');
     await expect(page.getByRole('list', { name: `${room.name} call participants`, exact: true })).toContainText('Layout Ada');

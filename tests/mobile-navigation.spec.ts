@@ -167,7 +167,7 @@ test('a phone call keeps every control in one row below cameras that fill the sc
     const page = await phone.newPage();
     const desk = await friend.newPage();
     await Promise.all([page.goto('/'), desk.goto('/')]);
-    await desk.getByRole('button', { name: room.name }).first().click();
+    await desk.getByRole('button', { name: room.name, exact: true }).first().click();
     await desk.getByRole('button', { name: 'Join call' }).click();
     await page.evaluate(() => {
       localStorage.setItem(

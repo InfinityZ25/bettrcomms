@@ -152,19 +152,45 @@ jobs:
       - run: go test ./... && go vet ./...
         working-directory: server
       - run: npx playwright install --with-deps chromium webkit
+      # The archived MinIO project distributes source only; historical image
+      # digests can disappear. Keep this disposable fixture on verified source.
+      - name: Cache pinned S3 fixture binary
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/bettercomms-s3-bin
+          key: minio-source-${{ runner.os }}-go1.26-9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a
       - name: Start isolated S3-compatible attachment storage
         run: |
-          docker run -d --name bettercomms-test-s3 \
-            -p 127.0.0.1:19000:9000 --tmpfs /data \
-            -e MINIO_ROOT_USER="$AWS_ACCESS_KEY_ID" \
-            -e MINIO_ROOT_PASSWORD="$AWS_SECRET_ACCESS_KEY" \
-            minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e server /data
-          docker exec bettercomms-test-s3 mkdir -p /data/bettercomms-daily-test
+          set -euo pipefail
+          # Official RELEASE.2025-10-15T17-29-55Z, commit 9e49d5e7a648.
+          version=v0.0.0-20251015172955-9e49d5e7a648
+          source_sum='h1:6TdolSCLSs2nwm8i0PpWDqf9iX2Ty9WQK8wmr7dCnUM='
+          tool_dir="$RUNNER_TEMP/bettercomms-s3-bin"
+          mkdir -p "$tool_dir" "$RUNNER_TEMP/bettercomms-s3-data"
+          if [ ! -x "$tool_dir/minio" ]; then
+            actual_sum=$(go mod download -json "github.com/minio/minio@$version" | jq -r '.Sum')
+            test "$actual_sum" = "$source_sum"
+            CGO_ENABLED=0 GOBIN="$tool_dir" go install "github.com/minio/minio@$version"
+          fi
+          go version -m "$tool_dir/minio" > "$RUNNER_TEMP/bettercomms-s3-build.txt"
+          grep -F "$version" "$RUNNER_TEMP/bettercomms-s3-build.txt"
+          grep -F "$source_sum" "$RUNNER_TEMP/bettercomms-s3-build.txt"
+          MINIO_ROOT_USER="$AWS_ACCESS_KEY_ID" MINIO_ROOT_PASSWORD="$AWS_SECRET_ACCESS_KEY" \
+            MINIO_BROWSER=off MINIO_UPDATE=off "$tool_dir/minio" server --quiet \
+            --address 127.0.0.1:19000 --console-address 127.0.0.1:19001 \
+            "$RUNNER_TEMP/bettercomms-s3-data" > "$RUNNER_TEMP/bettercomms-s3.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/bettercomms-s3.pid"
+          ready=false
           for attempt in $(seq 1 30); do
-            if curl --fail http://127.0.0.1:19000/minio/health/ready; then exit 0; fi
+            if curl --fail --silent http://127.0.0.1:19000/minio/health/ready; then ready=true; break; fi
             sleep 1
           done
-          exit 1
+          if [ "$ready" != true ]; then cat "$RUNNER_TEMP/bettercomms-s3.log"; exit 1; fi
+          # Create through the real S3 API instead of relying on filesystem layout.
+          curl --fail --silent --show-error \
+            --aws-sigv4 "aws:amz:$AWS_REGION:s3" \
+            --user "$AWS_ACCESS_KEY_ID:$AWS_SECRET_ACCESS_KEY" \
+            --request PUT "$AWS_ENDPOINT_URL_S3/$AWS_S3_BUCKET"
       - name: Start local services
         run: |
           (cd server && go run ./cmd/server > /tmp/bettercomms-api.log 2>&1) &
@@ -197,3 +223,9 @@ jobs:
           path: |
             playwright-report/
             test-results/
+      - name: Stop disposable S3 fixture
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/bettercomms-s3.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/bettercomms-s3.pid")" 2>/dev/null || true
+          fi

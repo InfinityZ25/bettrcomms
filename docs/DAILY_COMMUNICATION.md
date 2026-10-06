@@ -60,8 +60,13 @@ S3-compatible service, with a real Chromium MediaRecorder file. These checks do
 not prove microphone permission or MediaRecorder compatibility on physical macOS,
 packaged WorkOS sign-in, or cross-network voice connectivity.
 
-The browser CI job provisions disposable MinIO storage on loopback with fixture
-credentials, then runs the same private upload/playback test. Production keeps
+The browser CI job builds disposable MinIO storage from the pinned official
+`RELEASE.2025-10-15T17-29-55Z` source commit `9e49d5e7a648`, verifies its Go module
+checksum, caches the resulting binary and serves it on loopback with fixture
+credentials. It creates the bucket through signed S3 requests, then runs the same
+private upload/playback test. This avoids depending on unavailable historical
+container images; MinIO remains a test fixture, not a production storage change.
+Production keeps
 the existing `AWS_S3_BUCKET`, `AWS_REGION` and AWS credential-provider configuration.
 Local S3-compatible acceptance can additionally set `AWS_ENDPOINT_URL_S3`; it
 does not require changing production credentials or bucket permissions.
