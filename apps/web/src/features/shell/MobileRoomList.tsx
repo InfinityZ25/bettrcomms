@@ -1,5 +1,5 @@
 import { useState, useSyncExternalStore } from 'react';
-import { ChevronRight, Headphones, Plus, Search, Users } from 'lucide-react';
+import { ChevronRight, Headphones, Plus, Search, Star, Users } from 'lucide-react';
 import type { CallParticipant, Room, User } from '@/api';
 import { Avatar } from '@/components/avatar';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,9 @@ import { openMessageSearch } from '@/features/chat/searchEvents';
 import RoomContextMenu from '@/features/rooms/RoomContextMenu';
 import { roomLabel } from '@/features/rooms/RoomNavigation';
 import { isConversationRoom, type Section } from './sections';
+import { conversationPreferencesSnapshot, sortConversations, subscribeConversationPreferences } from '@/features/rooms/conversationPreferences';
+import ConversationArchiveFilter from '@/features/rooms/ConversationArchiveFilter';
+import ConversationPreferenceActions from '@/features/rooms/ConversationPreferenceActions';
 
 export default function MobileRoomList({
   section,
@@ -47,23 +50,22 @@ export default function MobileRoomList({
   onError: (message: string) => void;
 }) {
   const [query, setQuery] = useState('');
+  const [archived, setArchived] = useState(false);
+  const preferenceState = useSyncExternalStore(subscribeConversationPreferences, conversationPreferencesSnapshot);
+  const preferences = preferenceState.userId === user?.id ? preferenceState.preferences : {};
   const unread = useSyncExternalStore(subscribeUnread, unreadSnapshot);
   const activity = useSyncExternalStore(subscribeActivity, activitySnapshot);
   const messages = section === 'messages';
   const all = rooms.filter(
     (room) => messages ? isConversationRoom(room.kind) : !isConversationRoom(room.kind),
   );
-  const filtered = all
+  const filtered = sortConversations(all
+    .filter((room) => !messages || Boolean(preferences[room.id]?.archived) === archived)
     .filter((room) =>
       roomLabel(room)
         .toLocaleLowerCase()
         .includes(query.trim().toLocaleLowerCase()),
-    )
-    .sort(
-      (a, b) =>
-        (Date.parse(activity[b.id] ?? b.activity_at ?? b.created_at) || 0) -
-        (Date.parse(activity[a.id] ?? a.activity_at ?? a.created_at) || 0),
-    );
+    ), preferences, activity);
   return (
     <main
       className="mobile-room-list flex min-h-0 flex-1 flex-col bg-background"
@@ -95,6 +97,7 @@ export default function MobileRoomList({
         )}
       </header>
       {user && <div className="mx-4 mb-3"><Button variant="secondary" className="h-11 w-full" onClick={messages ? onCreateGroup : onJoinInvitation}>{messages ? 'New group message' : 'Join with invitation'}</Button></div>}
+      {user && messages && <div className="mx-4 mb-3"><ConversationArchiveFilter archived={archived} count={all.filter((room) => preferences[room.id]?.archived).length} onChange={setArchived} /></div>}
       <label className="relative mx-4 mb-3 block shrink-0">
         <Search
           className="pointer-events-none absolute top-3 left-3 text-muted-foreground"
@@ -120,7 +123,7 @@ export default function MobileRoomList({
               const callers = presence[room.id] ?? [];
               const count = unread[room.id]?.unread ?? 0;
               return (
-                <li key={room.id}>
+                <li key={room.id} className="relative">
                   <RoomContextMenu
                     room={room}
                     user={user}
@@ -130,7 +133,7 @@ export default function MobileRoomList({
                     onError={onError}
                   >
                     <button
-                      className="flex min-h-20 w-full items-center gap-3 rounded-2xl px-3 py-3 text-left hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+                      className="flex min-h-20 w-full items-center gap-3 rounded-2xl px-3 py-3 pr-14 text-left hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
                       aria-label={roomLabel(room)}
                       onClick={() => onSelect(room)}
                     >
@@ -141,6 +144,7 @@ export default function MobileRoomList({
                       />
                       <span className="min-w-0 flex-1">
                         <strong className="block truncate text-base font-semibold">
+                          {preferences[room.id]?.favorite && <Star size={13} className="mr-1 inline fill-primary text-primary" aria-hidden="true" />}
                           {roomLabel(room)}
                         </strong>
                         <span className="mt-1 flex items-center gap-1.5 truncate text-sm text-muted-foreground">
@@ -172,6 +176,7 @@ export default function MobileRoomList({
                       />
                     </button>
                   </RoomContextMenu>
+                  {user && <div className="absolute top-4 right-1"><ConversationPreferenceActions room={room} userId={user.id} onError={onError} /></div>}
                 </li>
               );
             })}
@@ -182,18 +187,18 @@ export default function MobileRoomList({
             <h2 className="text-lg font-semibold">
               {query
                 ? 'No matches'
-                : messages
+                : archived && messages ? 'No archived conversations' : messages
                   ? 'Start a conversation'
                   : 'Make room for your friends'}
             </h2>
             <p className="text-sm leading-6 text-muted-foreground">
               {query
                 ? 'Try another name.'
-                : messages
+                : archived && messages ? 'Archived conversations keep their history and membership. Alerts follow your notification settings.' : messages
                   ? 'Find a friend and send them a message.'
                   : 'Create a room to talk, watch and share together.'}
             </p>
-            {!query && (
+            {!query && !archived && (
               <Button
                 className="mt-2 h-11"
                 onClick={messages ? onFriends : onCreate}

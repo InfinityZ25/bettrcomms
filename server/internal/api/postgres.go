@@ -243,6 +243,9 @@ func (s *PostgresStore) ListFriends(uid string) ([]User, []FriendRequest, error)
 		friends = append(friends, u)
 	}
 	rows.Close()
+	if e = s.populateFriendStatuses(uid, friends); e != nil {
+		return nil, nil, e
+	}
 	rows, e = s.DB.Query(context.Background(), `SELECT f.id::text,f.status,f.created_at,s.id::text,s.email,s.name,s.avatar_url,s.created_at,s.username,s.bio,s.profile_version,r.id::text,r.email,r.name,r.avatar_url,r.created_at,r.username,r.bio,r.profile_version FROM friend_requests f JOIN users s ON s.id=f.sender_id JOIN users r ON r.id=f.receiver_id WHERE (f.sender_id=$1 OR f.receiver_id=$1) AND f.status='pending'`, uid)
 	if e != nil {
 		return nil, nil, e

@@ -3,16 +3,18 @@ package api
 import "time"
 
 type User struct {
-	ProfileVersion int64     `json:"profile_version"`
-	ID             string    `json:"id"`
-	WorkOSID       *string   `json:"-"`
-	Email          string    `json:"email"`
-	Name           string    `json:"name"`
-	Username       *string   `json:"username"`
-	Bio            string    `json:"bio"`
-	PresenceStatus string    `json:"presence_status,omitempty"`
-	AvatarURL      *string   `json:"avatar_url"`
-	CreatedAt      time.Time `json:"created_at"`
+	CustomStatus   *CustomStatus `json:"custom_status,omitempty"`
+	StatusVersion  int64         `json:"status_version,omitempty"`
+	ProfileVersion int64         `json:"profile_version"`
+	ID             string        `json:"id"`
+	WorkOSID       *string       `json:"-"`
+	Email          string        `json:"email"`
+	Name           string        `json:"name"`
+	Username       *string       `json:"username"`
+	Bio            string        `json:"bio"`
+	PresenceStatus string        `json:"presence_status,omitempty"`
+	AvatarURL      *string       `json:"avatar_url"`
+	CreatedAt      time.Time     `json:"created_at"`
 }
 type Room struct {
 	SlowModeSeconds int       `json:"slow_mode_seconds"`
@@ -47,6 +49,8 @@ type Message struct {
 }
 
 type MessageAttachment struct {
+	VoiceNote   bool   `json:"voice_note,omitempty"`
+	DurationMS  *int   `json:"duration_ms,omitempty"`
 	ID          string `json:"id"`
 	Filename    string `json:"filename"`
 	ContentType string `json:"content_type"`

@@ -9,6 +9,7 @@ import MessageAttachmentPreview from './MessageAttachmentPreview';
 import PlainMessage from './PlainMessage';
 import EmojiDialog from './EmojiDialog';
 import { formatMessagePreview, needsMessageFormatting } from './messageFormatting';
+import { openUserProfile } from '@/features/settings/ProfileDialog';
 
 const FormattedMessage = lazy(() => import('./FormattedMessage'));
 export function MessageBody({ message }: { message: Message }) {
@@ -83,14 +84,14 @@ export default function MessageItem({
       )}
     >
       <div className="flex gap-2.5">
-        <Avatar
+        <button type="button" className="shrink-0 self-start rounded-full focus-visible:ring-2 focus-visible:ring-ring" aria-label={`View ${message.author.name}'s profile`} onClick={() => openUserProfile(message.author.id)}><Avatar
           name={message.author.name}
           id={message.author.id}
           src={message.author.avatar_url}
-        />
+        /></button>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline gap-2 phone:pr-11">
-            <strong className="min-w-0 truncate text-xs phone:text-sm">{message.author.name}</strong>
+            <button type="button" aria-label={`Open profile for ${message.author.name}`} className="min-w-0 truncate text-xs font-semibold hover:underline phone:text-sm" onClick={() => openUserProfile(message.author.id)}>{message.author.name}</button>
             <time
               dateTime={message.created_at}
               title={new Date(message.created_at).toLocaleString()}
@@ -231,7 +232,7 @@ export default function MessageItem({
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
-              {reacting && <EmojiDialog onClose={() => setReacting(false)} onSelect={(emoji) => {
+              {reacting && <EmojiDialog userId={userId} onClose={() => setReacting(false)} onSelect={(emoji) => {
                 void onReact(message, emoji, message.reactions?.some((reaction) => reaction.emoji === emoji && reaction.users.includes(userId)) ?? false).then((done) => { if (done) setReacting(false); });
               }} />}
               {confirmDelete && (

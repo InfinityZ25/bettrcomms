@@ -154,6 +154,18 @@ function MessageTimeline({
     nonce.current = null;
     saveDraft(user.id, roomId, { body: draft, attachments: next }, threadRootId);
   };
+  const addVoiceFile = (file: File, durationMs: number) => {
+    if (busy || editing || posting.restricted || attachments.length >= 4 || file.size < 1 || file.size > 10 * 1024 * 1024) {
+      onError('Choose up to four files, each 10 MB or less.');
+      return false;
+    }
+    const next: PendingAttachment[] = [...attachments, { id: '', localId: crypto.randomUUID(), filename: file.name,
+      content_type: file.type, size_bytes: file.size, file, voice_note: true, duration_ms: durationMs }];
+    setAttachments(next);
+    nonce.current = null;
+    saveDraft(user.id, roomId, { body: draft, attachments: next }, threadRootId);
+    return true;
+  };
   const runMessageAction = async (action: () => Promise<unknown>) => {
     if (busy) return false;
     setBusy(true);
@@ -185,7 +197,9 @@ function MessageTimeline({
         for (let index = 0; index < ready.length; index++) {
           if (ready[index].id) continue;
           if (!ready[index].file) throw new Error('Choose the file again before sending.');
-          ready[index] = await uploadMessageAttachment(roomId, ready[index].file!, lifetime());
+          const attachment = ready[index];
+          ready[index] = await uploadMessageAttachment(roomId, attachment.file!, lifetime(), attachment.voice_note
+            ? { voiceNote: true, durationMs: attachment.duration_ms ?? 0 } : undefined);
           if (lifetime().aborted) return;
           setAttachments([...ready]);
           saveDraft(user.id, roomId, { body: draft, attachments: ready }, threadRootId);
@@ -439,6 +453,8 @@ function MessageTimeline({
         <p className="px-4 py-1 text-xs text-muted-foreground" role="status">{typingNames.join(', ')} {typingNames.length === 1 ? 'is' : 'are'} typing…</p>
       )}
       <MessageComposer
+        userId={user.id}
+        recordingKey={`${user.id}:${roomId}:${threadRootId ?? ''}`}
         draft={draft}
         onDraft={changeDraft}
         editing={!!editing}
@@ -466,6 +482,7 @@ function MessageTimeline({
         label={label}
         attachments={editing ? [] : attachments}
         onFiles={addFiles}
+        onVoiceFile={addVoiceFile}
         onRemoveFile={removeFile}
         onTypingStop={stopTyping}
       />

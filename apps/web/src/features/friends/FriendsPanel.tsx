@@ -16,6 +16,8 @@ import { Avatar } from '@/components/avatar';
 import { useMountEffect } from '@/hooks/useMountEffect';
 import { profileSnapshot, subscribeProfiles } from '@/features/settings/profileStore';
 import { contactStatus, presenceLabels, type ContactStatus } from '@/features/settings/presenceStore';
+import { openUserProfile } from '@/features/settings/ProfileDialog';
+import { CustomStatusText } from '@/features/settings/CustomStatus';
 
 function FriendsLoader({ load, onError }: { load: (signal: AbortSignal) => Promise<void>; onError: (error: string) => void }) {
   useMountEffect(() => {
@@ -27,10 +29,11 @@ function FriendsLoader({ load, onError }: { load: (signal: AbortSignal) => Promi
 }
 function PersonIdentity({ user, status }: { user: User; status?: ContactStatus }) {
   return <div className="flex min-w-0 flex-1 items-start gap-2.5">
-    <Avatar name={user.name} id={user.id} src={user.avatar_url} presence={status === 'idle' ? 'away' : status} />
+    <button type="button" className="shrink-0 rounded-lg focus-visible:ring-2 focus-visible:ring-ring" aria-label={`View profile of ${user.name}`} onClick={() => openUserProfile(user.id)}><Avatar name={user.name} id={user.id} src={user.avatar_url} presence={status === 'idle' ? 'away' : status} /></button>
     <div className="min-w-0 flex-1">
-      <strong className="block [overflow-wrap:anywhere]">{user.name}</strong>
+      <button type="button" className="block max-w-full text-left font-semibold [overflow-wrap:anywhere] hover:underline focus-visible:ring-2 focus-visible:ring-ring" onClick={() => openUserProfile(user.id)}>{user.name}</button>
       <small className="mt-1 block [overflow-wrap:anywhere] text-[0.7rem] text-muted-foreground">{user.username ? `@${user.username}` : user.email}</small>
+      <CustomStatusText userId={user.id} status={user.custom_status} version={user.status_version} />
       {user.bio && <details className="mt-1 text-[0.7rem] text-muted-foreground"><summary className="cursor-pointer">About</summary><p className="mt-1 whitespace-pre-wrap [overflow-wrap:anywhere]">{user.bio}</p></details>}
     </div>
   </div>;
@@ -262,9 +265,9 @@ export default function FriendsPanel({
               onClick={() =>
                 action(async () => {
                   await api(
-                    '/friends/' + (incoming ? r.sender.id : r.receiver.id),
-                    undefined,
-                    'DELETE',
+                    `/friends/requests/${r.id}/decline`,
+                    {},
+                    'POST',
                   );
                 })
               }

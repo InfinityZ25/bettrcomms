@@ -41,6 +41,24 @@ func main() {
 	}
 	store := &api.PostgresStore{DB: pool}
 	a := api.New(store, api.Sessions{Store: store, Secure: get("COOKIE_SECURE", "false") == "true"}, cfg)
+	statusContext, stopStatus := context.WithCancel(context.Background())
+	defer stopStatus()
+	go func() {
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for {
+			cleanupCtx, cancel := context.WithTimeout(statusContext, 10*time.Second)
+			if err := a.ExpireCustomStatuses(cleanupCtx); err != nil && statusContext.Err() == nil {
+				log.Printf("custom status cleanup failed: %v", err)
+			}
+			cancel()
+			select {
+			case <-statusContext.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
 	if cfg.VAPIDPublicKey != "" {
 		go func() {
 			ticker := time.NewTicker(10 * time.Second)
@@ -87,6 +105,7 @@ func main() {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
+	stopStatus()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if e := srv.Shutdown(ctx); e != nil {

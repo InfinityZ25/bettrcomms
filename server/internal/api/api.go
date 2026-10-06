@@ -266,11 +266,19 @@ func (a *API) authed(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	switch {
+	case p == "me/status" || p == "me/conversations" || p == "me/preferences" || p == "me/activity" || strings.HasPrefix(p, "users/") && strings.HasSuffix(p, "/profile"):
+		a.daily(w, r, u, p)
 	case p == "me/account" || p == "me/sessions" || strings.HasPrefix(p, "me/sessions/"):
 		a.account(w, r, u, p)
 	case r.Method == "GET" && p == "me":
 		if store, ok := a.Store.(ProfileStore); ok {
 			u.PresenceStatus, _ = store.Presence(u.ID)
+		}
+		if store, ok := a.Store.(DailyStore); ok {
+			if status, err := store.CustomStatus(u.ID); err == nil {
+				u.CustomStatus = &status.Status
+				u.StatusVersion = status.Version
+			}
 		}
 		a.json(w, 200, map[string]any{"user": u})
 	case p == "me" || p == "me/avatar" || p == "me/presence":
@@ -336,6 +344,8 @@ func (a *API) authed(w http.ResponseWriter, r *http.Request) {
 		a.friends(w, r, u)
 	case p == "friends/requests":
 		a.friendRequest(w, r, u)
+	case r.Method == http.MethodPost && strings.HasPrefix(p, "friends/requests/") && strings.HasSuffix(p, "/decline"):
+		a.declineFriendRequest(w, r, u, p)
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "friends/requests/") && strings.HasSuffix(p, "/accept"):
 		parts := strings.Split(p, "/")
 		requestID := strings.ToLower(parts[2])
@@ -517,6 +527,10 @@ func (a *API) room(w http.ResponseWriter, r *http.Request, u User, p []string) {
 	}
 	if _, e := a.Store.RoomForMember(rid, u.ID); e != nil {
 		a.fail(w, 403, "not_a_member", "room membership required")
+		return
+	}
+	if len(p) == 3 && p[2] == "preferences" {
+		a.daily(w, r, u, strings.Join(p, "/"))
 		return
 	}
 	if len(p) >= 3 && (p[2] == "pins" || p[2] == "threads" || (len(p) == 5 && p[2] == "messages" && p[4] == "pin")) {

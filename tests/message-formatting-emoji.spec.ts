@@ -22,7 +22,7 @@ test('safe formatting, spoilers and Unicode emoji work in real conversations', a
     const page = await owner.newPage();
     await page.goto('/');
     await page.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Messages', exact: true }).click();
-    await page.getByRole('region', { name: 'Direct messages' }).getByRole('button', { name: 'Format Peer' }).click();
+    await page.getByRole('region', { name: 'Direct messages' }).getByRole('button', { name: 'Format Peer', exact: true }).click();
     const row = page.locator(`[data-message-id="${first.id}"]`);
     await expect(row.locator('strong').filter({ hasText: 'Formatted heading' })).toBeVisible();
     await expect(row.locator('em')).toHaveText('italic text');

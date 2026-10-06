@@ -1,4 +1,4 @@
-import { ArrowRight, Clapperboard, Headphones, Plus, UserPlus } from 'lucide-react';
+import { ArrowRight, Clapperboard, Headphones, Inbox, Plus, UserPlus } from 'lucide-react';
 import { Avatar, leadingInitials } from '@/components/avatar';
 import { Button } from '@/components/ui/button';
 import { roomLabel } from '@/features/rooms/RoomNavigation';
@@ -23,6 +23,7 @@ export default function HomeScreen({
   onCreateRoom,
   onFriends,
   onRecordings,
+  onActivity,
 }: {
   user: User | null;
   rooms: Room[];
@@ -32,6 +33,7 @@ export default function HomeScreen({
   onCreateRoom: () => void;
   onFriends: () => void;
   onRecordings: () => void;
+  onActivity: () => void;
 }) {
   const live = rooms
     .map((room) => ({ room, callers: presence[room.id] ?? [] }))
@@ -81,7 +83,8 @@ export default function HomeScreen({
       )}
 
       <section aria-labelledby="home-actions">
-        <ul className="mt-3 grid gap-2 sm:grid-cols-3">
+        <ul className="mt-3 grid gap-2 sm:grid-cols-2">
+          <li><Action icon={<Inbox size={18} />} title="Activity" note="Mentions, replies and requests." onClick={onActivity} disabled={!user} /></li>
           <li>
             <Action
               icon={<Plus size={18} />}

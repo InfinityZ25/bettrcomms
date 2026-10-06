@@ -155,6 +155,9 @@ func (s *PostgresStore) DeleteAccount(ctx context.Context, user string) ([]strin
 	for _, sql := range []string{
 		`UPDATE users SET deleted_at=clock_timestamp(),workos_user_id=NULL,email='deleted-'||id::text||'@invalid.local',name='Deleted account',username=NULL,bio='',avatar_url=NULL,profile_edited=true,avatar_edited=true,profile_version=profile_version+1,avatar_version=avatar_version+1,presence_status='invisible',allow_dm_requests=false,updated_at=clock_timestamp() WHERE id=$1`,
 		`DELETE FROM user_avatars WHERE user_id=$1`,
+		`DELETE FROM user_custom_status WHERE user_id=$1`,
+		`DELETE FROM account_preferences WHERE user_id=$1`,
+		`DELETE FROM conversation_preferences WHERE user_id=$1`,
 		`DELETE FROM room_invites WHERE creator_id=$1`,
 		`DELETE FROM sessions WHERE user_id=$1`,
 		`UPDATE messages SET body='',deleted_at=COALESCE(deleted_at,clock_timestamp()),version=version+1 WHERE author_id=$1`,

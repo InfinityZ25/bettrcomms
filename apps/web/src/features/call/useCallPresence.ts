@@ -8,17 +8,22 @@ import { useMountEffect } from '@/hooks/useMountEffect';
 import { clearProfiles, receiveProfile } from '@/features/settings/profileStore';
 import { clearAvatarCache } from '@/features/settings/avatarCache';
 import { contactStatus, receiveOwnPresence, startPresenceSession, type ContactStatus } from '@/features/settings/presenceStore';
+import { receiveConversationPreference, reconcileConversationPreferences } from '@/features/rooms/conversationPreferences';
+import { receiveCustomStatus, reconcileCustomStatus } from '@/features/settings/customStatusStore';
+import { receiveAccountPreferences, reconcileAccountPreferences } from '@/features/settings/accountPreferences';
 
 type RoomPresence = { room_id: string; participants: CallParticipant[] };
 type RealtimeMessage = { sequence: number; value: Message };
 type RealtimeState = {
   userId?: string; known: boolean; rooms: Record<string, CallParticipant[]>;
   roomsRevision: number; friendsRevision: number; syncRevision: number;
+  activityRevision: number;
   onlineUsers: Record<string, boolean>; contactStatuses: Record<string, ContactStatus>;
   messages: RealtimeMessage[];
 };
 const emptyState: RealtimeState = {
   known: false, rooms: {}, roomsRevision: 0, friendsRevision: 0, syncRevision: 0,
+  activityRevision: 0,
   onlineUsers: {}, contactStatuses: {}, messages: [],
 };
 let state = emptyState;
@@ -79,6 +84,9 @@ export function startRealtimeSession(user: User) {
         const message = JSON.parse(String(event.data)) as { type?: string; payload?: unknown };
         if (message.type === 'app.ready') {
           reconcileMessaging(userId);
+          reconcileConversationPreferences();
+          reconcileAccountPreferences();
+          reconcileCustomStatus();
           const payload = message.payload as {
             presence?: RoomPresence[]; online_user_ids?: string[];
             contact_presence?: { user_id: string; online: boolean; status: unknown }[];
@@ -108,10 +116,19 @@ export function startRealtimeSession(user: User) {
           if (message.type === 'chat.message') {
             if (value.author.id === userId) invalidatePostingState(value.room_id);
             messageSequence += 1;
-            update({ messages: [...state.messages.slice(-99), { sequence: messageSequence, value }] });
+            update({ messages: [...state.messages.slice(-99), { sequence: messageSequence, value }], activityRevision: state.activityRevision + 1 });
+          } else {
+            update({ activityRevision: state.activityRevision + 1 });
           }
         } else if (message.type === 'chat.read') {
           void refreshUnread();
+          update({ activityRevision: state.activityRevision + 1 });
+        } else if (message.type === 'conversation.preferences') {
+          receiveConversationPreference(message.payload);
+        } else if (message.type === 'account.preferences') {
+          receiveAccountPreferences(message.payload);
+        } else if (message.type === 'user.status') {
+          receiveCustomStatus(message.payload);
         } else if (message.type === 'chat.typing') {
           const value = message.payload as { room_id?: string; user_id?: string; typing?: boolean; thread_root_id?: string };
           if (value?.room_id && value.user_id && value.user_id !== userId && typeof value.typing === 'boolean') receiveTyping(value.room_id, value.user_id, value.typing, value.thread_root_id);
@@ -122,6 +139,7 @@ export function startRealtimeSession(user: User) {
           reconcileMessaging(userId, true);
         } else if (message.type === 'rooms.changed') {
           reconcileMessaging(userId, true);
+          reconcileConversationPreferences();
           update({ roomsRevision: state.roomsRevision + 1 });
         } else if (message.type === 'friends.changed' || message.type === 'dm.requests.changed' || message.type === 'privacy.changed') {
           update({ friendsRevision: state.friendsRevision + 1 });

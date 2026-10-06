@@ -6,6 +6,8 @@ import {
   Phone,
   Settings2,
   Users,
+  Inbox,
+  UserRound,
 } from 'lucide-react';
 import { Avatar } from '@/components/avatar';
 import { useOwnFace } from '@/features/settings/blobatarIdentity';
@@ -33,6 +35,8 @@ import {
 } from '@/components/ui/tooltip';
 import type { Screen } from './useScreenRoute';
 import type { Section } from './sections';
+import { openUserProfile } from '@/features/settings/ProfileDialog';
+import { CustomStatusText } from '@/features/settings/CustomStatus';
 
 const railButton = 'size-10 rounded-2xl min-[481px]:size-11';
 // Portrait phones: a labelled tab, sized for a thumb rather than a pointer.
@@ -62,6 +66,7 @@ export default function SpacesRail({
   onSettings,
   onSignOut,
   onHome,
+  onActivity,
 }: {
   user: User | null;
   screen: Screen;
@@ -77,6 +82,7 @@ export default function SpacesRail({
   onSettings: () => void;
   onSignOut: () => void;
   onHome: () => void;
+  onActivity: () => void;
 }) {
   // A section button is current when the sidebar is showing it and no other
   // screen has taken over.
@@ -140,6 +146,7 @@ export default function SpacesRail({
           <Users size={21} />
         </RailButton>
       )}
+      {user && !isMobile && <RailButton label="Activity" onClick={onActivity}><Inbox size={21} /></RailButton>}
       <RailButton
         label="Calls"
         current={inSection('calls')}
@@ -202,6 +209,9 @@ export default function SpacesRail({
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             {user && <div className="px-2 py-2"><AccountPresenceSelector user={user} compact /></div>}
+            {user && <div className="px-2 pb-2"><CustomStatusText userId={user.id} /></div>}
+            {user && <DropdownMenuItem onClick={() => openUserProfile(user.id)} className="phone:min-h-11"><UserRound /> View my profile</DropdownMenuItem>}
+            {user && <DropdownMenuItem onClick={onActivity} className="min-h-11 phone:flex"><Inbox /> Activity</DropdownMenuItem>}
             <DropdownMenuItem
               onClick={onRecordings}
               className="hidden min-h-11 phone:flex"

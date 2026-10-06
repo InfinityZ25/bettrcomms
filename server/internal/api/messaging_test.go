@@ -469,6 +469,7 @@ func TestMessagingMigrationWithExistingHistory(t *testing.T) {
 	apply("010_conversation_threads_pins.sql")
 	apply("011_moderation.sql")
 	apply("012_account_sessions.sql")
+	apply("013_daily_communication.sql")
 	store := &PostgresStore{DB: db}
 	seen := []string{}
 	cursor := ""
@@ -519,7 +520,7 @@ func TestMessagingMigrationWithExistingHistory(t *testing.T) {
 	if _, err = db.Exec(ctx, `INSERT INTO messages(room_id,author_id,body) VALUES($1,$2,'')`, room, alice); err != nil {
 		t.Fatal(err)
 	}
-	for _, file := range []string{"003_messaging.sql", "004_messaging_complete.sql", "005_attachment_cleanup_attempts.sql", "006_attachment_lifecycle.sql", "007_dm_privacy.sql", "008_web_push.sql", "009_social_basics.sql", "010_conversation_threads_pins.sql", "011_moderation.sql", "012_account_sessions.sql"} {
+	for _, file := range []string{"003_messaging.sql", "004_messaging_complete.sql", "005_attachment_cleanup_attempts.sql", "006_attachment_lifecycle.sql", "007_dm_privacy.sql", "008_web_push.sql", "009_social_basics.sql", "010_conversation_threads_pins.sql", "011_moderation.sql", "012_account_sessions.sql", "013_daily_communication.sql"} {
 		apply(file)
 	}
 }

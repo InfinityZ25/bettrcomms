@@ -8,12 +8,16 @@ import {
   MicOff,
   Plus,
   Users,
+  Star,
 } from 'lucide-react';
 import type { CallParticipant, Room, User } from '@/api';
 import RoomContextMenu from './RoomContextMenu';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { conversationPreferencesSnapshot, sortConversations, subscribeConversationPreferences } from './conversationPreferences';
+import ConversationPreferenceActions from './ConversationPreferenceActions';
+import { openUserProfile } from '@/features/settings/ProfileDialog';
 import {
   SidebarGroup,
   SidebarGroupLabel,
@@ -61,13 +65,9 @@ export default function RoomNavigation({
 }) {
   const unread = useSyncExternalStore(subscribeUnread, unreadSnapshot);
   const activity = useSyncExternalStore(subscribeActivity, activitySnapshot);
-  const latestActivity = (room: Room) => Math.max(
-    Date.parse(activity[room.id] ?? '') || 0,
-    Date.parse(room.activity_at ?? room.created_at) || 0,
-  );
-  const sortedRooms = [...rooms].sort((left, right) =>
-    latestActivity(right) - latestActivity(left),
-  );
+  const preferenceState = useSyncExternalStore(subscribeConversationPreferences, conversationPreferencesSnapshot);
+  const preferences = preferenceState.userId === user?.id ? preferenceState.preferences : {};
+  const sortedRooms = sortConversations(rooms, preferences, activity);
   return (
     <div className="conversation-navigation min-h-0 overflow-x-hidden overflow-y-auto">
       <SidebarGroup
@@ -93,6 +93,7 @@ export default function RoomNavigation({
             const callers = presence[room.id] ?? [];
             return (
               <SidebarMenuItem key={room.id}>
+                <div className="relative">
                 <RoomContextMenu
                   room={room}
                   user={user}
@@ -103,7 +104,7 @@ export default function RoomNavigation({
                 >
                   <SidebarMenuButton
                     className={cn(
-                      'h-10',
+                      'h-10 pr-9',
                       selected === room.id && 'font-semibold',
                     )}
                     isActive={selected === room.id}
@@ -120,6 +121,7 @@ export default function RoomNavigation({
                     <span className="min-w-0 flex-1 truncate">
                       {roomLabel(room)}
                     </span>
+                    {preferences[room.id]?.favorite && <Star size={12} className="shrink-0 fill-primary text-primary" aria-hidden="true" />}
                     {(unread[room.id]?.unread ?? 0) > 0 && (
                       <Badge
                         aria-label={`${unread[room.id].unread} unread messages${unread[room.id].mentions ? `, ${unread[room.id].mentions} mentions` : ''}`}
@@ -140,6 +142,8 @@ export default function RoomNavigation({
                     )}
                   </SidebarMenuButton>
                 </RoomContextMenu>
+                {user && <div className="absolute top-1 right-1"><ConversationPreferenceActions room={room} userId={user.id} onError={onError} /></div>}
+                </div>
                 {known && callers.length > 0 && (
                   <ul
                     className="mt-1 mb-3 ml-5 list-none border-l pl-3"
@@ -156,12 +160,12 @@ export default function RoomNavigation({
                         >
                           {(person.name || '?').slice(0, 1).toUpperCase()}
                         </span>
-                        <span className="min-w-0 flex-1 truncate">
+                        <button type="button" className="min-w-0 flex-1 truncate text-left hover:underline" aria-label={`View ${person.name || 'participant'}'s profile`} onClick={() => openUserProfile(person.user_id)}>
                           {person.name || 'Participant'}
                           {person.device_count > 1
                             ? ` · ${person.device_count} devices`
                             : ''}
-                        </span>
+                        </button>
                         {person.deafened ? (
                           <HeadphoneOff size={14} aria-label="Deafened" />
                         ) : person.muted ? (

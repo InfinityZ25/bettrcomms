@@ -15,7 +15,7 @@ func (s *PostgresStore) SavePendingAttachment(room, user, key string, attachment
 	if err = checkRoomPosting(ctx, tx, room, user, false); err != nil {
 		return err
 	}
-	tag, err := tx.Exec(ctx, `INSERT INTO message_attachments(id,room_id,uploader_id,object_key,filename,content_type,size_bytes,upload_state) SELECT $1,$2,$3,$4,$5,$6,$7,'uploading' WHERE can_access_room($2,$3)`, attachment.ID, room, user, key, attachment.Filename, attachment.ContentType, attachment.SizeBytes)
+	tag, err := tx.Exec(ctx, `INSERT INTO message_attachments(id,room_id,uploader_id,object_key,filename,content_type,size_bytes,voice_note,duration_ms,upload_state) SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,'uploading' WHERE can_access_room($2,$3)`, attachment.ID, room, user, key, attachment.Filename, attachment.ContentType, attachment.SizeBytes, attachment.VoiceNote, attachment.DurationMS)
 	if err == nil && tag.RowsAffected() == 0 {
 		return ErrForbidden
 	}
@@ -46,7 +46,7 @@ func (s *PostgresStore) RemovePendingAttachment(id string) error {
 func (s *PostgresStore) AttachmentForMember(room, user, id string) (string, MessageAttachment, error) {
 	var key string
 	var attachment MessageAttachment
-	err := s.DB.QueryRow(context.Background(), `SELECT a.object_key,a.id::text,a.filename,a.content_type,a.size_bytes FROM message_attachments a JOIN room_members rm ON rm.room_id=a.room_id AND rm.user_id=$2 LEFT JOIN messages m ON m.id=a.message_id WHERE a.room_id=$1 AND a.id=$3 AND a.upload_state='ready' AND a.deleted_at IS NULL AND ((a.message_id IS NOT NULL AND m.deleted_at IS NULL) OR (a.message_id IS NULL AND a.uploader_id=$2 AND a.created_at>now()-interval '24 hours'))`, room, user, id).Scan(&key, &attachment.ID, &attachment.Filename, &attachment.ContentType, &attachment.SizeBytes)
+	err := s.DB.QueryRow(context.Background(), `SELECT a.object_key,a.id::text,a.filename,a.content_type,a.size_bytes,a.voice_note,a.duration_ms FROM message_attachments a JOIN room_members rm ON rm.room_id=a.room_id AND rm.user_id=$2 LEFT JOIN messages m ON m.id=a.message_id WHERE a.room_id=$1 AND a.id=$3 AND can_access_room(a.room_id,$2) AND a.upload_state='ready' AND a.deleted_at IS NULL AND ((a.message_id IS NOT NULL AND m.deleted_at IS NULL) OR (a.message_id IS NULL AND a.uploader_id=$2 AND a.created_at>now()-interval '24 hours'))`, room, user, id).Scan(&key, &attachment.ID, &attachment.Filename, &attachment.ContentType, &attachment.SizeBytes, &attachment.VoiceNote, &attachment.DurationMS)
 	return key, attachment, norm(err)
 }
 
