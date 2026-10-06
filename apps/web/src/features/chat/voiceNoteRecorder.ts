@@ -133,6 +133,12 @@ export class VoiceNoteRecorder {
     this.releaseCapture();
   }
 
+  /** A posting restriction ends capture, but keeps a completed note for local review. */
+  interruptCapture() {
+    if (this.phase === 'recording') this.stop();
+    else if (this.phase === 'requesting') this.cancel();
+  }
+
   cancel() {
     ++this.generation;
     this.clearTimers();

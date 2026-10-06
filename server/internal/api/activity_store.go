@@ -13,16 +13,23 @@ func (s *PostgresStore) Activity(user, kind string, cursor activityCursor, limit
 	if before.IsZero() {
 		before = time.Date(9999, 1, 1, 0, 0, 0, 0, time.UTC)
 	}
-	// Build only the requested scope, retain one canonical item when a reply also
-	// mentions the recipient, then page the union with a deterministic tuple.
-	const candidates = `WITH relevant AS (
+	// Both the quoted author and the thread owner receive replies. UNION keeps
+	// one candidate when both links belong to the recipient. Each path uses its
+	// own parent index; mentions take priority only in the combined activity view.
+	const candidates = `WITH reply_candidates AS (
+ SELECT m.id FROM messages parent JOIN messages m ON m.reply_to_id=parent.id
+ WHERE parent.author_id=$1 AND parent.deleted_at IS NULL AND m.deleted_at IS NULL AND $2 IN('all','replies')
+ AND (m.created_at,'reply:'||m.id::text)<($3::timestamptz,$4::text)
+ UNION
+ SELECT m.id FROM messages parent JOIN messages m ON m.thread_root_id=parent.id
+ WHERE parent.author_id=$1 AND parent.deleted_at IS NULL AND m.deleted_at IS NULL AND $2 IN('all','replies')
+ AND (m.created_at,'reply:'||m.id::text)<($3::timestamptz,$4::text)
+ ),relevant AS (
  SELECT mm.message_id id,'mention' kind FROM message_mentions mm JOIN messages m ON m.id=mm.message_id
  WHERE mm.user_id=$1 AND $2 IN('all','mentions') AND (m.created_at,'mention:'||m.id::text)<($3::timestamptz,$4::text)
  UNION ALL
- SELECT m.id,'reply' FROM messages parent JOIN messages m ON COALESCE(m.reply_to_id,m.thread_root_id)=parent.id
- WHERE parent.author_id=$1 AND parent.deleted_at IS NULL AND $2 IN('all','replies')
- AND ($2='replies' OR NOT EXISTS(SELECT 1 FROM message_mentions mm WHERE mm.message_id=m.id AND mm.user_id=$1))
- AND (m.created_at,'reply:'||m.id::text)<($3::timestamptz,$4::text)
+ SELECT r.id,'reply' FROM reply_candidates r
+ WHERE $2='replies' OR NOT EXISTS(SELECT 1 FROM message_mentions mm WHERE mm.message_id=r.id AND mm.user_id=$1)
  ),message_activity AS (
  SELECT relevant.kind,m.id::text object_id,m.room_id::text room_id,m.created_at,
  m.sequence<=CASE WHEN m.thread_root_id IS NULL THEN COALESCE(rr.sequence,0) ELSE COALESCE(tr.sequence,0) END is_read,NULL::jsonb payload

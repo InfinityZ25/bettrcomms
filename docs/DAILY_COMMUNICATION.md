@@ -23,6 +23,9 @@ cleanup. Live updates reuse the existing authenticated account socket.
 
 Record a voice note explicitly from the composer, stop and preview it locally,
 then attach and send. Discarding or changing conversation releases the recorder.
+Busy actions and sending cooldowns keep the recording and its review available.
+Posting restrictions stop capture and disable attaching; completed audio remains
+on this device for review or discard, and late microphone access is released.
 Its microphone is independent of call mute/PTT. The maximum is two minutes and
 10 MiB; audio-only WebM/Opus and MP4/AAC or Opus are validated on the server,
 including MP4 fragment timing. Received audio loads its private signed URL only
@@ -36,6 +39,9 @@ message history, notification rules or access to an ongoing call.
 Activity shows mentions, replies (including threads) and pending friend/message
 requests. Opening an item navigates to its exact message and thread; requests can
 be accepted or declined. Permissions are rechecked server-side on every page.
+Replies include responses to your messages and replies in threads you started,
+even when another participant is quoted. Each message appears once; mentions
+take priority in All, while Replies retains replies that also mention you.
 The view loads only while open, with cursor pagination, a 300-item client bound,
 and debounced refreshes through the existing socket rather than polling.
 
@@ -54,7 +60,9 @@ PTT keys, OS permissions and notification permissions remain local.
 ## Validation boundary
 
 Migration `013_daily_communication.sql` adds the persisted status and preferences,
-voice metadata and activity indexes. Browser acceptance uses real API/PostgreSQL
+voice metadata and activity indexes. Migration `014_activity_thread_replies.sql`
+adds an independent thread-reply index and removes the superseded combined index.
+Browser acceptance uses real API/PostgreSQL
 and synthetic media. Local voice acceptance additionally uses an isolated Docker
 S3-compatible service, with a real Chromium MediaRecorder file. These checks do
 not prove microphone permission or MediaRecorder compatibility on physical macOS,

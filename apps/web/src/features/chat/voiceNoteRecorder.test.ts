@@ -77,6 +77,36 @@ describe('voice note recording ownership and review', () => {
     h.controller.dispose();
   });
 
+  it('ends capture on a posting restriction while preserving the completed note for review', async () => {
+    const h = harness();
+    await h.controller.start();
+    h.setNow(1800);
+    h.controller.interruptCapture();
+    expect(h.latest().phase).toBe('review');
+    const file = h.latest().file;
+    expect(file?.size).toBeGreaterThan(0);
+    expect(h.mic.track.stop).toHaveBeenCalledTimes(1);
+    h.controller.interruptCapture();
+    expect(h.latest().file).toBe(file);
+    expect(vi.getTimerCount()).toBe(0);
+    h.controller.dispose();
+  });
+
+  it('cancels microphone permission requests when posting is revoked and releases late streams', async () => {
+    let grant!: (stream: MediaStream) => void;
+    const h = harness(() => new Promise<MediaStream>((resolve) => { grant = resolve; }));
+    const starting = h.controller.start();
+    await Promise.resolve();
+    h.controller.interruptCapture();
+    grant(h.mic.stream);
+    await starting;
+    expect(h.latest().phase).toBe('idle');
+    expect(h.environment.create).not.toHaveBeenCalled();
+    expect(h.mic.track.stop).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+    h.controller.dispose();
+  });
+
   it('stops a stream arriving after close, room change or account change without updating the closed composer', async () => {
     let grant!: (stream: MediaStream) => void;
     const h = harness(() => new Promise<MediaStream>((resolve) => { grant = resolve; }));

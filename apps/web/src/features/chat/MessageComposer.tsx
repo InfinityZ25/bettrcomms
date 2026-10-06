@@ -10,32 +10,8 @@ import EmojiDialog from './EmojiDialog';
 import { insertEmoji } from './emojiCatalog';
 import VoiceNoteComposer from './VoiceNoteComposer';
 import { voiceNoteTime } from './voiceNoteRecorder';
-export default function MessageComposer({
-  draft,
-  onDraft,
-  editing,
-  reply,
-  busy,
-  suggested,
-  suggestion,
-  onSuggestion,
-  onMention,
-  onSend,
-  onCancel,
-  inputRef,
-  label,
-  attachments,
-  onFiles,
-  onRemoveFile,
-  onTypingStop,
-  blocked = false,
-  blockedReason,
-  blockedUntil,
-  attachmentsBlocked = blocked,
-  userId,
-  recordingKey,
-  onVoiceFile,
-}: {
+
+type MessageComposerProps = {
   draft: string;
   onDraft: (value: string) => void;
   editing: boolean;
@@ -60,7 +36,37 @@ export default function MessageComposer({
   userId?: string;
   recordingKey?: string;
   onVoiceFile?: (file: File, durationMs: number) => boolean | void;
-}) {
+};
+
+export default function MessageComposer(props: MessageComposerProps) {
+  return <ScopedMessageComposer key={`${props.userId ?? ''}:${props.recordingKey ?? ''}`} {...props} />;
+}
+
+function ScopedMessageComposer({
+  draft,
+  onDraft,
+  editing,
+  reply,
+  busy,
+  suggested,
+  suggestion,
+  onSuggestion,
+  onMention,
+  onSend,
+  onCancel,
+  inputRef,
+  label,
+  attachments,
+  onFiles,
+  onRemoveFile,
+  onTypingStop,
+  blocked = false,
+  blockedReason,
+  blockedUntil,
+  attachmentsBlocked = blocked,
+  userId,
+  onVoiceFile,
+}: MessageComposerProps) {
   const phone = useIsMobile();
   const fileInput = useRef<HTMLInputElement>(null);
   const [choosingEmoji, setChoosingEmoji] = useState(false);
@@ -68,7 +74,13 @@ export default function MessageComposer({
   const [formatError, setFormatError] = useState('');
   const emojiSelection = useRef({ start: 0, end: 0 });
   const voiceAllowed = !editing && !blocked && !attachmentsBlocked && !busy && attachments.length < 4 && Boolean(onVoiceFile);
-  const voiceOpen = recording && voiceAllowed;
+  const voiceOpen = recording;
+  const voiceUnavailableReason = attachmentsBlocked ? blockedReason || 'Posting permission is restricted in this conversation.'
+    : busy ? 'Your voice note stays here while the current message action finishes.'
+      : editing ? 'Finish or cancel editing before attaching your voice note.'
+        : attachments.length >= 4 ? 'Remove an attachment before attaching your voice note.'
+          : blocked ? blockedReason || 'Wait until sending is available before attaching your voice note.'
+            : !onVoiceFile ? 'Voice notes are unavailable in this conversation.' : undefined;
   const format = (kind: FormatKind) => {
     const field = inputRef.current;
     const result = formatSelection(draft, field?.selectionStart ?? draft.length, field?.selectionEnd ?? draft.length, kind);
@@ -80,7 +92,7 @@ export default function MessageComposer({
   return (
     <form
       className="message-composer relative m-3 shrink-0 rounded-2xl border bg-muted/60 p-2 phone:m-2 phone:p-1 focus-within:ring-2 focus-within:ring-ring/40"
-      onSubmit={(event) => { if (blocked || voiceOpen) event.preventDefault(); else onSend(event); }}
+      onSubmit={(event) => { if (busy || blocked || voiceOpen) event.preventDefault(); else onSend(event); }}
       onDragOver={(event) => { if (!editing) event.preventDefault(); }}
       onDrop={(event) => {
         if (editing) return;
@@ -154,7 +166,14 @@ export default function MessageComposer({
       }} />}
       {formatError && <p role="alert" className="mb-1 px-2 text-xs text-destructive">{formatError}</p>}
       {blocked && <p role="status" className="mb-1 px-2 text-xs text-muted-foreground">{blockedReason}{blockedUntil && <> Available after {new Date(blockedUntil).toLocaleTimeString()}.</>}</p>}
-      {voiceOpen && onVoiceFile && <VoiceNoteComposer key={recordingKey ?? userId} onAttach={onVoiceFile} onClose={() => setRecording(false)} />}
+      {voiceOpen && <VoiceNoteComposer
+        onAttach={(file, durationMs) => onVoiceFile ? onVoiceFile(file, durationMs) : false}
+        onClose={() => setRecording(false)}
+        canStart={voiceAllowed}
+        canAttach={voiceAllowed}
+        captureRestricted={attachmentsBlocked}
+        unavailableReason={voiceUnavailableReason}
+      />}
       <div className="mb-1 flex gap-0.5" aria-label="Message formatting">
         {([['bold', Bold], ['italic', Italic], ['code', Code], ['quote', Quote], ['spoiler', EyeOff]] as const).map(([kind, Icon]) => <Button key={kind} variant="ghost" size="icon-sm" type="button" aria-label={`Format ${kind}`} disabled={busy} onMouseDown={(event) => event.preventDefault()} onClick={() => format(kind)}><Icon size={14} /></Button>)}
       </div>
@@ -219,7 +238,7 @@ export default function MessageComposer({
                 );
             } else if (event.key === 'Enter' && !event.shiftKey) {
               event.preventDefault();
-              if (!blocked && !voiceOpen) onSend();
+              if (!busy && !blocked && !voiceOpen) onSend();
             }
           }}
         />

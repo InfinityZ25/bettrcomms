@@ -382,6 +382,96 @@ func TestDailyActivityPaginationAndAuthorizationIntegration(t *testing.T) {
 		t.Fatal("blocked pending request remained in activity")
 	}
 }
+func TestDailyActivityThreadReplyRecipientsIntegration(t *testing.T) {
+	s := socialDatabase(t)
+	users := socialUsers(t, s, 3)
+	alice, bob, charlie := users[0], users[1], users[2]
+	socialFriend(t, s, alice.ID, bob.ID)
+	socialFriend(t, s, alice.ID, charlie.ID)
+	room, err := s.CreateRoom(alice.ID, "Thread activity recipients")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, user := range []User{bob, charlie} {
+		if err = s.AddRoomMember(room.ID, alice.ID, user.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	root, err := s.WriteMessage(room.ID, alice.ID, "", "Alice's thread", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	send := func(user User, body, replyID string) Message {
+		t.Helper()
+		message, _, err := s.SendThreadMessage(room.ID, user.ID, body, replyID, "", nil, root.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return message
+	}
+	bobMessage := send(bob, "Bob joins Alice's thread", "")
+	quotedBob := send(charlie, "Reply to Bob in Alice's thread", bobMessage.ID)
+	aliceMessage := send(alice, "Alice joins her thread", "")
+	quotedAlice := send(charlie, "Both recipient links belong to Alice", aliceMessage.ID)
+	mentionedAlice := send(charlie, "Reply to Bob and mention <@"+alice.ID+">", bobMessage.ID)
+	expectActivity := func(user User, kind string, wanted map[string]string) {
+		t.Helper()
+		page, err := s.Activity(user.ID, kind, activityCursor{}, 30)
+		if err != nil {
+			t.Fatal(err)
+		}
+		seen := map[string]bool{}
+		for _, item := range page.Items {
+			if item.Message == nil {
+				t.Fatalf("unexpected non-message activity for %s/%s: %+v", user.Name, kind, item)
+			}
+			id := item.Message.ID
+			if seen[id] {
+				t.Fatalf("duplicate thread reply for %s/%s: %s", user.Name, kind, id)
+			}
+			seen[id] = true
+			if wanted[id] != item.Kind || item.RoomID != room.ID || item.Message.ThreadRootID == nil || *item.Message.ThreadRootID != root.ID {
+				t.Fatalf("unexpected activity for %s/%s: %+v", user.Name, kind, item)
+			}
+		}
+		if len(seen) != len(wanted) {
+			t.Fatalf("missing thread activity for %s/%s: got %v, want %v", user.Name, kind, seen, wanted)
+		}
+	}
+	allAlice := map[string]string{bobMessage.ID: "reply", quotedBob.ID: "reply", quotedAlice.ID: "reply", mentionedAlice.ID: "mention"}
+	repliesAlice := map[string]string{bobMessage.ID: "reply", quotedBob.ID: "reply", quotedAlice.ID: "reply", mentionedAlice.ID: "reply"}
+	bobActivity := map[string]string{quotedBob.ID: "reply", mentionedAlice.ID: "reply"}
+	for _, kind := range []string{"all", "replies"} {
+		wanted := allAlice
+		if kind == "replies" {
+			wanted = repliesAlice
+		}
+		expectActivity(alice, kind, wanted)
+		expectActivity(bob, kind, bobActivity)
+		expectActivity(charlie, kind, nil)
+	}
+	if _, err = s.DeleteMessage(room.ID, charlie.ID, quotedBob.ID); err != nil {
+		t.Fatal(err)
+	}
+	delete(allAlice, quotedBob.ID)
+	delete(repliesAlice, quotedBob.ID)
+	delete(bobActivity, quotedBob.ID)
+	expectActivity(alice, "all", allAlice)
+	expectActivity(alice, "replies", repliesAlice)
+	expectActivity(bob, "replies", bobActivity)
+	if _, err = s.BlockUser(alice.ID, charlie.ID); err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []string{"all", "replies"} {
+		expectActivity(alice, kind, map[string]string{bobMessage.ID: "reply"})
+	}
+	if err = s.RemoveRoomMember(room.ID, alice.ID, bob.ID); err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []string{"all", "replies"} {
+		expectActivity(bob, kind, nil)
+	}
+}
 func voiceEBML(id []byte, body []byte) []byte {
 	out := append([]byte{}, id...)
 	if len(body) < 127 {

@@ -29,7 +29,6 @@ CREATE TABLE IF NOT EXISTS account_preferences (
 CREATE INDEX IF NOT EXISTS mentions_activity_user ON message_mentions(user_id,message_id);
 CREATE INDEX IF NOT EXISTS messages_reply_activity ON messages(reply_to_id,created_at DESC,id DESC) WHERE reply_to_id IS NOT NULL AND deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS messages_author_activity ON messages(author_id,id) WHERE deleted_at IS NULL;
-CREATE INDEX IF NOT EXISTS messages_activity_parent ON messages(COALESCE(reply_to_id,thread_root_id),created_at DESC,id DESC);
 CREATE INDEX IF NOT EXISTS room_members_account_lookup ON room_members(user_id,room_id);
 CREATE INDEX IF NOT EXISTS friend_requests_sender_activity ON friend_requests(sender_id,status,receiver_id);
 CREATE INDEX IF NOT EXISTS friend_requests_receiver_activity ON friend_requests(receiver_id,status,created_at DESC,id DESC);

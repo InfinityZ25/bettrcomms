@@ -2,7 +2,9 @@
 
 Voice notes support explicit recording, local review, discard, private attachment
 delivery and playback. Audio containers are checked for audio-only tracks and
-bounded duration, including fragmented MP4. Profiles can be opened from authors,
+bounded duration, including fragmented MP4. Busy actions and sending cooldowns
+retain an in-progress note; posting restrictions stop capture and retain completed
+audio for local review. Profiles can be opened from authors,
 friends, activity and the account menu; the existing editable identity remains
 available, with custom status text/emoji and expiration. Profile access follows
 friendship/blocking and shared membership, including reauthorization of an open
@@ -16,7 +18,7 @@ app sounds, with versioned sparse writes; hardware, permissions and shortcuts st
 local. These flows reuse the existing browser/Wails authentication boundary and
 socket rather than adding background polling.
 
-Migration 013, configuration and acceptance boundaries are documented in
+Migrations 013–014, configuration and acceptance boundaries are documented in
 `docs/DAILY_COMMUNICATION.md`. Real Chromium voice acceptance uses isolated local
 S3-compatible Docker storage. Physical macOS recording, packaged authentication
 and cross-network calls remain separate acceptance gates.
