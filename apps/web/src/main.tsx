@@ -10,6 +10,7 @@ import '@fontsource-variable/dm-sans';
 import '@fontsource-variable/manrope';
 import './styles.css';
 import { startWailsFrontendRuntime } from '@/desktop/wailsFrontendRuntime';
+import { releaseOrphanedAndroidProjection } from '@/media/androidProjection';
 import { releaseOrphanedIOSBroadcast } from '@/media/iosBroadcast';
 
 // Before the first render: the Wails runtime is what reports this page's
@@ -18,6 +19,7 @@ import { releaseOrphanedIOSBroadcast } from '@/media/iosBroadcast';
 startWailsFrontendRuntime();
 // A reloaded page cannot see or stop a screen broadcast it did not start.
 releaseOrphanedIOSBroadcast();
+releaseOrphanedAndroidProjection();
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

@@ -1,4 +1,4 @@
-import { getDesktopRuntime } from './runtime';
+import { getDesktopRuntime, readDesktopBootReport } from './runtime';
 
 /**
  * Native notifications, where the host has them.
@@ -25,7 +25,7 @@ export interface DesktopNotificationClick {
 }
 
 export function desktopNotificationsAvailable() {
-  return getDesktopRuntime() === 'wails';
+  return getDesktopRuntime() === 'wails' && readDesktopBootReport()?.platform !== 'android';
 }
 
 const service = () =>

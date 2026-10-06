@@ -75,3 +75,17 @@ func TestIOSNativeBridgeRejectsUnauthorisedPages(t *testing.T) {
 		})
 	}
 }
+
+func TestAndroidNativeBridgeRejectsUnauthorisedPages(t *testing.T) {
+	gate, err := desktop.NewPageGate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bridge := &AuthService{gate: gate}
+	if err := bridge.AndroidCallAudio("invalid", true); !errors.Is(err, desktop.ErrUntrustedCaller) {
+		t.Fatalf("Android audio accepted an untrusted caller: %v", err)
+	}
+	if _, err := bridge.AndroidScreenSender(context.Background(), "invalid", "native_screen_start", nil); !errors.Is(err, desktop.ErrUntrustedCaller) {
+		t.Fatalf("Android capture accepted an untrusted caller: %v", err)
+	}
+}

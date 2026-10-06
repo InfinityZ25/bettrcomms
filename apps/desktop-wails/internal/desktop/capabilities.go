@@ -43,6 +43,9 @@ type MediaCapabilities struct {
 	MediaPermissions    Capability `json:"mediaPermissions"`
 	GlobalInput         Capability `json:"globalInput"`
 	NativeOverlays      Capability `json:"nativeOverlays"`
+	// Optional for older hosts. Android's standard flavor deliberately omits
+	// Meta DAT so phones below the SDK's Android 12 minimum can still call.
+	NativeMetaCamera *Capability `json:"nativeMetaCamera,omitempty"`
 
 	Notes []string `json:"notes"`
 }
@@ -94,7 +97,7 @@ type WindowControls struct {
 
 // NewMediaCapabilities builds the report for the running host.
 func NewMediaCapabilities() MediaCapabilities {
-	return MediaCapabilities{
+	report := MediaCapabilities{
 		SchemaVersion: 1,
 		Platform:      runtime.GOOS,
 		Architecture:  runtime.GOARCH,
@@ -115,6 +118,8 @@ func NewMediaCapabilities() MediaCapabilities {
 			"the web client must use its browser path whenever a capability is not implemented",
 		},
 	}
+	configurePlatformCapabilities(&report)
+	return report
 }
 
 // DefaultWindowControls returns the title-bar contract for the running host.
@@ -130,9 +135,9 @@ func DefaultWindowControls() WindowControls {
 	const macTrafficLightInset = 78
 
 	switch runtime.GOOS {
-	case "ios":
+	case "ios", "android":
 		return WindowControls{
-			Platform:   "ios",
+			Platform:   runtime.GOOS,
 			Mode:       "native-frame",
 			Height:     0,
 			Buttons:    []string{},

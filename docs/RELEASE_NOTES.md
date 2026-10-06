@@ -525,3 +525,25 @@ Disposing the camera transport removes its signaling error listener. The iOS
 package no longer declares the unused background-processing mode, and session
 persistence guidance now describes the operating-system credential store
 without incorrectly naming a Windows account on Apple platforms.
+## Unreleased — experimental Android host
+
+Android now has a separately buildable Wails native package with shared UI,
+encrypted session persistence, native permission/audio-focus handling and
+system back navigation. A standard APK supports API 26+ without Meta's SDK;
+the Meta APK requires API 31+ and includes DAT 1.0.0 camera bindings and the
+native H.264/WebRTC sender. Screen sharing uses Android MediaProjection and
+native encoding rather than browser getDisplayMedia. CI builds both flavors.
+
+The review follow-up updates an existing foreground service rather than
+restarting it from the background, and handles Android service rejections by
+ending native capture and reporting the failure. Static screen frames repeat
+for late viewers; cancelling an unopened picker cannot stop a live share.
+Meta decoding tolerates brief backpressure, copies visible cropped YUV planes,
+and retains updated AVC parameter sets without a strict frame-time gate.
+Native peer teardown runs off Android's UI thread. The Gradle wrapper is checked
+against its official release checksum before execution.
+
+Phone camera/microphone transport still uses WebView WebRTC; system audio
+capture and production Android notification delivery are not implemented.
+Hardware, background-media and cross-network acceptance remain pending.
+See [Android setup and the device acceptance checklist](ANDROID.md).
