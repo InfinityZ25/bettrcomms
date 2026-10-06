@@ -54,6 +54,9 @@ test('input volume changes the same processed track live without changing captur
 
 test('global output volume scales call playback without altering the source or participant volume', async ({ page }) => {
   await page.goto('/');
+  // Session initialization tears down playback when /me reports signed out.
+  // Start the isolated graph after that lifecycle has completed.
+  await expect(page.getByRole('button', { name: 'Continue with WorkOS', exact: true })).toBeVisible();
   const result = await page.evaluate(async () => {
     const volume = await import('/src/media/volumeSettings.ts');
     const input = new AudioContext();
@@ -79,7 +82,12 @@ test('global output volume scales call playback without altering the source or p
     const rms = async () => {
       // Let the gain ramp and the 8192-frame analysis window settle on slower audio backends.
       const settledAt = meter.context.currentTime + 0.5;
-      while (meter.context.currentTime < settledAt) await new Promise(resolve => setTimeout(resolve, 25));
+      const deadline = performance.now() + 3_000;
+      while (meter.context.currentTime < settledAt) {
+        if (performance.now() >= deadline)
+          throw new Error(`Playback clock stopped: ${meter.context.state}, time=${meter.context.currentTime}, target=${settledAt}`);
+        await new Promise(resolve => setTimeout(resolve, 25));
+      }
       const samples = new Float32Array(8192); meter.getFloatTimeDomainData(samples);
       return Math.sqrt(samples.reduce((sum, sample) => sum + sample * sample, 0) / samples.length);
     };

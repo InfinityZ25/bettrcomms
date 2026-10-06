@@ -162,7 +162,7 @@ test('remote voice playback stays mounted while browsing Messages', async ({ bro
     const element = await remoteAudio.elementHandle();
     await ownerPage.getByRole('navigation', { name: 'Sections' })
       .getByRole('button', { name: 'Messages' }).click();
-    await ownerPage.getByRole('button', { name: 'Views Grace' }).click();
+    await ownerPage.getByRole('button', { name: 'Views Grace', exact: true }).click();
     await expect(ownerPage.getByRole('region', { name: 'Conversation with Views Grace' })).toBeVisible();
     await expect(remoteAudio).toHaveCount(1);
     expect(await element?.evaluate((audio) => audio.isConnected)).toBe(true);
