@@ -96,7 +96,7 @@ export default function App() {
   const presence = useCallPresence(user?.id);
   const { screen, setScreen, navigate } = useScreenRoute();
   const preferences = useCallPreferences();
-  const { rooms, room, setRoom, openRoom, reload, refresh, clear } = useRooms(
+  const { rooms, room, fallbackRevision, setRoom, openRoom, reload, refresh, clear } = useRooms(
     user,
     presence.roomsRevision + presence.syncRevision,
     setError,
@@ -147,10 +147,18 @@ export default function App() {
     revision: 0,
   });
   const openSettings = () => setSettingsOpen(true);
-  // Follow the initial room until navigation chooses a section. A late room
-  // list must not overwrite the user's choice while that request was loading.
-  const [sectionChoice, setSection] = useState<Section | null>(null);
-  const section = sectionChoice ?? sectionForRoom(room?.kind);
+  // Initial loading preserves explicit navigation. If membership removes the
+  // selected room, its replacement determines the section until another choice.
+  const [sectionChoice, setSectionChoice] = useState<{
+    section: Section;
+    fallbackRevision: number;
+  } | null>(null);
+  const section = sectionChoice?.fallbackRevision === fallbackRevision
+    ? sectionChoice.section
+    : sectionForRoom(room?.kind);
+  const setSection = (next: Section | null) => setSectionChoice(
+    next === null ? null : { section: next, fallbackRevision },
+  );
   const showSection = (next: Section) => {
     setSection(next);
     if (phone) setMobileDestination(next);

@@ -35,6 +35,9 @@ camera layout observation must follow the mounted stage and ignore stale callbac
 Delay the initial real `/rooms` response until Messages is selected, then require
 the direct-message list to appear without another click. Preserve the two-second
 realtime delivery checks and zero presence polling.
+Remove the selected room's membership through the real API and require the
+replacement conversation and sidebar selection to agree without a page reload,
+both from Rooms to Messages and from Messages to Rooms.
 Sign out or revoke the active session, then sign in as another account without
 reloading; its initial room determines navigation instead of the previous choice.
 

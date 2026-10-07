@@ -123,3 +123,69 @@ test('signing into another account without reloading restores its default Rooms 
     await Promise.allSettled([firstContext.close(), secondContext.close()]);
   }
 });
+
+for (const removedSection of ['Rooms', 'Messages'] as const) {
+  const fallbackSection = removedSection === 'Rooms' ? 'Messages' : 'Rooms';
+  test(`membership removal follows the fallback conversation from ${removedSection} to ${fallbackSection} without reloading`, async ({ browser }) => {
+    test.setTimeout(150_000);
+    const ownerContext = await browser.newContext({ baseURL });
+    const peerContext = await browser.newContext({ baseURL });
+    const roomIds: string[] = [];
+    try {
+      const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      await login(ownerContext, 'Fallback Owner', `fallback-owner-${suffix}@example.test`);
+      const peer = await login(peerContext, 'Fallback Peer', `fallback-peer-${suffix}@example.test`);
+      const { request } = await json<{ request: { id: string } }>(await ownerContext.request.post('/api/v1/friends/requests', {
+        headers: { Origin: origin }, data: { user_id: peer.id },
+      }));
+      await json(await peerContext.request.post(`/api/v1/friends/requests/${request.id}/accept`, {
+        headers: { Origin: origin }, data: {},
+      }));
+      type Room = { id: string; name: string; community_name?: string };
+      const { room: channel } = await json<{ room: Room }>(await ownerContext.request.post('/api/v1/rooms', {
+        headers: { Origin: origin }, data: { name: `Fallback channel ${suffix}` },
+      }));
+      roomIds.push(channel.id);
+      await json(await ownerContext.request.post(`/api/v1/rooms/${channel.id}/members`, {
+        headers: { Origin: origin }, data: { user_id: peer.id },
+      }));
+      const { room: group } = await json<{ room: Room }>(await ownerContext.request.post('/api/v1/rooms/group', {
+        headers: { Origin: origin }, data: { name: `Fallback group ${suffix}`, user_ids: [peer.id] },
+      }));
+      roomIds.push(group.id);
+      const removed = removedSection === 'Rooms' ? channel : group;
+      const fallback = removedSection === 'Rooms' ? group : channel;
+      const page = await peerContext.newPage();
+      await page.goto('/');
+      const sections = page.getByRole('navigation', { name: 'Sections' });
+      await sections.getByRole('button', { name: removedSection, exact: true }).click();
+      const roomList = (room: Room, section: 'Rooms' | 'Messages') => section === 'Rooms'
+        ? page.getByRole('list', { name: `${room.community_name ?? room.name} channel list`, exact: true })
+        : page.getByRole('region', { name: 'Direct messages', exact: true });
+      const conversation = (room: Room, section: 'Rooms' | 'Messages') => page.getByRole('region', {
+        name: section === 'Rooms' ? `${room.community_name ?? 'Room'} · ${room.name}` : `Conversation with ${room.name}`,
+        exact: true,
+      });
+      await roomList(removed, removedSection).getByRole('button', { name: removed.name, exact: true }).click();
+      await expect(conversation(removed, removedSection)).toBeVisible();
+      await expect(sections.getByRole('button', { name: removedSection, exact: true })).toHaveAttribute('aria-current', 'page');
+      await page.evaluate((value) => {
+        (window as unknown as { membershipFallbackDocument: string }).membershipFallbackDocument = value;
+      }, suffix);
+
+      await json(await ownerContext.request.delete(`/api/v1/rooms/${removed.id}/members/${peer.id}`, {
+        headers: { Origin: origin },
+      }));
+      expect((await peerContext.request.get(`/api/v1/rooms/${removed.id}`)).status()).toBe(403);
+      await expect(conversation(removed, removedSection)).toHaveCount(0);
+      await expect(conversation(fallback, fallbackSection)).toBeVisible();
+      await expect(sections.getByRole('button', { name: fallbackSection, exact: true })).toHaveAttribute('aria-current', 'page');
+      await expect(sections.getByRole('button', { name: removedSection, exact: true })).not.toHaveAttribute('aria-current', 'page');
+      await expect(roomList(fallback, fallbackSection).getByRole('button', { name: fallback.name, exact: true })).toHaveAttribute('aria-current', 'page');
+      expect(await page.evaluate(() => (window as unknown as { membershipFallbackDocument: string }).membershipFallbackDocument)).toBe(suffix);
+    } finally {
+      for (const roomId of roomIds) await ownerContext.request.delete(`/api/v1/rooms/${roomId}`, { headers: { Origin: origin } });
+      await Promise.allSettled([ownerContext.close(), peerContext.close()]);
+    }
+  });
+}
