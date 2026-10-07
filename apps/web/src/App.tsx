@@ -22,9 +22,11 @@ import CallDock from '@/features/call/CallDock';
 import CallAlerts from '@/features/call/CallAlerts';
 import IncomingCall from '@/features/call/IncomingCall';
 import RecordingNotice from '@/features/call/RecordingNotice';
-import { PresenceSession, useCallPresence } from '@/features/call/useCallPresence';
+import {
+  PresenceSession,
+  useCallPresence,
+} from '@/features/call/useCallPresence';
 import { onDesktopNotificationClick } from '@/desktop/notifications';
-import MessageThread from '@/features/chat/MessageThread';
 import MessageSearch from '@/features/chat/MessageSearch';
 import MessagingSession from '@/features/chat/MessagingSession';
 import { stopPushForThisBrowser } from '@/features/chat/notificationSettings';
@@ -35,7 +37,9 @@ import CreateRoomDialog from '@/features/rooms/CreateRoomDialog';
 import RoomSettings from '@/features/rooms/RoomSettings';
 import GroupConversationDialog from '@/features/rooms/GroupConversationDialog';
 import GroupMembersDialog from '@/features/rooms/GroupMembersDialog';
-import JoinInvitation, { EnterInvitation } from '@/features/rooms/JoinInvitation';
+import JoinInvitation, {
+  EnterInvitation,
+} from '@/features/rooms/JoinInvitation';
 import { useInvitation } from '@/features/rooms/useInvitation';
 import { useRooms } from '@/features/rooms/useRooms';
 import { SettingsDialog } from '@/components/settings-dialog';
@@ -46,7 +50,11 @@ import RoomSidebar from '@/features/shell/RoomSidebar';
 import MobileRoomList from '@/features/shell/MobileRoomList';
 import { useAppViewport } from '@/hooks/useAppViewport';
 import { useMobileSwipeNavigation } from '@/hooks/useMobileSwipeNavigation';
-import { isConversationRoom, sectionForRoom, type Section } from '@/features/shell/sections';
+import {
+  isConversationRoom,
+  sectionForRoom,
+  type Section,
+} from '@/features/shell/sections';
 import SpacesRail from '@/features/shell/SpacesRail';
 import HomeScreen from '@/features/shell/HomeScreen';
 import WorkspaceScreen from '@/features/shell/WorkspaceScreen';
@@ -105,7 +113,9 @@ export default function App() {
   const returningOnMobile = () => markMobileBack((value) => value + 1);
   const [settingsRoom, setSettingsRoom] = useState<Room | null>(null);
   const [inviteRoom, setInviteRoom] = useState<Room | null>(null);
-  const currentSettingsRoom = rooms.find((candidate) => candidate.id === settingsRoom?.id);
+  const currentSettingsRoom = rooms.find(
+    (candidate) => candidate.id === settingsRoom?.id,
+  );
   // Chrome only. The call itself is owned by CallSessionProvider below, which
   // outlives every screen; this is what the shell lays itself out against.
   const [call, setCall] = useState<CallChrome>({
@@ -131,7 +141,10 @@ export default function App() {
     ((phone && mobileDestination === 'home') ||
       (!room && !callJoined && !mobileList));
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsEntry, setSettingsEntry] = useState({ page: 'audio' as 'audio' | 'profile', revision: 0 });
+  const [settingsEntry, setSettingsEntry] = useState({
+    page: 'audio' as 'audio' | 'profile',
+    revision: 0,
+  });
   const openSettings = () => setSettingsOpen(true);
   // Which list the sidebar is showing. Selecting a conversation moves the rail
   // with it, so the two never disagree about where you are.
@@ -224,19 +237,18 @@ export default function App() {
 
   const inDirectRoom = Boolean(room && isConversationRoom(room.kind));
   /*
-    A direct room has two shapes: the conversation with the whole canvas, and
-    the call with the conversation beside it. The call never takes the whole
-    canvas here — a call with someone is still a conversation with them.
+    Every conversation and hybrid channel opens its message history first.
+    Joining voice uses the same workspace and can keep chat beside the call.
   */
   const conversation =
-    screen === 'call' && !atHome && !mobileList && inDirectRoom && !callOpen;
+    screen === 'call' && !atHome && !mobileList && Boolean(room) && !callOpen;
   const chatBeside =
     screen === 'call' &&
     !atHome &&
     !mobileList &&
     Boolean(room) &&
-    (callOpen || !inDirectRoom) &&
-    (inDirectRoom ? chatColumn : channelChat);
+    callOpen &&
+    chatColumn;
   const callOnScreen =
     screen === 'call' && !atHome && !mobileList && !conversation;
 
@@ -378,27 +390,84 @@ export default function App() {
         navigate('share');
       }}
     >
-      {user && <MessagingSession key={`messaging:${user.id}`} userId={user.id} />}
+      {user && (
+        <MessagingSession key={`messaging:${user.id}`} userId={user.id} />
+      )}
       {user && <PresenceSession key={`presence:${user.id}`} user={user} />}
-      {user && <ConversationPreferencesSession key={`conversations:${user.id}`} userId={user.id} />}
-      {user && <AccountPreferencesSession key={`preferences:${user.id}`} userId={user.id} />}
-      {user && <ProfileDialogHost key={`profiles:${user.id}`} user={user} onEditProfile={() => {
-        setSettingsEntry((entry) => ({ page: 'profile', revision: entry.revision + 1 }));
-        openSettings();
-      }} onOpenRoom={(next) => { openRoom(next); selectRoom(next); }} onCall={(next) => {
-        if (callJoined && callRoom?.id !== next.id) { setError('Leave your current call before starting another.'); return; }
-        openRoom(next);
-        selectRoom(next);
-        setCallOpen(true);
-        if (!callJoined) setProfileCall(next);
-      }} />}
-      {user && profileCall && room?.id === profileCall.id && !callJoined && <ProfileCallJoin key={`${user.id}:${profileCall.id}`} onSettled={() => setProfileCall(null)} />}
-      {user && activityOpen && <Suspense fallback={<p role="status" className="fixed top-4 right-4 z-50 rounded-xl border bg-background p-3 text-sm">Opening activity…</p>}><ActivityCenter key={`activity:${user.id}`} user={user} rooms={rooms} onClose={() => setActivityOpen(false)} onOpenRoom={(next) => { openRoom(next); selectRoom(next); }} onOpenMessage={(next, message) => {
-        selectRoom(next);
-        setMessageTarget({ room: next.id, id: message.id });
-        setChatColumn(true);
-        setChannelChat(true);
-      }} /></Suspense>}
+      {user && (
+        <ConversationPreferencesSession
+          key={`conversations:${user.id}`}
+          userId={user.id}
+        />
+      )}
+      {user && (
+        <AccountPreferencesSession
+          key={`preferences:${user.id}`}
+          userId={user.id}
+        />
+      )}
+      {user && (
+        <ProfileDialogHost
+          key={`profiles:${user.id}`}
+          user={user}
+          onEditProfile={() => {
+            setSettingsEntry((entry) => ({
+              page: 'profile',
+              revision: entry.revision + 1,
+            }));
+            openSettings();
+          }}
+          onOpenRoom={(next) => {
+            openRoom(next);
+            selectRoom(next);
+          }}
+          onCall={(next) => {
+            if (callJoined && callRoom?.id !== next.id) {
+              setError('Leave your current call before starting another.');
+              return;
+            }
+            openRoom(next);
+            selectRoom(next);
+            setCallOpen(true);
+            if (!callJoined) setProfileCall(next);
+          }}
+        />
+      )}
+      {user && profileCall && room?.id === profileCall.id && !callJoined && (
+        <ProfileCallJoin
+          key={`${user.id}:${profileCall.id}`}
+          onSettled={() => setProfileCall(null)}
+        />
+      )}
+      {user && activityOpen && (
+        <Suspense
+          fallback={
+            <p
+              role="status"
+              className="fixed top-4 right-4 z-50 rounded-xl border bg-background p-3 text-sm"
+            >
+              Opening activity…
+            </p>
+          }
+        >
+          <ActivityCenter
+            key={`activity:${user.id}`}
+            user={user}
+            rooms={rooms}
+            onClose={() => setActivityOpen(false)}
+            onOpenRoom={(next) => {
+              openRoom(next);
+              selectRoom(next);
+            }}
+            onOpenMessage={(next, message) => {
+              selectRoom(next);
+              setMessageTarget({ room: next.id, id: message.id });
+              setChatColumn(true);
+              setChannelChat(true);
+            }}
+          />
+        </Suspense>
+      )}
       {user && (
         <MessageSearch
           user={user}
@@ -481,34 +550,22 @@ export default function App() {
                     onActivity={() => setActivityOpen(true)}
                   />
                 ) : null}
-                {phone && !atHome && !mobileList && !inDirectRoom && room && (
-                  <Button
-                    className="mobile-room-back mb-2 shrink-0 self-start"
-                    variant="ghost"
-                    onClick={() => {
-                      returningOnMobile();
-                      showSection('calls');
-                    }}
-                    aria-label="Back to rooms"
-                  >
-                    ← Rooms
-                  </Button>
-                )}
-                {user &&
-                  room &&
-                  !inDirectRoom &&
-                  !callJoined &&
+                {phone &&
+                  callOpen &&
+                  !atHome &&
                   !mobileList &&
-                  !atHome && (
+                  !inDirectRoom &&
+                  room && (
                     <Button
-                      className="absolute top-2 left-5 z-10 phone:right-2 phone:left-auto phone:h-11"
-                      variant="secondary"
-                      size="sm"
-                      aria-label="Toggle room messages"
-                      aria-pressed={channelChat}
-                      onClick={() => setChannelChat((value) => !value)}
+                      className="mobile-room-back mb-2 shrink-0 self-start"
+                      variant="ghost"
+                      onClick={() => {
+                        returningOnMobile();
+                        showSection('calls');
+                      }}
+                      aria-label="Back to rooms"
                     >
-                      Room messages
+                      ← Rooms
                     </Button>
                   )}
                 <CallStage
@@ -517,9 +574,7 @@ export default function App() {
                   onChat={
                     room
                       ? () => {
-                          if (inDirectRoom)
-                            setChatColumn((value) => !(value ?? !phone));
-                          else setChannelChat((value) => !value);
+                          setChatColumn((value) => !(value ?? !phone));
                         }
                       : undefined
                   }
@@ -531,7 +586,9 @@ export default function App() {
                   balanced={preferences.balanced}
                   onError={setError}
                   onInvite={
-                    inDirectRoom ? undefined : () => setFriendsOpen(true)
+                    !inDirectRoom && room?.permissions?.manage_invites
+                      ? () => setFriendsOpen(true)
+                      : undefined
                   }
                 />
                 {/*
@@ -541,65 +598,49 @@ export default function App() {
           */}
                 {chatBeside && room && (
                   <div className="absolute inset-y-0 right-0 z-20 flex w-[min(21rem,calc(100%-2.5rem))] py-1 pr-1 min-[1100px]:static min-[1100px]:w-80 min-[1100px]:shrink-0 min-[1100px]:p-0 phone:z-40 phone:w-full phone:bg-background phone:p-0">
-                    {inDirectRoom ? (
-                      <DirectConversation
-                        room={room}
-                        user={user}
-                        live={presence.messages}
-                        variant="panel"
-                        onClose={() => setChatColumn(false)}
-                        targetId={
-                          messageTarget?.room === room.id
-                            ? messageTarget.id
-                            : undefined
-                        }
-                        onCall={() => setCallOpen(true)}
-                        onError={setError}
-                        onGroupInfo={() => setSettingsRoom(room)}
-                      />
-                    ) : (
-                      user && (
-                        <section
-                          className="flex min-h-0 min-w-0 flex-1 flex-col rounded-2xl border bg-background phone:rounded-none phone:border-0"
-                          aria-label="Room chat"
-                        >
-                          <MessageThread
-                            key={`${user.id}:${room.id}:${messageTarget?.id ?? ''}`}
-                            roomId={room.id}
-                            user={user}
-                            label={room.name}
-                            canModerate={
-                              room.kind !== 'direct' &&
-                              room.owner_id === user.id
-                            }
-                            onClose={() => setChannelChat(false)}
-                            targetId={
-                              messageTarget?.room === room.id
-                                ? messageTarget.id
-                                : undefined
-                            }
-                            onError={setError}
-                          />
-                        </section>
-                      )
-                    )}
+                    <DirectConversation
+                      room={room}
+                      user={user}
+                      live={presence.messages}
+                      variant="panel"
+                      onClose={() => setChatColumn(false)}
+                      targetId={
+                        messageTarget?.room === room.id
+                          ? messageTarget.id
+                          : undefined
+                      }
+                      onCall={() => setCallOpen(true)}
+                      onError={setError}
+                      onGroupInfo={() => setSettingsRoom(room)}
+                    />
                   </div>
                 )}
                 {!user && (
                   <div className="space-y-3">
-                  {invitation && <p className="rounded-xl border p-3 text-sm">Sign in to review your room invitation. <Button variant="ghost" size="sm" onClick={() => chooseInvitation(null)}>Dismiss invitation</Button></p>}
-                  <SignInPanel
-                    devAuth={devAuth}
-                    busy={busy}
-                    name={name}
-                    email={email}
-                    onNameChange={setName}
-                    onEmailChange={setEmail}
-                    onDevSignIn={devSignIn}
-                    onSignIn={signIn.start}
-                    onCancelSignIn={signIn.cancel}
-                    signInStatus={signIn.status}
-                  />
+                    {invitation && (
+                      <p className="rounded-xl border p-3 text-sm">
+                        Sign in to review your room invitation.{' '}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => chooseInvitation(null)}
+                        >
+                          Dismiss invitation
+                        </Button>
+                      </p>
+                    )}
+                    <SignInPanel
+                      devAuth={devAuth}
+                      busy={busy}
+                      name={name}
+                      email={email}
+                      onNameChange={setName}
+                      onEmailChange={setEmail}
+                      onDevSignIn={devSignIn}
+                      onSignIn={signIn.start}
+                      onCancelSignIn={signIn.cancel}
+                      signInStatus={signIn.status}
+                    />
                   </div>
                 )}
               </section>
@@ -628,7 +669,7 @@ export default function App() {
                       phone
                         ? () => {
                             returningOnMobile();
-                            showSection('messages');
+                            showSection(sectionForRoom(room.kind));
                           }
                         : undefined
                     }
@@ -767,7 +808,11 @@ export default function App() {
           )}
         </AnimatePresence>
         <RoomSettings
-          room={settingsRoom?.kind === 'group' ? null : settingsRoom}
+          room={
+            settingsRoom?.kind === 'group'
+              ? null
+              : (currentSettingsRoom ?? settingsRoom)
+          }
           user={user}
           open={settingsRoom !== null && settingsRoom.kind !== 'group'}
           onOpenChange={(next) => {
@@ -777,14 +822,48 @@ export default function App() {
           onError={setError}
           refreshRevision={presence.roomsRevision + presence.syncRevision}
         />
-        {user && currentSettingsRoom?.kind === 'group' && <GroupMembersDialog
-          key={`${user.id}:${currentSettingsRoom.id}:${currentSettingsRoom.owner_id}`}
-          room={currentSettingsRoom}
-          user={user} onClose={() => setSettingsRoom(null)} onChanged={refresh}
-        />}
-        {user && createGroupOpen && <GroupConversationDialog key={user.id} onClose={() => setCreateGroupOpen(false)} onCreated={async (created) => { openRoom(created); selectRoom(created); refresh(); }} />}
-        {user && enterInvitationOpen && <EnterInvitation onClose={() => setEnterInvitationOpen(false)} onChoose={(token) => { chooseInvitation(token); setEnterInvitationOpen(false); }} />}
-        {user && invitation && <JoinInvitation key={`${user.id}:${invitation}`} token={invitation} onClose={() => chooseInvitation(null)} onJoined={async (joined) => { openRoom(joined); selectRoom(joined); chooseInvitation(null); refresh(); }} />}
+        {user && currentSettingsRoom?.kind === 'group' && (
+          <GroupMembersDialog
+            key={`${user.id}:${currentSettingsRoom.id}:${currentSettingsRoom.owner_id}`}
+            room={currentSettingsRoom}
+            user={user}
+            onClose={() => setSettingsRoom(null)}
+            onChanged={refresh}
+          />
+        )}
+        {user && createGroupOpen && (
+          <GroupConversationDialog
+            key={user.id}
+            onClose={() => setCreateGroupOpen(false)}
+            onCreated={async (created) => {
+              openRoom(created);
+              selectRoom(created);
+              refresh();
+            }}
+          />
+        )}
+        {user && enterInvitationOpen && (
+          <EnterInvitation
+            onClose={() => setEnterInvitationOpen(false)}
+            onChoose={(token) => {
+              chooseInvitation(token);
+              setEnterInvitationOpen(false);
+            }}
+          />
+        )}
+        {user && invitation && (
+          <JoinInvitation
+            key={`${user.id}:${invitation}`}
+            token={invitation}
+            onClose={() => chooseInvitation(null)}
+            onJoined={async (joined) => {
+              openRoom(joined);
+              selectRoom(joined);
+              chooseInvitation(null);
+              refresh();
+            }}
+          />
+        )}
         <CreateRoomDialog
           open={createOpen}
           onOpenChange={setCreateOpen}

@@ -60,7 +60,7 @@ test('macOS Wails routes Share to webview capture without opening native setup',
 
     const page = await context.newPage();
     await page.goto('/');
-    await page.getByRole('button', { name: 'Join call' }).click();
+    await page.getByRole('button', { name: 'Join voice' }).click();
     await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
     await page.getByRole('button', { name: 'Share screen' }).click();
     await expect.poll(() => page.evaluate(() => Boolean((window as typeof window & { __macSharePickerOpened?: boolean }).__macSharePickerOpened))).toBe(true);

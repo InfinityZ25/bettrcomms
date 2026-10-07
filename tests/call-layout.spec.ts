@@ -64,7 +64,7 @@ test('camera dock resizes, snaps, focuses, and preserves the active share', asyn
     page.setDefaultTimeout(15_000);
     await page.goto('/');
     await page.getByRole('button', { name: room.name, exact: true }).click();
-    await page.getByRole('button', { name: 'Join call' }).click();
+    await page.getByRole('button', { name: 'Join voice' }).click();
     await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
 
     await page.getByRole('button', { name: otherRoom.name, exact: true }).click();
@@ -72,7 +72,7 @@ test('camera dock resizes, snaps, focuses, and preserves the active share', asyn
     await expect(page.getByRole('button', { name: otherRoom.name, exact: true })).toHaveAttribute('aria-current', 'page');
     await expect(page.getByRole('list', { name: `${room.name} call participants`, exact: true })).toContainText('Layout Ada');
     await expect(page.getByRole('list', { name: `${otherRoom.name} call participants`, exact: true })).toHaveCount(0);
-    await page.getByRole('button', { name: `${room.name} 1 in call`, exact: true }).click();
+    await page.getByRole('button', { name: `Back to the call in ${room.name}`, exact: true }).click();
 
     const stage = page.locator('.call-workspace .stage');
     await expect(stage).toHaveAttribute('data-has-share', 'false');

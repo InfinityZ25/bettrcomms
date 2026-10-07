@@ -1,5 +1,5 @@
 import { errorMessage } from '@/lib/errors';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { DoorOpen, Trash2, UserMinus } from 'lucide-react';
 import { api, type Room, type User } from '@/api';
 import { Button } from '@/components/ui/button';
@@ -7,18 +7,19 @@ import { AppDialog } from '@/components/app-dialog';
 import { Input } from '@/components/ui/input';
 import ModerationSettings from './ModerationSettings';
 import RoomInviteLinks from './RoomInviteLinks';
+import CommunitySettings from './CommunitySettings';
+import { useMountEffect } from '@/hooks/useMountEffect';
 
-type MessageReport = { id: string; message_id: string; reporter_name: string; author_name: string; excerpt: string; reason: string };
+type MessageReport = {
+  id: string;
+  message_id: string;
+  reporter_name: string;
+  author_name: string;
+  excerpt: string;
+  reason: string;
+};
 
-export default function RoomSettings({
-  room,
-  user,
-  open,
-  onOpenChange,
-  onChanged,
-  onError,
-  refreshRevision = 0,
-}: {
+type SettingsProps = {
   room: Room | null;
   user: User | null;
   open: boolean;
@@ -26,28 +27,74 @@ export default function RoomSettings({
   onChanged: () => void;
   onError: (s: string) => void;
   refreshRevision?: number;
-}) {
+};
+
+export default function RoomSettings(props: SettingsProps) {
+  const { room, user, open, refreshRevision = 0 } = props;
+  if (!open || !room || !user) return null;
+  if (room.community_id)
+    return (
+      <CommunitySettings
+        key={`${room.community_id}:${user.id}:${room.role}`}
+        room={room}
+        user={user}
+        onClose={() => props.onOpenChange(false)}
+        onChanged={props.onChanged}
+      />
+    );
+  return (
+    <LegacyRoomSettings
+      key={`${room.id}:${user.id}:${refreshRevision}:${room.name}`}
+      {...props}
+    />
+  );
+}
+
+function LegacyRoomSettings({
+  room,
+  user,
+  open,
+  onOpenChange,
+  onChanged,
+  onError,
+}: SettingsProps) {
   const [name, setName] = useState(room?.name ?? ''),
     [members, setMembers] = useState<{ user: User; role: string }[]>([]),
     [reports, setReports] = useState<MessageReport[]>([]),
     [busy, setBusy] = useState(false),
     [confirm, setConfirm] = useState(false);
   const owner = room?.owner_id === user?.id;
-  useEffect(() => {
-    setName(room?.name ?? '');
-    setConfirm(false);
+  useMountEffect(() => {
+    const controller = new AbortController();
     if (open && room)
       api<{ members: { user: User; role: string }[] }>(
         '/rooms/' + room.id + '/members',
+        undefined,
+        'GET',
+        controller.signal,
       )
-        .then((r) => setMembers(r.members))
-        .catch((e) => onError(e.message));
+        .then((r) => {
+          if (!controller.signal.aborted) setMembers(r.members);
+        })
+        .catch((e) => {
+          if (!controller.signal.aborted) onError(errorMessage(e));
+        });
     if (open && room && room.owner_id === user?.id && room.kind !== 'direct')
-      api<{ reports: MessageReport[] }>('/rooms/' + room.id + '/reports')
-        .then((result) => setReports(result.reports ?? []))
-        .catch((error) => onError(errorMessage(error)));
+      api<{ reports: MessageReport[] }>(
+        '/rooms/' + room.id + '/reports',
+        undefined,
+        'GET',
+        controller.signal,
+      )
+        .then((result) => {
+          if (!controller.signal.aborted) setReports(result.reports ?? []);
+        })
+        .catch((error) => {
+          if (!controller.signal.aborted) onError(errorMessage(error));
+        });
     else setReports([]);
-  }, [open, room?.id, room?.name, room?.owner_id, room?.kind, user?.id, refreshRevision, onError]);
+    return () => controller.abort();
+  });
   async function action(fn: () => Promise<void>) {
     setBusy(true);
     try {
@@ -63,8 +110,14 @@ export default function RoomSettings({
     if (!room) return;
     setBusy(true);
     try {
-      await api('/rooms/' + room.id + '/messages/' + report.message_id + '/moderation', { reason: `Report: ${report.reason}`.slice(0, 500) }, 'DELETE');
-      setReports((current) => current.filter((item) => item.message_id !== report.message_id));
+      await api(
+        '/rooms/' + room.id + '/messages/' + report.message_id + '/moderation',
+        { reason: `Report: ${report.reason}`.slice(0, 500) },
+        'DELETE',
+      );
+      setReports((current) =>
+        current.filter((item) => item.message_id !== report.message_id),
+      );
       onChanged();
     } catch (error) {
       onError(errorMessage(error));
@@ -76,7 +129,11 @@ export default function RoomSettings({
     if (!room) return;
     setBusy(true);
     try {
-      await api('/rooms/' + room.id + '/reports/' + report.id + '/dismiss', {}, 'POST');
+      await api(
+        '/rooms/' + room.id + '/reports/' + report.id + '/dismiss',
+        {},
+        'POST',
+      );
       setReports((current) => current.filter((item) => item.id !== report.id));
       onChanged();
     } catch (error) {
@@ -122,7 +179,14 @@ export default function RoomSettings({
               </Button>
             )}
           </form>
-          {owner && room.kind === 'channel' && <ModerationSettings key={`${room.id}:${room.owner_id}`} room={room} user={user} onChanged={onChanged} />}
+          {owner && room.kind === 'channel' && (
+            <ModerationSettings
+              key={`${room.id}:${room.owner_id}`}
+              room={room}
+              user={user}
+              onChanged={onChanged}
+            />
+          )}
           <div className="flex flex-col gap-4">
             <h3 className="text-sm font-semibold">People in this room</h3>
             {members.map((m) => (
@@ -160,17 +224,40 @@ export default function RoomSettings({
               </div>
             ))}
           </div>
-          {open && owner && room.kind !== 'direct' && room.kind !== 'group' && <RoomInviteLinks key={room.id} roomId={room.id} />}
+          {open && owner && room.kind !== 'direct' && room.kind !== 'group' && (
+            <RoomInviteLinks key={room.id} roomId={room.id} />
+          )}
           {owner && reports.length > 0 && (
             <div className="flex flex-col gap-2 border-t pt-4">
               <h3 className="text-sm font-semibold">Message reports</h3>
               {reports.map((report) => (
                 <div key={report.id} className="rounded-lg border p-3 text-xs">
-                  <p><strong>{report.reporter_name}</strong> reported a message from {report.author_name}</p>
-                  <p className="mt-1 truncate text-muted-foreground">{report.excerpt}</p>
+                  <p>
+                    <strong>{report.reporter_name}</strong> reported a message
+                    from {report.author_name}
+                  </p>
+                  <p className="mt-1 truncate text-muted-foreground">
+                    {report.excerpt}
+                  </p>
                   <p className="mt-1">{report.reason}</p>
-                  <Button className="mt-2" size="sm" variant="destructive" disabled={busy} onClick={() => void removeReportedMessage(report)}>Remove message</Button>
-                  <Button className="mt-2" size="sm" variant="ghost" disabled={busy} onClick={() => void dismissReport(report)}>Dismiss report</Button>
+                  <Button
+                    className="mt-2"
+                    size="sm"
+                    variant="destructive"
+                    disabled={busy}
+                    onClick={() => void removeReportedMessage(report)}
+                  >
+                    Remove message
+                  </Button>
+                  <Button
+                    className="mt-2"
+                    size="sm"
+                    variant="ghost"
+                    disabled={busy}
+                    onClick={() => void dismissReport(report)}
+                  >
+                    Dismiss report
+                  </Button>
                 </div>
               ))}
             </div>

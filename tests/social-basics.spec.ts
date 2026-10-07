@@ -15,7 +15,7 @@ async function friends(a: BrowserContext, b: BrowserContext, target: User) {
   const { request } = await value<{ request: { id: string } }>(await a.request.post('/api/v1/friends/requests', { headers, data: { user_id: target.id } }));
   await value(await b.request.post(`/api/v1/friends/requests/${request.id}/accept`, { headers, data: {} }));
 }
-async function section(page: Page, name: 'Messages' | 'Calls') {
+async function section(page: Page, name: 'Messages' | 'Rooms') {
   await page.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name, exact: true }).click();
 }
 async function profile(page: Page) {
@@ -143,7 +143,7 @@ test('shareable invitation requires authentication and acceptance, then can be r
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     await login(owner, 'social-inviter', suffix); await login(guest, 'social-invited', suffix);
     const { room } = await value<{ room: Room }>(await owner.request.post('/api/v1/rooms', { headers, data: { name: 'Invitation room' } })); roomId = room.id;
-    const a = await owner.newPage(); await a.goto('/'); await section(a, 'Calls');
+    const a = await owner.newPage(); await a.goto('/'); await section(a, 'Rooms');
     await a.getByRole('button', { name: 'Invitation room', exact: true }).click({ button: 'right' });
     await a.getByRole('menuitem', { name: 'Room settings…', exact: true }).click();
     await a.getByRole('button', { name: 'Create invitation link', exact: true }).click();

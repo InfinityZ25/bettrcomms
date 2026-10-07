@@ -46,15 +46,15 @@ test('mobile sections open full-screen lists without interrupting an active call
     }))).room;
     const page = await context.newPage();
     await page.goto('/');
-    await page.getByRole('button', { name: 'Join call' }).click();
+    await page.getByRole('button', { name: 'Join voice' }).click();
     await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
     const tabs = page.getByRole('navigation', { name: 'Sections' });
     for (const size of [{width:390,height:650}, {width:800,height:650}, {width:852,height:393}]) {
       await page.setViewportSize(size);
       await expect(tabs.getByRole('button', { name: 'Friends', exact: true })).toBeHidden();
       if (size.width <= 820) await expect(tabs.getByRole('button')).toHaveCount(4);
-      await tabs.getByRole('button', { name: 'Calls', exact: true }).click();
-      const list = page.getByRole('main', { name: 'Calls', exact: true });
+      await tabs.getByRole('button', { name: 'Rooms', exact: true }).click();
+      const list = page.getByRole('main', { name: 'Rooms', exact: true });
       await expect(list).toBeVisible();
       await expect(page.getByRole('dialog', { name: 'Conversations' })).toBeHidden();
       await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
@@ -168,7 +168,7 @@ test('a phone call keeps every control in one row below cameras that fill the sc
     const desk = await friend.newPage();
     await Promise.all([page.goto('/'), desk.goto('/')]);
     await desk.getByRole('button', { name: room.name, exact: true }).first().click();
-    await desk.getByRole('button', { name: 'Join call' }).click();
+    await desk.getByRole('button', { name: 'Join voice' }).click();
     await page.evaluate(() => {
       localStorage.setItem(
         'bc-push-to-talk',
@@ -179,7 +179,7 @@ test('a phone call keeps every control in one row below cameras that fill the sc
       );
       window.dispatchEvent(new Event('bc-push-to-talk'));
     });
-    await page.getByRole('button', { name: 'Join call' }).click();
+    await page.getByRole('button', { name: 'Join voice' }).click();
     await expect(
       page.getByRole('button', { name: 'Leave call' }),
     ).toBeVisible();
@@ -427,7 +427,7 @@ test('the iPhone app keeps notices clear of call controls and uses full-screen s
     const page = await context.newPage();
     await page.goto('/');
     await expect(page.getByRole('heading', { name: room.name })).toBeVisible();
-    await page.getByRole('button', { name: 'Join call' }).click();
+    await page.getByRole('button', { name: 'Join voice' }).click();
     await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
 
     // Without the native side the app reports its missing background audio.
@@ -509,7 +509,7 @@ test('unsupported mobile screen sharing explains the limit inside the viewport',
     });
     const page = await context.newPage();
     await page.goto('/');
-    await page.getByRole('button', { name: 'Join call' }).click();
+    await page.getByRole('button', { name: 'Join voice' }).click();
     await expect(page.getByRole('button', { name: 'Share screen' })).toBeVisible();
     await page.getByRole('button', { name: 'Share screen' }).click();
     const notice = page.getByRole('alert').filter({ hasText: 'This browser cannot share its screen' });

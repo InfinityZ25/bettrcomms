@@ -93,7 +93,7 @@ export async function closeCameraOverlay() { window.__overlay.closed++; }`,
   expect(roomResponse.ok()).toBe(true);
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Join call', exact: true }).click();
+  await page.getByRole('button', { name: 'Join voice', exact: true }).click();
   await page.locator('.call-footer').hover();
   await page.locator('.camera-overlay-controls summary').click();
   await page.getByRole('button', { name: 'Show camera overlay' }).click();

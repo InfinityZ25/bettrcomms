@@ -49,7 +49,7 @@ test('same account can add a device or move the call to a new device', async ({ 
       replacementPage.getByRole('button', { name: room.name, exact: true }).click(),
     ]);
 
-    await firstPage.getByRole('button', { name: 'Join call' }).click();
+    await firstPage.getByRole('button', { name: 'Join voice' }).click();
     await expect(firstPage.getByRole('button', { name: 'Leave call' })).toBeVisible();
     await expect(secondPage.getByText('You are already in this call on another device.', { exact: true })).toBeVisible();
     await secondPage.getByRole('button', { name: 'Add this device', exact: true }).click();

@@ -52,14 +52,14 @@ the lobby or **Chat** in the call toolbar. Opening chat does not join or leave a
   and calls. Leaving as owner transfers ownership to the earliest remaining
   member. Removing/blocking a member revokes HTTP and live access. Blocking
   someone leaves groups shared with that person; unblocking does not rejoin.
-- **Room settings → Invitation links** is available to channel owners. Set
+- **Room settings → Invitation links** is available to owners, admins and moderators. Set
   expiry (up to 30 days, or never) and maximum joins (up to 1000, or unlimited).
   Copy the new link before closing; existing links show metadata and revocation
   only, as the server keeps hashes rather than reusable plaintext tokens.
   A room can have up to 20 active links; active links remain visible before
   the bounded history of revoked/expired links.
-  Anyone with a valid link can sign in, review and explicitly join that room,
-  including its history. **Calls → Join with link** supports pasted links in
+  Anyone with a valid link can sign in, review and explicitly join that parent room
+  and all its channels, including their history. **Rooms → Join with link** supports pasted links in
   both browser and desktop. Existing members do not consume additional uses.
 
 ## Implementation and limits
@@ -85,20 +85,30 @@ by sequence after reconnect. Edits and reactions on older, unloaded messages
 are visible when that part of history is loaded; this is not yet a durable
 event-by-event replay for every historical mutation.
 
-Choose up to four files of 10 MB each from the composer or drop/paste them.
+Choose up to four files of 500 MiB each from the composer or drop/paste them.
+The server publishes its configured limit through `/config`; set
+`ATTACHMENT_MAX_BYTES` to change it (1 MiB–2 GiB). Voice notes keep their separate
+10 MiB and two-minute cap. Local selections show image/video/audio previews;
+uploads report per-file progress and support cancellation/retry without clearing
+the message draft. Sent images open an accessible viewer and videos/audio offer
+manual playback, with separate download actions. A signed preview that expires
+can be explicitly renewed after membership reauthorization.
 Images, audio, video, plain text, PDF, and ZIP/Office files are accepted after
 server-side type detection; executable and active web formats are rejected.
 Uploads remain private in S3 and are readable only to current conversation
 members through five-minute signed URLs. An attachment waiting more than 24
 hours for a message and attachments from deleted messages are removed by a
-periodic cleanup. The file picker remains visible without S3 configured but
-reports the missing configuration when used. Type checks do not replace malware
+periodic cleanup. Removing an uploaded draft revokes the pending attachment
+immediately and deletes its S3 object, with cleanup retrying storage failures.
+Uploads stream from temporary disk rather than retaining the whole file in RAM.
+The composer displays storage availability and its current file limit. Type checks do not replace malware
 scanning, which remains a production gate.
 
 Draft text persists per account and conversation on this device until sent,
 including across browser restarts. Uploaded attachment references expire from
 the draft after 24 hours. A local File object must be chosen again after a
-reload if its upload did not finish. Typing is ephemeral over the existing
+reload or navigation if its upload did not finish; completed uploaded drafts and
+text persist. Typing is ephemeral over the existing
 WebSocket. A divider marks the first unread loaded message. Right-click a
 conversation to select all notifications, mentions only, or mute. Do Not
 Disturb and system notification opt-in are device-local in Settings;

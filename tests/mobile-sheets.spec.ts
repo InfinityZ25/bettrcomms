@@ -113,7 +113,7 @@ test('phone sheets keep their full bounds visible after production CSS optimizat
       .getByRole('button', { name: 'Bettercomms home', exact: true })
       .click();
     await page.getByRole('button', { name: /^New room/ }).click();
-    const room = page.getByRole('dialog', { name: 'Make a little room' });
+    const room = page.getByRole('dialog', { name: 'Make room for your friends' });
     await expect(room).toBeVisible();
     const box = (await room.boundingBox())!;
     expect(Math.abs(box.x + box.width / 2 - 201)).toBeLessThan(1);

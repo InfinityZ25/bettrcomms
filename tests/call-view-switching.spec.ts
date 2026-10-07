@@ -63,7 +63,7 @@ test('the call survives every screen change', async ({ browser }) => {
     const page = await context.newPage();
     await page.goto('/');
     await page.getByRole('button', { name: room.name, exact: true }).click();
-    await page.getByRole('button', { name: 'Join call' }).click();
+    await page.getByRole('button', { name: 'Join voice' }).click();
     await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
 
     await page.getByRole('button', { name: 'Mute microphone' }).click();
@@ -100,7 +100,7 @@ test('browsing another room leaves the call in the room it started in', async ({
     const page = await context.newPage();
     await page.goto('/');
     await page.getByRole('button', { name: room.name, exact: true }).click();
-    await page.getByRole('button', { name: 'Join call' }).click();
+    await page.getByRole('button', { name: 'Join voice' }).click();
     await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
     await page.getByRole('button', { name: 'Mute microphone' }).click();
     await expect(page.getByRole('button', { name: 'Unmute microphone' })).toBeVisible();
@@ -147,15 +147,15 @@ test('remote voice playback stays mounted while browsing Messages', async ({ bro
     const guestPage = await guestContext.newPage();
     await Promise.all([ownerPage.goto('/'), guestPage.goto('/')]);
     await Promise.all([
-      ownerPage.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Calls' }).click(),
-      guestPage.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Calls' }).click(),
+      ownerPage.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Rooms' }).click(),
+      guestPage.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Rooms' }).click(),
     ]);
     await Promise.all([
       ownerPage.getByRole('button', { name: room.name, exact: true }).click(),
       guestPage.getByRole('button', { name: room.name, exact: true }).click(),
     ]);
-    await ownerPage.getByRole('button', { name: 'Join call' }).click();
-    await guestPage.getByRole('button', { name: 'Join call' }).click();
+    await ownerPage.getByRole('button', { name: 'Join voice' }).click();
+    await guestPage.getByRole('button', { name: 'Join voice' }).click();
 
     const remoteAudio = ownerPage.locator('audio[data-call-remote-audio]');
     await expect(remoteAudio).toHaveCount(1);

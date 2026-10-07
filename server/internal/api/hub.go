@@ -438,6 +438,9 @@ func (a *API) websocket(w http.ResponseWriter, r *http.Request, u User, room str
 		a.fail(w, http.StatusForbidden, "not_a_member", "room membership required")
 		return
 	}
+	if !a.requireVoice(w, room, u.ID) {
+		return
+	}
 	if !a.websocketOriginAllowed(r) {
 		a.fail(w, http.StatusForbidden, "origin_not_allowed", "WebSocket origin is not allowed")
 		return
@@ -544,7 +547,7 @@ func (a *API) websocket(w http.ResponseWriter, r *http.Request, u User, room str
 				continue
 			}
 			m.From = c.peer
-			if !a.Hub.relay(room, m.To, m) {
+			if !a.forwardSignal(room, c, m) {
 				c.deliver(wire{Type: "error", RequestID: m.RequestID, Error: &apiError{Code: "peer_unavailable", Message: "target is not connected"}})
 			}
 		default:

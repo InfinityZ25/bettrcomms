@@ -25,11 +25,11 @@ test('channel controls synchronize posting restrictions, slow mode and bans', as
     await ownerPage.goto('/'); await peerPage.goto('/');
     await ownerPage.getByRole('button', { name: 'Moderation acceptance', exact: true }).click({ button: 'right' });
     await ownerPage.getByRole('menuitem', { name: 'Room settings…', exact: true }).click();
+    await ownerPage.getByRole('dialog').getByRole('button', { name: 'Moderation', exact: true }).click();
     const controls = ownerPage.getByRole('region', { name: 'Channel moderation' });
     await controls.getByRole('combobox', { name: 'Member to moderate' }).selectOption(user.id);
     await controls.getByRole('textbox', { name: 'Reason (3–500 characters)' }).fill('Acceptance test posting restriction');
     await peerPage.getByRole('button', { name: 'Moderation acceptance', exact: true }).click();
-    await peerPage.getByRole('button', { name: 'Toggle room messages' }).click();
     const draft = peerPage.getByRole('textbox', { name: 'Message Moderation acceptance', exact: true });
     await draft.fill('Preserve this draft');
     await controls.getByRole('button', { name: 'Restrict posting', exact: true }).click();

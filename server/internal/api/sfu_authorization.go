@@ -72,7 +72,7 @@ func (a *API) sfuAuthorization(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 	var expires time.Time
-	err := store.DB.QueryRow(r.Context(), `SELECT s.expires_at FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.id=$1 AND s.user_id=$2 AND s.expires_at>now() AND u.deleted_at IS NULL AND can_access_room($3,$2)`, claims.SessionID, claims.UserID, claims.RoomID).Scan(&expires)
+	err := store.DB.QueryRow(r.Context(), `SELECT s.expires_at FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.id=$1 AND s.user_id=$2 AND s.expires_at>now() AND u.deleted_at IS NULL AND room_has_permission($3,$2,'join_voice')`, claims.SessionID, claims.UserID, claims.RoomID).Scan(&expires)
 	if err != nil {
 		a.fail(w, 403, "sfu_access_revoked", "session or room access was revoked")
 		return

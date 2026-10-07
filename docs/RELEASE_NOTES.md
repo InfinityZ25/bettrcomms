@@ -1,3 +1,30 @@
+## Unreleased — unified room channels and attachments
+
+Rooms now contain ordered channels with shared membership and built-in owner,
+admin, moderator and member roles. Ordinary channels open directly into chat
+and offer Join voice in the same place. Owners/admins can designate announcements:
+everyone reads, only owners/admins publish, and voice is disabled. Room settings
+provide channel creation, editing/reordering/deletion, role assignment, ownership
+transfer, invitations and moderation. Existing channel IDs and message histories
+remain intact; migration 016 gives each legacy channel its own parent room.
+Member removal, bans and announcement conversion revoke active channel media.
+
+Ordinary attachments default to 500 MiB per file (four per message), configurable
+with `ATTACHMENT_MAX_BYTES` up to 2 GiB. MP4 recognition reads container brands;
+large uploads spool to temporary disk and stream to S3. Voice notes retain their
+independent 10 MiB/two-minute limit. The composer provides local image/video/audio
+previews, progress, cancellation and retry. Sent images open a viewer, media has
+manual playback controls, and download is a separate action. Pending-file removal
+revokes uploaded drafts and retries object cleanup when storage deletion fails.
+Migration 015 updates the file-size constraint.
+
+Validation for this batch is intentionally deferred at the user's request: no
+local builds, compiler checks, unit/integration tests or browser acceptance runs.
+Source review and formatting do not establish runtime acceptance. The browser,
+database migration, role/announcement matrix, S3 MP4 upload/download/cancellation
+and call-switching flows require the normal acceptance pass before claiming them
+validated. Native capture/encoding acceptance boundaries are unchanged.
+
 ## Unreleased — daily communication
 
 Voice notes support explicit recording, local review, discard, private attachment

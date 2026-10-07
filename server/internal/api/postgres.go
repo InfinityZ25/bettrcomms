@@ -76,43 +76,30 @@ func (s *PostgresStore) FindUsers(q, uid string) ([]User, error) {
 	return out, rows.Err()
 }
 func (s *PostgresStore) ListRooms(uid string) ([]Room, error) {
-	rows, e := s.DB.Query(context.Background(), `SELECT r.id::text,r.name,r.owner_id::text,rm.role,r.kind,r.created_at,r.slow_mode_seconds,CASE WHEN r.kind='direct' THEN (SELECT u.name FROM room_members other JOIN users u ON u.id=other.user_id WHERE other.room_id=r.id AND other.user_id<>$1 ORDER BY other.joined_at LIMIT 1) END,COALESCE((SELECT m.created_at FROM messages m WHERE m.room_id=r.id ORDER BY m.sequence DESC LIMIT 1),r.created_at) activity_at FROM rooms r JOIN room_members rm ON rm.room_id=r.id WHERE rm.user_id=$1 AND can_access_room(r.id,$1) ORDER BY activity_at DESC,r.id`, uid)
-	if e != nil {
-		return nil, e
+	rows, err := s.DB.Query(context.Background(), roomSelect+` WHERE rm.user_id=$1 AND can_access_room(r.id,$1) ORDER BY r.community_id NULLS LAST,r.position,COALESCE((SELECT m.created_at FROM messages m WHERE m.room_id=r.id ORDER BY m.sequence DESC LIMIT 1),r.created_at) DESC,r.id`, uid)
+	if err != nil {
+		return nil, err
 	}
 	defer rows.Close()
 	out := []Room{}
 	for rows.Next() {
-		var r Room
-		if e = rows.Scan(&r.ID, &r.Name, &r.OwnerID, &r.Role, &r.Kind, &r.CreatedAt, &r.SlowModeSeconds, &r.DisplayName, &r.ActivityAt); e != nil {
-			return nil, e
+		room, err := scanRoom(rows)
+		if err != nil {
+			return nil, err
 		}
-		out = append(out, r)
+		out = append(out, room)
 	}
 	return out, rows.Err()
 }
 func (s *PostgresStore) CreateRoom(uid, name string) (Room, error) {
-	tx, e := s.DB.Begin(context.Background())
-	if e != nil {
-		return Room{}, e
+	community, err := s.CreateCommunity(uid, name, "", name)
+	if err != nil {
+		return Room{}, err
 	}
-	defer tx.Rollback(context.Background())
-	var r Room
-	e = tx.QueryRow(context.Background(), `INSERT INTO rooms(name,owner_id) SELECT $1,$2 WHERE EXISTS(SELECT 1 FROM users WHERE id=$2 AND deleted_at IS NULL) RETURNING id::text,name,owner_id::text,'owner',kind,created_at`, name, uid).Scan(&r.ID, &r.Name, &r.OwnerID, &r.Role, &r.Kind, &r.CreatedAt)
-	if e != nil {
-		return r, e
-	}
-	_, e = tx.Exec(context.Background(), `INSERT INTO room_members(room_id,user_id,role) VALUES($1,$2,'owner')`, r.ID, uid)
-	if e != nil {
-		return r, e
-	}
-	e = tx.Commit(context.Background())
-	return r, e
+	return s.RoomForMember(community.ID, uid)
 }
 func (s *PostgresStore) RoomForMember(rid, uid string) (Room, error) {
-	var r Room
-	e := s.DB.QueryRow(context.Background(), `SELECT r.id::text,r.name,r.owner_id::text,rm.role,r.kind,r.created_at,r.slow_mode_seconds,CASE WHEN r.kind='direct' THEN (SELECT u.name FROM room_members other JOIN users u ON u.id=other.user_id WHERE other.room_id=r.id AND other.user_id<>$2 ORDER BY other.joined_at LIMIT 1) END FROM rooms r JOIN room_members rm ON rm.room_id=r.id WHERE r.id=$1 AND rm.user_id=$2 AND can_access_room(r.id,$2)`, rid, uid).Scan(&r.ID, &r.Name, &r.OwnerID, &r.Role, &r.Kind, &r.CreatedAt, &r.SlowModeSeconds, &r.DisplayName)
-	return r, norm(e)
+	return scanRoom(s.DB.QueryRow(context.Background(), roomSelect+` WHERE rm.user_id=$1 AND r.id=$2 AND can_access_room(r.id,$1)`, uid, rid))
 }
 func (s *PostgresStore) CreateDirectRoom(uid, fid string) (Room, error) {
 	tx, e := s.DB.Begin(context.Background())
@@ -149,28 +136,46 @@ func (s *PostgresStore) CreateDirectRoom(uid, fid string) (Room, error) {
 	}
 	return s.RoomForMember(rid, uid)
 }
-func (s *PostgresStore) RenameRoom(rid, owner, name string) (Room, error) {
-	tag, e := s.DB.Exec(context.Background(), `UPDATE rooms SET name=$3 WHERE id=$1 AND owner_id=$2 AND kind IN ('channel','group')`, rid, owner, name)
-	if e != nil {
-		return Room{}, e
+func (s *PostgresStore) RenameRoom(rid, actor, name string) (Room, error) {
+	room, err := s.RoomForMember(rid, actor)
+	if err != nil {
+		return Room{}, err
+	}
+	if room.CommunityID != nil {
+		return s.UpdateChannel(*room.CommunityID, rid, actor, ChannelUpdate{Name: &name})
+	}
+	tag, err := s.DB.Exec(context.Background(), `UPDATE rooms SET name=$3 WHERE id=$1 AND owner_id=$2 AND kind='group'`, rid, actor, name)
+	if err != nil {
+		return Room{}, err
 	}
 	if tag.RowsAffected() == 0 {
 		return Room{}, ErrForbidden
 	}
-	return s.RoomForMember(rid, owner)
+	return s.RoomForMember(rid, actor)
 }
-func (s *PostgresStore) DeleteRoom(rid, owner string) error {
-	tag, e := s.DB.Exec(context.Background(), `DELETE FROM rooms WHERE id=$1 AND owner_id=$2 AND kind IN ('channel','group')`, rid, owner)
-	if e == nil && tag.RowsAffected() == 0 {
+func (s *PostgresStore) DeleteRoom(rid, actor string) error {
+	room, err := s.RoomForMember(rid, actor)
+	if err != nil {
+		return err
+	}
+	if room.CommunityID != nil {
+		err := s.DeleteChannel(*room.CommunityID, rid, actor)
+		if errors.Is(err, ErrLastChannel) && room.Role == "owner" {
+			return s.DeleteCommunity(*room.CommunityID, actor)
+		}
+		return err
+	}
+	tag, err := s.DB.Exec(context.Background(), `DELETE FROM rooms WHERE id=$1 AND owner_id=$2 AND kind='group'`, rid, actor)
+	if err == nil && tag.RowsAffected() == 0 {
 		return ErrForbidden
 	}
-	return e
+	return err
 }
 func (s *PostgresStore) RemoveRoomMember(rid, actor, target string) error {
 	return s.removeMember(rid, actor, target)
 }
 func (s *PostgresStore) ListRoomMembers(rid string) ([]RoomMember, error) {
-	rows, e := s.DB.Query(context.Background(), `SELECT u.id::text,u.email,u.name,u.avatar_url,u.created_at,u.username,u.bio,u.profile_version,rm.role,rm.joined_at,rm.posting_restricted_until FROM room_members rm JOIN users u ON u.id=rm.user_id WHERE rm.room_id=$1 AND u.deleted_at IS NULL ORDER BY CASE rm.role WHEN 'owner' THEN 0 ELSE 1 END,u.name`, rid)
+	rows, e := s.DB.Query(context.Background(), `SELECT u.id::text,u.email,u.name,u.avatar_url,u.created_at,u.username,u.bio,u.profile_version,rm.role,rm.joined_at,rm.posting_restricted_until FROM room_members rm JOIN users u ON u.id=rm.user_id WHERE rm.room_id=$1 AND u.deleted_at IS NULL ORDER BY CASE rm.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 WHEN 'moderator' THEN 2 ELSE 3 END,u.name`, rid)
 	if e != nil {
 		return nil, e
 	}
@@ -211,6 +216,9 @@ func (s *PostgresStore) CreateMessage(rid, uid, body string) (Message, error) {
 		return Message{}, e
 	}
 	defer tx.Rollback(ctx)
+	if e = lockRoomCommunity(ctx, tx, rid); e != nil {
+		return Message{}, e
+	}
 	if _, e = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::uuid::text,0))`, rid); e != nil {
 		return Message{}, e
 	}

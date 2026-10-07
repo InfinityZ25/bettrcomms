@@ -70,13 +70,15 @@ test('chat, call activity, and friend availability update without polling', asyn
     expect(presencePolls).toBe(0);
 
     for (const page of [ownerPage, guestPage]) {
-      await page.getByRole('button', { name: 'Calls', exact: true }).click();
+      await page.getByRole('button', { name: 'Rooms', exact: true }).click();
       await page.getByRole('button', { name: created.room.name, exact: true }).click();
+      await expect(page.getByRole('textbox', { name: `Message ${created.room.name}`, exact: true })).toBeVisible();
     }
-    await ownerPage.getByRole('button', { name: 'Join call' }).click();
-    await expect(guestPage.getByRole('region', { name: 'Call lobby' })).toContainText(owner.name, { timeout: 2_000 });
+    await ownerPage.getByRole('button', { name: 'Join voice', exact: true }).click();
+    const voiceParticipants = guestPage.getByRole('list', { name: `${created.room.name} call participants`, exact: true });
+    await expect(voiceParticipants).toContainText(owner.name, { timeout: 2_000 });
     await ownerPage.getByRole('button', { name: 'Mute microphone' }).click();
-    await expect(guestPage.getByRole('region', { name: 'Call lobby' })).toContainText('Muted', { timeout: 2_000 });
+    await expect(voiceParticipants).toContainText(`${owner.name} · muted`, { timeout: 2_000 });
     expect(presencePolls).toBe(0);
 
     await ownerPage.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Friends' }).click();

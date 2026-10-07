@@ -156,7 +156,7 @@ for (const route of ['automatic', 'relay']) {
             original.call(this, enabled);
           };
         }, route);
-        await page.getByRole('button', { name: 'Calls', exact: true }).click();
+        await page.getByRole('button', { name: 'Rooms', exact: true }).click();
         await page.getByRole('button', { name, exact: true }).click();
       }
       await sender.evaluate(async () => {
@@ -183,8 +183,8 @@ for (const route of ['automatic', 'relay']) {
       await sender.keyboard.press('v');
       await sender.keyboard.press('Escape');
       await expect(sender.getByRole('dialog', { name: 'Settings', exact: true })).toBeHidden();
-      await sender.getByRole('button', { name: 'Join call', exact: true }).click();
-      await receiver.getByRole('button', { name: 'Join call', exact: true }).click();
+      await sender.getByRole('button', { name: 'Join voice', exact: true }).click();
+      await receiver.getByRole('button', { name: 'Join voice', exact: true }).click();
       await expect(sender.getByRole('button', { name: 'Leave call' })).toBeVisible();
       const micEnabled = () => sender.evaluate(() => (window as any).pttEngine.getLocalTracks().get('microphone')?.enabled);
       await expect.poll(micEnabled).toBe(false);
@@ -312,7 +312,7 @@ for (const route of ['automatic', 'relay']) {
       // through real pointer movement before trying to use them.
       await sender.locator('.call-workspace').hover();
       await sender.getByRole('button', { name: 'Leave call' }).click();
-      await sender.getByRole('button', { name: 'Join call', exact: true }).click();
+      await sender.getByRole('button', { name: 'Join voice', exact: true }).click();
       await expect(sender.getByRole('button', { name: 'Leave call' })).toBeVisible();
       await expect.poll(micEnabled).toBe(false);
       await settings(sender);

@@ -2,6 +2,13 @@
 
 ## Test layers
 
+The October unified-channel/attachment batch intentionally defers local execution
+at the user's request. Run the normal build/unit/backend checks and then the
+acceptance matrix in `COMMUNITIES.md`, including S3 MP4 above 10 MiB, configured
+size boundaries, upload cancel/retry and pending-file cleanup, local/sent previews,
+all room role pairs, announcement admission and active voice switching. Added or
+adapted test source is not evidence of a passing run.
+
 Unit tests cover permission resolution, event sequencing, audio gain bounds, layout math, manifest/index transitions, quota eviction, and capability-state serialization. Contract tests run the React client against the Go API and signaling service with clock and disconnect control. PostgreSQL integration tests use real migrations and constraints. Browser automation covers primary keyboard and screen-reader semantics but does not substitute for real media tests.
 
 Wails Go tests must assert that unfinished native features cannot serialize as implemented. Desktop CI runs Go vet/tests, frontend build/tests, and platform packaging checks. The web production artifact is built before the Wails host and the packaged app is launched without the Vite server.

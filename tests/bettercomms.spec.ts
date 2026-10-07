@@ -134,12 +134,12 @@ test('two members chat, call, record separate tracks, and transport a screen sha
     await expect(guestPage.getByText(message)).toBeVisible();
 
     for (const page of [ownerPage, guestPage]) {
-      await page.getByRole('button', { name: 'Calls', exact: true }).click();
+      await page.getByRole('button', { name: 'Rooms', exact: true }).click();
       await page.getByRole('button', { name: room.name, exact: true }).click();
     }
     await Promise.all([
-      ownerPage.getByRole('button', { name: /join call/i }).click(),
-      guestPage.getByRole('button', { name: /join call/i }).click(),
+      ownerPage.getByRole('button', { name: /join voice/i }).click(),
+      guestPage.getByRole('button', { name: /join voice/i }).click(),
     ]);
     await Promise.all([
       expect(ownerPage.locator('.camera-tile:not(.self)')).toHaveCount(1),

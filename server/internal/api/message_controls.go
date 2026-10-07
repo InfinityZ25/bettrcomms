@@ -18,7 +18,7 @@ type MessageReport struct {
 func (s *PostgresStore) ReportMessage(room, user, id, reason string) error {
 	tag, err := s.DB.Exec(context.Background(), `INSERT INTO message_reports(room_id,message_id,reporter_id,reason)
 		SELECT m.room_id,m.id,$2,$4 FROM messages m JOIN room_members rm ON rm.room_id=m.room_id AND rm.user_id=$2
-		WHERE m.room_id=$1 AND m.id=$3 AND m.author_id<>$2 AND m.deleted_at IS NULL
+		WHERE m.room_id=$1 AND m.id=$3 AND m.author_id<>$2 AND m.deleted_at IS NULL AND can_access_room(m.room_id,$2)
 		ON CONFLICT(message_id,reporter_id) DO UPDATE SET reason=EXCLUDED.reason,status='open'`, room, user, id, reason)
 	if err == nil && tag.RowsAffected() == 0 {
 		return ErrNotFound
@@ -27,12 +27,8 @@ func (s *PostgresStore) ReportMessage(room, user, id, reason string) error {
 }
 
 func (s *PostgresStore) ListMessageReports(room, user string) ([]MessageReport, error) {
-	var owner string
-	if err := s.DB.QueryRow(context.Background(), `SELECT owner_id::text FROM rooms WHERE id=$1 AND kind IN('channel','group')`, room).Scan(&owner); err != nil {
-		return nil, norm(err)
-	}
-	if owner != user {
-		return nil, ErrForbidden
+	if err := s.RoomPermission(room, user, "moderate"); err != nil {
+		return nil, err
 	}
 	rows, err := s.DB.Query(context.Background(), `SELECT r.id::text,r.message_id::text,reporter.name,author.name,COALESCE(NULLIF(left(m.body,180),''),'[attachment]'),r.reason,r.created_at
 		FROM message_reports r JOIN messages m ON m.id=r.message_id JOIN users reporter ON reporter.id=r.reporter_id
@@ -59,14 +55,17 @@ func (s *PostgresStore) ModerateMessage(room, actor, id, reason string) (Message
 		return Message{}, err
 	}
 	defer tx.Rollback(ctx)
+	if err = lockRoomCommunity(ctx, tx, room); err != nil {
+		return Message{}, err
+	}
 	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::uuid::text,0))`, room); err != nil {
 		return Message{}, err
 	}
-	var owner string
-	if err = tx.QueryRow(ctx, `SELECT owner_id::text FROM rooms WHERE id=$1 AND kind IN('channel','group') FOR SHARE`, room).Scan(&owner); err != nil {
-		return Message{}, norm(err)
+	var allowed bool
+	if err = tx.QueryRow(ctx, `SELECT room_has_permission($1,$2,'moderate')`, room, actor).Scan(&allowed); err != nil {
+		return Message{}, err
 	}
-	if owner != actor {
+	if !allowed {
 		return Message{}, ErrForbidden
 	}
 	var found string
@@ -109,11 +108,14 @@ func (s *PostgresStore) DismissMessageReport(room, actor, reportID string) error
 		return err
 	}
 	defer tx.Rollback(ctx)
-	var owner string
-	if err = tx.QueryRow(ctx, `SELECT owner_id::text FROM rooms WHERE id=$1 AND kind IN('channel','group') FOR SHARE`, room).Scan(&owner); err != nil {
-		return norm(err)
+	if err = lockRoomCommunity(ctx, tx, room); err != nil {
+		return err
 	}
-	if owner != actor {
+	var allowed bool
+	if err = tx.QueryRow(ctx, `SELECT room_has_permission($1,$2,'moderate')`, room, actor).Scan(&allowed); err != nil {
+		return err
+	}
+	if !allowed {
 		return ErrForbidden
 	}
 	var messageID string

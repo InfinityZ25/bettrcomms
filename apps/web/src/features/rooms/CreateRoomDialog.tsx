@@ -3,7 +3,7 @@ import { ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AppDialog } from '@/components/app-dialog';
 import { Input } from '@/components/ui/input';
-import { api, type Room } from '@/api';
+import { api, type Community, type Room } from '@/api';
 
 export default function CreateRoomDialog({
   open,
@@ -21,22 +21,32 @@ export default function CreateRoomDialog({
   onCreated: (room: Room) => Promise<void> | void;
 }) {
   const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
   return (
     <AppDialog
       open={open}
       onOpenChange={onOpenChange}
-      title="Make a little room"
-      description="A private place for your calls, screen shares, and conversations."
+      title="Make room for your friends"
+      description="Start with #general for text and voice. Add more channels and manage roles whenever you need them."
     >
       <form
         className="mt-6 flex flex-col gap-5"
         onSubmit={(event) => {
           event.preventDefault();
           void run(async () => {
-            const result = await api<Room | { room: Room }>('/rooms', { name });
-            await onCreated('room' in result ? result.room : result);
+            const result = await api<{ community: Community }>('/communities', {
+              name: name.trim(),
+              description: description.trim(),
+            });
+            const channel = result.community.channels[0];
+            if (!channel)
+              throw new Error(
+                'The room was created without a channel. Refresh your rooms.',
+              );
+            await onCreated(channel);
             onOpenChange(false);
             setName('');
+            setDescription('');
           });
         }}
       >
@@ -50,6 +60,16 @@ export default function CreateRoomDialog({
             placeholder="Friday night crew"
             maxLength={80}
             required
+          />
+        </label>
+        <label className="block text-xs font-medium text-foreground/80">
+          Description <span className="text-muted-foreground">(optional)</span>
+          <Input
+            className="mt-2"
+            maxLength={500}
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            placeholder="Your place to hang out"
           />
         </label>
         {!signedIn && <p>Sign in before creating your first room.</p>}

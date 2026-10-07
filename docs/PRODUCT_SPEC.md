@@ -1,6 +1,6 @@
 # BetterComms product and technical specification
 
-Status: implementation target, September 2026. “Required” describes the intended product, not the current repository state. Native media support is experimental until it meets the gates in `TEST_PLAN.md`.
+Status: implementation target, updated October 2026. “Required” describes the intended product, not the current repository state. Native media support is experimental until it meets the gates in `TEST_PLAN.md`.
 
 ## Product promise
 
@@ -10,7 +10,9 @@ The browser is the reference client. Windows desktop uses a Wails v3 shell with 
 
 ## Information architecture
 
-The primary rail contains Home/Friends, direct conversations, and communities. A community owns roles, members, and ordered channels. Channel types initially include text and voice; a voice channel has a durable identity but an ephemeral call session. Direct conversations are first-class and may be one-to-one or group DMs. Search spans content the current user is authorized to read.
+The primary rail contains Home/Friends, direct conversations, and Rooms (persistent communities). A room owns roles, members, and ordered channels. Every ordinary channel combines text and voice: opening it shows its durable message history, and Join voice starts its ephemeral call session in one action. Owners and admins can mark a channel as Announcements, which disables voice and limits publication to owners/admins while keeping history readable to all members. There are no separate text-only and voice-only channel trees or secondary chats inside voice channels. Direct conversations are first-class and may be one-to-one or group DMs. Search spans content the current user is authorized to read.
+
+Built-in room roles are owner, admin, moderator, and member. Owners manage ownership and admins; admins manage room settings, channels and lower roles; moderators manage lower-ranked members, reports, pins, invitation links and posting restrictions; members chat and join voice in ordinary channels. Membership and role changes apply to every channel, and bans/removal revoke active media and signaling access. Custom roles and per-channel permission overrides remain future work.
 
 The conversation column contains message history, composer, replies, reactions, attachments, edit history markers, and unread boundaries. Presence has online, idle, do-not-disturb, and offline states. Read state is per user and per conversation. Blocking prevents new direct contact and suppresses presence; community moderation remains role-controlled.
 

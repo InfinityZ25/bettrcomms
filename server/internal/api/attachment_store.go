@@ -26,21 +26,48 @@ func (s *PostgresStore) SavePendingAttachment(room, user, key string, attachment
 }
 
 func (s *PostgresStore) CompletePendingAttachment(id, room string) error {
-	var currentRoom *string
-	var deleted *time.Time
-	err := s.DB.QueryRow(context.Background(), `UPDATE message_attachments a SET upload_state='ready',deleted_at=CASE WHEN can_access_room(a.room_id,a.uploader_id) AND EXISTS(SELECT 1 FROM rooms r JOIN room_members rm ON rm.room_id=r.id AND rm.user_id=a.uploader_id WHERE r.id=a.room_id AND (r.owner_id=a.uploader_id OR rm.posting_restricted_until IS NULL OR rm.posting_restricted_until<=clock_timestamp())) THEN deleted_at ELSE clock_timestamp() END WHERE id=$1 RETURNING room_id::text,deleted_at`, id).Scan(&currentRoom, &deleted)
+	ctx := context.Background()
+	tx, err := s.DB.Begin(ctx)
 	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	var user string
+	if err = tx.QueryRow(ctx, `SELECT uploader_id::text FROM message_attachments WHERE id=$1 AND room_id=$2 AND uploader_id IS NOT NULL AND message_id IS NULL AND upload_state='uploading' AND deleted_at IS NULL`, id, room).Scan(&user); err != nil {
 		return norm(err)
 	}
-	if currentRoom == nil || *currentRoom != room || deleted != nil {
-		return ErrForbidden
+	// Use the same posting authorization as a message, including announcement
+	// permissions and moderation changes made while bytes were sent to S3.
+	if err = checkRoomPosting(ctx, tx, room, user, false); err != nil {
+		tx.Rollback(ctx)
+		_ = s.DiscardPendingAttachment(ctx, id)
+		return err
 	}
-	return nil
+	var ready string
+	if err = tx.QueryRow(ctx, `UPDATE message_attachments SET upload_state='ready' WHERE id=$1 AND room_id=$2 AND uploader_id=$3 AND message_id IS NULL AND upload_state='uploading' AND deleted_at IS NULL RETURNING id::text`, id, room, user).Scan(&ready); err != nil {
+		return norm(err)
+	}
+	return tx.Commit(ctx)
 }
 
 func (s *PostgresStore) RemovePendingAttachment(id string) error {
-	_, err := s.DB.Exec(context.Background(), `DELETE FROM message_attachments WHERE id=$1 AND message_id IS NULL`, id)
+	return s.removePendingAttachment(context.Background(), id)
+}
+
+func (s *PostgresStore) removePendingAttachment(ctx context.Context, id string) error {
+	_, err := s.DB.Exec(ctx, `DELETE FROM message_attachments WHERE id=$1 AND message_id IS NULL`, id)
 	return err
+}
+
+func (s *PostgresStore) DiscardPendingAttachment(ctx context.Context, id string) error {
+	_, err := s.DB.Exec(ctx, `UPDATE message_attachments SET upload_state='ready',deleted_at=COALESCE(deleted_at,clock_timestamp()) WHERE id=$1 AND message_id IS NULL`, id)
+	return err
+}
+
+func (s *PostgresStore) CancelPendingAttachment(ctx context.Context, room, user, id string) (string, error) {
+	var key string
+	err := s.DB.QueryRow(ctx, `UPDATE message_attachments SET deleted_at=COALESCE(deleted_at,clock_timestamp()) WHERE id=$1 AND room_id=$2 AND uploader_id=$3 AND message_id IS NULL AND upload_state='ready' AND can_access_room(room_id,$3) RETURNING object_key`, id, room, user).Scan(&key)
+	return key, norm(err)
 }
 
 func (s *PostgresStore) AttachmentForMember(room, user, id string) (string, MessageAttachment, error) {
