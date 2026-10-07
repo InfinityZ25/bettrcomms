@@ -12,6 +12,7 @@ vi.mock('./nativeCaptureRegistry', () => ({
 }));
 
 const constructorCalls: Array<{ options?: MediaRecorderOptions }> = [];
+const recorderInstances: FakeMediaRecorder[] = [];
 
 class FakeMediaRecorder extends EventTarget {
   static isTypeSupported = () => true;
@@ -25,6 +26,7 @@ class FakeMediaRecorder extends EventTarget {
     super();
     this.mimeType = options?.mimeType ?? '';
     constructorCalls.push({ options });
+    recorderInstances.push(this);
   }
 
   start(): void {
@@ -38,7 +40,26 @@ class FakeMediaRecorder extends EventTarget {
   }
 }
 
+class QueuedMediaRecorder extends FakeMediaRecorder {
+  stopCalls = 0;
+
+  override stop(): void {
+    this.stopCalls++;
+    this.state = 'inactive';
+  }
+
+  flushStop(): void {
+    this.ondataavailable?.({
+      data: new Blob(['final recording data'], { type: 'audio/webm' }),
+    } as BlobEvent);
+    this.onstop?.();
+    this.dispatchEvent(new Event('stop'));
+  }
+}
+
 class FakeTrack extends EventTarget {
+  readonly stop = vi.fn();
+
   constructor(
     readonly id: string,
     readonly kind: 'audio' | 'video',
@@ -61,6 +82,7 @@ function descriptor(
 
 beforeEach(() => {
   constructorCalls.length = 0;
+  recorderInstances.length = 0;
   mocks.invoke.mockReset();
   mocks.nativeTrackId = undefined;
   vi.stubGlobal('MediaRecorder', FakeMediaRecorder);
@@ -70,6 +92,91 @@ beforeEach(() => {
       constructor(_tracks: MediaStreamTrack[]) {}
     },
   );
+});
+
+it.each(['removed', 'ended'] as const)(
+  'waits for queued final recording data after a track is %s',
+  async (reason) => {
+    vi.stubGlobal('MediaRecorder', QueuedMediaRecorder);
+    const microphone = descriptor('microphone', 'audio', 'microphone');
+    const session = new TrackRecordingSession();
+    session.start([microphone], ['audio/webm']);
+    const recorder = recorderInstances[0] as QueuedMediaRecorder;
+
+    if (reason === 'removed') session.removeTrack(microphone.track.id);
+    else microphone.track.dispatchEvent(new Event('ended'));
+    expect(recorder.state).toBe('inactive');
+    let settled = false;
+    const pending = session.stop().then((result) => {
+      settled = true;
+      return result;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const completedBeforeFinalData = settled;
+    recorder.flushStop();
+    const result = await pending;
+
+    expect(completedBeforeFinalData).toBe(false);
+    expect(recorder.stopCalls).toBe(1);
+    expect(result.manifest.tracks[0]).toMatchObject({
+      status: 'complete',
+      endedReason: 'track-ended',
+      bytes: 20,
+    });
+    expect(await result.files[0].blob.text()).toBe('final recording data');
+    expect((microphone.track as unknown as FakeTrack).stop).not.toHaveBeenCalled();
+  },
+);
+
+it('retains the final chunk delivered after a recorder error', async () => {
+  vi.stubGlobal('MediaRecorder', QueuedMediaRecorder);
+  const onError = vi.fn();
+  const session = new TrackRecordingSession({ onError });
+  session.start([descriptor('microphone', 'audio', 'microphone')]);
+  const recorder = recorderInstances[0] as QueuedMediaRecorder;
+  recorder.state = 'inactive';
+  recorder.onerror?.({ message: 'Encoder failed' } as ErrorEvent);
+  let settled = false;
+  const pending = session.stop().then((result) => {
+    settled = true;
+    return result;
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const completedBeforeFinalData = settled;
+  recorder.flushStop();
+  const result = await pending;
+
+  expect(completedBeforeFinalData).toBe(false);
+  expect(onError).toHaveBeenCalledOnce();
+  expect(result.manifest.tracks[0]).toMatchObject({
+    status: 'error',
+    endedReason: 'recorder-error',
+    error: 'Encoder failed',
+    bytes: 20,
+  });
+  expect(await result.files[0].blob.text()).toBe('final recording data');
+});
+
+it('finishes without a stop event when recorder start fails', async () => {
+  vi.stubGlobal('MediaRecorder', class extends FakeMediaRecorder {
+    override start(): void {
+      throw new Error('Encoder cannot start');
+    }
+  });
+  const microphone = descriptor('microphone', 'audio', 'microphone');
+  const removeListener = vi.spyOn(microphone.track, 'removeEventListener');
+  const session = new TrackRecordingSession();
+  session.start([microphone]);
+  const result = await session.stop();
+
+  expect(result.manifest.tracks[0]).toMatchObject({
+    status: 'error',
+    endedReason: 'recorder-error',
+    error: 'Encoder cannot start',
+    bytes: 0,
+  });
+  expect(removeListener).toHaveBeenCalledWith('ended', expect.any(Function));
+  expect((microphone.track as unknown as FakeTrack).stop).not.toHaveBeenCalled();
 });
 
 it('imports a native screen pass-through MP4 once and releases its opaque asset', async () => {

@@ -23,19 +23,32 @@ changes, and late responses cannot navigate them. Completed authorized downloads
 remain open. Cancelled voice joins reject late completion and release their
 capture and signaling resources.
 
+The floating call footer lets pointer input reach share zoom controls through its
+transparent background while keeping its own controls interactive. Fullscreen
+call controls stay centered when a conversation pane is open.
+
+Returning to a call after channel navigation reattaches camera layout observation
+to the current stage and ignores callbacks from the old stage. Choosing Messages
+while the initial room list loads now survives automatic default-channel selection.
+
+Track recording waits for the recorder's stop event and final data block even
+when track removal has already made it inactive. RNNoise and Speex modules load
+on demand, allowing WebKit hosts without `AudioWorkletNode` to start the app.
+
 The revoked-upload regression test now verifies immediate removal of the object
 and pending database row when storage deletion succeeds. Failed deletion must
 retain an inaccessible tombstone and object key until cleanup retries succeed.
 The correction preserves the production session and membership authorization.
 
-The user lifted the earlier request to defer local validation. The web production
-build, 479 Vitest tests, `go test ./...` with Docker PostgreSQL integration and
-`go vet ./...` passed. Targeted Chromium acceptance against the real API,
+The web production build, 489 Vitest tests, `go test ./...` with Docker PostgreSQL
+integration and `go vet ./...` passed. Targeted Chromium acceptance against the real API,
 PostgreSQL and MinIO passed for room roles/announcements and attachments, including
 local/sent image viewers, interrupted-upload retry, separate original downloads,
-outsider denial and a playable synthetic MP4 above 16 MiB. The full browser suite
-is running; its result is not yet established. These checks do not establish
-500 MiB production transfers or native capture/encoding acceptance.
+outsider denial and a playable synthetic MP4 above 16 MiB. Automated results are
+recorded in [PR #40](https://github.com/InfinityZ25/bettrcomms/pull/40). Release
+requires the Chromium suite and the optimized-build Chromium/WebKit matrix.
+These checks do not establish 500 MiB production transfers, physical/native
+capture or encoding, or cross-network connectivity.
 
 ## Unreleased — daily communication
 

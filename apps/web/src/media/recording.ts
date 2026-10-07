@@ -18,6 +18,7 @@ interface ActiveRecorder {
   segmentId: string;
   descriptor: RecordableTrack;
   recorder?: MediaRecorder;
+  recorderStopped?: Promise<void>;
   chunks: Blob[];
   startedAt: number;
   error?: string;
@@ -147,6 +148,7 @@ export class TrackRecordingSession {
     const mimeType = mimeTypes.find((candidate) =>
       MediaRecorder.isTypeSupported(candidate),
     );
+    let resolveStopped: (() => void) | undefined;
     try {
       const bitrate =
         descriptor.track.kind === 'video'
@@ -159,6 +161,9 @@ export class TrackRecordingSession {
         ...bitrate,
       });
       active.recorder = recorder;
+      active.recorderStopped = new Promise((resolve) => {
+        resolveStopped = resolve;
+      });
       recorder.ondataavailable = (event) => {
         if (!event.data.size) return;
         if (this.retainedBytes + event.data.size > this.maxBytes) {
@@ -177,6 +182,7 @@ export class TrackRecordingSession {
       };
       recorder.onstop = () => {
         active.endedAt ??= performance.now();
+        resolveStopped?.();
       };
       active.onTrackEnded = () => {
         active.endedReason ??= 'track-ended';
@@ -188,6 +194,7 @@ export class TrackRecordingSession {
       });
       recorder.start(1000);
     } catch (error) {
+      resolveStopped?.();
       active.error = error instanceof Error ? error.message : String(error);
       active.endedReason = 'recorder-error';
       this.options.onError?.(
@@ -234,23 +241,19 @@ export class TrackRecordingSession {
       }
     }
     await Promise.all(
-      this.active.map(
-        (active) =>
-          new Promise<void>((resolve) => {
-            if (active.native) {
-              active.endedReason ??= 'session-stopped';
-              active.endedAt ??= stopRequestedAt;
-              void this.finishNative(active).then(resolve);
-              return;
-            }
-            const { recorder } = active;
-            if (!recorder || recorder.state === 'inactive') return resolve();
-            recorder.addEventListener('stop', () => resolve(), { once: true });
-            active.endedReason ??= 'session-stopped';
-            active.endedAt ??= stopRequestedAt;
-            recorder.stop();
-          }),
-      ),
+      this.active.map(async (active) => {
+        active.endedReason ??= 'session-stopped';
+        active.endedAt ??= stopRequestedAt;
+        if (active.native) {
+          await this.finishNative(active);
+          return;
+        }
+        const { recorder } = active;
+        if (!recorder) return;
+        if (recorder.state !== 'inactive') recorder.stop();
+        // stop() changes state before queued final dataavailable/stop events.
+        await active.recorderStopped;
+      }),
     );
     const stoppedAt = performance.now();
     const files: RecordingFile[] = [];

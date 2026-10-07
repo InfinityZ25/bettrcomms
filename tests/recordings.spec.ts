@@ -7,19 +7,120 @@ test('saved multitrack recording reloads, mixes, seeks, and deletes', async ({
   const recordingTitle = `Synthetic mix ${Date.now()}`;
 
   const savedFixture = await page.evaluate(async (title) => {
-    const record = (stream: MediaStream, mimeType: string) =>
-      new Promise<Blob>((resolve, reject) => {
-        const chunks: BlobPart[] = [];
-        const recorder = new MediaRecorder(stream, { mimeType });
-        recorder.ondataavailable = (event) => {
-          if (event.data.size) chunks.push(event.data);
-        };
-        recorder.onerror = () =>
-          reject(recorder.error ?? new Error('Synthetic recorder failed'));
-        recorder.onstop = () => resolve(new Blob(chunks, { type: mimeType }));
-        recorder.start(100);
-        window.setTimeout(() => recorder.stop(), 1_400);
-      });
+    const declaredDurationMs = 1_400;
+    const timesliceMs = 100;
+    const waitUntil = async (ready: () => boolean, label: string) => {
+      const deadline = performance.now() + 5_000;
+      while (!ready()) {
+        if (performance.now() >= deadline) throw new Error(label);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+    };
+    const rms = (analyser: AnalyserNode) => {
+      const samples = new Float32Array(analyser.fftSize);
+      analyser.getFloatTimeDomainData(samples);
+      return Math.sqrt(
+        samples.reduce((sum, sample) => sum + sample * sample, 0) /
+          samples.length,
+      );
+    };
+    const record = async (
+      stream: MediaStream,
+      mimeType: string,
+      clock: AudioContext,
+    ) => {
+      const chunks: BlobPart[] = [];
+      const recorder = new MediaRecorder(stream, { mimeType });
+      let startedAt: number | undefined;
+      let stopped = false;
+      let failure: Error | undefined;
+      recorder.onstart = () => {
+        startedAt = clock.currentTime;
+      };
+      recorder.ondataavailable = (event) => {
+        if (event.data.size) chunks.push(event.data);
+      };
+      recorder.onerror = () => {
+        failure = new Error('Synthetic recorder failed');
+      };
+      recorder.onstop = () => {
+        stopped = true;
+      };
+      const ready = (predicate: () => boolean) => () => {
+        if (failure) throw failure;
+        return predicate();
+      };
+      try {
+        recorder.start(timesliceMs);
+        await waitUntil(
+          ready(() => startedAt !== undefined),
+          'Synthetic recorder did not start',
+        );
+        // Capture two encoder chunks beyond the declared timeline. Wall time can
+        // advance while the audio device is still starting, so use its render clock.
+        const captureSeconds = (declaredDurationMs + 2 * timesliceMs) / 1_000;
+        await waitUntil(
+          ready(() => clock.currentTime - startedAt! >= captureSeconds),
+          `Synthetic recording audio clock stalled: ${clock.state}`,
+        );
+        recorder.stop();
+        await waitUntil(
+          ready(() => stopped),
+          'Synthetic recorder did not emit its final data',
+        );
+        return new Blob(chunks, { type: mimeType });
+      } finally {
+        if (recorder.state !== 'inactive') recorder.stop();
+      }
+    };
+    const validateVideo = async (blob: Blob) => {
+      const url = URL.createObjectURL(blob);
+      const element = document.createElement('video');
+      element.muted = true;
+      element.preload = 'auto';
+      element.src = url;
+      const ready = (predicate: () => boolean) => () => {
+        if (element.error)
+          throw new Error(
+            `Synthetic video decode failed: ${element.error.message}`,
+          );
+        return predicate();
+      };
+      try {
+        element.load();
+        await waitUntil(
+          ready(() => element.readyState >= HTMLMediaElement.HAVE_METADATA),
+          'Synthetic video metadata did not load',
+        );
+        if (!Number.isFinite(element.duration)) {
+          // MediaRecorder WebM lacks a duration header; seeking resolves its end.
+          element.currentTime = 1e10;
+          await waitUntil(
+            ready(() => Number.isFinite(element.duration)),
+            'Synthetic video duration did not resolve',
+          );
+        }
+        if (element.duration * 1_000 < declaredDurationMs)
+          throw new Error(
+            `Synthetic video is shorter than its manifest: ${element.duration}s`,
+          );
+        element.currentTime = 0;
+        await waitUntil(
+          ready(
+            () =>
+              element.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+              element.videoWidth === 320 &&
+              element.videoHeight === 180,
+          ),
+          'Synthetic video frame did not decode',
+        );
+      } finally {
+        element.pause();
+        element.removeAttribute('src');
+        element.load();
+        URL.revokeObjectURL(url);
+      }
+    };
 
     const mimeType =
       ['video/webm;codecs=vp8,opus', 'video/webm'].find((type) =>
@@ -46,23 +147,48 @@ test('saved multitrack recording reloads, mixes, seeks, and deletes', async ({
       const context = new AudioContext();
       const oscillator = context.createOscillator();
       const gain = context.createGain();
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 1024;
       const destination = context.createMediaStreamDestination();
       oscillator.frequency.value = frequency;
       gain.gain.value = 0.08;
-      oscillator.connect(gain).connect(destination);
+      oscillator.connect(gain).connect(analyser).connect(destination);
       oscillator.start();
-      return { context, oscillator, stream: destination.stream };
+      return { context, oscillator, analyser, stream: destination.stream };
     };
     const first = makeTone(330);
     const second = makeTone(550);
     const videoStream = canvas.captureStream(20);
 
     try {
+      await Promise.all([first.context.resume(), second.context.resume()]);
+      await waitUntil(
+        () =>
+          first.context.currentTime >= 0.1 &&
+          second.context.currentTime >= 0.1 &&
+          rms(first.analyser) > 0.05 &&
+          rms(second.analyser) > 0.05,
+        'Synthetic microphones did not render samples',
+      );
       const [video, microphone, guest] = await Promise.all([
-        record(videoStream, mimeType),
-        record(first.stream, audioMimeType),
-        record(second.stream, audioMimeType),
+        record(videoStream, mimeType, first.context),
+        record(first.stream, audioMimeType, first.context),
+        record(second.stream, audioMimeType, second.context),
       ]);
+      const [ownerAudio, guestAudio] = await Promise.all([
+        first.context.decodeAudioData(await microphone.arrayBuffer()),
+        second.context.decodeAudioData(await guest.arrayBuffer()),
+      ]);
+      for (const [name, buffer] of [
+        ['owner', ownerAudio],
+        ['guest', guestAudio],
+      ] as const) {
+        if (buffer.duration * 1_000 < declaredDurationMs)
+          throw new Error(
+            `Synthetic ${name} audio is shorter than its manifest: ${buffer.duration}s`,
+          );
+      }
+      await validateVideo(video);
       const startedAt = new Date().toISOString();
       const result = {
         manifest: {
@@ -154,6 +280,8 @@ test('saved multitrack recording reloads, mixes, seeks, and deletes', async ({
     } finally {
       clearInterval(paint);
       videoStream.getTracks().forEach((track) => track.stop());
+      first.stream.getTracks().forEach((track) => track.stop());
+      second.stream.getTracks().forEach((track) => track.stop());
       first.oscillator.stop();
       second.oscillator.stop();
       await Promise.all([first.context.close(), second.context.close()]);
@@ -204,21 +332,42 @@ test('saved multitrack recording reloads, mixes, seeks, and deletes', async ({
   await cameraDownload.click();
   const downloaded = await originalDownload;
   expect(downloaded.suggestedFilename()).toBe('camera.webm');
-  const audioExport = page.locator('.recording-asset').filter({ has: page.getByRole('link', { name: 'Download original Ada · microphone' }) });
-  await audioExport.getByLabel('Export format for Ada · microphone').selectOption('wav');
-  await audioExport.getByRole('button', { name: 'Convert', exact: true }).click();
+  const audioExport = page
+    .locator('.recording-asset')
+    .filter({
+      has: page.getByRole('link', {
+        name: 'Download original Ada · microphone',
+      }),
+    });
+  await audioExport
+    .getByLabel('Export format for Ada · microphone')
+    .selectOption('wav');
+  await audioExport
+    .getByRole('button', { name: 'Convert', exact: true })
+    .click();
   const wavDownload = audioExport.getByRole('link', { name: 'Download WAV' });
   await expect(wavDownload).toBeVisible();
-  const wavHeader = await wavDownload.evaluate(async (link: HTMLAnchorElement) => {
-    const bytes = new Uint8Array(await (await fetch(link.href)).arrayBuffer());
-    return { container: String.fromCharCode(...bytes.slice(0, 4)), type: String.fromCharCode(...bytes.slice(8, 12)), bytes: bytes.length };
-  });
+  const wavHeader = await wavDownload.evaluate(
+    async (link: HTMLAnchorElement) => {
+      const bytes = new Uint8Array(
+        await (await fetch(link.href)).arrayBuffer(),
+      );
+      return {
+        container: String.fromCharCode(...bytes.slice(0, 4)),
+        type: String.fromCharCode(...bytes.slice(8, 12)),
+        bytes: bytes.length,
+      };
+    },
+  );
   expect(wavHeader).toMatchObject({ container: 'RIFF', type: 'WAVE' });
   expect(wavHeader.bytes).toBeGreaterThan(10_000);
   const convertedDownload = page.waitForEvent('download');
   await wavDownload.click();
   expect((await convertedDownload).suggestedFilename()).toMatch(/\.wav$/);
-  await page.screenshot({ path: '.local/recording-export-formats.png', fullPage: true });
+  await page.screenshot({
+    path: '.local/recording-export-formats.png',
+    fullPage: true,
+  });
   await page
     .getByTestId('workspace-scroll')
     .evaluate((element) => (element.scrollTop = 0));

@@ -146,9 +146,10 @@ export default function App() {
     revision: 0,
   });
   const openSettings = () => setSettingsOpen(true);
-  // Which list the sidebar is showing. Selecting a conversation moves the rail
-  // with it, so the two never disagree about where you are.
-  const [section, setSection] = useState<Section>('calls');
+  // Follow the initial room until navigation chooses a section. A late room
+  // list must not overwrite the user's choice while that request was loading.
+  const [sectionChoice, setSection] = useState<Section | null>(null);
+  const section = sectionChoice ?? sectionForRoom(room?.kind);
   const showSection = (next: Section) => {
     setSection(next);
     if (phone) setMobileDestination(next);
@@ -211,17 +212,6 @@ export default function App() {
     setCallOpen(false);
     navigate('call');
   };
-  /*
-    Rooms are also selected without the sidebar: the first one arrives with the
-    list, and a new conversation arrives from the friends dialog. The rail has
-    to follow, or the list you are looking at does not contain the room you are
-    in — which is how a direct message could be open while the sidebar offered
-    to create your first room.
-  */
-  useEffect(() => {
-    if (room && !(phone && mobileDestination))
-      setSection(sectionForRoom(room.kind));
-  }, [room?.id]);
   /*
     The end of a call in a conversation hands the screen back to the
     conversation. It used to leave the call's own empty lobby up, offering to
@@ -492,7 +482,10 @@ export default function App() {
               onOpen={() => {
                 setMobileDestination(null);
                 setCallOpen(true);
-                if (callRoom) setRoom(callRoom);
+                if (callRoom) {
+                  setRoom(callRoom);
+                  setSection(sectionForRoom(callRoom.kind));
+                }
                 navigate('call');
               }}
             />
@@ -912,11 +905,9 @@ export default function App() {
           refreshRevision={presence.friendsRevision + presence.syncRevision}
           onError={setError}
           onOpenRoom={(next) => {
-            setMobileDestination(null);
             openRoom(next);
-            setCallOpen(false);
+            selectRoom(next);
             setFriendsOpen(false);
-            navigate('call');
           }}
           onSignIn={signIn.start}
         />

@@ -25,6 +25,7 @@ const login = async (context: BrowserContext, name: string, email: string) => {
 test('chat, call activity, and friend availability update without polling', async ({ browser }) => {
   const ownerContext = await browser.newContext({ baseURL });
   const guestContext = await browser.newContext({ baseURL });
+  let releaseInitialRooms = () => {};
   try {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const owner = await login(ownerContext, 'Realtime Ada', `realtime-ada-${suffix}@example.test`);
@@ -47,6 +48,19 @@ test('chat, call activity, and friend availability update without polling', asyn
 
     const ownerPage = await ownerContext.newPage();
     const guestPage = await guestContext.newPage();
+    const pages = [ownerPage, guestPage];
+    const initialRooms = new Promise<void>(resolve => { releaseInitialRooms = resolve; });
+    const heldRoomReads = [0, 0];
+    await Promise.all(pages.map((page, index) => page.route(
+      url => url.pathname === '/api/v1/rooms',
+      async route => {
+        if (route.request().method() === 'GET') {
+          heldRoomReads[index] = (heldRoomReads[index] ?? 0) + 1;
+          await initialRooms;
+        }
+        await route.continue();
+      },
+    )));
     let guestHistoryReads = 0;
     let presencePolls = 0;
     guestPage.on('request', (request) => {
@@ -55,26 +69,45 @@ test('chat, call activity, and friend availability update without polling', asyn
       if (url.pathname === '/api/v1/call-presence') presencePolls += 1;
     });
     await Promise.all([ownerPage.goto('/'), guestPage.goto('/')]);
+    await Promise.all(pages.map((_, index) => expect.poll(() => heldRoomReads[index]).toBeGreaterThan(0)));
+    await Promise.all(pages.map(page => page.getByRole('navigation', { name: 'Sections' })
+      .getByRole('button', { name: 'Messages', exact: true }).click()));
+    await Promise.all(pages.map(page => expect(page.getByRole('heading', { name: 'Messages', exact: true })).toBeVisible()));
+    // The real room list arrives after explicit navigation. Its default channel
+    // selection must not move the sidebar back to Rooms during bootstrap.
+    releaseInitialRooms();
+    await Promise.all(pages.map(async page => {
+      await expect(page.getByRole('region', { name: 'Direct messages', exact: true })).toBeVisible();
+      await expect(page.getByRole('navigation', { name: 'Sections' })
+        .getByRole('button', { name: 'Messages', exact: true })).toHaveAttribute('aria-current', 'page');
+    }));
     await Promise.all([
-      ownerPage.getByRole('button', { name: guest.name, exact: true }).click(),
-      guestPage.getByRole('button', { name: owner.name, exact: true }).click(),
+      ownerPage.getByRole('region', { name: 'Direct messages', exact: true })
+        .getByRole('button', { name: guest.name, exact: true }).click(),
+      guestPage.getByRole('region', { name: 'Direct messages', exact: true })
+        .getByRole('button', { name: owner.name, exact: true }).click(),
     ]);
     await expect.poll(() => guestHistoryReads).toBeGreaterThan(0);
     const readsAfterHydration = guestHistoryReads;
 
     const body = `socket message ${Date.now()}`;
-    await ownerPage.getByRole('textbox', { name: `Message ${guest.name}`, exact: true }).fill(body);
-    await ownerPage.getByRole('button', { name: /send message/i }).click();
-    await expect(guestPage.getByText(body)).toBeVisible({ timeout: 2_000 });
+    const ownerConversation = ownerPage.getByRole('region', { name: `Conversation with ${guest.name}`, exact: true });
+    const guestConversation = guestPage.getByRole('region', { name: `Conversation with ${owner.name}`, exact: true });
+    await ownerConversation.getByRole('textbox', { name: `Message ${guest.name}`, exact: true }).fill(body);
+    await ownerConversation.getByRole('button', { name: 'Send message', exact: true }).click();
+    await expect(guestConversation.getByText(body)).toBeVisible({ timeout: 2_000 });
     expect(guestHistoryReads).toBe(readsAfterHydration);
     expect(presencePolls).toBe(0);
 
     for (const page of [ownerPage, guestPage]) {
-      await page.getByRole('button', { name: 'Rooms', exact: true }).click();
-      await page.getByRole('button', { name: created.room.name, exact: true }).click();
+      await page.getByRole('navigation', { name: 'Sections' })
+        .getByRole('button', { name: 'Rooms', exact: true }).click();
+      await page.getByRole('list', { name: `${created.room.name} channel list`, exact: true })
+        .getByRole('button', { name: created.room.name, exact: true }).click();
       await expect(page.getByRole('textbox', { name: `Message ${created.room.name}`, exact: true })).toBeVisible();
     }
-    await ownerPage.getByRole('button', { name: 'Join voice', exact: true }).click();
+    await ownerPage.getByRole('region', { name: `${created.room.name} · ${created.room.name}`, exact: true })
+      .getByRole('button', { name: 'Join voice', exact: true }).click();
     const voiceParticipants = guestPage.getByRole('list', { name: `${created.room.name} call participants`, exact: true });
     await expect(voiceParticipants).toContainText(owner.name, { timeout: 2_000 });
     await ownerPage.getByRole('button', { name: 'Mute microphone' }).click();
@@ -87,6 +120,7 @@ test('chat, call activity, and friend availability update without polling', asyn
     await guestContext.close();
     await expect(contact.getByText('Offline', { exact: true })).toBeVisible({ timeout: 5_000 });
   } finally {
+    releaseInitialRooms();
     await Promise.allSettled([ownerContext.close(), guestContext.close()]);
   }
 });

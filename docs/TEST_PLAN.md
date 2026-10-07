@@ -2,11 +2,13 @@
 
 ## Test layers
 
-The earlier request to defer local execution for the October unified-channel/
-attachment batch has been lifted. The web production build, 479 Vitest tests,
-`go test ./...` with Docker PostgreSQL integration and `go vet ./...` passed.
+For the October unified-channel/attachment batch, the web production build,
+489 Vitest tests, `go test ./...` with Docker PostgreSQL integration and
+`go vet ./...` passed.
 Targeted Chromium community/attachment acceptance passed against the real API,
-PostgreSQL and MinIO. The full browser suite is running; its result is pending.
+PostgreSQL and MinIO. Automated results are recorded in
+[PR #40](https://github.com/InfinityZ25/bettrcomms/pull/40). Release requires the
+Chromium suite and the optimized-build Chromium/WebKit matrix.
 
 `tests/attachment-upload-flow.spec.ts` verifies local and sent PNG previews,
 interrupted-upload retry without losing the draft, separate downloads with exact
@@ -22,11 +24,29 @@ release microphone/signaling resources. Backend revoked-session upload tests
 verify both immediate object/row deletion and an inaccessible, retryable tombstone
 after storage failure; authorization checks remain unchanged.
 
+The footer's transparent background now passes pointer input to underlying share
+zoom controls, and fullscreen control alignment is independent of an open chat
+pane. Browser regression acceptance requires normal zoom clicks with the footer
+visible, usable footer buttons, and centered fullscreen controls with chat open
+across the required Chromium and optimized-build Chromium/WebKit matrix.
+
+Navigate between channels and back to an active call, then resize its stage;
+camera layout observation must follow the mounted stage and ignore stale callbacks.
+Delay the initial real `/rooms` response until Messages is selected, then require
+the direct-message list to appear without another click. Preserve the two-second
+realtime delivery checks and zero presence polling.
+
+Recording regressions cover the final data block arriving after the recorder is
+already inactive, including track removal, track end and recorder errors. Audio
+fixtures wait for rendered samples and verify decoded duration before storing a
+declared timeline. WebKit startup must work without `AudioWorkletNode`; RNNoise
+and Speex imports are deferred until their audio paths are requested.
+
 Continue the release acceptance matrix in `COMMUNITIES.md`, including configured
 size boundaries, upload cancellation and pending-file cleanup, all room role pairs,
 announcement admission and active voice switching. Test source alone is not
 evidence of a passing run, and synthetic browser media does not satisfy physical
-device or cross-network gates.
+device, native capture/encoding or cross-network gates.
 
 Unit tests cover permission resolution, event sequencing, audio gain bounds, layout math, manifest/index transitions, quota eviction, and capability-state serialization. Contract tests run the React client against the Go API and signaling service with clock and disconnect control. PostgreSQL integration tests use real migrations and constraints. Browser automation covers primary keyboard and screen-reader semantics but does not substitute for real media tests.
 

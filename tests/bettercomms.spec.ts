@@ -204,6 +204,8 @@ test('two members chat, call, record separate tracks, and transport a screen sha
       expectDecodedVideo(guestPage, '.camera-tile:not(.self) video'),
     ]);
 
+    // Keep chat open behind fullscreen: its compact footer must not carry over.
+    await expect(ownerPage.locator('.call-workspace')).toHaveAttribute('data-chat', 'true');
     await callControl(ownerPage, 'Fullscreen call');
     const fullscreenWorkspace = ownerPage.locator('.call-workspace');
     const fullscreenStage = fullscreenWorkspace.locator('.stage');

@@ -22,6 +22,14 @@ async function select(page: Page, name: string, option: string) {
   await page.getByRole('combobox', { name, exact: true }).click();
   await page.getByRole('option', { name: option, exact: true }).click();
 }
+async function clickFrameCenter(page: Page) {
+  const surface = page.locator('.copilot-pointer-surface');
+  await expect(surface).toBeVisible();
+  const box = await surface.boundingBox();
+  if (!box) throw new Error('Shared-frame marking surface has no layout box');
+  // The pane can letterbox a frame when chat narrows the call canvas.
+  await surface.click({ position: { x: box.width / 2, y: box.height / 2 } });
+}
 function syntheticScreen() {
   if (!navigator.mediaDevices) return;
   Object.defineProperty(navigator.mediaDevices, 'getDisplayMedia', { configurable: true, value: async () => {
@@ -96,7 +104,7 @@ test('two participants point, freeze a frame, receive its marked capture and rev
     const localVideo = owner.locator('.stage-content-pane video');
     const trackId = await localVideo.evaluate((v: HTMLVideoElement) => (v.srcObject as MediaStream).getVideoTracks()[0].id);
     await viewer.getByRole('button', { name: 'Point', exact: true }).click();
-    await viewer.locator('.copilot-pointer-surface').click({ position: { x: 200, y: 130 } });
+    await clickFrameCenter(viewer);
     await expect(viewer.locator('.copilot-presentation')).toHaveText('Inside BetterComms');
     await expect(owner.locator('.copilot-marker-head')).toHaveCount(1);
     await expect(viewer.locator('.copilot-toolbar [role=status]')).toContainText('Received by the sharer.');
@@ -109,10 +117,20 @@ test('two participants point, freeze a frame, receive its marked capture and rev
     await viewer.mouse.down();
     await expect(owner.locator('.copilot-marker-head')).toHaveCount(1);
     const initialPosition = await owner.locator('.copilot-mark').getAttribute('transform');
-    // A quick drag must retain its last position even inside the send throttle.
+    // Observe the 450 ms trail before the gesture; browser assertions and trace
+    // snapshots between mouse events can otherwise outlive the previous sample.
+    const trailObserved = owner.waitForFunction(
+      () => document.querySelectorAll('.copilot-trail-point').length === 1,
+      undefined,
+      { polling: 'raf' },
+    );
+    // Consecutive moves exercise a quick drag inside the send throttle.
+    await viewer.mouse.move(surface.x + surface.width * .5, surface.y + surface.height * .5);
     await viewer.mouse.move(surface.x + surface.width * .6, surface.y + surface.height * .6);
+    const trail = await trailObserved;
+    expect(await trail.jsonValue()).toBe(true);
+    await trail.dispose();
     await expect(owner.locator('.copilot-mark')).not.toHaveAttribute('transform', initialPosition!);
-    await expect(owner.locator('.copilot-trail-point')).toHaveCount(1);
     await viewer.mouse.up();
     await expect(owner.locator('.copilot-marker-head')).toHaveCount(1);
     await expect.poll(() => owner.locator('.copilot-trail-point').evaluateAll(points => points.every(point => Number(getComputedStyle(point).opacity) === 0))).toBe(true);
@@ -122,7 +140,7 @@ test('two participants point, freeze a frame, receive its marked capture and rev
     await owner.evaluate(() => { (window as any).copilotFixtureColor = '#b71522'; });
     await expect.poll(() => video.evaluate((v: HTMLVideoElement) => { const c = document.createElement('canvas'); c.width = 640; c.height = 360; const x = c.getContext('2d')!; x.drawImage(v, 0, 0); return x.getImageData(10, 10, 1, 1).data[0]; })).toBeGreaterThan(120);
     expect(await viewer.locator('.copilot-frozen').getAttribute('src')).toBe(frozen);
-    await viewer.locator('.copilot-pointer-surface').click({ position: { x: 200, y: 140 } });
+    await clickFrameCenter(viewer);
     await viewer.getByRole('button', { name: 'Send marked capture' }).click();
     const image = owner.getByRole('img', { name: 'Frame marked by Viewer' });
     await expect(image).toBeVisible();
