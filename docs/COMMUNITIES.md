@@ -44,9 +44,17 @@ those permissions for affordances; the Go API independently authorizes every
 HTTP write and media subscription. Membership events refresh navigation through
 the existing authenticated realtime stream.
 
-This batch has source review only at the user's request. Deferred acceptance must
-cover migration with existing channels/DMs/groups, all role pairs, ownership and
-account deletion, concurrent last-channel deletion, sibling membership/media
-revocation, invitation redemption, announcement posting/upload/typing/pins and
-media admission, and switching voice channels while a call is active. Build,
-unit/integration and browser checks have not been run locally for this batch.
+The user lifted the earlier request to defer local validation. The web production
+build, 479 Vitest tests, `go test ./...` with Docker PostgreSQL integration and
+`go vet ./...` passed. Targeted real-API Chromium acceptance passed for shared room
+roles, hybrid channels, announcement posting/voice denial and live revocation,
+alongside the MinIO image/MP4 upload, preview, retry and original-download flow.
+The full browser suite is running; its result remains pending.
+
+The release matrix still covers migration with existing channels/DMs/groups, all
+role pairs, ownership and account deletion, concurrent last-channel deletion,
+sibling membership/media revocation, invitation redemption, announcement posting/
+upload/typing/pins and media admission, and switching voice channels during an
+active call. Cancelled joins must reject late completion and release their media
+resources. See `TEST_PLAN.md` for validated coverage and the remaining deployment,
+physical-device and cross-network acceptance boundaries.

@@ -131,15 +131,17 @@ test('two members chat, call, record separate tracks, and transport a screen sha
     await ownerPage.getByRole('button', { name: /send message/i }).click();
     await expect(guestPage.getByText(message)).toBeVisible({ timeout: 3_000 });
     await guestPage.reload();
-    await expect(guestPage.getByText(message)).toBeVisible();
+    await guestPage.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Messages', exact: true }).click();
+    await guestPage.getByRole('region', { name: 'Direct messages', exact: true }).getByRole('button', { name: 'Ada E2E', exact: true }).click();
+    await expect(guestPage.getByRole('region', { name: 'Conversation with Ada E2E', exact: true }).getByRole('log', { name: 'Messages', exact: true }).getByText(message, { exact: true })).toBeVisible();
 
     for (const page of [ownerPage, guestPage]) {
       await page.getByRole('button', { name: 'Rooms', exact: true }).click();
       await page.getByRole('button', { name: room.name, exact: true }).click();
     }
     await Promise.all([
-      ownerPage.getByRole('button', { name: /join voice/i }).click(),
-      guestPage.getByRole('button', { name: /join voice/i }).click(),
+      ownerPage.getByRole('region', { name: `${room.name} · ${room.name}`, exact: true }).getByRole('button', { name: 'Join voice', exact: true }).click(),
+      guestPage.getByRole('region', { name: `${room.name} · ${room.name}`, exact: true }).getByRole('button', { name: 'Join voice', exact: true }).click(),
     ]);
     await Promise.all([
       expect(ownerPage.locator('.camera-tile:not(.self)')).toHaveCount(1),

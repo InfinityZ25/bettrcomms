@@ -78,8 +78,10 @@ test('two participants point, freeze a frame, receive its marked capture and rev
       await page.keyboard.press('Escape');
       await expect(page.getByRole('dialog', { name: 'Settings', exact: true })).toBeHidden();
       await page.getByRole('button', { name: 'Rooms', exact: true }).click();
-      await page.getByRole('button').and(page.getByTitle(room.name, { exact: true })).click();
-      await page.getByRole('button', { name: 'Join voice', exact: true }).click();
+      await page.getByRole('list', { name: `${room.name} channel list`, exact: true })
+        .getByRole('button', { name: room.name, exact: true }).click();
+      await page.getByRole('region', { name: `${room.name} · ${room.name}`, exact: true })
+        .getByRole('button', { name: 'Join voice', exact: true }).click();
       await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
     }
     await owner.getByRole('button', { name: 'Share screen', exact: true }).click();

@@ -100,7 +100,7 @@ test('browsing another room leaves the call in the room it started in', async ({
     const page = await context.newPage();
     await page.goto('/');
     await page.getByRole('button', { name: room.name, exact: true }).click();
-    await page.getByRole('button', { name: 'Join voice' }).click();
+    await page.getByRole('region', { name: `${room.name} · ${room.name}`, exact: true }).getByRole('button', { name: 'Join voice', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
     await page.getByRole('button', { name: 'Mute microphone' }).click();
     await expect(page.getByRole('button', { name: 'Unmute microphone' })).toBeVisible();

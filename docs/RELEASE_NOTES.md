@@ -18,12 +18,24 @@ manual playback controls, and download is a separate action. Pending-file remova
 revokes uploaded drafts and retries object cleanup when storage deletion fails.
 Migration 015 updates the file-size constraint.
 
-Validation for this batch is intentionally deferred at the user's request: no
-local builds, compiler checks, unit/integration tests or browser acceptance runs.
-Source review and formatting do not establish runtime acceptance. The browser,
-database migration, role/announcement matrix, S3 MP4 upload/download/cancellation
-and call-switching flows require the normal acceptance pass before claiming them
-validated. Native capture/encoding acceptance boundaries are unchanged.
+Waiting attachment-download windows now close when their conversation or account
+changes, and late responses cannot navigate them. Completed authorized downloads
+remain open. Cancelled voice joins reject late completion and release their
+capture and signaling resources.
+
+The revoked-upload regression test now verifies immediate removal of the object
+and pending database row when storage deletion succeeds. Failed deletion must
+retain an inaccessible tombstone and object key until cleanup retries succeed.
+The correction preserves the production session and membership authorization.
+
+The user lifted the earlier request to defer local validation. The web production
+build, 479 Vitest tests, `go test ./...` with Docker PostgreSQL integration and
+`go vet ./...` passed. Targeted Chromium acceptance against the real API,
+PostgreSQL and MinIO passed for room roles/announcements and attachments, including
+local/sent image viewers, interrupted-upload retry, separate original downloads,
+outsider denial and a playable synthetic MP4 above 16 MiB. The full browser suite
+is running; its result is not yet established. These checks do not establish
+500 MiB production transfers or native capture/encoding acceptance.
 
 ## Unreleased — daily communication
 

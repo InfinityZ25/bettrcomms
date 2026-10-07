@@ -82,7 +82,11 @@ test("signed room has no A/AA violations or viewport overflow", async ({ browser
     const roomName = await devLogin(context);
     const page = await context.newPage();
     await page.goto("/");
-    await expect(page.locator("main").getByText(roomName).first()).toBeVisible();
+    const conversation = page.getByRole("region", {
+      name: `${roomName} · ${roomName}`,
+      exact: true,
+    });
+    await expect(conversation.getByRole("heading", { level: 2 })).toBeVisible();
     await page.screenshot({
       path: `tests/screenshots/a11y-room-${viewport.name}.png`,
       fullPage: true,

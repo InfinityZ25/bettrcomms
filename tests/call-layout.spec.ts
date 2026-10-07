@@ -64,7 +64,7 @@ test('camera dock resizes, snaps, focuses, and preserves the active share', asyn
     page.setDefaultTimeout(15_000);
     await page.goto('/');
     await page.getByRole('button', { name: room.name, exact: true }).click();
-    await page.getByRole('button', { name: 'Join voice' }).click();
+    await page.getByRole('region', { name: `${room.name} · ${room.name}`, exact: true }).getByRole('button', { name: 'Join voice', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
 
     await page.getByRole('button', { name: otherRoom.name, exact: true }).click();
