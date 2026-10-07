@@ -590,11 +590,10 @@ export function useCallSession({
     // channel ends the old call and its captures before opening the new one.
     if (engine.current || socket.current || recorder.current) leave();
     prepareCallPlayback();
-    let attemptController: AbortController | null = null;
+    const attemptController = new AbortController();
     const success = await perform(async () => {
       const generation = ++joinGeneration.current;
-      const controller = new AbortController();
-      attemptController = controller;
+      const controller = attemptController;
       sessionAbort.current = controller;
       const assertCurrent = () => {
         if (
@@ -930,7 +929,7 @@ export function useCallSession({
       }
     });
     if (!engine.current && sessionAbort.current === attemptController) {
-      sessionAbort.current?.abort();
+      attemptController.abort();
       sessionAbort.current = null;
       disposeCallPlayback();
     } else if (!engine.current && !sessionAbort.current) disposeCallPlayback();
