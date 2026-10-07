@@ -141,15 +141,16 @@ for (const route of ['automatic', 'relay']) {
       const sender = await a.newPage(); const receiver = await b.newPage();
       sender.setDefaultTimeout(15_000); receiver.setDefaultTimeout(15_000);
       for (const page of [sender, receiver]) {
+        // Retain the real engine URL, including Vite's hot-reload revision.
+        await page.addInitScript(() => performance.setResourceTimingBufferSize(5000));
         await page.goto('/');
         // Observe the real call engine without adding production-only test hooks.
         await page.evaluate(async route => {
           localStorage.setItem('bc-connection-mode', 'automatic');
           localStorage.setItem('bc-voice-route', route);
           const loaded = performance.getEntriesByType('resource').find(entry => /\/src\/media\/engine\.ts(?:\?|$)/.test(entry.name));
-          // Large Vite module graphs can exhaust the Resource Timing buffer.
-          // Import the existing development module directly when its entry was evicted.
-          const { MediaEngine } = await import(loaded?.name ?? '/src/media/engine.ts');
+          if (!loaded) throw new Error('The loaded media engine was not retained in Resource Timing');
+          const { MediaEngine } = await import(loaded.name);
           const original = MediaEngine.prototype.setMicrophoneEnabled;
           MediaEngine.prototype.setMicrophoneEnabled = function (enabled: boolean) {
             (window as any).pttEngine = this;
