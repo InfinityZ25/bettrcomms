@@ -145,6 +145,9 @@ func (s *PostgresStore) writeMessage(room, user, id, body, replyID, nonce string
 		return Message{}, false, err
 	}
 	defer tx.Rollback(ctx)
+	if err = lockRoomCommunity(ctx, tx, room); err != nil {
+		return Message{}, false, err
+	}
 	// Allocate per-room message order only after earlier room writes commit.
 	// Otherwise a late commit with a lower sequence could land behind a read cursor.
 	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::uuid::text,0))`, room); err != nil {
@@ -281,7 +284,7 @@ func (s *PostgresStore) writeMessage(room, user, id, body, replyID, nonce string
 			}
 			seenAttachments[attachmentID] = true
 			var found string
-			if err = tx.QueryRow(ctx, `SELECT id::text FROM message_attachments WHERE id=$1 AND room_id=$2 AND uploader_id=$3 AND message_id IS NULL AND created_at>now()-interval '24 hours' FOR UPDATE`, attachmentID, room, user).Scan(&found); err != nil {
+			if err = tx.QueryRow(ctx, `SELECT id::text FROM message_attachments WHERE id=$1 AND room_id=$2 AND uploader_id=$3 AND message_id IS NULL AND upload_state='ready' AND deleted_at IS NULL AND created_at>now()-interval '24 hours' FOR UPDATE`, attachmentID, room, user).Scan(&found); err != nil {
 				return Message{}, false, norm(err)
 			}
 		}
@@ -359,11 +362,14 @@ func (s *PostgresStore) DeleteMessage(room, user, id string) (Message, error) {
 		return Message{}, err
 	}
 	defer tx.Rollback(ctx)
+	if err = lockRoomCommunity(ctx, tx, room); err != nil {
+		return Message{}, err
+	}
 	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::uuid::text,0))`, room); err != nil {
 		return Message{}, err
 	}
 	var member string
-	if err = tx.QueryRow(ctx, `SELECT user_id::text FROM room_members WHERE room_id=$1 AND user_id=$2 FOR SHARE`, room, user).Scan(&member); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT user_id::text FROM room_members WHERE room_id=$1 AND user_id=$2 AND can_access_room($1,$2) FOR SHARE`, room, user).Scan(&member); err != nil {
 		return Message{}, ErrForbidden
 	}
 	var author string
@@ -408,6 +414,9 @@ func (s *PostgresStore) ReactMessage(room, user, id, emoji string, remove bool) 
 		return Message{}, err
 	}
 	defer tx.Rollback(ctx)
+	if err = lockRoomCommunity(ctx, tx, room); err != nil {
+		return Message{}, err
+	}
 	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::uuid::text,0))`, room); err != nil {
 		return Message{}, err
 	}

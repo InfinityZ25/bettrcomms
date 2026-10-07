@@ -117,18 +117,14 @@ func (s *PostgresStore) PinMessage(room, user, id string, remove bool) (Message,
 		return Message{}, err
 	}
 	defer tx.Rollback(ctx)
+	if err = lockRoomCommunity(ctx, tx, room); err != nil {
+		return Message{}, err
+	}
 	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::uuid::text,0))`, room); err != nil {
 		return Message{}, err
 	}
-	var kind, owner string
-	if err = tx.QueryRow(ctx, `SELECT kind,owner_id::text FROM rooms WHERE id=$1 FOR SHARE`, room).Scan(&kind, &owner); err != nil {
-		return Message{}, norm(err)
-	}
-	if kind == "channel" && owner != user {
-		return Message{}, ErrForbidden
-	}
 	var allowed bool
-	if err = tx.QueryRow(ctx, `SELECT can_access_room($1,$2)`, room, user).Scan(&allowed); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT room_has_permission($1,$2,'pin_messages')`, room, user).Scan(&allowed); err != nil {
 		return Message{}, err
 	}
 	if !allowed {

@@ -11,7 +11,7 @@ var errVoiceContainer = errors.New("invalid audio-only voice note")
 // Recordings remain attachments, but their special playback UI is only enabled
 // for bounded containers with actual audio track metadata, never a MIME claim.
 func validateVoiceNote(data []byte, duration int) (string, error) {
-	if duration < 1 || duration > 120000 || len(data) < 16 || len(data) > maxAttachmentBytes {
+	if duration < 1 || duration > 120000 || len(data) < 16 || len(data) > maxVoiceNoteBytes {
 		return "", errVoiceContainer
 	}
 	var actual float64

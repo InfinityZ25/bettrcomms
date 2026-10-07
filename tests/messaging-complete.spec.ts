@@ -40,7 +40,7 @@ test('typing, draft recovery and conversation notification choices work across t
     const preferences = await json<{ rooms: Record<string, string> }>(await ownerContext.request.get('/api/v1/messages/notification-preferences'));
     expect(preferences.rooms[directId]).toBe('mentions');
 
-    await ownerPage.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Calls', exact: true }).click();
+    await ownerPage.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Rooms', exact: true }).click();
     await ownerPage.getByRole('button', { name: 'Draft side room', exact: true }).click();
     await ownerPage.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Messages', exact: true }).click();
     await directButton.click();

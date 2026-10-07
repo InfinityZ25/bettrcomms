@@ -24,6 +24,7 @@ import (
 )
 
 type Config struct {
+	AttachmentMaxBytes                                      int64
 	AppURL, WorkOSClientID, WorkOSAPIKey, WorkOSRedirectURI string
 	DevAuth                                                 bool
 	ICEURLs                                                 []string
@@ -83,7 +84,7 @@ func (a *API) Handler() http.Handler {
 	m := http.NewServeMux()
 	m.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { a.json(w, 200, map[string]any{"status": "ok"}) })
 	m.HandleFunc("GET /api/v1/config", func(w http.ResponseWriter, r *http.Request) {
-		a.json(w, 200, map[string]any{"dev_auth": a.Config.DevAuth, "ice_servers": []map[string]any{{"urls": a.Config.ICEURLs}}})
+		a.json(w, 200, map[string]any{"dev_auth": a.Config.DevAuth, "attachments": a.attachmentConfig(), "ice_servers": []map[string]any{{"urls": a.Config.ICEURLs}}})
 	})
 	m.Handle("GET /api/v1/auth/login", a.rate("auth", 10, time.Minute, http.HandlerFunc(a.login)))
 	m.HandleFunc("GET /api/v1/auth/callback", a.callback)
@@ -318,6 +319,8 @@ func (a *API) authed(w http.ResponseWriter, r *http.Request) {
 		}
 		v, e := a.Store.FindUsers(q, u.ID)
 		a.result(w, map[string]any{"users": v}, e)
+	case p == "communities" || strings.HasPrefix(p, "communities/"):
+		a.communities(w, r, u, strings.Split(p, "/"))
 	case p == "rooms":
 		a.rooms(w, r, u)
 	case p == "rooms/group" && r.Method == http.MethodPost:
@@ -399,6 +402,9 @@ func (a *API) authed(w http.ResponseWriter, r *http.Request) {
 // Socket registration shares this boundary until ACL changes commit and evict
 // stale subscriptions. Reads, message writes and live media do not take it.
 func membershipMutation(method, path string) bool {
+	if method != http.MethodGet && method != http.MethodHead && (path == "communities" || strings.HasPrefix(path, "communities/")) {
+		return true
+	}
 	if method == http.MethodPost {
 		if path == "rooms" || path == "rooms/group" || path == "rooms/direct" {
 			return true
@@ -453,6 +459,9 @@ func (a *API) ice(w http.ResponseWriter, u User) {
 // this token with the same shared secret and never talks to Postgres or
 // WorkOS itself — this endpoint is its only source of authorization.
 func (a *API) sfuJoin(w http.ResponseWriter, r *http.Request, rid string, u User) {
+	if !a.requireVoice(w, rid, u.ID) {
+		return
+	}
 	if a.Config.SFUURL == "" || a.Config.SFUJoinSecret == "" {
 		a.fail(w, 503, "sfu_unavailable", "no SFU is configured for this deployment")
 		return
@@ -553,6 +562,10 @@ func (a *API) room(w http.ResponseWriter, r *http.Request, u User, p []string) {
 		a.uploadAttachment(w, r, u, rid)
 		return
 	}
+	if len(p) == 4 && p[2] == "attachments" && r.Method == http.MethodDelete {
+		a.deletePendingAttachment(w, r, u, rid, p[3])
+		return
+	}
 	if len(p) == 4 && p[2] == "attachments" && r.Method == "GET" {
 		a.downloadAttachment(w, r, u, rid, p[3])
 		return
@@ -648,20 +661,43 @@ func (a *API) room(w http.ResponseWriter, r *http.Request, u User, p []string) {
 		in.UserID = strings.ToLower(in.UserID)
 		e := a.Store.AddRoomMember(rid, u.ID, in.UserID)
 		if e == nil {
-			a.Realtime.subscribeUser(rid, in.UserID)
-			a.Realtime.publishRoom(rid, wire{Type: "rooms.changed"})
+			if store, ok := a.Store.(*PostgresStore); ok {
+				if info, lookupErr := store.RoomForMember(rid, u.ID); lookupErr == nil && info.CommunityID != nil {
+					if community, lookupErr := store.CommunityForMember(*info.CommunityID, u.ID); lookupErr == nil {
+						a.communityMembershipChanged(community, in.UserID, true)
+					}
+				} else {
+					a.Realtime.subscribeUser(rid, in.UserID)
+					a.Realtime.publishRoom(rid, wire{Type: "rooms.changed"})
+				}
+			} else {
+				a.Realtime.subscribeUser(rid, in.UserID)
+				a.Realtime.publishRoom(rid, wire{Type: "rooms.changed"})
+			}
 		}
 		a.socialResult(w, map[string]bool{"ok": true}, e, 201)
 		return
 	}
 	if len(p) == 4 && p[2] == "members" && r.Method == "DELETE" {
 		target := strings.ToLower(p[3])
+		var community *Community
+		if store, ok := a.Store.(*PostgresStore); ok {
+			if info, lookupErr := store.RoomForMember(rid, u.ID); lookupErr == nil && info.CommunityID != nil {
+				if c, lookupErr := store.CommunityForMember(*info.CommunityID, u.ID); lookupErr == nil {
+					community = &c
+				}
+			}
+		}
 		e := a.Store.RemoveRoomMember(rid, u.ID, target)
 		if e == nil {
-			a.Realtime.publishRoom(rid, wire{Type: "rooms.changed"})
-			a.Realtime.unsubscribeUser(rid, target)
-			a.Hub.disconnectRoomUser(rid, target)
-			a.revokeSFU(rid, target, "")
+			if community != nil {
+				a.communityMembershipChanged(*community, target, false)
+			} else {
+				a.Realtime.publishRoom(rid, wire{Type: "rooms.changed"})
+				a.Realtime.unsubscribeUser(rid, target)
+				a.Hub.disconnectRoomUser(rid, target)
+				a.revokeSFU(rid, target, "")
+			}
 		}
 		a.result(w, map[string]bool{"ok": true}, e)
 		return
@@ -885,6 +921,10 @@ func (a *API) resultStatus(w http.ResponseWriter, v any, e error, status int) {
 	}
 	if e == nil {
 		a.json(w, status, v)
+		return
+	}
+	if errors.Is(e, ErrLastChannel) {
+		a.fail(w, 409, "last_channel", "keep at least one channel or delete the community")
 		return
 	}
 	if errors.Is(e, ErrNotFound) {

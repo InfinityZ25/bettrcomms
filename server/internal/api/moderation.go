@@ -34,7 +34,7 @@ func (a *API) moderation(w http.ResponseWriter, r *http.Request, u User, p []str
 		var bans []RoomBan
 		var audit []ModerationAudit
 		next := ""
-		if info.Kind == "channel" && info.OwnerID == u.ID {
+		if info.Kind == "channel" && info.Permissions.Moderate {
 			var err error
 			bans, audit, next, err = store.RoomModeration(room, u.ID, after)
 			if err != nil {
@@ -108,13 +108,17 @@ func (a *API) moderation(w http.ResponseWriter, r *http.Request, u User, p []str
 	}
 	err := store.ModerateMember(room, u.ID, target, action, reason, duration)
 	if err == nil {
-		if action == "ban" {
-			a.Realtime.publishUser(target, wire{Type: "rooms.changed"})
-			a.Realtime.unsubscribeUser(room, target)
-			a.Hub.disconnectRoomUser(room, target)
-			a.revokeSFU(room, target, "")
+		if info, lookupErr := store.RoomForMember(room, u.ID); lookupErr == nil && info.CommunityID != nil {
+			if community, lookupErr := store.CommunityForMember(*info.CommunityID, u.ID); lookupErr == nil {
+				if action == "ban" {
+					a.communityMembershipChanged(community, target, false)
+				} else {
+					a.communityChanged(community)
+				}
+			}
+		} else {
+			a.moderationChanged(room)
 		}
-		a.moderationChanged(room)
 	}
 	a.result(w, map[string]bool{"ok": true}, err)
 }

@@ -459,22 +459,29 @@ func (a *API) realtimeWebsocket(w http.ResponseWriter, r *http.Request, user Use
 			if !a.limiter.allow("chat-typing:"+user.ID+":"+value.RoomID, 60, time.Minute) {
 				continue
 			}
-			if store, ok := a.Store.(*PostgresStore); ok {
-				if err := store.CheckPosting(value.RoomID, user.ID); err != nil {
-					continue
+			func() {
+				a.accessMu.RLock()
+				defer a.accessMu.RUnlock()
+				if client.revoked.Load() || !a.Realtime.canPublishRoom(client, value.RoomID) {
+					return
 				}
-				if value.ThreadRootID != "" {
-					if !uuidPattern.MatchString(value.ThreadRootID) {
-						continue
+				if store, ok := a.Store.(*PostgresStore); ok {
+					if err := store.CheckPosting(value.RoomID, user.ID); err != nil {
+						return
 					}
-					var valid bool
-					if err := store.DB.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM messages WHERE id=$1 AND room_id=$2 AND thread_root_id IS NULL AND deleted_at IS NULL)`, value.ThreadRootID, value.RoomID).Scan(&valid); err != nil || !valid {
-						continue
+					if value.ThreadRootID != "" {
+						if !uuidPattern.MatchString(value.ThreadRootID) {
+							return
+						}
+						var valid bool
+						if err := store.DB.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM messages WHERE id=$1 AND room_id=$2 AND thread_root_id IS NULL AND deleted_at IS NULL)`, value.ThreadRootID, value.RoomID).Scan(&valid); err != nil || !valid {
+							return
+						}
 					}
 				}
-			}
-			payload, _ := json.Marshal(map[string]any{"room_id": value.RoomID, "user_id": user.ID, "typing": value.Typing, "thread_root_id": value.ThreadRootID})
-			a.Realtime.publishRoom(value.RoomID, wire{Type: "chat.typing", From: user.ID, Payload: payload})
+				payload, _ := json.Marshal(map[string]any{"room_id": value.RoomID, "user_id": user.ID, "typing": value.Typing, "thread_root_id": value.ThreadRootID})
+				a.Realtime.publishRoom(value.RoomID, wire{Type: "chat.typing", From: user.ID, Payload: payload})
+			}()
 			continue
 		}
 		if message.Type != "ping" || message.RequestID == "" || len(message.RequestID) > 128 {

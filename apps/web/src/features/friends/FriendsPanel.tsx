@@ -1,6 +1,14 @@
 import { errorMessage } from '@/lib/errors';
 import { useState, useSyncExternalStore, type FormEvent } from 'react';
-import { Ban, Check, MessageSquare, Plus, Search, Users, X } from 'lucide-react';
+import {
+  Ban,
+  Check,
+  MessageSquare,
+  Plus,
+  Search,
+  Users,
+  X,
+} from 'lucide-react';
 import {
   api,
   type User,
@@ -14,29 +22,83 @@ import { Input } from '@/components/ui/input';
 import PrivacyPanel from './PrivacyPanel';
 import { Avatar } from '@/components/avatar';
 import { useMountEffect } from '@/hooks/useMountEffect';
-import { profileSnapshot, subscribeProfiles } from '@/features/settings/profileStore';
-import { contactStatus, presenceLabels, type ContactStatus } from '@/features/settings/presenceStore';
+import {
+  profileSnapshot,
+  subscribeProfiles,
+} from '@/features/settings/profileStore';
+import {
+  contactStatus,
+  presenceLabels,
+  type ContactStatus,
+} from '@/features/settings/presenceStore';
 import { openUserProfile } from '@/features/settings/ProfileDialog';
 import { CustomStatusText } from '@/features/settings/CustomStatus';
 
-function FriendsLoader({ load, onError }: { load: (signal: AbortSignal) => Promise<void>; onError: (error: string) => void }) {
+function FriendsLoader({
+  load,
+  onError,
+}: {
+  load: (signal: AbortSignal) => Promise<void>;
+  onError: (error: string) => void;
+}) {
   useMountEffect(() => {
     const request = new AbortController();
-    void load(request.signal).catch((error) => { if (!request.signal.aborted) onError(errorMessage(error)); });
+    void load(request.signal).catch((error) => {
+      if (!request.signal.aborted) onError(errorMessage(error));
+    });
     return () => request.abort();
   });
   return null;
 }
-function PersonIdentity({ user, status }: { user: User; status?: ContactStatus }) {
-  return <div className="flex min-w-0 flex-1 items-start gap-2.5">
-    <button type="button" className="shrink-0 rounded-lg focus-visible:ring-2 focus-visible:ring-ring" aria-label={`View profile of ${user.name}`} onClick={() => openUserProfile(user.id)}><Avatar name={user.name} id={user.id} src={user.avatar_url} presence={status === 'idle' ? 'away' : status} /></button>
-    <div className="min-w-0 flex-1">
-      <button type="button" className="block max-w-full text-left font-semibold [overflow-wrap:anywhere] hover:underline focus-visible:ring-2 focus-visible:ring-ring" onClick={() => openUserProfile(user.id)}>{user.name}</button>
-      <small className="mt-1 block [overflow-wrap:anywhere] text-[0.7rem] text-muted-foreground">{user.username ? `@${user.username}` : user.email}</small>
-      <CustomStatusText userId={user.id} status={user.custom_status} version={user.status_version} />
-      {user.bio && <details className="mt-1 text-[0.7rem] text-muted-foreground"><summary className="cursor-pointer">About</summary><p className="mt-1 whitespace-pre-wrap [overflow-wrap:anywhere]">{user.bio}</p></details>}
+function PersonIdentity({
+  user,
+  status,
+}: {
+  user: User;
+  status?: ContactStatus;
+}) {
+  return (
+    <div className="flex min-w-0 flex-1 items-start gap-2.5">
+      <button
+        type="button"
+        className="shrink-0 rounded-lg focus-visible:ring-2 focus-visible:ring-ring"
+        aria-label={`View profile of ${user.name}`}
+        onClick={() => openUserProfile(user.id)}
+      >
+        <Avatar
+          name={user.name}
+          id={user.id}
+          src={user.avatar_url}
+          presence={status === 'idle' ? 'away' : status}
+        />
+      </button>
+      <div className="min-w-0 flex-1">
+        <button
+          type="button"
+          className="block max-w-full text-left font-semibold [overflow-wrap:anywhere] hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={() => openUserProfile(user.id)}
+        >
+          {user.name}
+        </button>
+        <small className="mt-1 block [overflow-wrap:anywhere] text-[0.7rem] text-muted-foreground">
+          {user.username ? `@${user.username}` : user.email}
+        </small>
+        <CustomStatusText
+          userId={user.id}
+          status={user.custom_status}
+          version={user.status_version}
+        />
+        {user.bio && (
+          <details className="mt-1 text-[0.7rem] text-muted-foreground">
+            <summary className="cursor-pointer">About</summary>
+            <p className="mt-1 whitespace-pre-wrap [overflow-wrap:anywhere]">
+              {user.bio}
+            </p>
+          </details>
+        )}
+      </div>
     </div>
-  </div>;
+  );
 }
 
 export default function FriendsPanel({
@@ -70,12 +132,17 @@ export default function FriendsPanel({
   const profiles = useSyncExternalStore(subscribeProfiles, profileSnapshot);
   const latest = (person: User) => {
     const cached = profiles[person.id];
-    return cached && (cached.profile_version ?? 0) >= (person.profile_version ?? 0) ? cached : person;
+    return cached &&
+      (cached.profile_version ?? 0) >= (person.profile_version ?? 0)
+      ? cached
+      : person;
   };
   async function refresh(signal?: AbortSignal) {
     const r = await api<{ friends: User[]; requests: FriendRequest[] }>(
       '/friends',
-      undefined, undefined, signal,
+      undefined,
+      undefined,
+      signal,
     );
     if (signal?.aborted) return;
     setFriends(r.friends ?? []);
@@ -113,7 +180,11 @@ export default function FriendsPanel({
   }
   return (
     <div className="flex flex-col gap-4">
-      <FriendsLoader key={`${user.id}:${refreshRevision}`} load={refresh} onError={onError} />
+      <FriendsLoader
+        key={`${user.id}:${refreshRevision}`}
+        load={refresh}
+        onError={onError}
+      />
       <form onSubmit={search}>
         <label className="block text-xs font-medium text-foreground/80">
           Find your people
@@ -169,33 +240,83 @@ export default function FriendsPanel({
             <Plus size={14} /> Add friend
           </Button>
           {!friends.some((friend) => friend.id === u.id) && (
-            <Button size="sm" variant="ghost" disabled={busy} onClick={() => { setRequestTarget(u); setRequestBody(''); }}>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={busy}
+              onClick={() => {
+                setRequestTarget(u);
+                setRequestBody('');
+              }}
+            >
               <MessageSquare size={14} /> Request DM
             </Button>
           )}
-          <Button size="icon" variant="ghost" disabled={busy} aria-label={`Block ${u.name}`} onClick={() =>
-            action(async () => {
-              await api(`/privacy/blocks/${u.id}`, {}, 'POST');
-              setResults((current) => current.filter((person) => person.id !== u.id));
-              setPrivacyRevision((current) => current + 1);
-            })
-          }><Ban size={14} /></Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            disabled={busy}
+            aria-label={`Block ${u.name}`}
+            onClick={() =>
+              action(async () => {
+                await api(`/privacy/blocks/${u.id}`, {}, 'POST');
+                setResults((current) =>
+                  current.filter((person) => person.id !== u.id),
+                );
+                setPrivacyRevision((current) => current + 1);
+              })
+            }
+          >
+            <Ban size={14} />
+          </Button>
         </div>
       ))}
       {requestTarget && (
-        <form className="space-y-2 rounded-xl border p-3 text-xs" onSubmit={(event) => {
-          event.preventDefault();
-          void action(async () => {
-            await api('/dm-requests', { user_id: requestTarget.id, body: requestBody });
-            setStatus(`Message request sent to ${requestTarget.name}.`);
-            setRequestTarget(null);
-            setRequestBody('');
-            setPrivacyRevision((current) => current + 1);
-          });
-        }}>
-          <label className="block font-medium" htmlFor="dm-request-body">Request a conversation with {requestTarget.name}</label>
-          <textarea id="dm-request-body" className="min-h-20 w-full rounded-lg border bg-background p-2" value={requestBody} maxLength={500} required onChange={(event) => setRequestBody(event.target.value)} placeholder="Write a short first message" />
-          <div className="flex gap-2"><Button size="sm" disabled={busy || !requestBody.trim()} type="submit">Send request</Button><Button size="sm" variant="ghost" type="button" onClick={() => setRequestTarget(null)}>Cancel</Button></div>
+        <form
+          className="space-y-2 rounded-xl border p-3 text-xs"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void action(async () => {
+              await api('/dm-requests', {
+                user_id: requestTarget.id,
+                body: requestBody,
+              });
+              setStatus(`Message request sent to ${requestTarget.name}.`);
+              setRequestTarget(null);
+              setRequestBody('');
+              setPrivacyRevision((current) => current + 1);
+            });
+          }}
+        >
+          <label className="block font-medium" htmlFor="dm-request-body">
+            Request a conversation with {requestTarget.name}
+          </label>
+          <textarea
+            id="dm-request-body"
+            className="min-h-20 w-full rounded-lg border bg-background p-2"
+            value={requestBody}
+            maxLength={500}
+            required
+            onChange={(event) => setRequestBody(event.target.value)}
+            placeholder="Write a short first message"
+          />
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              disabled={busy || !requestBody.trim()}
+              type="submit"
+            >
+              Send request
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              type="button"
+              onClick={() => setRequestTarget(null)}
+            >
+              Cancel
+            </Button>
+          </div>
         </form>
       )}
       <details className="text-xs text-muted-foreground">
@@ -264,11 +385,7 @@ export default function FriendsPanel({
               aria-label={incoming ? 'Decline request' : 'Cancel request'}
               onClick={() =>
                 action(async () => {
-                  await api(
-                    `/friends/requests/${r.id}/decline`,
-                    {},
-                    'POST',
-                  );
+                  await api(`/friends/requests/${r.id}/decline`, {}, 'POST');
                 })
               }
             >
@@ -299,7 +416,13 @@ export default function FriendsPanel({
           key={f.id}
         >
           <div className="min-w-0 flex-1 phone:basis-full">
-            <PersonIdentity user={f} status={contactStatuses[f.id] ?? contactStatus(undefined, Boolean(onlineUsers[f.id]))} />
+            <PersonIdentity
+              user={f}
+              status={
+                contactStatuses[f.id] ??
+                contactStatus(undefined, Boolean(onlineUsers[f.id]))
+              }
+            />
             <small className="mt-1 block [overflow-wrap:anywhere] text-[0.7rem] text-muted-foreground">
               {(() => {
                 const state = Object.values(callPresence)
@@ -307,7 +430,10 @@ export default function FriendsPanel({
                   .find((person) => person.user_id === f.id);
                 return state
                   ? `In a shared call${state.deafened ? ' · Deafened' : state.muted ? ' · Muted' : ''}`
-                  : presenceLabels[contactStatuses[f.id] ?? contactStatus(undefined, Boolean(onlineUsers[f.id]))];
+                  : presenceLabels[
+                      contactStatuses[f.id] ??
+                        contactStatus(undefined, Boolean(onlineUsers[f.id]))
+                    ];
               })()}
             </small>
           </div>
@@ -329,32 +455,49 @@ export default function FriendsPanel({
           >
             Message
           </Button>
-          <Button size="icon" variant="ghost" disabled={busy} aria-label={`Block ${f.name}`} onClick={() =>
-            action(async () => {
-              await api(`/privacy/blocks/${f.id}`, {}, 'POST');
-              setPrivacyRevision((current) => current + 1);
-            })
-          }><Ban size={14} /></Button>
-          {room?.owner_id === user.id && (room.kind ?? 'channel') === 'channel' && (
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={busy}
-              onClick={() =>
-                action(async () => {
-                  await api('/rooms/' + room.id + '/members', {
-                    user_id: f.id,
-                  });
-                  setStatus(`${f.name} can now join ${room.name}.`);
-                })
-              }
-            >
-              Invite to room
-            </Button>
-          )}
+          <Button
+            size="icon"
+            variant="ghost"
+            disabled={busy}
+            aria-label={`Block ${f.name}`}
+            onClick={() =>
+              action(async () => {
+                await api(`/privacy/blocks/${f.id}`, {}, 'POST');
+                setPrivacyRevision((current) => current + 1);
+              })
+            }
+          >
+            <Ban size={14} />
+          </Button>
+          {room &&
+            (room.permissions?.manage_members ?? room.owner_id === user.id) &&
+            (room.kind ?? 'channel') === 'channel' && (
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={busy}
+                onClick={() =>
+                  action(async () => {
+                    await api('/rooms/' + room.id + '/members', {
+                      user_id: f.id,
+                    });
+                    setStatus(
+                      `${f.name} can now join ${room.community_name ?? room.name} and its channels.`,
+                    );
+                  })
+                }
+              >
+                Invite to room
+              </Button>
+            )}
         </div>
       ))}
-      <PrivacyPanel key={`${user.id}:${refreshRevision}:${privacyRevision}`} userId={user.id} onOpenRoom={onOpenRoom} onError={onError} />
+      <PrivacyPanel
+        key={`${user.id}:${refreshRevision}:${privacyRevision}`}
+        userId={user.id}
+        onOpenRoom={onOpenRoom}
+        onError={onError}
+      />
     </div>
   );
 }

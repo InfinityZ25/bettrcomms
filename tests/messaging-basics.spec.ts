@@ -364,9 +364,8 @@ test('room chat works without joining a call and opens distant search hits safel
     await page
       .getByRole('button', { name: 'Messaging channel', exact: true })
       .click();
-    await page
-      .getByRole('button', { name: 'Toggle room messages', exact: true })
-      .click();
+    await expect(page.getByRole('textbox', { name: 'Message Messaging channel', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Join voice', exact: true })).toBeEnabled();
     await expect(
       page.getByRole('button', { name: 'Leave call', exact: true }),
     ).toHaveCount(0);

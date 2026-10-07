@@ -75,6 +75,13 @@ func (s *PostgresStore) RevokeDeviceSessions(ctx context.Context, user, id strin
 }
 
 func (s *PostgresStore) TransferRoomOwner(ctx context.Context, room, actor, target string) error {
+	var parent *string
+	if err := s.DB.QueryRow(ctx, `SELECT community_id::text FROM rooms WHERE id=$1`, room).Scan(&parent); err != nil {
+		return norm(err)
+	}
+	if parent != nil {
+		return s.TransferCommunityOwner(ctx, *parent, actor, target)
+	}
 	tx, err := s.DB.Begin(ctx)
 	if err != nil {
 		return err
@@ -115,7 +122,7 @@ func (s *PostgresStore) DeleteAccount(ctx context.Context, user string) ([]strin
 		return nil, norm(err)
 	}
 	var owns bool
-	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM rooms WHERE owner_id=$1 AND kind='channel')`, user).Scan(&owns); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM communities WHERE owner_id=$1)`, user).Scan(&owns); err != nil {
 		return nil, err
 	}
 	if owns {
@@ -176,6 +183,8 @@ func (s *PostgresStore) DeleteAccount(ctx context.Context, user string) ([]strin
 		`DELETE FROM user_blocks WHERE blocker_id=$1 OR blocked_id=$1`,
 		`DELETE FROM room_bans WHERE user_id=$1`,
 		`DELETE FROM message_reports WHERE reporter_id=$1`,
+		`DELETE FROM community_members WHERE user_id=$1`,
+		`DELETE FROM community_bans WHERE user_id=$1`,
 		`DELETE FROM room_members WHERE user_id=$1`,
 		// Direct-room ownership is bookkeeping; it conveys no moderation privileges.
 		`UPDATE rooms r SET owner_id=(SELECT rm.user_id FROM room_members rm WHERE rm.room_id=r.id ORDER BY rm.joined_at,rm.user_id LIMIT 1) WHERE r.owner_id=$1 AND r.kind='direct' AND EXISTS(SELECT 1 FROM room_members WHERE room_id=r.id)`,

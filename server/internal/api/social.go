@@ -160,9 +160,15 @@ func (a *API) invite(w http.ResponseWriter, r *http.Request, u User, p []string)
 	if len(p) == 3 && p[2] == "join" && r.Method == http.MethodPost {
 		room, added, err := store.RedeemInvite(p[1], u.ID)
 		if err == nil {
-			a.Realtime.subscribeUser(room.ID, u.ID)
-			if added {
-				a.Realtime.publishRoom(room.ID, wire{Type: "rooms.changed"})
+			if pg, ok := a.Store.(*PostgresStore); ok && room.CommunityID != nil {
+				if community, lookupErr := pg.CommunityForMember(*room.CommunityID, u.ID); lookupErr == nil {
+					a.communityMembershipChanged(community, u.ID, true)
+				}
+			} else {
+				a.Realtime.subscribeUser(room.ID, u.ID)
+				if added {
+					a.Realtime.publishRoom(room.ID, wire{Type: "rooms.changed"})
+				}
 			}
 		}
 		a.socialResult(w, map[string]any{"room": room}, err, 200)

@@ -1,7 +1,7 @@
 import {
   createContext,
   useContext,
-  useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -9,10 +9,12 @@ import type { CallParticipant, Room, User } from '@/api';
 import { useCallSession } from './useCallSession';
 import { RemoteAudio } from './PeerAudio';
 import { CopilotNativeOverlay } from './CopilotNativeOverlay';
+import { useMountEffect } from '@/hooks/useMountEffect';
 import {
   EMPTY_CALL_PRESENCE,
   type CallPresence,
   type NativeShareActions,
+  type JoinMode,
 } from './callTypes';
 
 /**
@@ -21,7 +23,9 @@ import {
  * `room` is what the call screen renders. It is the room the call was joined
  * in for as long as the call is live, and the browsed room otherwise.
  */
-export type CallSession = ReturnType<typeof useCallSession> & {
+export type CallSession = Omit<ReturnType<typeof useCallSession>, 'join'> & {
+  /** An explicit join targets the browsed room unless another target is supplied. */
+  join: (mode?: JoinMode, target?: Room | null) => Promise<boolean>;
   /** The room the live call belongs to. Null when no call is live. */
   callRoom: Room | null;
   room: Room | null;
@@ -39,6 +43,24 @@ export type CallChrome = {
 };
 
 const CallSessionContext = createContext<CallSession | null>(null);
+
+function CallIdentityScope({ onLeave }: { onLeave: () => void }) {
+  useMountEffect(() => () => onLeave());
+  return null;
+}
+
+function CallChromeReporter({
+  chrome,
+  onChange,
+}: {
+  chrome: CallChrome;
+  onChange?: (chrome: CallChrome) => void;
+}) {
+  useMountEffect(() => {
+    onChange?.(chrome);
+  });
+  return null;
+}
 
 /**
  * Reads the call the app is currently in.
@@ -103,35 +125,58 @@ export function CallSessionProvider({
     callPresence,
     onError,
     onRequestShare,
+    onRoomChange: (next) => {
+      setCallRoom(next);
+      setAudibleShareIds([]);
+    },
   });
   const { joined } = session;
-
-  // Joining pins the call to the room it started in; leaving releases it. The
-  // pin is what keeps `room` from following the sidebar mid-call, which is what
-  // would otherwise tear the session down.
-  useEffect(() => {
-    setCallRoom((current) => (joined ? (current ?? browsingRoom) : null));
-    if (!joined) setAudibleShareIds([]);
-  }, [joined]);
-
-  useEffect(() => {
-    onCallChange?.({
-      joined,
-      room: joined ? room : null,
-      recording: session.recording,
-    });
-  }, [joined, room, session.recording, onCallChange]);
+  const latestSession = useRef(session);
+  latestSession.current = session;
+  const join = (
+    mode: JoinMode = 'replace',
+    target: Room | null = browsingRoom,
+  ) => session.join(mode, target);
 
   return (
     <CallSessionContext.Provider
-      value={{ ...session, callRoom, room, callPresence, presenceKnown, setAudibleShareIds }}
+      value={{
+        ...session,
+        join,
+        callRoom,
+        room,
+        callPresence,
+        presenceKnown,
+        setAudibleShareIds,
+      }}
     >
-      {session.joined && session.engine && <CopilotNativeOverlay copilot={session.engine.copilot} names={session.names} />}
+      <CallIdentityScope
+        key={user?.id ?? 'signed-out'}
+        onLeave={() => latestSession.current.leave()}
+      />
+      <CallChromeReporter
+        key={`${joined}:${joined ? (room?.id ?? '') : ''}:${session.recording}`}
+        chrome={{
+          joined,
+          room: joined ? room : null,
+          recording: session.recording,
+        }}
+        onChange={onCallChange}
+      />
+      {session.joined && session.engine && (
+        <CopilotNativeOverlay
+          copilot={session.engine.copilot}
+          names={session.names}
+        />
+      )}
       {session.remote
-        .filter((track) => track.track.kind === 'audio' && (
-          track.source === 'microphone' ||
-          (track.source === 'system' && audibleShareIds.includes(track.peerId))
-        ))
+        .filter(
+          (track) =>
+            track.track.kind === 'audio' &&
+            (track.source === 'microphone' ||
+              (track.source === 'system' &&
+                audibleShareIds.includes(track.peerId))),
+        )
         .map((track) => (
           <RemoteAudio
             key={track.peerId + track.source + track.track.id}

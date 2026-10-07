@@ -17,15 +17,33 @@ type User struct {
 	CreatedAt      time.Time     `json:"created_at"`
 }
 type Room struct {
-	SlowModeSeconds int       `json:"slow_mode_seconds"`
-	ID              string    `json:"id"`
-	Name            string    `json:"name"`
-	DisplayName     *string   `json:"display_name,omitempty"`
-	OwnerID         string    `json:"owner_id"`
-	Role            string    `json:"role"`
-	Kind            string    `json:"kind"`
-	CreatedAt       time.Time `json:"created_at"`
-	ActivityAt      time.Time `json:"activity_at"`
+	CommunityID     *string         `json:"community_id,omitempty"`
+	CommunityName   *string         `json:"community_name,omitempty"`
+	ChannelType     string          `json:"channel_type,omitempty"`
+	Topic           string          `json:"topic"`
+	Position        int             `json:"position"`
+	Permissions     RoomPermissions `json:"permissions"`
+	SlowModeSeconds int             `json:"slow_mode_seconds"`
+	ID              string          `json:"id"`
+	Name            string          `json:"name"`
+	DisplayName     *string         `json:"display_name,omitempty"`
+	OwnerID         string          `json:"owner_id"`
+	Role            string          `json:"role"`
+	Kind            string          `json:"kind"`
+	CreatedAt       time.Time       `json:"created_at"`
+	ActivityAt      time.Time       `json:"activity_at"`
+}
+
+type RoomPermissions struct {
+	ManageCommunity bool `json:"manage_community"`
+	ManageChannels  bool `json:"manage_channels"`
+	ManageMembers   bool `json:"manage_members"`
+	ManageRoles     bool `json:"manage_roles"`
+	Moderate        bool `json:"moderate"`
+	ManageInvites   bool `json:"manage_invites"`
+	PinMessages     bool `json:"pin_messages"`
+	Post            bool `json:"post"`
+	JoinVoice       bool `json:"join_voice"`
 }
 type Message struct {
 	ID                string              `json:"id"`

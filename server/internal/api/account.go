@@ -124,8 +124,13 @@ func (a *API) transferOwner(w http.ResponseWriter, r *http.Request, u User, room
 	}
 	err := store.TransferRoomOwner(r.Context(), room, u.ID, strings.ToLower(in.UserID))
 	if err == nil {
-		a.Realtime.publishRoom(room, wire{Type: "rooms.changed"})
-		a.moderationChanged(room)
+		if info, lookupErr := store.RoomForMember(room, u.ID); lookupErr == nil && info.CommunityID != nil {
+			if community, lookupErr := store.CommunityForMember(*info.CommunityID, u.ID); lookupErr == nil {
+				a.communityChanged(community)
+			}
+		} else {
+			a.moderationChanged(room)
+		}
 	}
 	a.result(w, map[string]bool{"ok": true}, err)
 }

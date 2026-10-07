@@ -12,8 +12,15 @@ import {
 import { api, type Room, type User } from '@/api';
 import { CallMicrophone } from '@/media/pushToTalk';
 import { allowDesktopCapture } from '@/media/permissions';
-import { cameraCaptureConstraints, captureCameraWithFallback, readCameraSettings } from '@/media/cameraSettings';
-import { META_GLASSES_CAMERA_ID, startMetaGlassesCamera } from '@/media/metaGlassesCamera';
+import {
+  cameraCaptureConstraints,
+  captureCameraWithFallback,
+  readCameraSettings,
+} from '@/media/cameraSettings';
+import {
+  META_GLASSES_CAMERA_ID,
+  startMetaGlassesCamera,
+} from '@/media/metaGlassesCamera';
 import { hasIOSBroadcast } from '@/media/iosBroadcast';
 import { microphoneCaptureOptions } from '@/media/processingSettings';
 import { readRecordingQuality } from '@/media/recordingQuality';
@@ -48,11 +55,15 @@ const ICE_LIFETIME_MS = 10 * 60_000;
 type PeerFlags = { muted: boolean; deafened: boolean };
 type RecordingMetadata = { title: string; labels: Record<string, string> };
 
-const captureOptions = () => microphoneCaptureOptions(readStored('bc-input') ?? '');
+const captureOptions = () =>
+  microphoneCaptureOptions(readStored('bc-input') ?? '');
 const cameraConstraints = () =>
   cameraCaptureConstraints(readStored('bc-camera') ?? '', readCameraSettings());
 
-async function captureSelectedCamera(media: MediaEngine, deviceId: string): Promise<void> {
+async function captureSelectedCamera(
+  media: MediaEngine,
+  deviceId: string,
+): Promise<void> {
   if (deviceId === META_GLASSES_CAMERA_ID) {
     const glasses = await startMetaGlassesCamera();
     try {
@@ -82,6 +93,7 @@ export function useCallSession({
   callPresence,
   onError,
   onRequestShare,
+  onRoomChange,
 }: {
   user: User | null;
   room: Room | null;
@@ -89,10 +101,13 @@ export function useCallSession({
   callPresence: CallPresence[];
   onError: (message: string) => void;
   onRequestShare: (actions: NativeShareActions) => void;
+  onRoomChange?: (room: Room | null) => void;
 }) {
   const [joined, setJoined] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [locals, setLocals] = useState<Map<MediaSourceKind, MediaStreamTrack>>(new Map());
+  const [locals, setLocals] = useState<Map<MediaSourceKind, MediaStreamTrack>>(
+    new Map(),
+  );
   const [remote, setRemote] = useState<RemoteTrack[]>([]);
   const [peers, setPeers] = useState<Record<string, string>>({});
   const [names, setNames] = useState<Record<string, string>>({});
@@ -109,8 +124,12 @@ export function useCallSession({
   const [stats, setStats] = useState<PeerMediaStats[]>([]);
   const serverRtt = useRef<number | null>(null);
   const [audioBlocked, setAudioBlocked] = useState(false);
-  const [remotePresence, setRemotePresence] = useState<Record<string, PeerFlags>>({});
-  const [remoteRecording, setRemoteRecording] = useState<Record<string, boolean>>({});
+  const [remotePresence, setRemotePresence] = useState<
+    Record<string, PeerFlags>
+  >({});
+  const [remoteRecording, setRemoteRecording] = useState<
+    Record<string, boolean>
+  >({});
   /** Signaling is retrying. Media continues; setup and membership pause. */
   const [signalingDown, setSignalingDown] = useState(false);
 
@@ -119,6 +138,13 @@ export function useCallSession({
   const recorder = useRef<TrackRecordingSession | null>(null);
   const shareRequest = useRef(0);
   const active = useRef(true);
+  const busyRef = useRef(false);
+  const actionGeneration = useRef(0);
+  const joinGeneration = useRef(0);
+  const sessionAbort = useRef<AbortController | null>(null);
+  const joinedRoom = useRef<Room | null>(null);
+  const reportRoom = useRef(onRoomChange);
+  reportRoom.current = onRoomChange;
   const recordedTracks = useRef(new Set<string>());
   const recordingMetadata = useRef<RecordingMetadata>({
     title: 'Call recording',
@@ -126,7 +152,11 @@ export function useCallSession({
   });
 
   const [callMicrophone] = useState(
-    () => new CallMicrophone((enabled) => engine.current?.setMicrophoneEnabled(enabled), setCallPlaybackDeafened),
+    () =>
+      new CallMicrophone(
+        (enabled) => engine.current?.setMicrophoneEnabled(enabled),
+        setCallPlaybackDeafened,
+      ),
   );
   const microphoneState = useSyncExternalStore(
     callMicrophone.subscribe,
@@ -138,7 +168,9 @@ export function useCallSession({
   /** A peer is audible once its connection is up or its voice is being relayed. */
   const isConnected = (id: string) =>
     peers[id] === 'connected' ||
-    stats.some((peer) => peer.peerId === id && peer.voiceRelay?.state === 'relayed');
+    stats.some(
+      (peer) => peer.peerId === id && peer.voiceRelay?.state === 'relayed',
+    );
 
   const speaking = useSpeakingActivity(
     [
@@ -146,23 +178,36 @@ export function useCallSession({
         ? [{ id: 'self', track: locals.get('microphone')! }]
         : []),
       ...remote
-        .filter((track) => track.source === 'microphone' && isConnected(track.peerId))
+        .filter(
+          (track) => track.source === 'microphone' && isConnected(track.peerId),
+        )
         .map((track) => ({ id: track.peerId, track: track.track })),
     ],
     joined,
   );
 
-  async function perform(task: () => Promise<void>) {
-    if (busy) return;
+  async function perform(task: () => Promise<void>): Promise<boolean> {
+    if (busyRef.current) return false;
+    const generation = ++actionGeneration.current;
+    busyRef.current = true;
     setBusy(true);
     try {
       await task();
+      return true;
     } catch (error) {
       // Tearing the call down mid-operation is not something to report.
-      if (!(error instanceof MediaEngineDisposedError))
+      if (
+        active.current &&
+        !(error instanceof MediaEngineDisposedError) &&
+        !(error instanceof DOMException && error.name === 'AbortError')
+      )
         onError(errorMessage(error));
+      return false;
     } finally {
-      if (active.current) setBusy(false);
+      if (generation === actionGeneration.current) {
+        busyRef.current = false;
+        if (active.current) setBusy(false);
+      }
     }
   }
 
@@ -217,6 +262,13 @@ export function useCallSession({
   };
 
   const leave = () => {
+    joinGeneration.current++;
+    sessionAbort.current?.abort();
+    sessionAbort.current = null;
+    actionGeneration.current++;
+    busyRef.current = false;
+    setBusy(false);
+    shareRequest.current++;
     callMicrophone.stop();
     void stopIOSCallAudio().catch(() => {});
     disposeCallPlayback();
@@ -230,6 +282,8 @@ export function useCallSession({
     socket.current = null;
     engine.current?.dispose();
     engine.current = null;
+    joinedRoom.current = null;
+    reportRoom.current?.(null);
     setJoined(false);
     setSignalingDown(false);
     serverRtt.current = null;
@@ -237,6 +291,7 @@ export function useCallSession({
     setLocals(new Map());
     setRemote([]);
     setPeers({});
+    setNames({});
     setRemoteRecording({});
     setRemotePresence({});
     setCallPlaybackDeafened(false);
@@ -249,6 +304,9 @@ export function useCallSession({
     return () => {
       window.removeEventListener('bc-audio-blocked', blocked);
       active.current = false;
+      joinGeneration.current++;
+      sessionAbort.current?.abort();
+      sessionAbort.current = null;
       socket.current?.close();
       engine.current?.dispose();
       void stopIOSCallAudio().catch(() => {});
@@ -261,16 +319,6 @@ export function useCallSession({
       recorder.current = null;
     };
   }, []);
-
-  // Signing in or out ends the call rather than carrying it across identities.
-  //
-  // A room change only reaches here when no call is live: CallSessionProvider
-  // pins `room` to the room the call was joined in, so browsing elsewhere never
-  // changes it mid-call. The guard keeps the release of that pin on hang-up — and
-  // the first run on mount — from repeating a teardown that already ran.
-  useEffect(() => {
-    if (joined || engine.current || socket.current || recorder.current) leave();
-  }, [room?.id, user?.id]);
 
   // Presence arriving over the app-wide stream seeds the roster, but once the
   // call is live its own signaling is authoritative for peers it already knows.
@@ -291,7 +339,8 @@ export function useCallSession({
   }, [callPresence, joined]);
 
   useEffect(() => {
-    if (recorder.current) Object.assign(recordingMetadata.current.labels, names);
+    if (recorder.current)
+      Object.assign(recordingMetadata.current.labels, names);
   }, [names]);
 
   useEffect(() => {
@@ -338,7 +387,10 @@ export function useCallSession({
         if (live)
           setNames((current) => ({
             ...Object.fromEntries(
-              response.members.map((member) => [member.user.id, member.user.name]),
+              response.members.map((member) => [
+                member.user.id,
+                member.user.name,
+              ]),
             ),
             ...current,
           }));
@@ -381,7 +433,9 @@ export function useCallSession({
           console.warn('Could not renew relay credentials', error);
           if (!warned && Date.now() - renewedAt >= ICE_LIFETIME_MS) {
             warned = true;
-            reportIceError.current('Could not renew relay access. If your connection drops, rejoin the call.');
+            reportIceError.current(
+              'Could not renew relay access. If your connection drops, rejoin the call.',
+            );
           }
           timer = setTimeout(renew, ICE_RETRY_MS);
         });
@@ -401,9 +455,14 @@ export function useCallSession({
       const current = engine.current;
       if (!current || pending) return;
       pending = true;
-      Promise.all(Object.keys(peers).map((id) => current.getStats(id).catch(() => null)))
+      Promise.all(
+        Object.keys(peers).map((id) => current.getStats(id).catch(() => null)),
+      )
         .then((results) => {
-          if (live) setStats(results.filter((peer): peer is PeerMediaStats => peer !== null));
+          if (live)
+            setStats(
+              results.filter((peer): peer is PeerMediaStats => peer !== null),
+            );
         })
         .finally(() => {
           pending = false;
@@ -422,7 +481,10 @@ export function useCallSession({
     const update = async () => {
       if (!engine.current) return;
       try {
-        await engine.current.captureUserMedia({ camera: false, ...captureOptions() });
+        await engine.current.captureUserMedia({
+          camera: false,
+          ...captureOptions(),
+        });
       } catch (error) {
         onError(errorMessage(error));
       }
@@ -438,7 +500,9 @@ export function useCallSession({
 
   useEffect(() => {
     const handler = () => {
-      engine.current?.setQuality(readQuality()).catch((error) => onError(error.message));
+      engine.current
+        ?.setQuality(readQuality())
+        .catch((error) => onError(error.message));
     };
     window.addEventListener('bc-quality', handler);
     return () => window.removeEventListener('bc-quality', handler);
@@ -453,8 +517,11 @@ export function useCallSession({
       try {
         await current.captureUserMedia({
           ...captureOptions(),
-          camera: current.getLocalTracks().has('camera') &&
-            readStored('bc-camera') !== META_GLASSES_CAMERA_ID ? cameraConstraints() : false,
+          camera:
+            current.getLocalTracks().has('camera') &&
+            readStored('bc-camera') !== META_GLASSES_CAMERA_ID
+              ? cameraConstraints()
+              : false,
         });
       } catch (error) {
         onError(errorMessage(error));
@@ -493,174 +560,343 @@ export function useCallSession({
     };
   }, [onError]);
 
-  async function join(joinMode: JoinMode = 'replace') {
+  async function join(
+    joinMode: JoinMode = 'replace',
+    targetRoom: Room | null = room,
+  ): Promise<boolean> {
     if (!user) {
       location.assign('/api/v1/auth/login');
-      return;
+      return false;
     }
-    if (!room) {
+    if (!targetRoom) {
       onError('Create a room before joining a call.');
-      return;
+      return false;
     }
-    prepareCallPlayback();
-    await perform(async () => {
-      await allowDesktopCapture('microphone');
-      const config = await api<{ ice_servers: RTCIceServer[] }>('/ice').catch(() =>
-        api<{ ice_servers: RTCIceServer[] }>('/config'),
+    if (
+      targetRoom.channel_type === 'announcement' ||
+      targetRoom.can_join_voice === false ||
+      targetRoom.permissions?.join_voice === false
+    ) {
+      onError(
+        targetRoom.channel_type === 'announcement'
+          ? 'Announcement channels have text only. Choose a text and voice channel to join voice.'
+          : 'Your room role does not allow joining voice in this channel.',
       );
+      return false;
+    }
+    if (busyRef.current) return false;
+    if (engine.current && joinedRoom.current?.id === targetRoom.id) return true;
+    // Browsing never changes the live engine. An explicit join into another
+    // channel ends the old call and its captures before opening the new one.
+    if (engine.current || socket.current || recorder.current) leave();
+    prepareCallPlayback();
+    let attemptController: AbortController | null = null;
+    const success = await perform(async () => {
+      const generation = ++joinGeneration.current;
+      const controller = new AbortController();
+      attemptController = controller;
+      sessionAbort.current = controller;
+      const assertCurrent = () => {
+        if (
+          !active.current ||
+          controller.signal.aborted ||
+          generation !== joinGeneration.current
+        )
+          throw new DOMException('Call join cancelled', 'AbortError');
+      };
+      // Re-read current membership and role before asking for a microphone.
+      // The WebSocket still independently authorizes actual voice admission.
+      const { room: freshRoom } = await api<{ room: Room }>(
+        `/rooms/${targetRoom.id}`,
+        undefined,
+        undefined,
+        controller.signal,
+      );
+      assertCurrent();
+      if (
+        freshRoom.channel_type === 'announcement' ||
+        freshRoom.can_join_voice === false ||
+        freshRoom.permissions?.join_voice === false
+      )
+        throw new Error(
+          freshRoom.channel_type === 'announcement'
+            ? 'This channel is now an announcement channel and has no voice call.'
+            : 'Your room role no longer allows joining voice in this channel.',
+        );
+      await allowDesktopCapture('microphone');
+      assertCurrent();
+      const config = await api<{ ice_servers: RTCIceServer[] }>(
+        '/ice',
+        undefined,
+        undefined,
+        controller.signal,
+      ).catch((error) => {
+        assertCurrent();
+        if (error instanceof DOMException && error.name === 'AbortError')
+          throw error;
+        return api<{ ice_servers: RTCIceServer[] }>(
+          '/config',
+          undefined,
+          undefined,
+          controller.signal,
+        );
+      });
+      assertCurrent();
       const peerId = createCallPeerId();
-      const query = new URLSearchParams({ peer_id: peerId, join_mode: joinMode });
+      const query = new URLSearchParams({
+        peer_id: peerId,
+        join_mode: joinMode,
+      });
       const connection = new RoomWebSocketSignaling(
         peerId,
-        `/api/v1/rooms/${room.id}/ws?${query}`,
+        `/api/v1/rooms/${targetRoom.id}/ws?${query}`,
       );
       const connectionMode = readConnectionMode();
       const media = new MediaEngine({
         signaling: connection,
         voiceRelay: {
-          url: `/api/v1/rooms/${room.id}/voice-relay?peer_id=${encodeURIComponent(peerId)}`,
-          mode: readStored('bc-voice-route') === 'relay' ? 'relay' : 'automatic',
+          url: `/api/v1/rooms/${targetRoom.id}/voice-relay?peer_id=${encodeURIComponent(peerId)}`,
+          mode:
+            readStored('bc-voice-route') === 'relay' ? 'relay' : 'automatic',
         },
         quality: readQuality(),
         ice: {
-          mode: connectionMode === 'automatic' ? 'direct-preferred' : connectionMode,
+          mode:
+            connectionMode === 'automatic'
+              ? 'direct-preferred'
+              : connectionMode,
           iceServers: config.ice_servers,
         },
       });
       engine.current = media;
       callMicrophone.start();
       socket.current = connection;
+      const listenerOptions = { signal: controller.signal };
+      const ownsSession = () =>
+        active.current &&
+        engine.current === media &&
+        socket.current === connection;
 
-      connection.addEventListener('latency', (event) => {
-        if (socket.current === connection) serverRtt.current = event.detail.rttMs;
-      });
-      media.addEventListener('local-track', () => setLocals(new Map(media.getLocalTracks())));
-      media.addEventListener('remote-track', () => setRemote(media.getRemoteTracks()));
-      media.addEventListener('remote-track-removed', () => setRemote(media.getRemoteTracks()));
-      media.addEventListener('peer-state', (event) =>
-        setPeers((current) => ({ ...current, [event.detail.peerId]: event.detail.state })),
+      connection.addEventListener(
+        'latency',
+        (event) => {
+          if (socket.current === connection)
+            serverRtt.current = event.detail.rttMs;
+        },
+        listenerOptions,
       );
-      media.addEventListener('error', (event) =>
-        onError('Media: ' + errorMessage(event.detail.error)),
+      media.addEventListener(
+        'local-track',
+        () => setLocals(new Map(media.getLocalTracks())),
+        listenerOptions,
       );
-      media.addEventListener('denoiser-status', (event) => onError(event.detail.message));
+      media.addEventListener(
+        'remote-track',
+        () => setRemote(media.getRemoteTracks()),
+        listenerOptions,
+      );
+      media.addEventListener(
+        'remote-track-removed',
+        () => setRemote(media.getRemoteTracks()),
+        listenerOptions,
+      );
+      media.addEventListener(
+        'peer-state',
+        (event) =>
+          setPeers((current) => ({
+            ...current,
+            [event.detail.peerId]: event.detail.state,
+          })),
+        listenerOptions,
+      );
+      media.addEventListener(
+        'error',
+        (event) => onError('Media: ' + errorMessage(event.detail.error)),
+        listenerOptions,
+      );
+      media.addEventListener(
+        'denoiser-status',
+        (event) => onError(event.detail.message),
+        listenerOptions,
+      );
 
-      connection.addEventListener('peers', (event) => {
-        for (const id of event.detail.peerIds) {
+      connection.addEventListener(
+        'peers',
+        (event) => {
+          for (const id of event.detail.peerIds) {
+            media.addPeer(id);
+            setPeers((current) =>
+              current[id] === undefined
+                ? { ...current, [id]: 'connecting' }
+                : current,
+            );
+          }
+          setNames((current) => {
+            const next = { ...current };
+            for (const [id, identity] of Object.entries(
+              event.detail.identities,
+            ))
+              if (identity.name) next[id] = identity.name;
+            return next;
+          });
+        },
+        listenerOptions,
+      );
+      connection.addEventListener(
+        'signal',
+        (event) => {
+          void media.handleSignal(event.detail).catch((error) => {
+            if (ownsSession()) onError(error.message);
+          });
+        },
+        listenerOptions,
+      );
+      connection.addEventListener(
+        'peer-joined',
+        (event) => {
+          const { peerId: id, name } = event.detail;
           media.addPeer(id);
           setPeers((current) =>
-            current[id] === undefined ? { ...current, [id]: 'connecting' } : current,
+            current[id] === undefined
+              ? { ...current, [id]: 'connecting' }
+              : current,
           );
-        }
-        setNames((current) => {
-          const next = { ...current };
-          for (const [id, identity] of Object.entries(event.detail.identities))
-            if (identity.name) next[id] = identity.name;
-          return next;
-        });
-      });
-      connection.addEventListener('signal', (event) => {
-        void media.handleSignal(event.detail).catch((error) => onError(error.message));
-      });
-      connection.addEventListener('peer-joined', (event) => {
-        const { peerId: id, name } = event.detail;
-        media.addPeer(id);
-        setPeers((current) =>
-          current[id] === undefined ? { ...current, [id]: 'connecting' } : current,
-        );
-        if (name) setNames((current) => ({ ...current, [id]: name }));
-      });
-      connection.addEventListener('peer-left', (event) => {
-        const { peerId: id } = event.detail;
-        const without = <T,>(record: Record<string, T>) => {
-          const next = { ...record };
-          delete next[id];
-          return next;
-        };
-        setRemotePresence(without);
-        setRemoteRecording(without);
-        media.removePeer(id);
-        setPeers(without);
-      });
-      connection.addEventListener('presence', (event) => {
-        const payload = event.detail.payload as {
-          name?: string;
-          recording?: boolean;
-          muted?: boolean;
-          deafened?: boolean;
-          microphone?: boolean;
-        };
-        const id = event.detail.peerId;
-        setRemotePresence((current) => ({
-          ...current,
-          [id]: {
-            muted:
-              typeof payload?.muted === 'boolean'
-                ? payload.muted
-                : payload?.microphone === false,
-            deafened: Boolean(payload?.deafened),
-          },
-        }));
-        setRemoteRecording((current) => ({ ...current, [id]: Boolean(payload?.recording) }));
-        if (payload?.name) setNames((current) => ({ ...current, [id]: payload.name! }));
-      });
+          if (name) setNames((current) => ({ ...current, [id]: name }));
+        },
+        listenerOptions,
+      );
+      connection.addEventListener(
+        'peer-left',
+        (event) => {
+          const { peerId: id } = event.detail;
+          const without = <T>(record: Record<string, T>) => {
+            const next = { ...record };
+            delete next[id];
+            return next;
+          };
+          setRemotePresence(without);
+          setRemoteRecording(without);
+          media.removePeer(id);
+          setPeers(without);
+        },
+        listenerOptions,
+      );
+      connection.addEventListener(
+        'presence',
+        (event) => {
+          const payload = event.detail.payload as {
+            name?: string;
+            recording?: boolean;
+            muted?: boolean;
+            deafened?: boolean;
+            microphone?: boolean;
+          };
+          const id = event.detail.peerId;
+          setRemotePresence((current) => ({
+            ...current,
+            [id]: {
+              muted:
+                typeof payload?.muted === 'boolean'
+                  ? payload.muted
+                  : payload?.microphone === false,
+              deafened: Boolean(payload?.deafened),
+            },
+          }));
+          setRemoteRecording((current) => ({
+            ...current,
+            [id]: Boolean(payload?.recording),
+          }));
+          if (payload?.name)
+            setNames((current) => ({ ...current, [id]: payload.name! }));
+        },
+        listenerOptions,
+      );
 
       // Signaling carries setup and membership, not media. Established peer
       // connections keep flowing while the server restarts, so a dropped socket
       // is a degraded state, not the end of the call.
-      connection.addEventListener('disconnected', () => {
-        if (socket.current === connection) setSignalingDown(true);
-      });
-      connection.addEventListener('reconnected', () => {
-        if (socket.current !== connection) return;
-        setSignalingDown(false);
-        // A restarted server has no memory of this participant's presence, and
-        // peers it never saw join need connections. Both are re-announced by the
-        // server's snapshot; adding a peer we already hold is a no-op.
-        const input = callMicrophone.getSnapshot();
-        const tracks = media.getLocalTracks();
-        try {
-          connection.sendPresence({
-            camera: tracks.has('camera'),
-            microphone: !input.muted,
-            sharing: tracks.has('screen'),
-            recording: recorder.current !== null,
-            muted: input.muted,
-            deafened: input.deafened,
-            name: user.name,
-          });
-        } catch {
-          // The socket closed again before presence could be re-announced;
-          // the next reconnection repeats it.
-        }
-      });
-      connection.addEventListener('close', () => {
-        setSignalingDown(false);
-        if (engine.current !== media) return;
-        callMicrophone.stop();
-        void finishRecording();
-        media.dispose();
-        void stopIOSCallAudio().catch(() => {});
-        disposeCallPlayback();
-        engine.current = null;
-        setJoined(false);
-        setCallPlaybackDeafened(false);
-        serverRtt.current = null;
-        setStats([]);
-        setRemote([]);
-        setLocals(new Map());
-        setPeers({});
-        onError('Call disconnected. Join again to reconnect.');
-      });
+      connection.addEventListener(
+        'disconnected',
+        () => {
+          if (socket.current === connection) setSignalingDown(true);
+        },
+        listenerOptions,
+      );
+      connection.addEventListener(
+        'reconnected',
+        () => {
+          if (socket.current !== connection) return;
+          setSignalingDown(false);
+          // A restarted server has no memory of this participant's presence, and
+          // peers it never saw join need connections. Both are re-announced by the
+          // server's snapshot; adding a peer we already hold is a no-op.
+          const input = callMicrophone.getSnapshot();
+          const tracks = media.getLocalTracks();
+          try {
+            connection.sendPresence({
+              camera: tracks.has('camera'),
+              microphone: !input.muted,
+              sharing: tracks.has('screen'),
+              recording: recorder.current !== null,
+              muted: input.muted,
+              deafened: input.deafened,
+              name: user.name,
+            });
+          } catch {
+            // The socket closed again before presence could be re-announced;
+            // the next reconnection repeats it.
+          }
+        },
+        listenerOptions,
+      );
+      connection.addEventListener(
+        'close',
+        () => {
+          if (!ownsSession()) return;
+          const wasJoined = joinedRoom.current !== null;
+          joinGeneration.current++;
+          controller.abort();
+          if (sessionAbort.current === controller) sessionAbort.current = null;
+          setSignalingDown(false);
+          callMicrophone.stop();
+          void finishRecording();
+          media.dispose();
+          void stopIOSCallAudio().catch(() => {});
+          disposeCallPlayback();
+          engine.current = null;
+          socket.current = null;
+          joinedRoom.current = null;
+          reportRoom.current?.(null);
+          setJoined(false);
+          setCallPlaybackDeafened(false);
+          serverRtt.current = null;
+          setStats([]);
+          setRemote([]);
+          setLocals(new Map());
+          setPeers({});
+          setNames({});
+          setRemotePresence({});
+          setRemoteRecording({});
+          if (wasJoined) onError('Call disconnected. Join again to reconnect.');
+        },
+        listenerOptions,
+      );
 
       try {
         try {
           await startIOSCallAudio();
         } catch (error) {
-          onError(`iPhone background audio unavailable: ${errorMessage(error)}`);
+          onError(
+            `iPhone background audio unavailable: ${errorMessage(error)}`,
+          );
         }
+        assertCurrent();
         await media.captureUserMedia({ camera: false, ...captureOptions() });
+        assertCurrent();
         await connection.connect();
+        assertCurrent();
+        joinedRoom.current = freshRoom;
+        reportRoom.current?.(freshRoom);
         setJoined(true);
         const input = callMicrophone.getSnapshot();
         connection.sendPresence({
@@ -672,17 +908,37 @@ export function useCallSession({
           name: user.name,
         });
       } catch (error) {
-        callMicrophone.stop();
+        const owned = engine.current === media;
+        controller.abort();
         connection.close();
         media.dispose();
-        void stopIOSCallAudio().catch(() => {});
-        disposeCallPlayback();
-        engine.current = null;
-        socket.current = null;
+        if (owned) {
+          callMicrophone.stop();
+          void stopIOSCallAudio().catch(() => {});
+          disposeCallPlayback();
+          engine.current = null;
+          socket.current = null;
+          joinedRoom.current = null;
+          reportRoom.current?.(null);
+          setJoined(false);
+          setLocals(new Map());
+          setRemote([]);
+          setPeers({});
+        }
+        if (sessionAbort.current === controller) sessionAbort.current = null;
         throw error;
       }
     });
-    if (!engine.current) disposeCallPlayback();
+    if (!engine.current && sessionAbort.current === attemptController) {
+      sessionAbort.current?.abort();
+      sessionAbort.current = null;
+      disposeCallPlayback();
+    } else if (!engine.current && !sessionAbort.current) disposeCallPlayback();
+    return (
+      success &&
+      engine.current !== null &&
+      joinedRoom.current?.id === targetRoom.id
+    );
   }
 
   async function toggleScreen() {
@@ -723,7 +979,8 @@ export function useCallSession({
       onBrowser: async () => {
         await originating.captureScreen(
           { systemAudio: true },
-          () => request === shareRequest.current && originating === engine.current,
+          () =>
+            request === shareRequest.current && originating === engine.current,
         );
       },
       onClose: () => {
@@ -740,9 +997,13 @@ export function useCallSession({
         onError('Join the call to turn on your camera.');
         return;
       }
-      if (locals.has('camera')) await engine.current.setLocalTrack('camera', null);
+      if (locals.has('camera'))
+        await engine.current.setLocalTrack('camera', null);
       else {
-        await captureSelectedCamera(engine.current, readStored('bc-camera') ?? '');
+        await captureSelectedCamera(
+          engine.current,
+          readStored('bc-camera') ?? '',
+        );
       }
     });
   }
@@ -756,11 +1017,13 @@ export function useCallSession({
       }
       const cameraTrack = current.getLocalTracks().get('camera');
       // Choosing a source while video is off must not start publishing it.
-      if (!cameraTrack || (deviceId && (
-        deviceId === META_GLASSES_CAMERA_ID
-          ? readStored('bc-camera') === deviceId
-          : cameraTrack.getSettings().deviceId === deviceId
-      ))) {
+      if (
+        !cameraTrack ||
+        (deviceId &&
+          (deviceId === META_GLASSES_CAMERA_ID
+            ? readStored('bc-camera') === deviceId
+            : cameraTrack.getSettings().deviceId === deviceId))
+      ) {
         writeStored('bc-camera', deviceId);
         window.dispatchEvent(new Event('bc-camera-selected'));
         return;
@@ -771,9 +1034,13 @@ export function useCallSession({
         // The selected device may belong to another app, or the browser may
         // reject opening a second camera. We cannot distinguish those cases;
         // keep the working feed and make the workaround conditional.
-        if (error instanceof DOMException &&
-            ['NotReadableError', 'AbortError'].includes(error.name)) {
-          throw new Error('Could not open that camera; it may be busy or unavailable. Your current video is still live. If your browser limits cameras, turn video off, select it, then turn video on.');
+        if (
+          error instanceof DOMException &&
+          ['NotReadableError', 'AbortError'].includes(error.name)
+        ) {
+          throw new Error(
+            'Could not open that camera; it may be busy or unavailable. Your current video is still live. If your browser limits cameras, turn video off, select it, then turn video on.',
+          );
         }
         throw error;
       }

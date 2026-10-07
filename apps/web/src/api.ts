@@ -3,7 +3,10 @@ import {
   apiCredentials,
   apiHttpUrl,
 } from '@/desktop/apiTransport';
-import { sessionExpired, sessionGeneration } from '@/features/auth/sessionEvents';
+import {
+  sessionExpired,
+  sessionGeneration,
+} from '@/features/auth/sessionEvents';
 
 export interface CustomStatus {
   text: string;
@@ -26,6 +29,19 @@ export interface User extends PublicUser {
   /** Desired account status; the API only includes this on your own profile. */
   presence_status?: 'online' | 'idle' | 'dnd' | 'invisible';
 }
+export type CommunityRole = 'owner' | 'admin' | 'moderator' | 'member';
+export type ChannelType = 'hybrid' | 'announcement';
+export interface RoomPermissions {
+  manage_channels: boolean;
+  manage_members: boolean;
+  manage_roles: boolean;
+  moderate: boolean;
+  post: boolean;
+  join_voice: boolean;
+  manage_community: boolean;
+  manage_invites: boolean;
+  pin_messages: boolean;
+}
 export interface Room {
   slow_mode_seconds?: number;
   id: string;
@@ -36,6 +52,29 @@ export interface Room {
   role?: string;
   display_name?: string;
   activity_at?: string;
+  community_id?: string;
+  community_name?: string;
+  channel_type?: ChannelType;
+  topic?: string;
+  position?: number;
+  can_post?: boolean;
+  can_join_voice?: boolean;
+  permissions?: RoomPermissions;
+}
+export interface Community {
+  id: string;
+  name: string;
+  description: string;
+  owner_id: string;
+  role: CommunityRole;
+  created_at: string;
+  updated_at: string;
+  channels: Room[];
+}
+export interface RoomMember {
+  user: PublicUser;
+  role: CommunityRole;
+  restricted_until?: string;
 }
 export interface MessageAttachment {
   id: string;

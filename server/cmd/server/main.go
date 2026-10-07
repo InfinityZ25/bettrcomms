@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -36,6 +37,14 @@ func main() {
 		log.Fatal(e)
 	}
 	cfg := api.Config{AppURL: get("APP_URL", "http://localhost:5173"), WorkOSClientID: os.Getenv("WORKOS_CLIENT_ID"), WorkOSAPIKey: os.Getenv("WORKOS_API_KEY"), WorkOSRedirectURI: get("WORKOS_REDIRECT_URI", "http://localhost:5173/api/v1/auth/callback"), DevAuth: get("DEV_AUTH", "false") == "true", ICEURLs: split(get("ICE_URLS", "stun:stun.l.google.com:19302")), TURNURLs: split(os.Getenv("TURN_URLS")), TURNSecret: os.Getenv("TURN_SECRET"), WebDist: os.Getenv("WEB_DIST"), SFUURL: os.Getenv("SFU_URL"), SFUJoinSecret: os.Getenv("SFU_JOIN_SECRET"), VAPIDPublicKey: os.Getenv("VAPID_PUBLIC_KEY"), VAPIDPrivateKey: os.Getenv("VAPID_PRIVATE_KEY"), VAPIDSubject: os.Getenv("VAPID_SUBJECT")}
+	cfg.AttachmentMaxBytes = api.DefaultAttachmentMaxBytes
+	if value := os.Getenv("ATTACHMENT_MAX_BYTES"); value != "" {
+		limit, parseErr := strconv.ParseInt(value, 10, 64)
+		if parseErr != nil || limit < 1<<20 || limit > api.MaximumAttachmentMaxBytes {
+			log.Fatal("ATTACHMENT_MAX_BYTES must be between 1048576 and 2147483648")
+		}
+		cfg.AttachmentMaxBytes = limit
+	}
 	if err := api.ValidVAPIDConfig(cfg.VAPIDPublicKey, cfg.VAPIDPrivateKey, cfg.VAPIDSubject); err != nil {
 		log.Fatal(err)
 	}

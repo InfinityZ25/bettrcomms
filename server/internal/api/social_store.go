@@ -127,6 +127,13 @@ func (s *PostgresStore) CreateGroup(owner, name string, invitees []string) (Room
 }
 
 func (s *PostgresStore) addMember(rid, owner, target string) error {
+	var parent *string
+	if err := s.DB.QueryRow(context.Background(), `SELECT community_id::text FROM rooms WHERE id=$1`, rid).Scan(&parent); err != nil {
+		return norm(err)
+	}
+	if parent != nil {
+		return s.AddCommunityMember(*parent, owner, target)
+	}
 	rid, owner, target = strings.ToLower(rid), strings.ToLower(owner), strings.ToLower(target)
 	if !uuidPattern.MatchString(target) || target == owner {
 		return ErrForbidden
@@ -257,6 +264,13 @@ func removeMemberTx(ctx context.Context, tx pgx.Tx, rid, actor, target string) e
 	return nil
 }
 func (s *PostgresStore) removeMember(rid, actor, target string) error {
+	var parent *string
+	if err := s.DB.QueryRow(context.Background(), `SELECT community_id::text FROM rooms WHERE id=$1`, rid).Scan(&parent); err != nil {
+		return norm(err)
+	}
+	if parent != nil {
+		return s.RemoveCommunityMember(*parent, actor, target)
+	}
 	rid, actor, target = strings.ToLower(rid), strings.ToLower(actor), strings.ToLower(target)
 	ctx := context.Background()
 	tx, err := s.DB.Begin(ctx)
@@ -283,14 +297,14 @@ const inviteCols = `id::text,room_id::text,created_at,expires_at,max_uses,uses,r
 
 func (s *PostgresStore) ListInvites(room, owner string) ([]RoomInvite, error) {
 	var permitted bool
-	err := s.DB.QueryRow(context.Background(), `SELECT EXISTS(SELECT 1 FROM rooms WHERE id=$1 AND owner_id=$2 AND kind='channel')`, room, owner).Scan(&permitted)
+	err := s.DB.QueryRow(context.Background(), `SELECT EXISTS(SELECT 1 FROM rooms WHERE id=$1 AND kind='channel' AND room_has_permission(id,$2,'manage_invites'))`, room, owner).Scan(&permitted)
 	if err != nil {
 		return nil, err
 	}
 	if !permitted {
 		return nil, ErrForbidden
 	}
-	rows, err := s.DB.Query(context.Background(), `SELECT `+inviteCols+` FROM room_invites WHERE room_id=$1 ORDER BY (revoked_at IS NULL AND (expires_at IS NULL OR expires_at>now()) AND (max_uses=0 OR uses<max_uses)) DESC,created_at DESC LIMIT 100`, room)
+	rows, err := s.DB.Query(context.Background(), `SELECT `+inviteCols+` FROM room_invites WHERE room_id IN(SELECT id FROM rooms WHERE community_id=(SELECT community_id FROM rooms WHERE id=$1)) ORDER BY (revoked_at IS NULL AND (expires_at IS NULL OR expires_at>now()) AND (max_uses=0 OR uses<max_uses)) DESC,created_at DESC LIMIT 100`, room)
 	if err != nil {
 		return nil, err
 	}
@@ -312,15 +326,22 @@ func (s *PostgresStore) CreateInvite(room, owner, token string, expires *time.Ti
 		return RoomInvite{}, err
 	}
 	defer tx.Rollback(ctx)
+	var community string
+	if err = tx.QueryRow(ctx, `SELECT community_id::text FROM rooms WHERE id=$1 AND kind='channel'`, room).Scan(&community); err != nil {
+		return RoomInvite{}, norm(err)
+	}
+	if _, err = lockCommunity(ctx, tx, community, owner, 2); err != nil {
+		return RoomInvite{}, err
+	}
 	var permitted string
-	if err = tx.QueryRow(ctx, `SELECT id::text FROM rooms WHERE id=$1 AND owner_id=$2 AND kind='channel' FOR UPDATE`, room, owner).Scan(&permitted); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT id::text FROM rooms WHERE id=$1 AND kind='channel' AND room_has_permission(id,$2,'manage_invites') FOR UPDATE`, room, owner).Scan(&permitted); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return RoomInvite{}, ErrForbidden
 		}
 		return RoomInvite{}, err
 	}
 	var count int
-	if err = tx.QueryRow(ctx, `SELECT count(*) FROM room_invites WHERE room_id=$1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at>now()) AND (max_uses=0 OR uses<max_uses)`, room).Scan(&count); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT count(*) FROM room_invites WHERE room_id IN(SELECT id FROM rooms WHERE community_id=$1) AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at>now()) AND (max_uses=0 OR uses<max_uses)`, community).Scan(&count); err != nil {
 		return RoomInvite{}, err
 	}
 	if count >= activeInviteLimit {
@@ -334,7 +355,7 @@ func (s *PostgresStore) CreateInvite(room, owner, token string, expires *time.Ti
 	return item, tx.Commit(ctx)
 }
 func (s *PostgresStore) RevokeInvite(room, owner, id string) error {
-	tag, err := s.DB.Exec(context.Background(), `UPDATE room_invites i SET revoked_at=COALESCE(revoked_at,now()) FROM rooms r WHERE i.id=$3 AND i.room_id=$1 AND r.id=i.room_id AND r.owner_id=$2 AND r.kind='channel'`, room, owner, id)
+	tag, err := s.DB.Exec(context.Background(), `UPDATE room_invites i SET revoked_at=COALESCE(revoked_at,now()) FROM rooms r WHERE i.id=$3 AND r.id=i.room_id AND r.community_id=(SELECT community_id FROM rooms WHERE id=$1) AND room_has_permission(r.id,$2,'manage_invites') AND r.kind='channel'`, room, owner, id)
 	if err == nil && tag.RowsAffected() == 0 {
 		return ErrForbidden
 	}
@@ -343,10 +364,10 @@ func (s *PostgresStore) RevokeInvite(room, owner, id string) error {
 func (s *PostgresStore) PreviewInvite(token, user string) (InvitePreview, error) {
 	hash := sha256.Sum256([]byte(token))
 	var out InvitePreview
-	err := s.DB.QueryRow(context.Background(), `SELECT r.id::text,r.name,i.expires_at,CASE WHEN i.max_uses=0 THEN NULL ELSE greatest(i.max_uses-i.uses,0) END,EXISTS(SELECT 1 FROM room_members WHERE room_id=r.id AND user_id=$2)
- FROM room_invites i JOIN rooms r ON r.id=i.room_id WHERE i.token_hash=$1 AND r.kind='channel' AND i.revoked_at IS NULL AND (i.expires_at IS NULL OR i.expires_at>now()) AND (i.max_uses=0 OR i.uses<i.max_uses OR EXISTS(SELECT 1 FROM room_members WHERE room_id=r.id AND user_id=$2))
+	err := s.DB.QueryRow(context.Background(), `SELECT r.id::text,c.name,i.expires_at,CASE WHEN i.max_uses=0 THEN NULL ELSE greatest(i.max_uses-i.uses,0) END,EXISTS(SELECT 1 FROM room_members WHERE room_id=r.id AND user_id=$2)
+ FROM room_invites i JOIN rooms r ON r.id=i.room_id JOIN communities c ON c.id=r.community_id WHERE i.token_hash=$1 AND r.kind='channel' AND i.revoked_at IS NULL AND (i.expires_at IS NULL OR i.expires_at>now()) AND (i.max_uses=0 OR i.uses<i.max_uses OR EXISTS(SELECT 1 FROM room_members WHERE room_id=r.id AND user_id=$2))
  AND NOT EXISTS(SELECT 1 FROM user_blocks WHERE (blocker_id=$2 AND blocked_id=r.owner_id) OR (blocker_id=r.owner_id AND blocked_id=$2))
- AND NOT EXISTS(SELECT 1 FROM room_bans WHERE room_id=r.id AND user_id=$2)
+ AND NOT EXISTS(SELECT 1 FROM community_bans WHERE community_id=r.community_id AND user_id=$2)
  AND EXISTS(SELECT 1 FROM users WHERE id=$2 AND deleted_at IS NULL)`, hash[:], user).Scan(&out.RoomID, &out.RoomName, &out.ExpiresAt, &out.RemainingUses, &out.AlreadyMember)
 	if errors.Is(err, pgx.ErrNoRows) {
 		err = ErrInviteUnavailable
@@ -361,12 +382,15 @@ func (s *PostgresStore) RedeemInvite(token, user string) (Room, bool, error) {
 		return Room{}, false, err
 	}
 	defer tx.Rollback(ctx)
-	var room, owner string
-	if err = tx.QueryRow(ctx, `SELECT r.id::text,r.owner_id::text FROM room_invites i JOIN rooms r ON r.id=i.room_id WHERE token_hash=$1 AND r.kind='channel'`, hash[:]).Scan(&room, &owner); err != nil {
+	var room, owner, community string
+	if err = tx.QueryRow(ctx, `SELECT r.id::text,r.owner_id::text,r.community_id::text FROM room_invites i JOIN rooms r ON r.id=i.room_id WHERE token_hash=$1 AND r.kind='channel'`, hash[:]).Scan(&room, &owner, &community); err != nil {
 		return Room{}, false, ErrInviteUnavailable
 	}
 	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,1))`, directPairKey(owner, user)); err != nil {
 		return Room{}, false, err
+	}
+	if err = tx.QueryRow(ctx, `SELECT owner_id::text FROM communities WHERE id=$1 FOR UPDATE`, community).Scan(&owner); err != nil {
+		return Room{}, false, ErrInviteUnavailable
 	}
 	// Lock room before invite, consistently with deletion/revocation, then lease a use.
 	if err = tx.QueryRow(ctx, `SELECT owner_id::text FROM rooms WHERE id=$1 AND kind='channel' FOR UPDATE`, room).Scan(&owner); err != nil {
@@ -382,7 +406,7 @@ func (s *PostgresStore) RedeemInvite(token, user string) (Room, bool, error) {
 		return Room{}, false, ErrInviteUnavailable
 	}
 	var blocked, member, accountAllowed bool
-	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM user_blocks WHERE (blocker_id=$1 AND blocked_id=$2) OR (blocker_id=$2 AND blocked_id=$1)),EXISTS(SELECT 1 FROM room_members WHERE room_id=$3 AND user_id=$2),EXISTS(SELECT 1 FROM users WHERE id=$2 AND deleted_at IS NULL) AND NOT EXISTS(SELECT 1 FROM room_bans WHERE room_id=$3 AND user_id=$2)`, owner, user, room).Scan(&blocked, &member, &accountAllowed); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM user_blocks WHERE (blocker_id=$1 AND blocked_id=$2) OR (blocker_id=$2 AND blocked_id=$1)),EXISTS(SELECT 1 FROM room_members WHERE room_id=$3 AND user_id=$2),EXISTS(SELECT 1 FROM users WHERE id=$2 AND deleted_at IS NULL) AND NOT EXISTS(SELECT 1 FROM community_bans WHERE community_id=$4 AND user_id=$2)`, owner, user, room, community).Scan(&blocked, &member, &accountAllowed); err != nil {
 		return Room{}, false, err
 	}
 	if blocked || !accountAllowed {
@@ -392,7 +416,7 @@ func (s *PostgresStore) RedeemInvite(token, user string) (Room, bool, error) {
 		if max > 0 && uses >= max {
 			return Room{}, false, ErrInviteUnavailable
 		}
-		if _, err = tx.Exec(ctx, `INSERT INTO room_members(room_id,user_id) VALUES($1,$2)`, room, user); err != nil {
+		if _, err = tx.Exec(ctx, `INSERT INTO community_members(community_id,user_id) VALUES($1,$2)`, community, user); err != nil {
 			return Room{}, false, err
 		}
 		if _, err = tx.Exec(ctx, `UPDATE room_invites SET uses=uses+1 WHERE id=$1`, id); err != nil {

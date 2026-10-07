@@ -27,7 +27,7 @@ func TestWebSocketSignalIntegration(t *testing.T) {
 		t.Fatal(e)
 	}
 	defer pool.Close()
-	for _, path := range []string{"../../migrations/001_init.sql", "../../migrations/002_direct_rooms.sql", "../../migrations/003_messaging.sql", "../../migrations/004_messaging_complete.sql", "../../migrations/005_attachment_cleanup_attempts.sql", "../../migrations/006_attachment_lifecycle.sql", "../../migrations/007_dm_privacy.sql", "../../migrations/008_web_push.sql", "../../migrations/009_social_basics.sql", "../../migrations/010_conversation_threads_pins.sql", "../../migrations/011_moderation.sql", "../../migrations/012_account_sessions.sql"} {
+	for _, path := range []string{"../../migrations/001_init.sql", "../../migrations/002_direct_rooms.sql", "../../migrations/003_messaging.sql", "../../migrations/004_messaging_complete.sql", "../../migrations/005_attachment_cleanup_attempts.sql", "../../migrations/006_attachment_lifecycle.sql", "../../migrations/007_dm_privacy.sql", "../../migrations/008_web_push.sql", "../../migrations/009_social_basics.sql", "../../migrations/010_conversation_threads_pins.sql", "../../migrations/011_moderation.sql", "../../migrations/012_account_sessions.sql", "../../migrations/013_daily_communication.sql", "../../migrations/014_activity_thread_replies.sql", "../../migrations/015_attachment_limits.sql", "../../migrations/016_communities_channels_roles.sql"} {
 		migration, e := os.ReadFile(path)
 		if e != nil {
 			t.Fatal(e)
@@ -246,7 +246,7 @@ func TestRoomManagementAuthorization(t *testing.T) {
 		t.Fatal(e)
 	}
 	defer pool.Close()
-	for _, path := range []string{"../../migrations/001_init.sql", "../../migrations/002_direct_rooms.sql", "../../migrations/003_messaging.sql", "../../migrations/004_messaging_complete.sql", "../../migrations/005_attachment_cleanup_attempts.sql", "../../migrations/006_attachment_lifecycle.sql", "../../migrations/007_dm_privacy.sql", "../../migrations/008_web_push.sql", "../../migrations/009_social_basics.sql", "../../migrations/010_conversation_threads_pins.sql", "../../migrations/011_moderation.sql", "../../migrations/012_account_sessions.sql"} {
+	for _, path := range []string{"../../migrations/001_init.sql", "../../migrations/002_direct_rooms.sql", "../../migrations/003_messaging.sql", "../../migrations/004_messaging_complete.sql", "../../migrations/005_attachment_cleanup_attempts.sql", "../../migrations/006_attachment_lifecycle.sql", "../../migrations/007_dm_privacy.sql", "../../migrations/008_web_push.sql", "../../migrations/009_social_basics.sql", "../../migrations/010_conversation_threads_pins.sql", "../../migrations/011_moderation.sql", "../../migrations/012_account_sessions.sql", "../../migrations/013_daily_communication.sql", "../../migrations/014_activity_thread_replies.sql", "../../migrations/015_attachment_limits.sql", "../../migrations/016_communities_channels_roles.sql"} {
 		sql, e := os.ReadFile(path)
 		if e != nil {
 			t.Fatal(e)

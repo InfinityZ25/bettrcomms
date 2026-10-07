@@ -199,6 +199,9 @@ func (a *API) voiceRelay(w http.ResponseWriter, r *http.Request, u User, room st
 		a.fail(w, http.StatusForbidden, "not_a_member", "room membership required")
 		return
 	}
+	if !a.requireVoice(w, room, u.ID) {
+		return
+	}
 	if !a.websocketOriginAllowed(r) {
 		a.fail(w, http.StatusForbidden, "origin_not_allowed", "WebSocket origin is not allowed")
 		return

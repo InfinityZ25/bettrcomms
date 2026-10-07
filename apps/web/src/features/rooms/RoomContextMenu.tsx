@@ -1,5 +1,15 @@
 import { useState, useSyncExternalStore } from 'react';
-import { Archive, ArchiveRestore, Check, LogOut, Settings2, Star, StarOff, Trash2, UserPlus } from 'lucide-react';
+import {
+  Archive,
+  ArchiveRestore,
+  Check,
+  LogOut,
+  Settings2,
+  Star,
+  StarOff,
+  Trash2,
+  UserPlus,
+} from 'lucide-react';
 import { api, type Room, type User } from '@/api';
 import { errorMessage } from '@/lib/errors';
 import { AppDialog } from '@/components/app-dialog';
@@ -14,8 +24,17 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { roomLabel } from './RoomNavigation';
-import { notificationSnapshot, setRoomNotificationMode, subscribeNotifications, type NotificationMode } from '@/features/chat/notificationSettings';
-import { conversationPreferencesSnapshot, setConversationPreference, subscribeConversationPreferences } from './conversationPreferences';
+import {
+  notificationSnapshot,
+  setRoomNotificationMode,
+  subscribeNotifications,
+  type NotificationMode,
+} from '@/features/chat/notificationSettings';
+import {
+  conversationPreferencesSnapshot,
+  setConversationPreference,
+  subscribeConversationPreferences,
+} from './conversationPreferences';
 
 /**
  * Right-click a room.
@@ -49,19 +68,31 @@ export default function RoomContextMenu({
 }) {
   const [pending, setPending] = useState<'delete' | 'leave' | null>(null);
   const [busy, setBusy] = useState(false);
-  const notifications = useSyncExternalStore(subscribeNotifications, notificationSnapshot);
-  const preferences = useSyncExternalStore(subscribeConversationPreferences, conversationPreferencesSnapshot);
-  const preference = preferences.userId === user?.id ? preferences.preferences[room.id] : undefined;
+  const notifications = useSyncExternalStore(
+    subscribeNotifications,
+    notificationSnapshot,
+  );
+  const preferences = useSyncExternalStore(
+    subscribeConversationPreferences,
+    conversationPreferencesSnapshot,
+  );
+  const preference =
+    preferences.userId === user?.id
+      ? preferences.preferences[room.id]
+      : undefined;
 
   const channel = (room.kind ?? 'channel') === 'channel';
   const group = room.kind === 'group';
   const owner = Boolean(user && room.owner_id === user.id);
+  const community = Boolean(channel && room.community_id);
   const label = roomLabel(room);
 
   if (!user) return <>{children}</>;
 
   const chooseNotifications = (mode: NotificationMode) => {
-    void setRoomNotificationMode(room.id, mode).catch((error) => onError(errorMessage(error)));
+    void setRoomNotificationMode(room.id, mode).catch((error) =>
+      onError(errorMessage(error)),
+    );
   };
 
   const confirmed = async () => {
@@ -70,9 +101,11 @@ export default function RoomContextMenu({
       // Leaving is removing yourself from the members, which is the only
       // member the server lets a non-owner remove.
       await api(
-        pending === 'delete'
-          ? '/rooms/' + room.id
-          : '/rooms/' + room.id + '/members/' + user.id,
+        community && pending === 'leave'
+          ? `/communities/${room.community_id}/members/${user.id}`
+          : pending === 'delete'
+            ? '/rooms/' + room.id
+            : '/rooms/' + room.id + '/members/' + user.id,
         undefined,
         'DELETE',
       );
@@ -97,37 +130,109 @@ export default function RoomContextMenu({
           </ContextMenuGroup>
           <ContextMenuSeparator />
           <ContextMenuGroup>
-            <ContextMenuItem disabled={!preferences.ready || preferences.busy[room.id]} onClick={() => {
-              void setConversationPreference(room, { favorite: !preference?.favorite }).catch((error) => onError(errorMessage(error)));
-            }}>{preference?.favorite ? <StarOff /> : <Star />}{preference?.favorite ? 'Remove from favorites' : 'Add to favorites'}</ContextMenuItem>
-            {!channel && <ContextMenuItem disabled={!preferences.ready || preferences.busy[room.id]} onClick={() => {
-              void setConversationPreference(room, { archived: !preference?.archived }).catch((error) => onError(errorMessage(error)));
-            }}>{preference?.archived ? <ArchiveRestore /> : <Archive />}{preference?.archived ? 'Restore conversation' : 'Archive conversation'}</ContextMenuItem>}
+            <ContextMenuItem
+              disabled={!preferences.ready || preferences.busy[room.id]}
+              onClick={() => {
+                void setConversationPreference(room, {
+                  favorite: !preference?.favorite,
+                }).catch((error) => onError(errorMessage(error)));
+              }}
+            >
+              {preference?.favorite ? <StarOff /> : <Star />}
+              {preference?.favorite
+                ? 'Remove from favorites'
+                : 'Add to favorites'}
+            </ContextMenuItem>
+            {!channel && (
+              <ContextMenuItem
+                disabled={!preferences.ready || preferences.busy[room.id]}
+                onClick={() => {
+                  void setConversationPreference(room, {
+                    archived: !preference?.archived,
+                  }).catch((error) => onError(errorMessage(error)));
+                }}
+              >
+                {preference?.archived ? <ArchiveRestore /> : <Archive />}
+                {preference?.archived
+                  ? 'Restore conversation'
+                  : 'Archive conversation'}
+              </ContextMenuItem>
+            )}
           </ContextMenuGroup>
           <ContextMenuSeparator />
           <ContextMenuGroup>
             <ContextMenuLabel>Message notifications</ContextMenuLabel>
             {(['all', 'mentions', 'mute'] as NotificationMode[]).map((mode) => (
-              <ContextMenuItem key={mode} onClick={() => chooseNotifications(mode)}>
-                {notifications.rooms[room.id] === mode || (!notifications.rooms[room.id] && mode === 'all') ? <Check size={15} /> : <span className="inline-block w-[15px]" />}
-                {mode === 'all' ? 'All messages' : mode === 'mentions' ? 'Mentions only' : 'Mute conversation'}
+              <ContextMenuItem
+                key={mode}
+                onClick={() => chooseNotifications(mode)}
+              >
+                {notifications.rooms[room.id] === mode ||
+                (!notifications.rooms[room.id] && mode === 'all') ? (
+                  <Check size={15} />
+                ) : (
+                  <span className="inline-block w-[15px]" />
+                )}
+                {mode === 'all'
+                  ? 'All messages'
+                  : mode === 'mentions'
+                    ? 'Mentions only'
+                    : 'Mute conversation'}
               </ContextMenuItem>
             ))}
           </ContextMenuGroup>
           {channel && (
             <>
               <ContextMenuSeparator />
-              <ContextMenuItem onClick={() => onSettings(room)}><Settings2 /> Room settings…</ContextMenuItem>
-              {owner && <ContextMenuItem onClick={() => onInvite(room)}><UserPlus /> Invite a friend…</ContextMenuItem>}
+              <ContextMenuItem onClick={() => onSettings(room)}>
+                <Settings2 /> Room settings…
+              </ContextMenuItem>
+              {(room.permissions?.manage_members ?? owner) && (
+                <ContextMenuItem onClick={() => onInvite(room)}>
+                  <UserPlus /> Invite a friend…
+                </ContextMenuItem>
+              )}
               <ContextMenuSeparator />
-              {owner ? (
-                <ContextMenuItem variant="destructive" onClick={() => setPending('delete')}><Trash2 /> Delete room</ContextMenuItem>
+              {community ? (
+                !owner && (
+                  <ContextMenuItem
+                    variant="destructive"
+                    onClick={() => setPending('leave')}
+                  >
+                    <LogOut /> Leave room
+                  </ContextMenuItem>
+                )
+              ) : owner ? (
+                <ContextMenuItem
+                  variant="destructive"
+                  onClick={() => setPending('delete')}
+                >
+                  <Trash2 /> Delete room
+                </ContextMenuItem>
               ) : (
-                <ContextMenuItem variant="destructive" onClick={() => setPending('leave')}><LogOut /> Leave room</ContextMenuItem>
+                <ContextMenuItem
+                  variant="destructive"
+                  onClick={() => setPending('leave')}
+                >
+                  <LogOut /> Leave room
+                </ContextMenuItem>
               )}
             </>
           )}
-          {group && <><ContextMenuSeparator /><ContextMenuItem onClick={() => onSettings(room)}><Settings2 /> Group info…</ContextMenuItem><ContextMenuItem variant="destructive" onClick={() => setPending('leave')}><LogOut /> Leave group</ContextMenuItem></>}
+          {group && (
+            <>
+              <ContextMenuSeparator />
+              <ContextMenuItem onClick={() => onSettings(room)}>
+                <Settings2 /> Group info…
+              </ContextMenuItem>
+              <ContextMenuItem
+                variant="destructive"
+                onClick={() => setPending('leave')}
+              >
+                <LogOut /> Leave group
+              </ContextMenuItem>
+            </>
+          )}
         </ContextMenuContent>
       </ContextMenu>
 
@@ -144,7 +249,7 @@ export default function RoomContextMenu({
         title={pending === 'leave' ? 'Leave this room?' : 'Delete this room?'}
         description={
           pending === 'leave'
-            ? `You will leave ${label}. A friend has to invite you back.${group && owner ? ' Ownership passes to the next member.' : ''}`
+            ? `You will leave ${community ? (room.community_name ?? label) : label}${community ? ' and every channel in it' : ''}. A friend has to invite you back.${group && owner ? ' Ownership passes to the next member.' : ''}`
             : `${label} and everything said in it goes for everyone. This cannot be undone.`
         }
       >

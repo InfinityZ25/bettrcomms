@@ -82,7 +82,7 @@ test('a signaling restart does not end an established peer-to-peer call', async 
       secondPage.getByRole('button', { name: room.name, exact: true }).click(),
     ]);
 
-    await firstPage.getByRole('button', { name: 'Join call' }).click();
+    await firstPage.getByRole('button', { name: 'Join voice' }).click();
     await expect(firstPage.getByRole('button', { name: 'Leave call' })).toBeVisible();
     await secondPage.getByRole('button', { name: 'Add this device', exact: true }).click();
     await expect(secondPage.getByRole('button', { name: 'Leave call' })).toBeVisible();

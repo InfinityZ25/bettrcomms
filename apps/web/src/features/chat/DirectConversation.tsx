@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from 'react';
 import {
   CheckCheck,
   ChevronLeft,
@@ -7,11 +8,20 @@ import {
   Search,
   MessagesSquare,
   Users,
+  Hash,
+  Headphones,
+  Megaphone,
+  Settings2,
 } from 'lucide-react';
 import { type Message, type Room, type User } from '@/api';
 import { Avatar } from '@/components/avatar';
 import { Button } from '@/components/ui/button';
 import { useActiveCall } from '@/features/call/CallSessionContext';
+import { SecondDevice } from '@/features/call/CallLobby';
+import {
+  callPresenceSnapshot,
+  subscribeCallPresence,
+} from '@/features/call/useCallPresence';
 import { roomLabel } from '@/features/rooms/RoomNavigation';
 import { cn } from '@/lib/utils';
 import MessageThread from './MessageThread';
@@ -65,6 +75,19 @@ export default function DirectConversation({
   const call = useActiveCall();
   const name = roomLabel(room);
   const inThisCall = call.joined && call.callRoom?.id === room.id;
+  const channel = (room.kind ?? 'channel') === 'channel';
+  const announcement = channel && room.channel_type === 'announcement';
+  const canJoinVoice =
+    !announcement &&
+    room.can_join_voice !== false &&
+    room.permissions?.join_voice !== false;
+  const presence = useSyncExternalStore(
+    subscribeCallPresence,
+    callPresenceSnapshot,
+  );
+  const alreadyIn =
+    !inThisCall &&
+    presence.rooms[room.id]?.find((person) => person.user_id === user?.id);
 
   return (
     <section
@@ -75,7 +98,11 @@ export default function DirectConversation({
           ? 'content-canvas rounded-3xl border border-border/60 shadow-[0_20px_60px_rgb(0_0_0/0.16)]'
           : 'rounded-2xl border border-border/60',
       )}
-      aria-label={`Conversation with ${name}`}
+      aria-label={
+        channel
+          ? `${room.community_name ?? 'Room'} · ${name}`
+          : `Conversation with ${name}`
+      }
     >
       <header className="conversation-header flex shrink-0 items-center gap-2.5 border-b px-4 py-2.5 phone:gap-2 phone:px-2 phone:py-2">
         {(onClose || onBack) && (
@@ -83,38 +110,92 @@ export default function DirectConversation({
             variant="ghost"
             size="icon"
             className="hidden shrink-0 phone:inline-flex phone:size-11"
-            aria-label={onClose ? 'Back to call' : 'Back to messages'}
+            aria-label={
+              onClose
+                ? 'Back to call'
+                : channel
+                  ? 'Back to rooms'
+                  : 'Back to messages'
+            }
             onClick={onClose ?? onBack}
           >
             <ChevronLeft size={20} />
           </Button>
         )}
-        <Avatar name={name} id={room.id} />
+        {channel ? (
+          <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-muted">
+            {announcement ? <Megaphone size={18} /> : <Hash size={20} />}
+          </span>
+        ) : (
+          <Avatar name={name} id={room.id} />
+        )}
         <div className="min-w-0 flex-1">
-          <strong className="block truncate text-sm font-semibold phone:text-base">
+          <h2 className="block truncate text-sm font-semibold phone:text-base">
+            {channel && (
+              <span className="mr-1 font-normal text-muted-foreground">
+                {room.community_name} /
+              </span>
+            )}
             {name}
-          </strong>
-          <span className="text-[0.65rem] text-muted-foreground phone:text-xs">
-            {inThisCall ? 'In a call with you' : room.kind === 'group' ? 'Group message' : 'Direct message'}
+          </h2>
+          <span
+            className="block truncate text-[0.65rem] text-muted-foreground phone:text-xs"
+            title={room.topic}
+          >
+            {channel
+              ? room.topic ||
+                (announcement
+                  ? 'Announcements · owner and admins publish'
+                  : inThisCall
+                    ? 'Connected to voice'
+                    : 'Text and voice together')
+              : inThisCall
+                ? 'In a call with you'
+                : room.kind === 'group'
+                  ? 'Group message'
+                  : 'Direct message'}
           </span>
         </div>
         {/* The one place the conversation reaches for the call: pressing this
             starts it, rather than opening a lobby to press again. */}
-        {!inThisCall && (
+        {canJoinVoice && !alreadyIn && (!inThisCall || channel) && (
           <Button
             variant="secondary"
             size="sm"
             className="shrink-0 phone:h-11 phone:rounded-full"
             disabled={!user || call.busy}
             onClick={() => {
-              void call.join('replace');
-              onCall();
+              if (!inThisCall)
+                void call.join('replace', room).then((success) => {
+                  if (success) onCall();
+                });
+              else onCall();
             }}
           >
-            <Phone size={15} /> Call
+            {channel ? <Headphones size={15} /> : <Phone size={15} />}{' '}
+            {channel ? (inThisCall ? 'Open voice' : 'Join voice') : 'Call'}
           </Button>
         )}
-        {room.kind === 'group' && onGroupInfo && <Button variant="ghost" size="icon" aria-label="Group info" onClick={onGroupInfo}><Users size={18} /></Button>}
+        {room.kind === 'group' && onGroupInfo && (
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Group info"
+            onClick={onGroupInfo}
+          >
+            <Users size={18} />
+          </Button>
+        )}
+        {channel && onGroupInfo && (
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Room settings"
+            onClick={onGroupInfo}
+          >
+            <Settings2 size={18} />
+          </Button>
+        )}
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
@@ -135,10 +216,16 @@ export default function DirectConversation({
             >
               <Search /> Search this conversation
             </DropdownMenuItem>
-            <DropdownMenuItem className="min-h-11" onClick={() => openConversationPanel(room.id, 'pins')}>
+            <DropdownMenuItem
+              className="min-h-11"
+              onClick={() => openConversationPanel(room.id, 'pins')}
+            >
               <Pin /> Pinned messages
             </DropdownMenuItem>
-            <DropdownMenuItem className="min-h-11" onClick={() => openConversationPanel(room.id, 'threads')}>
+            <DropdownMenuItem
+              className="min-h-11"
+              onClick={() => openConversationPanel(room.id, 'threads')}
+            >
               <MessagesSquare /> Conversation threads
             </DropdownMenuItem>
             <DropdownMenuItem
@@ -161,6 +248,20 @@ export default function DirectConversation({
         </DropdownMenu>
       </header>
 
+      {canJoinVoice && alreadyIn && user && (
+        <div className="shrink-0 px-4 py-3">
+          <SecondDevice
+            devices={alreadyIn.device_count}
+            busy={call.busy}
+            onJoin={(mode) => {
+              void call.join(mode, room).then((success) => {
+                if (success) onCall();
+              });
+            }}
+          />
+        </div>
+      )}
+
       {user && (
         <MessageThread
           key={`${user.id}:${room.id}:${targetId ?? ''}`}
@@ -168,8 +269,20 @@ export default function DirectConversation({
           user={user}
           label={name}
           compactHeader
-          canPin={room.kind !== 'channel' || room.owner_id === user.id}
-          canModerate={room.kind === 'group' && room.owner_id === user.id}
+          canPin={
+            room.permissions?.pin_messages ??
+            (room.kind !== 'channel' || room.owner_id === user.id)
+          }
+          canModerate={
+            room.permissions?.moderate ??
+            (room.kind === 'group' && room.owner_id === user.id)
+          }
+          canPost={room.can_post !== false && room.permissions?.post !== false}
+          postingReason={
+            announcement
+              ? 'Only the room owner and admins can publish announcements.'
+              : undefined
+          }
           targetId={targetId}
           onError={onError}
         />

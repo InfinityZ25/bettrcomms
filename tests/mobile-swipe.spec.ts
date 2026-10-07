@@ -30,11 +30,11 @@ test('edge swipes restore mobile screens and sheets while keeping a call connect
     // OS capture permission, so it checks navigation from the call lobby.
     if (liveCall)
       await page
-        .getByRole('button', { name: 'Join call', exact: true })
+        .getByRole('button', { name: 'Join voice', exact: true })
         .click();
     await expect(
       page.getByRole('button', {
-        name: liveCall ? 'Leave call' : 'Join call',
+        name: liveCall ? 'Leave call' : 'Join voice',
         exact: true,
       }),
     ).toBeVisible();

@@ -32,8 +32,12 @@ export default function CallLobby({
   presenceKnown: boolean;
   onJoin: (mode: JoinMode) => void;
 }) {
-  const others = callPresence.filter((presence) => presence.user_id !== user?.id);
-  const alreadyIn = callPresence.find((presence) => presence.user_id === user?.id);
+  const others = callPresence.filter(
+    (presence) => presence.user_id !== user?.id,
+  );
+  const alreadyIn = callPresence.find(
+    (presence) => presence.user_id === user?.id,
+  );
   const ready = Boolean(user && room);
   const label = (presence: CallPresence) =>
     presence.name || names[presence.user_id] || 'Friend';
@@ -47,9 +51,15 @@ export default function CallLobby({
           so it is drawn first and largest. An empty room gets the mascot, which
           is friendlier than an empty box. */}
       {others.length > 0 ? (
-        <ul className="flex flex-wrap justify-center gap-4" aria-label="In this call">
+        <ul
+          className="flex flex-wrap justify-center gap-4"
+          aria-label="In this call"
+        >
           {others.map((presence) => (
-            <li key={presence.user_id} className="flex w-20 flex-col items-center gap-1.5">
+            <li
+              key={presence.user_id}
+              className="flex w-20 flex-col items-center gap-1.5"
+            >
               {/* They are in the call, so their presence is not a guess. */}
               <Avatar
                 name={label(presence)}
@@ -69,7 +79,10 @@ export default function CallLobby({
       )}
 
       <div>
-        <h2 className="font-heading text-2xl font-semibold tracking-tight break-words" data-testid="room-heading">
+        <h2
+          className="font-heading text-2xl font-semibold tracking-tight break-words"
+          data-testid="room-heading"
+        >
           {room ? room.display_name || room.name : 'Your call'}
         </h2>
         <p
@@ -81,9 +94,17 @@ export default function CallLobby({
       </div>
 
       {alreadyIn && ready ? (
-        <SecondDevice devices={alreadyIn.device_count} busy={busy} onJoin={onJoin} />
+        <SecondDevice
+          devices={alreadyIn.device_count}
+          busy={busy}
+          onJoin={onJoin}
+        />
       ) : (
-        <Button size="lg" disabled={busy || !ready} onClick={() => onJoin('replace')}>
+        <Button
+          size="lg"
+          disabled={busy || !ready}
+          onClick={() => onJoin('replace')}
+        >
           <Headphones size={18} />
           {busy ? 'Connecting…' : user ? 'Join call' : 'Sign in to join'}
         </Button>
@@ -96,7 +117,8 @@ export default function CallLobby({
 function Signals({ presence }: { presence: CallPresence }) {
   const notes = [
     presence.deafened && { icon: <HeadphoneOff size={11} />, text: 'Deafened' },
-    !presence.deafened && presence.muted && { icon: <MicOff size={11} />, text: 'Muted' },
+    !presence.deafened &&
+      presence.muted && { icon: <MicOff size={11} />, text: 'Muted' },
     presence.device_count > 1 && {
       icon: null,
       text: `${presence.device_count} devices`,
@@ -123,7 +145,7 @@ function Signals({ presence }: { presence: CallPresence }) {
  * other device, and picking the wrong one either drops a call you are on or
  * leaves two microphones in the same room feeding each other.
  */
-function SecondDevice({
+export function SecondDevice({
   devices,
   busy,
   onJoin,
@@ -142,7 +164,11 @@ function SecondDevice({
         <Button disabled={busy} onClick={() => onJoin('replace')}>
           <Headphones size={18} /> {busy ? 'Connecting…' : 'Move it here'}
         </Button>
-        <Button variant="secondary" disabled={busy} onClick={() => onJoin('additional')}>
+        <Button
+          variant="secondary"
+          disabled={busy}
+          onClick={() => onJoin('additional')}
+        >
           <Plus size={18} /> Add this device
         </Button>
       </div>
@@ -158,7 +184,8 @@ function SecondDevice({
 function describe(names: string[], ready: boolean, known: boolean): string {
   if (!ready) return 'Pick a room to see who is in it.';
   if (!known) return 'Seeing who is in…';
-  if (!names.length) return 'Empty in here. Walk in and the others will see you.';
+  if (!names.length)
+    return 'Empty in here. Walk in and the others will see you.';
   if (names.length === 1) return `${names[0]} is in here.`;
   if (names.length === 2) return `${names[0]} and ${names[1]} are in here.`;
   return `${names[0]}, ${names[1]} and ${names.length - 2} more are in here.`;

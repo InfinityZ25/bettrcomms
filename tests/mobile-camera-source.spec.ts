@@ -101,7 +101,7 @@ test('mobile call switches to a browser-exposed camera without recapturing the m
     await page.goto('/');
     await expect(page.getByRole('heading', { name: room.name })).toBeVisible();
     if (browserName === 'chromium') await page.evaluate(installMediaProbe);
-    await page.getByRole('button', { name: 'Join call' }).click();
+    await page.getByRole('button', { name: 'Join voice' }).click();
     await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
 
     if (browserName === 'webkit') {

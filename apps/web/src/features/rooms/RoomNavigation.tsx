@@ -1,21 +1,28 @@
 import { useSyncExternalStore } from 'react';
-import { activitySnapshot, subscribeActivity, subscribeUnread, unreadSnapshot } from '@/features/chat/messageStore';
 import {
-  Hash,
+  activitySnapshot,
+  subscribeActivity,
+  subscribeUnread,
+  unreadSnapshot,
+} from '@/features/chat/messageStore';
+import {
   Headphones,
   HeadphoneOff,
   MessageSquare,
   MicOff,
-  Plus,
   Users,
   Star,
 } from 'lucide-react';
 import type { CallParticipant, Room, User } from '@/api';
 import RoomContextMenu from './RoomContextMenu';
+import CommunityNavigation from './CommunityNavigation';
 import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { conversationPreferencesSnapshot, sortConversations, subscribeConversationPreferences } from './conversationPreferences';
+import {
+  conversationPreferencesSnapshot,
+  sortConversations,
+  subscribeConversationPreferences,
+} from './conversationPreferences';
 import ConversationPreferenceActions from './ConversationPreferenceActions';
 import { openUserProfile } from '@/features/settings/ProfileDialog';
 import {
@@ -44,7 +51,6 @@ export default function RoomNavigation({
   presence,
   known,
   onSelect,
-  onCreate,
   onRoomSettings,
   onInviteToRoom,
   onRoomsChanged,
@@ -65,9 +71,35 @@ export default function RoomNavigation({
 }) {
   const unread = useSyncExternalStore(subscribeUnread, unreadSnapshot);
   const activity = useSyncExternalStore(subscribeActivity, activitySnapshot);
-  const preferenceState = useSyncExternalStore(subscribeConversationPreferences, conversationPreferencesSnapshot);
-  const preferences = preferenceState.userId === user?.id ? preferenceState.preferences : {};
+  const preferenceState = useSyncExternalStore(
+    subscribeConversationPreferences,
+    conversationPreferencesSnapshot,
+  );
+  const preferences =
+    preferenceState.userId === user?.id ? preferenceState.preferences : {};
   const sortedRooms = sortConversations(rooms, preferences, activity);
+  if (kind === 'channel')
+    return (
+      <div className="min-h-0 overflow-y-auto">
+        <CommunityNavigation
+          rooms={rooms}
+          user={user}
+          selected={selected}
+          presence={presence}
+          known={known}
+          onSelect={onSelect}
+          onSettings={onRoomSettings}
+          onInvite={onInviteToRoom}
+          onChanged={onRoomsChanged}
+          onError={onError}
+        />
+        {!known && rooms.length > 0 && (
+          <p role="status" className="mx-3 my-3 text-xs text-muted-foreground">
+            Call activity unavailable
+          </p>
+        )}
+      </div>
+    );
   return (
     <div className="conversation-navigation min-h-0 overflow-x-hidden overflow-y-auto">
       <SidebarGroup
@@ -76,17 +108,6 @@ export default function RoomNavigation({
       >
         <SidebarGroupLabel className="justify-between">
           {kind === 'direct' ? 'Conversations' : 'Rooms'}
-          {kind === 'channel' && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-7 rounded-lg phone:size-10"
-              aria-label="Create room"
-              onClick={onCreate}
-            >
-              <Plus size={16} />
-            </Button>
-          )}
         </SidebarGroupLabel>
         <SidebarMenu>
           {sortedRooms.map((room) => {
@@ -94,55 +115,69 @@ export default function RoomNavigation({
             return (
               <SidebarMenuItem key={room.id}>
                 <div className="relative">
-                <RoomContextMenu
-                  room={room}
-                  user={user}
-                  onSettings={onRoomSettings}
-                  onInvite={onInviteToRoom}
-                  onChanged={onRoomsChanged}
-                  onError={onError}
-                >
-                  <SidebarMenuButton
-                    className={cn(
-                      'h-10 pr-9',
-                      selected === room.id && 'font-semibold',
-                    )}
-                    isActive={selected === room.id}
-                    aria-current={selected === room.id ? 'page' : undefined}
-                    onClick={() => onSelect(room)}
-                    title={roomLabel(room)}
-                    aria-label={`${roomLabel(room)}${known && callers.length ? ` ${callers.length} in call` : ''}`}
+                  <RoomContextMenu
+                    room={room}
+                    user={user}
+                    onSettings={onRoomSettings}
+                    onInvite={onInviteToRoom}
+                    onChanged={onRoomsChanged}
+                    onError={onError}
                   >
-                    {room.kind === 'group' ? <Users size={18} /> : kind === 'direct' ? (
-                      <MessageSquare size={18} />
-                    ) : (
-                      <Hash size={19} />
-                    )}
-                    <span className="min-w-0 flex-1 truncate">
-                      {roomLabel(room)}
-                    </span>
-                    {preferences[room.id]?.favorite && <Star size={12} className="shrink-0 fill-primary text-primary" aria-hidden="true" />}
-                    {(unread[room.id]?.unread ?? 0) > 0 && (
-                      <Badge
-                        aria-label={`${unread[room.id].unread} unread messages${unread[room.id].mentions ? `, ${unread[room.id].mentions} mentions` : ''}`}
-                        className="h-5 px-1.5"
-                      >
-                        {unread[room.id].mentions ? '@ ' : ''}
-                        {unread[room.id].unread}
-                      </Badge>
-                    )}
-                    {known && callers.length > 0 && (
-                      <Badge
-                        className="h-5 gap-1 px-1.5"
-                        aria-label={`${callers.length} in call`}
-                      >
-                        <Headphones size={12} />
-                        {callers.length}
-                      </Badge>
-                    )}
-                  </SidebarMenuButton>
-                </RoomContextMenu>
-                {user && <div className="absolute top-1 right-1"><ConversationPreferenceActions room={room} userId={user.id} onError={onError} /></div>}
+                    <SidebarMenuButton
+                      className={cn(
+                        'h-10 pr-9',
+                        selected === room.id && 'font-semibold',
+                      )}
+                      isActive={selected === room.id}
+                      aria-current={selected === room.id ? 'page' : undefined}
+                      onClick={() => onSelect(room)}
+                      title={roomLabel(room)}
+                      aria-label={`${roomLabel(room)}${known && callers.length ? ` ${callers.length} in call` : ''}`}
+                    >
+                      {room.kind === 'group' ? (
+                        <Users size={18} />
+                      ) : (
+                        <MessageSquare size={18} />
+                      )}
+                      <span className="min-w-0 flex-1 truncate">
+                        {roomLabel(room)}
+                      </span>
+                      {preferences[room.id]?.favorite && (
+                        <Star
+                          size={12}
+                          className="shrink-0 fill-primary text-primary"
+                          aria-hidden="true"
+                        />
+                      )}
+                      {(unread[room.id]?.unread ?? 0) > 0 && (
+                        <Badge
+                          aria-label={`${unread[room.id].unread} unread messages${unread[room.id].mentions ? `, ${unread[room.id].mentions} mentions` : ''}`}
+                          className="h-5 px-1.5"
+                        >
+                          {unread[room.id].mentions ? '@ ' : ''}
+                          {unread[room.id].unread}
+                        </Badge>
+                      )}
+                      {known && callers.length > 0 && (
+                        <Badge
+                          className="h-5 gap-1 px-1.5"
+                          aria-label={`${callers.length} in call`}
+                        >
+                          <Headphones size={12} />
+                          {callers.length}
+                        </Badge>
+                      )}
+                    </SidebarMenuButton>
+                  </RoomContextMenu>
+                  {user && (
+                    <div className="absolute top-1 right-1">
+                      <ConversationPreferenceActions
+                        room={room}
+                        userId={user.id}
+                        onError={onError}
+                      />
+                    </div>
+                  )}
                 </div>
                 {known && callers.length > 0 && (
                   <ul
@@ -160,7 +195,12 @@ export default function RoomNavigation({
                         >
                           {(person.name || '?').slice(0, 1).toUpperCase()}
                         </span>
-                        <button type="button" className="min-w-0 flex-1 truncate text-left hover:underline" aria-label={`View ${person.name || 'participant'}'s profile`} onClick={() => openUserProfile(person.user_id)}>
+                        <button
+                          type="button"
+                          className="min-w-0 flex-1 truncate text-left hover:underline"
+                          aria-label={`View ${person.name || 'participant'}'s profile`}
+                          onClick={() => openUserProfile(person.user_id)}
+                        >
                           {person.name || 'Participant'}
                           {person.device_count > 1
                             ? ` · ${person.device_count} devices`
