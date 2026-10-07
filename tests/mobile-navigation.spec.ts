@@ -248,19 +248,21 @@ test('a phone call keeps every control in one row below cameras that fill the sc
     await page.keyboard.press('Escape');
     await page.keyboard.press('Escape');
 
-    // Room chat covers the call on a phone, so it offers its own way back.
+    // Channel chat covers the call on a phone, so it offers its own way back.
     await page.getByRole('button', { name: 'More call options' }).click();
     await page.getByRole('menuitem', { name: 'Chat' }).click();
-    await expect(page.getByRole('region', { name: 'Room chat' })).toBeVisible();
+    const chat = page.getByRole('region', {
+      name: `${room.name} · ${room.name}`,
+      exact: true,
+    });
+    await expect(chat).toBeVisible();
     // Nothing from the call sits on top of the composer.
-    const composer = (await page
-      .getByRole('region', { name: 'Room chat' })
-      .getByRole('textbox')
-      .boundingBox())!;
-    const hit = await page.evaluate(
-      ({ x, y }) =>
-        document.elementFromPoint(x, y)?.closest('[aria-label="Room chat"]') !==
-        null,
+    const composer = (await chat.getByRole('textbox').boundingBox())!;
+    const hit = await chat.evaluate(
+      (conversation, { x, y }) => {
+        const target = document.elementFromPoint(x, y);
+        return target !== null && conversation.contains(target);
+      },
       {
         x: composer.x + composer.width / 2,
         y: composer.y + composer.height / 2,
@@ -287,8 +289,8 @@ test('a phone call keeps every control in one row below cameras that fill the sc
     await expect(page.getByRole('menuitem', { name: 'Add reaction', exact: true })).toBeVisible();
     await expect(page.getByRole('menuitem', { name: 'Reply', exact: true })).toBeVisible();
     await page.keyboard.press('Escape');
-    await page.getByRole('button', { name: 'Close room messages' }).click();
-    await expect(page.getByRole('region', { name: 'Room chat' })).toBeHidden();
+    await chat.getByRole('button', { name: 'Back to call', exact: true }).click();
+    await expect(chat).toBeHidden();
     await page.screenshot({ path: '.local/mobile-call.png' });
   } finally {
     await phone.close();

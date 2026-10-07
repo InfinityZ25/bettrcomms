@@ -11,7 +11,7 @@ import {
   PinOff,
   MessagesSquare,
 } from 'lucide-react';
-import { api, type Message } from '@/api';
+import type { Message } from '@/api';
 import { Avatar } from '@/components/avatar';
 import { Button } from '@/components/ui/button';
 import {
@@ -29,6 +29,8 @@ import {
   needsMessageFormatting,
 } from './messageFormatting';
 import { openUserProfile } from '@/features/settings/ProfileDialog';
+import { useLifetimeSignal } from '@/hooks/useLifetimeSignal';
+import { downloadMessageAttachment } from './attachmentFiles';
 
 const FormattedMessage = lazy(() => import('./FormattedMessage'));
 export function MessageBody({ message }: { message: Message }) {
@@ -92,37 +94,15 @@ export default function MessageItem({
   const [moderating, setModerating] = useState(false);
   const [reason, setReason] = useState('');
   const [reported, setReported] = useState(false);
-  const openAttachment = async (id: string) => {
-    const tab = window.open('about:blank', '_blank');
-    if (tab) tab.opener = null;
-    try {
-      const result = await api<{ url: string }>(
-        `/rooms/${message.room_id}/attachments/${id}?link=1`,
-      );
-      const url = new URL(result.url);
-      if (url.protocol !== 'https:' && url.protocol !== 'http:')
-        throw new Error('Invalid attachment URL');
-      if (tab) tab.location.href = url.href;
-      else {
-        const link = document.createElement('a');
-        link.href = url.href;
-        link.target = '_blank';
-        link.rel = 'noopener noreferrer';
-        link.referrerPolicy = 'no-referrer';
-        link.download =
-          message.attachments?.find((attachment) => attachment.id === id)
-            ?.filename ?? '';
-        document.body.append(link);
-        link.click();
-        link.remove();
-      }
-    } catch (error) {
-      tab?.close();
-      onError(
-        error instanceof Error ? error.message : 'Could not open attachment',
-      );
-    }
-  };
+  const lifetime = useLifetimeSignal();
+  const openAttachment = (id: string) =>
+    downloadMessageAttachment(
+      message.room_id,
+      id,
+      message.attachments?.find((attachment) => attachment.id === id)
+        ?.filename ?? '',
+      { signal: lifetime(), onError },
+    );
   return (
     <article
       data-message-id={message.id}

@@ -127,19 +127,23 @@ test('two members chat, call, record separate tracks, and transport a screen sha
     await ownerPage.screenshot({ path: 'tests/screenshots/signed-room.png', fullPage: true });
 
     const message = `persistent message ${Date.now()}`;
-    await ownerPage.getByRole('textbox', { name: 'Message Grace E2E', exact: true }).fill(message);
-    await ownerPage.getByRole('button', { name: /send message/i }).click();
-    await expect(guestPage.getByText(message)).toBeVisible({ timeout: 3_000 });
+    const ownerConversation = ownerPage.getByRole('region', { name: 'Conversation with Grace E2E', exact: true });
+    const guestConversation = guestPage.getByRole('region', { name: 'Conversation with Ada E2E', exact: true });
+    await ownerConversation.getByRole('textbox', { name: 'Message Grace E2E', exact: true }).fill(message);
+    await ownerConversation.getByRole('button', { name: 'Send message', exact: true }).click();
+    await expect(guestConversation.getByText(message)).toBeVisible({ timeout: 3_000 });
     await guestPage.reload();
-    await expect(guestPage.getByText(message)).toBeVisible();
+    await guestPage.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Messages', exact: true }).click();
+    await guestPage.getByRole('region', { name: 'Direct messages', exact: true }).getByRole('button', { name: 'Ada E2E', exact: true }).click();
+    await expect(guestPage.getByRole('region', { name: 'Conversation with Ada E2E', exact: true }).getByRole('log', { name: 'Messages', exact: true }).getByText(message, { exact: true })).toBeVisible();
 
     for (const page of [ownerPage, guestPage]) {
       await page.getByRole('button', { name: 'Rooms', exact: true }).click();
       await page.getByRole('button', { name: room.name, exact: true }).click();
     }
     await Promise.all([
-      ownerPage.getByRole('button', { name: /join voice/i }).click(),
-      guestPage.getByRole('button', { name: /join voice/i }).click(),
+      ownerPage.getByRole('region', { name: `${room.name} · ${room.name}`, exact: true }).getByRole('button', { name: 'Join voice', exact: true }).click(),
+      guestPage.getByRole('region', { name: `${room.name} · ${room.name}`, exact: true }).getByRole('button', { name: 'Join voice', exact: true }).click(),
     ]);
     await Promise.all([
       expect(ownerPage.locator('.camera-tile:not(.self)')).toHaveCount(1),
@@ -202,6 +206,8 @@ test('two members chat, call, record separate tracks, and transport a screen sha
       expectDecodedVideo(guestPage, '.camera-tile:not(.self) video'),
     ]);
 
+    // Keep chat open behind fullscreen: its compact footer must not carry over.
+    await expect(ownerPage.locator('.call-workspace')).toHaveAttribute('data-chat', 'true');
     await callControl(ownerPage, 'Fullscreen call');
     const fullscreenWorkspace = ownerPage.locator('.call-workspace');
     const fullscreenStage = fullscreenWorkspace.locator('.stage');

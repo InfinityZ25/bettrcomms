@@ -223,3 +223,67 @@ export async function signedAttachmentURL(
     throw new Error('Invalid attachment URL');
   return result.url;
 }
+
+/** Keep the popup in the user's click gesture, but never navigate it with a
+ * response belonging to a closed conversation or a previous account. */
+export async function downloadMessageAttachment(
+  roomId: string,
+  id: string,
+  filename: string,
+  options: { signal: AbortSignal; onError: (message: string) => void },
+): Promise<boolean> {
+  const { signal, onError } = options;
+  const generation = sessionGeneration();
+  const current = () => !signal.aborted && generation === sessionGeneration();
+  if (!current()) return false;
+  const tab = window.open('about:blank', '_blank');
+  if (tab) tab.opener = null;
+  let closed = false;
+  const closeTab = () => {
+    if (tab && !closed) {
+      closed = true;
+      tab.close();
+    }
+  };
+  signal.addEventListener('abort', closeTab, { once: true });
+  try {
+    const result = await api<{ url: string }>(
+      `/rooms/${roomId}/attachments/${id}?link=1`,
+      undefined,
+      undefined,
+      signal,
+    );
+    if (!current()) {
+      closeTab();
+      return false;
+    }
+    const url = new URL(result.url);
+    if (url.protocol !== 'https:' && url.protocol !== 'http:')
+      throw new Error('Invalid attachment URL');
+    if (tab) tab.location.href = url.href;
+    else {
+      const link = document.createElement('a');
+      link.href = url.href;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.referrerPolicy = 'no-referrer';
+      link.download = filename;
+      document.body.append(link);
+      try {
+        link.click();
+      } finally {
+        link.remove();
+      }
+    }
+    return true;
+  } catch (error) {
+    closeTab();
+    if (current())
+      onError(
+        error instanceof Error ? error.message : 'Could not open attachment',
+      );
+    return false;
+  } finally {
+    signal.removeEventListener('abort', closeTab);
+  }
+}

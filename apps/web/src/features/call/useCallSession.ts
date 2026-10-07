@@ -198,6 +198,7 @@ export function useCallSession({
       // Tearing the call down mid-operation is not something to report.
       if (
         active.current &&
+        generation === actionGeneration.current &&
         !(error instanceof MediaEngineDisposedError) &&
         !(error instanceof DOMException && error.name === 'AbortError')
       )
@@ -885,6 +886,7 @@ export function useCallSession({
         try {
           await startIOSCallAudio();
         } catch (error) {
+          assertCurrent();
           onError(
             `iPhone background audio unavailable: ${errorMessage(error)}`,
           );

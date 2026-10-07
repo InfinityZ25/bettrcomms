@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type SetStateAction } from 'react';
 import { api, type Room, type User } from '@/api';
 import { errorMessage } from '@/lib/errors';
 
@@ -12,18 +12,32 @@ export function useRooms(
   revision: number,
   onError: (message: string) => void,
 ) {
-  const [rooms, setRooms] = useState<Room[]>([]);
-  const [room, setRoom] = useState<Room | null>(null);
+  const [{ rooms, room, fallbackRevision }, setState] = useState<{
+    rooms: Room[];
+    room: Room | null;
+    fallbackRevision: number;
+  }>({ rooms: [], room: null, fallbackRevision: 0 });
+
+  const setRoom = useCallback((next: SetStateAction<Room | null>) => {
+    setState((current) => ({
+      ...current,
+      room: typeof next === 'function' ? next(current.room) : next,
+    }));
+  }, []);
 
   const reload = useCallback(async () => {
     const result = await api<{ rooms: Room[] }>('/rooms');
-    setRooms(result.rooms ?? []);
-    setRoom(
-      (current) =>
-        result.rooms?.find((candidate) => candidate.id === current?.id) ??
-        result.rooms?.[0] ??
-        null,
-    );
+    setState((current) => {
+      const rooms = result.rooms ?? [];
+      const selected = rooms.find((candidate) => candidate.id === current.room?.id);
+      return {
+        rooms,
+        room: selected ?? rooms[0] ?? null,
+        // Initial loading must preserve explicit section navigation. Losing an
+        // existing selection instead hands navigation to its replacement.
+        fallbackRevision: current.fallbackRevision + (current.room && !selected ? 1 : 0),
+      };
+    });
   }, []);
 
   const refresh = useCallback(
@@ -37,16 +51,18 @@ export function useRooms(
 
   /** Opens a room the list may not carry yet, such as a new direct conversation. */
   const openRoom = useCallback((next: Room) => {
-    setRoom(next);
-    setRooms((list) =>
-      list.some((candidate) => candidate.id === next.id) ? list : [next, ...list],
-    );
+    setState((current) => ({
+      ...current,
+      room: next,
+      rooms: current.rooms.some((candidate) => candidate.id === next.id)
+        ? current.rooms
+        : [next, ...current.rooms],
+    }));
   }, []);
 
   const clear = useCallback(() => {
-    setRooms([]);
-    setRoom(null);
+    setState((current) => ({ ...current, rooms: [], room: null }));
   }, []);
 
-  return { rooms, room, setRoom, openRoom, reload, refresh, clear };
+  return { rooms, room, fallbackRevision, setRoom, openRoom, reload, refresh, clear };
 }

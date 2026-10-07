@@ -1,7 +1,4 @@
-import {
-  loadRnnoise,
-  RnnoiseWorkletNode,
-} from '@sapphi-red/web-noise-suppressor';
+import type { RnnoiseWorkletNode } from '@sapphi-red/web-noise-suppressor';
 import rnnoiseWasmUrl from '@sapphi-red/web-noise-suppressor/rnnoise.wasm?url';
 import rnnoiseWasmSimdUrl from '@sapphi-red/web-noise-suppressor/rnnoise_simd.wasm?url';
 import rnnoiseWorkletUrl from '@sapphi-red/web-noise-suppressor/rnnoiseWorklet.js?url';
@@ -47,6 +44,7 @@ export async function createDenoiser(
   let destination: MediaStreamAudioDestinationNode | undefined;
   let outputTrack: MediaStreamTrack | undefined;
   let disposed = false;
+  const inputEnded = () => rawTrack.readyState === 'ended';
 
   const cleanup = () => {
     if (disposed) return;
@@ -61,10 +59,20 @@ export async function createDenoiser(
   };
 
   try {
+    // The library subclasses AudioWorkletNode while evaluating its module.
+    const { loadRnnoise, RnnoiseWorkletNode } = await import(
+      '@sapphi-red/web-noise-suppressor'
+    );
+    if (inputEnded()) {
+      throw new Error('Cannot denoise an ended audio track');
+    }
     const [wasmBinary] = await Promise.all([
       loadRnnoise({ url: rnnoiseWasmUrl, simdUrl: rnnoiseWasmSimdUrl }),
       context.audioWorklet.addModule(rnnoiseWorkletUrl),
     ]);
+    if (inputEnded()) {
+      throw new Error('Cannot denoise an ended audio track');
+    }
 
     source = context.createMediaStreamSource(new MediaStream([rawTrack]));
     denoiser = new RnnoiseWorkletNode(context, {

@@ -44,9 +44,30 @@ those permissions for affordances; the Go API independently authorizes every
 HTTP write and media subscription. Membership events refresh navigation through
 the existing authenticated realtime stream.
 
-This batch has source review only at the user's request. Deferred acceptance must
-cover migration with existing channels/DMs/groups, all role pairs, ownership and
-account deletion, concurrent last-channel deletion, sibling membership/media
-revocation, invitation redemption, announcement posting/upload/typing/pins and
-media admission, and switching voice channels while a call is active. Build,
-unit/integration and browser checks have not been run locally for this batch.
+The web production build, 489 Vitest tests, `go test ./...` with Docker PostgreSQL
+integration and `go vet ./...` passed. Targeted real-API Chromium acceptance passed for shared room
+roles, hybrid channels, announcement posting/voice denial and live revocation,
+alongside the MinIO image/MP4 upload, preview, retry and original-download flow.
+Automated results are recorded in
+[PR #40](https://github.com/InfinityZ25/bettrcomms/pull/40). Release requires the
+Chromium suite and the optimized-build Chromium/WebKit matrix, including share
+zoom through transparent footer areas and centered fullscreen controls with an
+open conversation pane.
+
+Explicit Messages navigation now survives initial default-channel selection.
+Returning to an active call after channel navigation reattaches camera layout
+observation to its mounted stage and ignores callbacks from the previous stage.
+
+Recording finalization now waits for the stop event and final data block after
+the recorder becomes inactive. The browser matrix also covers WebKit startup
+without `AudioWorkletNode`, with RNNoise/Speex imports deferred to their audio
+paths.
+
+The release matrix still covers migration with existing channels/DMs/groups, all
+role pairs, ownership and account deletion, concurrent last-channel deletion,
+sibling membership/media revocation, invitation redemption, announcement posting/
+upload/typing/pins and media admission, and switching voice channels during an
+active call. Cancelled joins must reject late completion and release their media
+resources. The synthetic MP4 above 16 MiB does not establish 500 MiB production
+transfers. See `TEST_PLAN.md` for validated coverage and the remaining deployment,
+physical-device, native capture/encoding and cross-network acceptance boundaries.

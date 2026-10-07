@@ -480,14 +480,21 @@ func TestDeviceDescriptionsAreBounded(t *testing.T) {
 }
 
 type gatedAccountStorage struct {
-	started chan string
-	release chan struct{}
+	started   chan string
+	release   chan struct{}
+	mu        sync.Mutex
+	objects   map[string]bool
+	deleted   []string
+	deleteErr error
 }
 
 func (s *gatedAccountStorage) Put(ctx context.Context, key string, body io.Reader, _ int64, _ string) error {
 	if _, err := io.Copy(io.Discard, body); err != nil {
 		return err
 	}
+	s.mu.Lock()
+	s.objects[key] = true
+	s.mu.Unlock()
 	s.started <- key
 	select {
 	case <-s.release:
@@ -499,72 +506,138 @@ func (s *gatedAccountStorage) Put(ctx context.Context, key string, body io.Reade
 func (*gatedAccountStorage) URL(context.Context, string, string, string, bool) (string, error) {
 	return "https://example.test/file", nil
 }
-func (*gatedAccountStorage) Delete(context.Context, string) error { return nil }
+func (s *gatedAccountStorage) Delete(_ context.Context, key string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.deleted = append(s.deleted, key)
+	if s.deleteErr != nil {
+		return s.deleteErr
+	}
+	delete(s.objects, key)
+	return nil
+}
 
 func TestRevokedSessionCannotFinalizeInFlightUploadIntegration(t *testing.T) {
-	s := conversationTestStore(t)
-	user, err := s.UpsertDevUser("upload-revoke@example.test", "Uploader")
-	if err != nil {
-		t.Fatal(err)
+	for _, test := range []struct {
+		name      string
+		deleteErr error
+	}{
+		{name: "immediate cleanup succeeds"},
+		{name: "failed cleanup retains retryable tombstone", deleteErr: errors.New("object storage unavailable")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			s := conversationTestStore(t)
+			user, err := s.UpsertDevUser("upload-revoke@example.test", "Uploader")
+			if err != nil {
+				t.Fatal(err)
+			}
+			room, err := s.CreateRoom(user.ID, "Upload")
+			if err != nil {
+				t.Fatal(err)
+			}
+			a := New(s, Sessions{Store: s}, Config{AppURL: "http://localhost"})
+			currentCookie, _ := issueAccountSession(t, a, user)
+			uploadCookie, _ := issueAccountSession(t, a, user)
+			storage := &gatedAccountStorage{started: make(chan string, 1), release: make(chan struct{}), objects: make(map[string]bool), deleteErr: test.deleteErr}
+			a.Attachments = storage
+			var releaseOnce sync.Once
+			release := func() { releaseOnce.Do(func() { close(storage.release) }) }
+			t.Cleanup(release)
+			var body bytes.Buffer
+			form := multipart.NewWriter(&body)
+			part, err := form.CreateFormFile("file", "note.txt")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = part.Write([]byte("upload is in flight")); err != nil {
+				t.Fatal(err)
+			}
+			if err = form.Close(); err != nil {
+				t.Fatal(err)
+			}
+			request := httptest.NewRequest("POST", "http://localhost/api/v1/rooms/"+room.ID+"/attachments", &body)
+			request.Header.Set("Content-Type", form.FormDataContentType())
+			request.AddCookie(uploadCookie)
+			response := httptest.NewRecorder()
+			done := make(chan struct{})
+			go func() { a.Handler().ServeHTTP(response, request); close(done) }()
+			var key string
+			select {
+			case key = <-storage.started:
+			case <-time.After(3 * time.Second):
+				t.Fatal("upload did not reach object storage")
+			}
+			id := strings.TrimPrefix(key, "messages/")
+			var state string
+			var deleted *time.Time
+			if err = s.DB.QueryRow(context.Background(), `SELECT upload_state,deleted_at FROM message_attachments WHERE id=$1`, id).Scan(&state, &deleted); err != nil || state != "uploading" || deleted != nil {
+				t.Fatalf("in-flight upload became ready before storage completed: state=%q deleted=%v err=%v", state, deleted, err)
+			}
+			accountHTTP(t, a, currentCookie, "POST", "/me/sessions/revoke-others", "{}", 200)
+			release()
+			select {
+			case <-done:
+			case <-time.After(3 * time.Second):
+				t.Fatal("revoked upload did not finish")
+			}
+			if response.Code != 401 {
+				t.Fatalf("revoked upload returned %d", response.Code)
+			}
+			storage.mu.Lock()
+			objectExists := storage.objects[key]
+			deleteKeys := append([]string(nil), storage.deleted...)
+			storage.mu.Unlock()
+			if len(deleteKeys) != 1 || deleteKeys[0] != key || objectExists != (test.deleteErr != nil) {
+				t.Fatalf("revoked object cleanup: deletes=%v objectExists=%v", deleteKeys, objectExists)
+			}
+			assertRemoved := func() {
+				t.Helper()
+				var count int
+				if err = s.DB.QueryRow(context.Background(), `SELECT count(*) FROM message_attachments WHERE object_key=$1`, key).Scan(&count); err != nil || count != 0 {
+					t.Fatalf("cleaned object retained its pending row: count=%d err=%v", count, err)
+				}
+			}
+			if test.deleteErr == nil {
+				assertRemoved()
+			} else {
+				if err = s.DB.QueryRow(context.Background(), `SELECT upload_state,deleted_at FROM message_attachments WHERE id=$1 AND object_key=$2`, id, key).Scan(&state, &deleted); err != nil || state != "ready" || deleted == nil {
+					t.Fatalf("failed object deletion lost its cleanup tombstone: state=%q deleted=%v err=%v", state, deleted, err)
+				}
+			}
+			if _, _, err = s.AttachmentForMember(room.ID, user.ID, id); !errors.Is(err, ErrNotFound) {
+				t.Fatal("another active session can download a revoked upload")
+			}
+			if _, _, err = s.SendThreadMessage(room.ID, user.ID, "", "", "", []string{id}, ""); !errors.Is(err, ErrNotFound) {
+				t.Fatalf("another active session can attach a revoked upload: %v", err)
+			}
+			accountHTTP(t, a, currentCookie, "GET", "/rooms/"+room.ID+"/attachments/"+id+"?link=1", "", 404)
+			accountHTTP(t, a, uploadCookie, "GET", "/me", "", 401)
+			accountHTTP(t, a, currentCookie, "GET", "/me", "", 200)
+			if test.deleteErr != nil {
+				if err = s.CleanPendingAttachments(context.Background(), storage); !errors.Is(err, test.deleteErr) {
+					t.Fatalf("cleanup worker did not report storage failure: %v", err)
+				}
+				var attempted *time.Time
+				if err = s.DB.QueryRow(context.Background(), `SELECT cleanup_attempted_at FROM message_attachments WHERE id=$1 AND object_key=$2 AND deleted_at IS NOT NULL`, id, key).Scan(&attempted); err != nil || attempted == nil {
+					t.Fatalf("cleanup worker discarded the retryable object key: attempted=%v err=%v", attempted, err)
+				}
+				storage.mu.Lock()
+				storage.deleteErr = nil
+				storage.mu.Unlock()
+				if err = s.CleanPendingAttachments(context.Background(), storage); err != nil {
+					t.Fatal(err)
+				}
+				assertRemoved()
+				storage.mu.Lock()
+				objectExists = storage.objects[key]
+				deleteKeys = append([]string(nil), storage.deleted...)
+				storage.mu.Unlock()
+				if objectExists || len(deleteKeys) != 3 || deleteKeys[1] != key || deleteKeys[2] != key {
+					t.Fatalf("cleanup worker failed to delete the revoked object: deletes=%v objectExists=%v", deleteKeys, objectExists)
+				}
+			}
+		})
 	}
-	room, err := s.CreateRoom(user.ID, "Upload")
-	if err != nil {
-		t.Fatal(err)
-	}
-	a := New(s, Sessions{Store: s}, Config{AppURL: "http://localhost"})
-	currentCookie, _ := issueAccountSession(t, a, user)
-	uploadCookie, _ := issueAccountSession(t, a, user)
-	storage := &gatedAccountStorage{started: make(chan string, 1), release: make(chan struct{})}
-	a.Attachments = storage
-	var releaseOnce sync.Once
-	release := func() { releaseOnce.Do(func() { close(storage.release) }) }
-	t.Cleanup(release)
-	var body bytes.Buffer
-	form := multipart.NewWriter(&body)
-	part, err := form.CreateFormFile("file", "note.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = part.Write([]byte("upload is in flight")); err != nil {
-		t.Fatal(err)
-	}
-	if err = form.Close(); err != nil {
-		t.Fatal(err)
-	}
-	request := httptest.NewRequest("POST", "http://localhost/api/v1/rooms/"+room.ID+"/attachments", &body)
-	request.Header.Set("Content-Type", form.FormDataContentType())
-	request.AddCookie(uploadCookie)
-	response := httptest.NewRecorder()
-	done := make(chan struct{})
-	go func() { a.Handler().ServeHTTP(response, request); close(done) }()
-	var key string
-	select {
-	case key = <-storage.started:
-	case <-time.After(3 * time.Second):
-		t.Fatal("upload did not reach object storage")
-	}
-	accountHTTP(t, a, currentCookie, "POST", "/me/sessions/revoke-others", "{}", 200)
-	release()
-	select {
-	case <-done:
-	case <-time.After(3 * time.Second):
-		t.Fatal("revoked upload did not finish")
-	}
-	if response.Code != 401 {
-		t.Fatalf("revoked upload returned %d", response.Code)
-	}
-	var id, state string
-	var deleted *time.Time
-	if err = s.DB.QueryRow(context.Background(), `SELECT id::text,upload_state,deleted_at FROM message_attachments WHERE object_key=$1`, key).Scan(&id, &state, &deleted); err != nil {
-		t.Fatal(err)
-	}
-	if state != "ready" || deleted == nil {
-		t.Fatal("revoked stored object was not retained for immediate cleanup")
-	}
-	if _, _, err = s.AttachmentForMember(room.ID, user.ID, id); !errors.Is(err, ErrNotFound) {
-		t.Fatal("another active session can download a revoked upload")
-	}
-	accountHTTP(t, a, currentCookie, "GET", "/me", "", 200)
 }
 
 func TestHubRevocationStopsDeliveryAndAdmission(t *testing.T) {

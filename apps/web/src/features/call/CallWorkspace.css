@@ -466,12 +466,22 @@
     transparent,
     color-mix(in oklch, var(--background) 86%, transparent) 55%
   );
+  /* The floating backdrop must not block the shared pane's zoom controls. */
+  pointer-events: none;
   transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.call-workspace > .call-footer > * {
+  pointer-events: auto;
 }
 
 .call-workspace[data-controls-visible='false'] > .call-footer {
   opacity: 0;
   transform: translateY(100%);
+  pointer-events: none;
+}
+
+.call-workspace[data-controls-visible='false'] > .call-footer > * {
   pointer-events: none;
 }
 
@@ -484,6 +494,12 @@
 .call-workspace > .call-footer:has([open]) {
   opacity: 1;
   transform: none;
+}
+
+.call-workspace > .call-footer:hover > *,
+.call-workspace > .call-footer:focus-within > *,
+.call-workspace > .call-footer:has([aria-expanded='true']) > *,
+.call-workspace > .call-footer:has([open]) > * {
   pointer-events: auto;
 }
 
@@ -605,7 +621,7 @@
 .call-workspace[data-chat='true'] {
   --chrome-bottom: 96px;
 }
-.call-workspace[data-chat='true'] > .call-footer {
+.call-workspace[data-chat='true']:not(:fullscreen) > .call-footer {
   display: flex;
   flex-wrap: wrap;
   align-items: center;

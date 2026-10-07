@@ -1,4 +1,4 @@
-import { loadSpeex, SpeexWorkletNode } from '@sapphi-red/web-noise-suppressor';
+import type { SpeexWorkletNode } from '@sapphi-red/web-noise-suppressor';
 import speexWasmUrl from '@sapphi-red/web-noise-suppressor/speex.wasm?url';
 import speexWorkletUrl from '@sapphi-red/web-noise-suppressor/speexWorklet.js?url';
 import type { DenoisedTrack } from './denoise';
@@ -58,6 +58,13 @@ export async function createSpeexDenoiser(
   };
 
   try {
+    // Keep application startup independent of AudioWorklet support.
+    const { loadSpeex, SpeexWorkletNode } = await import(
+      '@sapphi-red/web-noise-suppressor'
+    );
+    if (inputEnded()) {
+      throw new Error('Cannot denoise an ended audio track');
+    }
     const [wasmBinary] = await Promise.all([
       loadSpeex({ url: speexWasmUrl }),
       context.audioWorklet.addModule(speexWorkletUrl),

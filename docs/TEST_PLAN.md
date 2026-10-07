@@ -2,12 +2,56 @@
 
 ## Test layers
 
-The October unified-channel/attachment batch intentionally defers local execution
-at the user's request. Run the normal build/unit/backend checks and then the
-acceptance matrix in `COMMUNITIES.md`, including S3 MP4 above 10 MiB, configured
-size boundaries, upload cancel/retry and pending-file cleanup, local/sent previews,
-all room role pairs, announcement admission and active voice switching. Added or
-adapted test source is not evidence of a passing run.
+For the October unified-channel/attachment batch, the web production build,
+489 Vitest tests, `go test ./...` with Docker PostgreSQL integration and
+`go vet ./...` passed.
+Targeted Chromium community/attachment acceptance passed against the real API,
+PostgreSQL and MinIO. Automated results are recorded in
+[PR #40](https://github.com/InfinityZ25/bettrcomms/pull/40). Release requires the
+Chromium suite and the optimized-build Chromium/WebKit matrix.
+
+`tests/attachment-upload-flow.spec.ts` verifies local and sent PNG previews,
+interrupted-upload retry without losing the draft, separate downloads with exact
+original bytes, outsider denial and MP4 playback/upload/download above
+the former 10 MiB limit. Its synthetic H.264 fixture has a valid ISO BMFF free box
+appended to exceed 16 MiB while preserving playback. This run does not establish
+the configured 500 MiB/2 GiB size boundaries or production proxy/network behavior.
+
+Regression coverage also checks that leaving a view or replacing an account
+cancels a waiting download without navigating a late response, while a completed
+download remains open. Cancelled voice joins must reject late completion and
+release microphone/signaling resources. Backend revoked-session upload tests
+verify both immediate object/row deletion and an inaccessible, retryable tombstone
+after storage failure; authorization checks remain unchanged.
+
+The footer's transparent background now passes pointer input to underlying share
+zoom controls, and fullscreen control alignment is independent of an open chat
+pane. Browser regression acceptance requires normal zoom clicks with the footer
+visible, usable footer buttons, and centered fullscreen controls with chat open
+across the required Chromium and optimized-build Chromium/WebKit matrix.
+
+Navigate between channels and back to an active call, then resize its stage;
+camera layout observation must follow the mounted stage and ignore stale callbacks.
+Delay the initial real `/rooms` response until Messages is selected, then require
+the direct-message list to appear without another click. Preserve the two-second
+realtime delivery checks and zero presence polling.
+Remove the selected room's membership through the real API and require the
+replacement conversation and sidebar selection to agree without a page reload,
+both from Rooms to Messages and from Messages to Rooms.
+Sign out or revoke the active session, then sign in as another account without
+reloading; its initial room determines navigation instead of the previous choice.
+
+Recording regressions cover the final data block arriving after the recorder is
+already inactive, including track removal, track end and recorder errors. Audio
+fixtures wait for rendered samples and verify decoded duration before storing a
+declared timeline. WebKit startup must work without `AudioWorkletNode`; RNNoise
+and Speex imports are deferred until their audio paths are requested.
+
+Continue the release acceptance matrix in `COMMUNITIES.md`, including configured
+size boundaries, upload cancellation and pending-file cleanup, all room role pairs,
+announcement admission and active voice switching. Test source alone is not
+evidence of a passing run, and synthetic browser media does not satisfy physical
+device, native capture/encoding or cross-network gates.
 
 Unit tests cover permission resolution, event sequencing, audio gain bounds, layout math, manifest/index transitions, quota eviction, and capability-state serialization. Contract tests run the React client against the Go API and signaling service with clock and disconnect control. PostgreSQL integration tests use real migrations and constraints. Browser automation covers primary keyboard and screen-reader semantics but does not substitute for real media tests.
 

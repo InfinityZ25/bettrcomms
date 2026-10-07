@@ -40,6 +40,11 @@
     pointer-events: auto;
   }
 
+  .call-workspace > .call-footer > *,
+  .call-workspace[data-controls-visible='false'] > .call-footer > * {
+    pointer-events: auto;
+  }
+
   .phone-call-status {
     display: flex;
     flex-wrap: wrap;

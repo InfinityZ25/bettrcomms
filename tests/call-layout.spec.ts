@@ -64,7 +64,7 @@ test('camera dock resizes, snaps, focuses, and preserves the active share', asyn
     page.setDefaultTimeout(15_000);
     await page.goto('/');
     await page.getByRole('button', { name: room.name, exact: true }).click();
-    await page.getByRole('button', { name: 'Join voice' }).click();
+    await page.getByRole('region', { name: `${room.name} · ${room.name}`, exact: true }).getByRole('button', { name: 'Join voice', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
 
     await page.getByRole('button', { name: otherRoom.name, exact: true }).click();
@@ -114,6 +114,18 @@ test('camera dock resizes, snaps, focuses, and preserves the active share', asyn
 
     const zoomOut = page.getByRole('button', { name: 'Zoom out Your screen' });
     const resetZoom = page.getByRole('button', { name: 'Reset zoom Your screen' });
+    await page.locator('.stage-content-pane').hover({ position: { x: 20, y: 20 } });
+    // The floating footer's transparent padding must let pointer input reach
+    // the share controls while the footer is visible, not only after it hides.
+    await expect.poll(() => zoomOut.evaluate((button) => {
+      const footer = button.closest('.call-workspace')?.querySelector(':scope > .call-footer');
+      const rect = button.getBoundingClientRect();
+      const target = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+      return {
+        footerVisible: Boolean(footer && getComputedStyle(footer).opacity === '1' && getComputedStyle(footer).transform === 'none'),
+        centerHitsZoom: target === button || Boolean(target && button.contains(target)),
+      };
+    })).toEqual({ footerVisible: true, centerHitsZoom: true });
     for (let step = 0; step < 6; step += 1) await zoomOut.click();
     await expect(resetZoom).toHaveText('50%');
     await resetZoom.click();
@@ -143,6 +155,8 @@ test('camera dock resizes, snaps, focuses, and preserves the active share', asyn
     await layoutOption(page, 'Top row');
     const divider = page.getByRole('separator', { name: 'Resize cameras' });
     const before = Number(await divider.getAttribute('aria-valuenow'));
+    // Returning to the call must observe the restored canvas, not the removed one.
+    await expect.poll(async () => Number(await divider.getAttribute('aria-valuemax'))).toBeGreaterThan(before);
     const dividerBox = await divider.boundingBox();
     if (!dividerBox) throw new Error('Camera divider has no layout box');
     await page.mouse.move(dividerBox.x + dividerBox.width / 2, dividerBox.y + dividerBox.height / 2);
