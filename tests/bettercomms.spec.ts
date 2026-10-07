@@ -127,9 +127,11 @@ test('two members chat, call, record separate tracks, and transport a screen sha
     await ownerPage.screenshot({ path: 'tests/screenshots/signed-room.png', fullPage: true });
 
     const message = `persistent message ${Date.now()}`;
-    await ownerPage.getByRole('textbox', { name: 'Message Grace E2E', exact: true }).fill(message);
-    await ownerPage.getByRole('button', { name: /send message/i }).click();
-    await expect(guestPage.getByText(message)).toBeVisible({ timeout: 3_000 });
+    const ownerConversation = ownerPage.getByRole('region', { name: 'Conversation with Grace E2E', exact: true });
+    const guestConversation = guestPage.getByRole('region', { name: 'Conversation with Ada E2E', exact: true });
+    await ownerConversation.getByRole('textbox', { name: 'Message Grace E2E', exact: true }).fill(message);
+    await ownerConversation.getByRole('button', { name: 'Send message', exact: true }).click();
+    await expect(guestConversation.getByText(message)).toBeVisible({ timeout: 3_000 });
     await guestPage.reload();
     await guestPage.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Messages', exact: true }).click();
     await guestPage.getByRole('region', { name: 'Direct messages', exact: true }).getByRole('button', { name: 'Ada E2E', exact: true }).click();
