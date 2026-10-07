@@ -71,3 +71,55 @@ test('direct rooms use the other friend name and share call presence', async ({ 
     await Promise.allSettled([adaContext.close(), graceContext.close()]);
   }
 });
+
+test('signing into another account without reloading restores its default Rooms section', async ({ browser }) => {
+  test.setTimeout(150_000);
+  const firstContext = await browser.newContext({ baseURL });
+  const secondContext = await browser.newContext({ baseURL });
+  try {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const secondEmail = `section-second-${suffix}@example.test`;
+    const second = await login(secondContext, 'Second Section Account', secondEmail);
+    const { room } = await json<{ room: { name: string } }>(await secondContext.request.post('/api/v1/rooms', {
+      headers: { Origin: origin }, data: { name: `Second account room ${suffix}` },
+    }));
+    const first = await login(firstContext, 'First Section Account', `section-first-${suffix}@example.test`);
+    const page = await firstContext.newPage();
+    await page.goto('/');
+    const sections = page.getByRole('navigation', { name: 'Sections' });
+    await expect(sections.getByRole('button', { name: `${first.name} and account options`, exact: true })).toBeVisible();
+    await sections.getByRole('button', { name: 'Messages', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Messages', exact: true })).toBeVisible();
+    await page.evaluate((value) => {
+      (window as unknown as { sectionAccountDocument: string }).sectionAccountDocument = value;
+    }, suffix);
+
+    await sections.getByRole('button', { name: `${first.name} and account options`, exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Sign out', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Enter local workspace', exact: true })).toBeVisible();
+    expect((await firstContext.request.get('/api/v1/me')).status()).toBe(401);
+    await page.getByRole('textbox', { name: 'Your name', exact: true }).fill(second.name);
+    await page.getByRole('textbox', { name: 'Your email', exact: true }).fill(secondEmail);
+
+    const deadline = Date.now() + 65_000;
+    for (;;) {
+      const [response] = await Promise.all([
+        page.waitForResponse((result) => result.request().method() === 'POST' && new URL(result.url()).pathname === '/api/v1/auth/dev'),
+        page.getByRole('button', { name: 'Enter local workspace', exact: true }).click(),
+      ]);
+      if (response.status() !== 429 || Date.now() >= deadline) {
+        expect(response.ok(), `Local sign-in status ${response.status()}`).toBeTruthy();
+        break;
+      }
+      await new Promise(resolve => setTimeout(resolve, 5000));
+    }
+
+    await expect(sections.getByRole('button', { name: `${second.name} and account options`, exact: true })).toBeVisible();
+    await expect(page.getByRole('list', { name: `${room.name} channel list`, exact: true })).toBeVisible();
+    await expect(sections.getByRole('button', { name: 'Rooms', exact: true })).toHaveAttribute('aria-current', 'page');
+    await expect(sections.getByRole('button', { name: 'Messages', exact: true })).not.toHaveAttribute('aria-current', 'page');
+    expect(await page.evaluate(() => (window as unknown as { sectionAccountDocument: string }).sectionAccountDocument)).toBe(suffix);
+  } finally {
+    await Promise.allSettled([firstContext.close(), secondContext.close()]);
+  }
+});

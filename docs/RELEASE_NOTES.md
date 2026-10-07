@@ -30,6 +30,7 @@ call controls stay centered when a conversation pane is open.
 Returning to a call after channel navigation reattaches camera layout observation
 to the current stage and ignores callbacks from the old stage. Choosing Messages
 while the initial room list loads now survives automatic default-channel selection.
+Signing out or losing a session resets that choice before another account enters.
 
 Track recording waits for the recorder's stop event and final data block even
 when track removal has already made it inactive. RNNoise and Speex modules load

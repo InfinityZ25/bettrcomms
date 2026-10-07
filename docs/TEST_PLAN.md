@@ -35,6 +35,8 @@ camera layout observation must follow the mounted stage and ignore stale callbac
 Delay the initial real `/rooms` response until Messages is selected, then require
 the direct-message list to appear without another click. Preserve the two-second
 realtime delivery checks and zero presence polling.
+Sign out or revoke the active session, then sign in as another account without
+reloading; its initial room determines navigation instead of the previous choice.
 
 Recording regressions cover the final data block arriving after the recorder is
 already inactive, including track removal, track end and recorder errors. Audio

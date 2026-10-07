@@ -79,6 +79,7 @@ export default function App() {
   const [error, setError] = useState('');
   const { busy, run } = useAsyncAction(setError);
   const { user, setUser, devAuth, loading, unwrap, signIn } = useSession(() => {
+    setSection(null);
     clear();
     backToCall();
     setSettingsOpen(false);
@@ -300,6 +301,7 @@ export default function App() {
       await stopPushForThisBrowser();
       await api('/auth/logout', {}, 'POST');
       setUser(null);
+      setSection(null);
       setActivityOpen(false);
       setProfileCall(null);
       setSettingsOpen(false);
