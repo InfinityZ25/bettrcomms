@@ -35,11 +35,11 @@ func (a *AuthService) authoriseNative(hostToken string) error {
 	return a.gate.Authorise(hostToken)
 }
 
-func (a *AuthService) IOSCallAudioStart(hostToken string) error {
+func (a *AuthService) IOSCallAudioStart(hostToken string, preferBuiltInMic bool) error {
 	if err := a.authoriseNative(hostToken); err != nil {
 		return err
 	}
-	return iosCallAudioStart()
+	return iosCallAudioStart(preferBuiltInMic)
 }
 
 func (a *AuthService) IOSCallAudioStop(hostToken string) error {
