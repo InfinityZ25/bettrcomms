@@ -8,12 +8,19 @@ import {
   sessionExpired,
   sessionGeneration,
 } from '@/features/auth/sessionEvents';
+import { uploadResumableAttachment } from './resumableUploads';
 
 export type AttachmentLimits = {
   available: boolean;
   max_file_bytes: number;
   max_voice_note_bytes: number;
   max_per_message: number;
+  resumable?: boolean;
+  scanner?: {
+    enabled: boolean;
+    status: 'disabled' | 'ready' | 'unavailable';
+    max_scan_bytes: number;
+  };
 };
 
 export const defaultAttachmentLimits: AttachmentLimits = {
@@ -90,11 +97,42 @@ export async function loadAttachmentLimits(
     max_file_bytes: Math.max(1, attachments.max_file_bytes),
     max_voice_note_bytes: Math.max(1, attachments.max_voice_note_bytes),
     max_per_message: Math.max(1, Math.min(4, attachments.max_per_message)),
+    resumable: attachments.resumable,
+    scanner: attachments.scanner,
   };
 }
 
 /** FormData streams the original File; no full-size arrayBuffer/base64 copy. */
+type UploadOptions = {
+  signal: AbortSignal;
+  onProgress: (progress: number) => void;
+  voiceNote?: boolean;
+  durationMs?: number;
+  resumeId?: string;
+  onSession?: (id: string) => void;
+  resumable?: boolean;
+};
+
 export function uploadAttachmentWithProgress(
+  roomId: string,
+  file: File,
+  options: UploadOptions,
+): Promise<MessageAttachment> {
+  if (options.voiceNote || options.resumable === false)
+    return uploadLegacyAttachmentWithProgress(roomId, file, options);
+  return uploadResumableAttachment(roomId, file, options).catch(
+    (error: unknown) => {
+      if (
+        error instanceof ApiRequestError &&
+        error.code === 'resumable_unavailable'
+      )
+        return uploadLegacyAttachmentWithProgress(roomId, file, options);
+      throw error;
+    },
+  );
+}
+
+function uploadLegacyAttachmentWithProgress(
   roomId: string,
   file: File,
   options: {
@@ -102,6 +140,8 @@ export function uploadAttachmentWithProgress(
     onProgress: (progress: number) => void;
     voiceNote?: boolean;
     durationMs?: number;
+    resumeId?: string;
+    onSession?: (id: string) => void;
   },
 ): Promise<MessageAttachment> {
   return new Promise((resolve, reject) => {

@@ -256,7 +256,7 @@ test('real S3 attachments preview locally, retry, open after sending and downloa
     await page.keyboard.press('Escape');
     await expect(localViewer).toBeHidden();
 
-    const uploadPath = `**/api/v1/rooms/${room}/attachments`;
+    const uploadPath = `**/api/v1/rooms/${room}/uploads/*/chunks`;
     let interrupted = false;
     await page.route(uploadPath, async (route) => {
       if (route.request().method() === 'POST' && !interrupted) {

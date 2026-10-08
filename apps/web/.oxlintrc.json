@@ -1,0 +1,7 @@
+{
+  "settings": {
+    "react-hooks": {
+      "additionalEffectHooks": "^(useMountEffect)$"
+    }
+  }
+}

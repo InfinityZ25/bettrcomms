@@ -50,6 +50,11 @@ func main() {
 	}
 	store := &api.PostgresStore{DB: pool}
 	a := api.New(store, api.Sessions{Store: store, Secure: get("COOKIE_SECURE", "false") == "true"}, cfg)
+	storageFeatures, storageErr := api.StorageFeatureOptionsFromEnv()
+	if storageErr != nil {
+		log.Fatal(storageErr)
+	}
+	a.StorageFeatures = storageFeatures
 	statusContext, stopStatus := context.WithCancel(context.Background())
 	defer stopStatus()
 	go func() {
@@ -98,6 +103,9 @@ func main() {
 				cleanupCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
 				if cleanErr := store.CleanPendingAttachments(cleanupCtx, a.Attachments); cleanErr != nil {
 					log.Printf("attachment cleanup failed: %v", cleanErr)
+				}
+				if cleanErr := a.CleanStorageFeatures(cleanupCtx); cleanErr != nil {
+					log.Printf("storage policy cleanup failed: %v", cleanErr)
 				}
 				cancel()
 				<-ticker.C

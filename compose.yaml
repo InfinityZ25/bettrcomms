@@ -1,5 +1,19 @@
 name: bettercomms
 services:
+  attachment-scanner:
+    image: clamav/clamav:1.5.2
+    profiles: ["scanning"]
+    ports:
+      - "127.0.0.1:13310:3310"
+    volumes:
+      - clamav-signatures:/var/lib/clamav
+      - ./server/clamd.conf:/etc/clamav/clamd.conf:ro
+    healthcheck:
+      test: ["CMD", "clamdscan", "--ping", "1"]
+      interval: 10s
+      timeout: 5s
+      start_period: 180s
+      retries: 12
   turn:
     image: coturn/coturn:4.17.2-r0
     profiles: ["relay"]
@@ -26,4 +40,5 @@ services:
       timeout: 3s
       retries: 10
 volumes:
+  clamav-signatures:
   postgres-data:

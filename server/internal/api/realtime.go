@@ -277,11 +277,25 @@ func (h *RealtimeHub) publishProfile(user User, rooms []Room) {
 }
 
 func (h *RealtimeHub) publishRoom(room string, message wire) {
+	message.audienceRoom = room
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	for c := range h.rooms[room] {
 		enqueueRealtime(c, message)
 	}
+}
+
+func (h *RealtimeHub) canDeliver(client *realtimeClient, message wire) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if client.revoked.Load() {
+		return false
+	}
+	if message.audienceRoom == "" {
+		return true
+	}
+	_, allowed := h.rooms[message.audienceRoom][client]
+	return allowed
 }
 
 func (h *RealtimeHub) canPublishRoom(client *realtimeClient, room string) bool {
@@ -424,9 +438,18 @@ func (a *API) realtimeWebsocket(w http.ResponseWriter, r *http.Request, user Use
 					cancel()
 					return
 				}
+				// A room event may have been queued before an ACL update. Hold
+				// the admission boundary until this bounded write completes so
+				// revocation drops queued events and waits for an authorized write.
+				a.accessMu.RLock()
+				if !a.Realtime.canDeliver(client, message) {
+					a.accessMu.RUnlock()
+					continue
+				}
 				writeContext, writeCancel := context.WithTimeout(ctx, 5*time.Second)
 				err := wsjsonWrite(writeContext, conn, message)
 				writeCancel()
+				a.accessMu.RUnlock()
 				if err != nil {
 					cancel()
 					return

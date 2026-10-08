@@ -52,7 +52,10 @@ test('mobile sections open full-screen lists without interrupting an active call
     for (const size of [{width:390,height:650}, {width:800,height:650}, {width:852,height:393}]) {
       await page.setViewportSize(size);
       await expect(tabs.getByRole('button', { name: 'Friends', exact: true })).toBeHidden();
-      if (size.width <= 820) await expect(tabs.getByRole('button')).toHaveCount(4);
+      if (size.width <= 820) {
+        await expect(tabs.getByRole('button', { name: /^Event reminders/ })).toBeVisible();
+        await expect(tabs.getByRole('button')).toHaveCount(5);
+      }
       await tabs.getByRole('button', { name: 'Rooms', exact: true }).click();
       const list = page.getByRole('main', { name: 'Rooms', exact: true });
       await expect(list).toBeVisible();

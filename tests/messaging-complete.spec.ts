@@ -7,56 +7,165 @@ async function json<T>(response: APIResponse): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-test('typing, draft recovery and conversation notification choices work across two users', async ({ browser }) => {
+test('typing, draft recovery and conversation notification choices work across two users', async ({
+  browser,
+}) => {
   const ownerContext = await browser.newContext({ baseURL });
   const guestContext = await browser.newContext({ baseURL });
   let directId = '';
   let otherId = '';
   try {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const owner = (await json<{ user: { id: string } }>(await ownerContext.request.post('/api/v1/auth/dev', { headers, data: { name: 'Draft Owner', email: `draft-owner-${suffix}@example.test` } }))).user;
-    const guest = (await json<{ user: { id: string } }>(await guestContext.request.post('/api/v1/auth/dev', { headers, data: { name: 'Draft Guest', email: `draft-guest-${suffix}@example.test` } }))).user;
-    const request = await json<{ request: { id: string } }>(await ownerContext.request.post('/api/v1/friends/requests', { headers, data: { user_id: guest.id } }));
-    await json(await guestContext.request.post(`/api/v1/friends/requests/${request.request.id}/accept`, { headers, data: {} }));
-    directId = (await json<{ room: { id: string } }>(await ownerContext.request.post('/api/v1/rooms/direct', { headers, data: { user_id: guest.id } }))).room.id;
-    otherId = (await json<{ room: { id: string } }>(await ownerContext.request.post('/api/v1/rooms', { headers, data: { name: 'Draft side room' } }))).room.id;
+    const owner = (
+      await json<{ user: { id: string } }>(
+        await ownerContext.request.post('/api/v1/auth/dev', {
+          headers,
+          data: {
+            name: 'Draft Owner',
+            email: `draft-owner-${suffix}@example.test`,
+          },
+        }),
+      )
+    ).user;
+    const guest = (
+      await json<{ user: { id: string } }>(
+        await guestContext.request.post('/api/v1/auth/dev', {
+          headers,
+          data: {
+            name: 'Draft Guest',
+            email: `draft-guest-${suffix}@example.test`,
+          },
+        }),
+      )
+    ).user;
+    const request = await json<{ request: { id: string } }>(
+      await ownerContext.request.post('/api/v1/friends/requests', {
+        headers,
+        data: { user_id: guest.id },
+      }),
+    );
+    await json(
+      await guestContext.request.post(
+        `/api/v1/friends/requests/${request.request.id}/accept`,
+        { headers, data: {} },
+      ),
+    );
+    directId = (
+      await json<{ room: { id: string } }>(
+        await ownerContext.request.post('/api/v1/rooms/direct', {
+          headers,
+          data: { user_id: guest.id },
+        }),
+      )
+    ).room.id;
+    otherId = (
+      await json<{ room: { id: string } }>(
+        await ownerContext.request.post('/api/v1/rooms', {
+          headers,
+          data: { name: 'Draft side room' },
+        }),
+      )
+    ).room.id;
 
     const ownerPage = await ownerContext.newPage();
     const guestPage = await guestContext.newPage();
     await ownerPage.goto('/');
     await guestPage.goto('/');
-    await ownerPage.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Messages', exact: true }).click();
-    await guestPage.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Messages', exact: true }).click();
-    await ownerPage.getByRole('region', { name: 'Direct messages' }).getByRole('button', { name: 'Draft Guest', exact: true }).click();
-    const ownerComposer = ownerPage.getByRole('textbox', { name: 'Message Draft Guest' });
+    await ownerPage
+      .getByRole('navigation', { name: 'Sections' })
+      .getByRole('button', { name: 'Messages', exact: true })
+      .click();
+    await guestPage
+      .getByRole('navigation', { name: 'Sections' })
+      .getByRole('button', { name: 'Messages', exact: true })
+      .click();
+    await ownerPage
+      .getByRole('region', { name: 'Direct messages' })
+      .getByRole('button', { name: 'Draft Guest', exact: true })
+      .click();
+    const ownerComposer = ownerPage.getByRole('textbox', {
+      name: 'Message Draft Guest',
+    });
     await expect(ownerComposer).toBeVisible();
-    await expect(guestPage.getByRole('textbox', { name: 'Message Draft Owner' })).toBeVisible();
+    await expect(
+      guestPage.getByRole('textbox', { name: 'Message Draft Owner' }),
+    ).toBeVisible();
     await ownerComposer.fill('A draft that should survive navigation');
     await expect(guestPage.getByText('Draft Owner is typing…')).toBeVisible();
 
-    const directButton = ownerPage.getByRole('region', { name: 'Direct messages' }).getByRole('button', { name: 'Draft Guest', exact: true });
+    const directButton = ownerPage
+      .getByRole('region', { name: 'Direct messages' })
+      .getByRole('button', { name: 'Draft Guest', exact: true });
     await directButton.click({ button: 'right' });
+    const preferenceSaved = ownerPage.waitForResponse((response) => {
+      const request = response.request();
+      return (
+        new URL(response.url()).pathname ===
+          '/api/v1/messages/notification-preferences' &&
+        request.method() === 'PUT' &&
+        request.postDataJSON()?.room_id === directId &&
+        request.postDataJSON()?.mode === 'mentions'
+      );
+    });
     await ownerPage.getByRole('menuitem', { name: 'Mentions only' }).click();
-    const preferences = await json<{ rooms: Record<string, string> }>(await ownerContext.request.get('/api/v1/messages/notification-preferences'));
+    const preferenceResponse = await preferenceSaved;
+    expect(
+      preferenceResponse.ok(),
+      await preferenceResponse.text(),
+    ).toBeTruthy();
+    const preferences = await json<{ rooms: Record<string, string> }>(
+      await ownerContext.request.get(
+        '/api/v1/messages/notification-preferences',
+      ),
+    );
     expect(preferences.rooms[directId]).toBe('mentions');
 
-    await ownerPage.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Rooms', exact: true }).click();
-    await ownerPage.getByRole('button', { name: 'Draft side room', exact: true }).click();
-    await ownerPage.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Messages', exact: true }).click();
+    await ownerPage
+      .getByRole('navigation', { name: 'Sections' })
+      .getByRole('button', { name: 'Rooms', exact: true })
+      .click();
+    await ownerPage
+      .getByRole('button', { name: 'Draft side room', exact: true })
+      .click();
+    await ownerPage
+      .getByRole('navigation', { name: 'Sections' })
+      .getByRole('button', { name: 'Messages', exact: true })
+      .click();
     await directButton.click();
-    await expect(ownerPage.getByRole('textbox', { name: 'Message Draft Guest' })).toHaveValue('A draft that should survive navigation');
+    await expect(
+      ownerPage.getByRole('textbox', { name: 'Message Draft Guest' }),
+    ).toHaveValue('A draft that should survive navigation');
     await ownerPage.reload();
-    await ownerPage.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Messages', exact: true }).click();
-    await ownerPage.getByRole('region', { name: 'Direct messages' }).getByRole('button', { name: 'Draft Guest', exact: true }).click();
-    await expect(ownerPage.getByRole('textbox', { name: 'Message Draft Guest' })).toHaveValue('A draft that should survive navigation');
+    await ownerPage
+      .getByRole('navigation', { name: 'Sections' })
+      .getByRole('button', { name: 'Messages', exact: true })
+      .click();
+    await ownerPage
+      .getByRole('region', { name: 'Direct messages' })
+      .getByRole('button', { name: 'Draft Guest', exact: true })
+      .click();
+    await expect(
+      ownerPage.getByRole('textbox', { name: 'Message Draft Guest' }),
+    ).toHaveValue('A draft that should survive navigation');
     await ownerPage.close();
     const reopenedPage = await ownerContext.newPage();
     await reopenedPage.goto('/');
-    await reopenedPage.getByRole('navigation', { name: 'Sections' }).getByRole('button', { name: 'Messages', exact: true }).click();
-    await reopenedPage.getByRole('region', { name: 'Direct messages' }).getByRole('button', { name: 'Draft Guest', exact: true }).click();
-    await expect(reopenedPage.getByRole('textbox', { name: 'Message Draft Guest' })).toHaveValue('A draft that should survive navigation');
+    await reopenedPage
+      .getByRole('navigation', { name: 'Sections' })
+      .getByRole('button', { name: 'Messages', exact: true })
+      .click();
+    await reopenedPage
+      .getByRole('region', { name: 'Direct messages' })
+      .getByRole('button', { name: 'Draft Guest', exact: true })
+      .click();
+    await expect(
+      reopenedPage.getByRole('textbox', { name: 'Message Draft Guest' }),
+    ).toHaveValue('A draft that should survive navigation');
   } finally {
-    if (otherId) await ownerContext.request.delete(`/api/v1/rooms/${otherId}`, { headers });
+    if (otherId)
+      await ownerContext.request.delete(`/api/v1/rooms/${otherId}`, {
+        headers,
+      });
     await Promise.all([ownerContext.close(), guestContext.close()]);
   }
 });

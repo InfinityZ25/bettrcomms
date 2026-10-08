@@ -31,6 +31,7 @@ import {
 import { openUserProfile } from '@/features/settings/ProfileDialog';
 import { useLifetimeSignal } from '@/hooks/useLifetimeSignal';
 import { downloadMessageAttachment } from './attachmentFiles';
+import { MessageHistory } from '@/features/activities/MessageHistory';
 
 const FormattedMessage = lazy(() => import('./FormattedMessage'));
 export function MessageBody({ message }: { message: Message }) {
@@ -94,6 +95,7 @@ export default function MessageItem({
   const [moderating, setModerating] = useState(false);
   const [reason, setReason] = useState('');
   const [reported, setReported] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const lifetime = useLifetimeSignal();
   const openAttachment = (id: string) =>
     downloadMessageAttachment(
@@ -146,9 +148,9 @@ export default function MessageItem({
               })}
             </time>
             {message.edited_at && !message.deleted_at && (
-              <span className="text-[0.65rem] text-muted-foreground phone:text-xs">
+              <button type="button" aria-label="View edit history" onClick={() => setHistoryOpen(true)} className="text-[0.65rem] text-muted-foreground underline-offset-2 hover:underline phone:text-xs">
                 edited
-              </span>
+              </button>
             )}
           </div>
           {message.pinned_at && (
@@ -510,6 +512,7 @@ export default function MessageItem({
             )}
         </div>
       </div>
+      {historyOpen && !message.deleted_at && <MessageHistory roomId={message.room_id} messageId={message.id} onClose={() => setHistoryOpen(false)} />}
     </article>
   );
 }

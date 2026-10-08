@@ -473,6 +473,9 @@ func TestMessagingMigrationWithExistingHistory(t *testing.T) {
 	apply("014_activity_thread_replies.sql")
 	apply("015_attachment_limits.sql")
 	apply("016_communities_channels_roles.sql")
+	apply("017_storage_features.sql")
+	apply("018_custom_permissions.sql")
+	apply("019_channel_activities.sql")
 	store := &PostgresStore{DB: db}
 	seen := []string{}
 	cursor := ""

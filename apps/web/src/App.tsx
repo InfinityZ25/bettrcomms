@@ -68,6 +68,7 @@ import { useMountEffect } from '@/hooks/useMountEffect';
 import ConversationPreferencesSession from '@/features/rooms/ConversationPreferencesSession';
 import { ProfileDialogHost } from '@/features/settings/ProfileDialog';
 import AccountPreferencesSession from '@/features/settings/AccountPreferencesSession';
+import { ActivityReminderInbox } from '@/features/activities/ActivityReminderInbox';
 const ActivityCenter = lazy(() => import('@/features/chat/ActivityCenter'));
 
 export default function App() {
@@ -96,11 +97,16 @@ export default function App() {
   const presence = useCallPresence(user?.id);
   const { screen, setScreen, navigate } = useScreenRoute();
   const preferences = useCallPreferences();
-  const { rooms, room, fallbackRevision, setRoom, openRoom, reload, refresh, clear } = useRooms(
-    user,
-    presence.roomsRevision + presence.syncRevision,
-    setError,
-  );
+  const {
+    rooms,
+    room,
+    fallbackRevision,
+    setRoom,
+    openRoom,
+    reload,
+    refresh,
+    clear,
+  } = useRooms(user, presence.roomsRevision + presence.syncRevision, setError);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
@@ -153,12 +159,14 @@ export default function App() {
     section: Section;
     fallbackRevision: number;
   } | null>(null);
-  const section = sectionChoice?.fallbackRevision === fallbackRevision
-    ? sectionChoice.section
-    : sectionForRoom(room?.kind);
-  const setSection = (next: Section | null) => setSectionChoice(
-    next === null ? null : { section: next, fallbackRevision },
-  );
+  const section =
+    sectionChoice?.fallbackRevision === fallbackRevision
+      ? sectionChoice.section
+      : sectionForRoom(room?.kind);
+  const setSection = (next: Section | null) =>
+    setSectionChoice(
+      next === null ? null : { section: next, fallbackRevision },
+    );
   const showSection = (next: Section) => {
     setSection(next);
     if (phone) setMobileDestination(next);
@@ -789,6 +797,21 @@ export default function App() {
           onError={setError}
         />
         <SpacesRail
+          reminders={
+            user && (
+              <ActivityReminderInbox
+                key={user.id}
+                user={user}
+                onOpenRoom={(id) => {
+                  const next = rooms.find((candidate) => candidate.id === id);
+                  if (next) {
+                    openRoom(next);
+                    selectRoom(next);
+                  }
+                }}
+              />
+            )
+          }
           user={user}
           screen={screen}
           section={section}

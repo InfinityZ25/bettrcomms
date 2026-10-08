@@ -6,23 +6,7 @@ import (
 )
 
 func (s *PostgresStore) SavePendingAttachment(room, user, key string, attachment MessageAttachment) error {
-	ctx := context.Background()
-	tx, err := s.DB.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-	if err = checkRoomPosting(ctx, tx, room, user, false); err != nil {
-		return err
-	}
-	tag, err := tx.Exec(ctx, `INSERT INTO message_attachments(id,room_id,uploader_id,object_key,filename,content_type,size_bytes,voice_note,duration_ms,upload_state) SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,'uploading' WHERE can_access_room($2,$3)`, attachment.ID, room, user, key, attachment.Filename, attachment.ContentType, attachment.SizeBytes, attachment.VoiceNote, attachment.DurationMS)
-	if err == nil && tag.RowsAffected() == 0 {
-		return ErrForbidden
-	}
-	if err != nil {
-		return err
-	}
-	return tx.Commit(ctx)
+	return s.SavePendingAttachmentWithPolicy(room, user, key, attachment, "not_required")
 }
 
 func (s *PostgresStore) CompletePendingAttachment(id, room string) error {
@@ -44,7 +28,7 @@ func (s *PostgresStore) CompletePendingAttachment(id, room string) error {
 		return err
 	}
 	var ready string
-	if err = tx.QueryRow(ctx, `UPDATE message_attachments SET upload_state='ready' WHERE id=$1 AND room_id=$2 AND uploader_id=$3 AND message_id IS NULL AND upload_state='uploading' AND deleted_at IS NULL RETURNING id::text`, id, room, user).Scan(&ready); err != nil {
+	if err = tx.QueryRow(ctx, `UPDATE message_attachments SET upload_state='ready' WHERE id=$1 AND room_id=$2 AND uploader_id=$3 AND message_id IS NULL AND upload_state='uploading' AND scan_state IN('not_required','clean') AND deleted_at IS NULL RETURNING id::text`, id, room, user).Scan(&ready); err != nil {
 		return norm(err)
 	}
 	return tx.Commit(ctx)
@@ -55,25 +39,25 @@ func (s *PostgresStore) RemovePendingAttachment(id string) error {
 }
 
 func (s *PostgresStore) removePendingAttachment(ctx context.Context, id string) error {
-	_, err := s.DB.Exec(ctx, `DELETE FROM message_attachments WHERE id=$1 AND message_id IS NULL`, id)
+	_, err := s.DB.Exec(ctx, `DELETE FROM message_attachments a WHERE id=$1 AND message_id IS NULL AND NOT EXISTS(SELECT 1 FROM channel_media_assets asset WHERE asset.attachment_id=a.id) AND NOT EXISTS(SELECT 1 FROM attachment_uploads upload WHERE upload.id=a.id AND upload.finalize_until>clock_timestamp())`, id)
 	return err
 }
 
 func (s *PostgresStore) DiscardPendingAttachment(ctx context.Context, id string) error {
-	_, err := s.DB.Exec(ctx, `UPDATE message_attachments SET upload_state='ready',deleted_at=COALESCE(deleted_at,clock_timestamp()) WHERE id=$1 AND message_id IS NULL`, id)
+	_, err := s.DB.Exec(ctx, `UPDATE message_attachments a SET upload_state='ready',deleted_at=COALESCE(deleted_at,clock_timestamp()) WHERE id=$1 AND message_id IS NULL AND NOT EXISTS(SELECT 1 FROM channel_media_assets asset WHERE asset.attachment_id=a.id)`, id)
 	return err
 }
 
 func (s *PostgresStore) CancelPendingAttachment(ctx context.Context, room, user, id string) (string, error) {
 	var key string
-	err := s.DB.QueryRow(ctx, `UPDATE message_attachments SET deleted_at=COALESCE(deleted_at,clock_timestamp()) WHERE id=$1 AND room_id=$2 AND uploader_id=$3 AND message_id IS NULL AND upload_state='ready' AND can_access_room(room_id,$3) RETURNING object_key`, id, room, user).Scan(&key)
+	err := s.DB.QueryRow(ctx, `UPDATE message_attachments a SET deleted_at=COALESCE(deleted_at,clock_timestamp()) WHERE id=$1 AND room_id=$2 AND uploader_id=$3 AND message_id IS NULL AND upload_state='ready' AND can_access_room(room_id,$3) AND NOT EXISTS(SELECT 1 FROM channel_media_assets asset WHERE asset.attachment_id=a.id) RETURNING object_key`, id, room, user).Scan(&key)
 	return key, norm(err)
 }
 
 func (s *PostgresStore) AttachmentForMember(room, user, id string) (string, MessageAttachment, error) {
 	var key string
 	var attachment MessageAttachment
-	err := s.DB.QueryRow(context.Background(), `SELECT a.object_key,a.id::text,a.filename,a.content_type,a.size_bytes,a.voice_note,a.duration_ms FROM message_attachments a JOIN room_members rm ON rm.room_id=a.room_id AND rm.user_id=$2 LEFT JOIN messages m ON m.id=a.message_id WHERE a.room_id=$1 AND a.id=$3 AND can_access_room(a.room_id,$2) AND a.upload_state='ready' AND a.deleted_at IS NULL AND ((a.message_id IS NOT NULL AND m.deleted_at IS NULL) OR (a.message_id IS NULL AND a.uploader_id=$2 AND a.created_at>now()-interval '24 hours'))`, room, user, id).Scan(&key, &attachment.ID, &attachment.Filename, &attachment.ContentType, &attachment.SizeBytes, &attachment.VoiceNote, &attachment.DurationMS)
+	err := s.DB.QueryRow(context.Background(), `SELECT a.object_key,a.id::text,a.filename,a.content_type,a.size_bytes,a.voice_note,a.duration_ms FROM message_attachments a JOIN room_members rm ON rm.room_id=a.room_id AND rm.user_id=$2 LEFT JOIN messages m ON m.id=a.message_id WHERE a.room_id=$1 AND a.id=$3 AND can_access_room(a.room_id,$2) AND a.upload_state='ready' AND a.scan_state IN('not_required','clean') AND a.deleted_at IS NULL AND ((a.message_id IS NOT NULL AND m.deleted_at IS NULL) OR (a.message_id IS NULL AND a.uploader_id=$2 AND a.created_at>now()-interval '24 hours') OR EXISTS(SELECT 1 FROM channel_media_assets asset WHERE asset.attachment_id=a.id AND asset.room_id=a.room_id))`, room, user, id).Scan(&key, &attachment.ID, &attachment.Filename, &attachment.ContentType, &attachment.SizeBytes, &attachment.VoiceNote, &attachment.DurationMS)
 	return key, attachment, norm(err)
 }
 
@@ -83,7 +67,7 @@ func (s *PostgresStore) CleanPendingAttachments(ctx context.Context, storage Att
 		return err
 	}
 	defer tx.Rollback(ctx)
-	rows, err := tx.Query(ctx, `SELECT id::text,object_key FROM message_attachments WHERE (message_id IS NULL AND created_at<now()-interval '24 hours') OR (upload_state='ready' AND (room_id IS NULL OR uploader_id IS NULL OR deleted_at IS NOT NULL)) ORDER BY COALESCE(cleanup_attempted_at,created_at) LIMIT 50 FOR UPDATE SKIP LOCKED`)
+	rows, err := tx.Query(ctx, `SELECT a.id::text,a.object_key FROM message_attachments a WHERE NOT EXISTS(SELECT 1 FROM channel_media_assets asset WHERE asset.attachment_id=a.id) AND NOT EXISTS(SELECT 1 FROM attachment_uploads upload WHERE upload.id=a.id AND (upload.finalize_until>clock_timestamp() OR upload.state NOT IN('complete','cancelled','rejected') OR (upload.state IN('cancelled','rejected') AND upload.multipart_id IS NOT NULL))) AND ((a.message_id IS NULL AND a.created_at<now()-interval '24 hours') OR (a.upload_state='ready' AND (a.room_id IS NULL OR a.uploader_id IS NULL OR a.deleted_at IS NOT NULL))) ORDER BY COALESCE(a.cleanup_attempted_at,a.created_at) LIMIT 50 FOR UPDATE OF a SKIP LOCKED`)
 	if err != nil {
 		return err
 	}

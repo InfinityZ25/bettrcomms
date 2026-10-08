@@ -423,9 +423,15 @@ func (s *PostgresStore) RedeemInvite(token, user string) (Room, bool, error) {
 			return Room{}, false, err
 		}
 	}
+	// An invitation joins the community, never bypasses a private channel ACL.
+	// Resolve its public sibling within the transaction. An entirely private
+	// community cannot consume an invite or leave a hidden membership on failure.
+	result, err := scanRoom(tx.QueryRow(ctx, roomSelect+` WHERE rm.user_id=$1 AND r.community_id=$2 AND can_access_room(r.id,$1) ORDER BY (r.id=$3) DESC,r.position,r.created_at,r.id LIMIT 1`, user, community, room))
+	if err != nil {
+		return Room{}, false, ErrForbidden
+	}
 	if err = tx.Commit(ctx); err != nil {
 		return Room{}, false, err
 	}
-	result, err := s.RoomForMember(room, user)
-	return result, !member, err
+	return result, !member, nil
 }

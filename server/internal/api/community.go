@@ -61,6 +61,9 @@ func (a *API) communities(w http.ResponseWriter, r *http.Request, user User, pat
 		a.result(w, nil, err)
 		return
 	}
+	if a.routePermissionFeatures(w, r, path, user, c) {
+		return
+	}
 	if len(path) == 2 {
 		switch r.Method {
 		case http.MethodGet:
@@ -180,6 +183,7 @@ func (a *API) communities(w http.ResponseWriter, r *http.Request, user User, pat
 				Name        string `json:"name"`
 				Topic       string `json:"topic"`
 				ChannelType string `json:"channel_type"`
+				IsPrivate   bool   `json:"is_private"`
 			}
 			if !a.decode(w, r, &in) {
 				return
@@ -192,12 +196,14 @@ func (a *API) communities(w http.ResponseWriter, r *http.Request, user User, pat
 				a.fail(w, 400, "invalid_channel", "provide a channel name, topic up to 500 characters and hybrid or announcement type")
 				return
 			}
-			room, err := store.CreateChannel(id, user.ID, in.Name, in.Topic, in.ChannelType)
+			room, err := store.CreateChannelWithPrivacy(id, user.ID, in.Name, in.Topic, in.ChannelType, in.IsPrivate)
 			if err == nil {
 				members, memberErr := store.CommunityMembers(id, user.ID)
 				if memberErr == nil {
 					for _, member := range members {
-						a.Realtime.subscribeUser(room.ID, member.User.ID)
+						if store.RoomPermission(room.ID, member.User.ID, "read") == nil {
+							a.Realtime.subscribeUser(room.ID, member.User.ID)
+						}
 					}
 				}
 				c.Channels = append(c.Channels, room)
@@ -253,6 +259,7 @@ func (a *API) communities(w http.ResponseWriter, r *http.Request, user User, pat
 					if updated.ChannelType == "announcement" {
 						a.Hub.disconnectRoom(room)
 						a.revokeSFU(room, "", "")
+						a.publishChannelActivity(room, "watch-together")
 					}
 					a.communityChanged(c)
 				}
@@ -274,6 +281,7 @@ func (a *API) communities(w http.ResponseWriter, r *http.Request, user User, pat
 }
 
 func (a *API) communityChanged(c Community) {
+	a.reconcileCommunityAccess(c)
 	for _, room := range c.Channels {
 		a.moderationChanged(room.ID)
 	}
@@ -281,9 +289,20 @@ func (a *API) communityChanged(c Community) {
 
 func (a *API) communityMembershipChanged(c Community, user string, added bool) {
 	a.Realtime.publishUser(user, wire{Type: "rooms.changed"})
-	for _, room := range c.Channels {
+	// Moderators can remove members without seeing their private channels.
+	// Revocation must still cover every sibling, including those hidden to actor.
+	channels, err := a.communityChannelIDs(c)
+	if err != nil {
+		a.Realtime.disconnectUser(user)
+		a.Hub.disconnectUser(user)
+		a.revokeSFU("", user, "")
+		return
+	}
+	for _, room := range channels {
 		if added {
-			a.Realtime.subscribeUser(room.ID, user)
+			if store, ok := a.Store.(*PostgresStore); ok && store.RoomPermission(room.ID, user, "read") == nil {
+				a.Realtime.subscribeUser(room.ID, user)
+			}
 		} else {
 			a.Realtime.unsubscribeUser(room.ID, user)
 			a.Hub.disconnectRoomUser(room.ID, user)

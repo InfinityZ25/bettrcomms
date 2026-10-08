@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import {
   MediaEngine,
   MediaEngineDisposedError,
@@ -112,6 +118,12 @@ export function useCallSession({
   const [peers, setPeers] = useState<Record<string, string>>({});
   const [names, setNames] = useState<Record<string, string>>({});
   const [recording, setRecording] = useState(false);
+  const [clipping, setClipping] = useState(false);
+  const clippingRef = useRef(false);
+  const setClipBuffering = useCallback((value: boolean) => {
+    clippingRef.current = value;
+    setClipping(value);
+  }, []);
   const [result, setResult] = useState<RecordingResult | null>(null);
   /*
     What became of it, rather than a sentence about what became of it. The
@@ -263,6 +275,7 @@ export function useCallSession({
   };
 
   const leave = () => {
+    window.dispatchEvent(new Event('bc-call-ended'));
     joinGeneration.current++;
     sessionAbort.current?.abort();
     sessionAbort.current = null;
@@ -286,6 +299,7 @@ export function useCallSession({
     joinedRoom.current = null;
     reportRoom.current?.(null);
     setJoined(false);
+    setClipBuffering(false);
     setSignalingDown(false);
     serverRtt.current = null;
     setStats([]);
@@ -369,14 +383,14 @@ export function useCallSession({
         camera: locals.has('camera'),
         microphone: !muted,
         sharing: locals.has('screen'),
-        recording,
+        recording: recording || clipping,
         muted,
         deafened,
       });
     } catch {
       // The socket closed; the reconnection handler re-announces presence.
     }
-  }, [joined, locals, muted, deafened, recording, peerIds]);
+  }, [joined, locals, muted, deafened, recording, clipping, peerIds]);
 
   // Room membership names every participant; signaling identities are keyed by
   // per-device peer IDs, so those entries survive a membership refresh.
@@ -837,7 +851,7 @@ export function useCallSession({
               camera: tracks.has('camera'),
               microphone: !input.muted,
               sharing: tracks.has('screen'),
-              recording: recorder.current !== null,
+              recording: recorder.current !== null || clippingRef.current,
               muted: input.muted,
               deafened: input.deafened,
               name: user.name,
@@ -1126,6 +1140,8 @@ export function useCallSession({
     remotePresence,
     remoteRecording,
     recording,
+    clipping,
+    setClipBuffering,
     result,
     saveState,
     savedId,

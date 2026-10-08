@@ -19,6 +19,7 @@ import {
   signedAttachmentURL,
 } from './attachmentFiles';
 import AttachmentViewer from './AttachmentViewer';
+import PDFPreview from './PDFPreview';
 import { voiceNoteTime } from './voiceNoteRecorder';
 
 type PreviewProps = {
@@ -295,7 +296,9 @@ function AttachmentPreview({
             {kind === 'audio' && !attachment.voice_note && ' · Audio'}
           </p>
         </div>
-        {(kind === 'image' || kind === 'video') && (
+        {(kind === 'image' ||
+          kind === 'video' ||
+          attachment.content_type === 'application/pdf') && (
           <Button
             type="button"
             size="icon-sm"
@@ -375,7 +378,15 @@ function AttachmentPreview({
           />
         </div>
       )}
-      {expanded && (
+      {expanded && attachment.content_type === 'application/pdf' && (
+        <PDFPreview
+          roomId={roomId}
+          attachment={attachment}
+          onClose={() => setExpanded(false)}
+          onDownload={onDownload}
+        />
+      )}
+      {expanded && attachment.content_type !== 'application/pdf' && (
         <RemoteAttachmentViewer
           attachment={attachment}
           roomId={roomId}

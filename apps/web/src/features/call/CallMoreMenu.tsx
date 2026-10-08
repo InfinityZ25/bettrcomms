@@ -11,6 +11,7 @@ import {
   Square,
 } from 'lucide-react';
 import CameraSourceMenu from './CameraSourceMenu';
+import { ClipMenuItems } from '@/features/clips/ClipSession';
 import { canUseFullscreen } from './fullscreenSupport';
 import type { useCallLayout } from './useCallLayout';
 import type { GalleryLayout } from './stageItems';
@@ -89,7 +90,13 @@ export default function CallMoreMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        render={<Button variant="secondary" size="icon" aria-label="More call options" />}
+        render={
+          <Button
+            variant="secondary"
+            size="icon"
+            aria-label="More call options"
+          />
+        }
       >
         <Ellipsis size={19} />
       </DropdownMenuTrigger>
@@ -97,7 +104,10 @@ export default function CallMoreMenu({
         <CameraSourceMenu busy={busy} onSelect={onSelectCamera} submenu />
         {onToggleCameraOverlay && (
           <DropdownMenuItem onClick={onToggleCameraOverlay}>
-            <PictureInPicture2 /> {cameraOverlayEnabled ? 'Hide camera overlay' : 'Show camera overlay'}
+            <PictureInPicture2 />{' '}
+            {cameraOverlayEnabled
+              ? 'Hide camera overlay'
+              : 'Show camera overlay'}
           </DropdownMenuItem>
         )}
         {hasStageContent && focusedMedia && (
@@ -126,6 +136,7 @@ export default function CallMoreMenu({
           {recording ? <Square /> : <Circle />}
           {recording ? 'Stop recording' : 'Record separate tracks'}
         </DropdownMenuItem>
+        <ClipMenuItems />
         {onFocus && (
           <DropdownMenuItem onClick={onFocus}>
             <PanelsTopLeft /> {focused ? 'Show navigation' : 'Focus call'}
@@ -147,10 +158,18 @@ export default function CallMoreMenu({
           value={galleryLayout}
           onValueChange={(value) => onGalleryLayout(value as GalleryLayout)}
         >
-          <DropdownMenuRadioItem value="adaptive">Adaptive</DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="grid">Equal cameras</DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="focus">Focus camera</DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="all">Everyone + screens</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="adaptive">
+            Adaptive
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="grid">
+            Equal cameras
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="focus">
+            Focus camera
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="all">
+            Everyone + screens
+          </DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
         {hasStageContent && (
           <>
