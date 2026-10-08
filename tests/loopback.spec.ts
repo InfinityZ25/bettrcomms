@@ -212,10 +212,13 @@ test('microphone diagnostics separate captured and processed levels without copy
   });
   await openSettings(page);
   await page.getByRole('button', { name: 'Start live loopback' }).click();
+  // The 1024-sample raw meter fills later than the 256-sample processed meter.
+  // Wait for the known fixture tone's full RMS before comparing their gain.
+  const fullInputDbfs = 20 * Math.log10(0.2 / Math.SQRT2);
   await expect.poll(async () => {
     await page.getByRole('button', { name: 'Copy microphone diagnostics' }).click();
-    return page.evaluate(() => (window as any).__copiedMicDiagnostics?.levelsDbfs.processedPeak ?? -120);
-  }).toBeGreaterThan(-40);
+    return page.evaluate(() => (window as any).__copiedMicDiagnostics?.levelsDbfs.inputPeak ?? -120);
+  }).toBeCloseTo(fullInputDbfs, 0);
   const report = await page.evaluate(() => (window as any).__copiedMicDiagnostics);
   expect(report.inputAvailable).toBe(true);
   expect(report.inputFormat.channelCount).toBe(2);
@@ -224,6 +227,7 @@ test('microphone diagnostics separate captured and processed levels without copy
   expect(report.inputChannelsDbfs[1].peak).toBeCloseTo(report.inputChannelsDbfs[0].peak, 0);
   expect(report.processedFormat.channelCount).toBe(1);
   expect(report.requestedProcessing.gainDb).toBe(-12);
+  expect(report.levelsDbfs.processedPeak).toBeGreaterThan(-40);
   expect(report.levelsDbfs.processedPeak - report.levelsDbfs.inputPeak).toBeCloseTo(-12, 0);
   expect(JSON.stringify(report)).not.toMatch(/deviceId|groupId|label|token|credential/i);
   await page.getByRole('button', { name: 'Stop live loopback' }).click();
