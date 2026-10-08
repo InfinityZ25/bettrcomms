@@ -63,15 +63,19 @@ export async function reconnectMetaGlassesCamera() {}`,
   }));
 }
 
-async function join(page: Page, roomId: string, legacyReceiver = false, fallbackFailures = 0) {
+async function join(page: Page, roomId: string, legacyReceiver = false, fallbackFailures = 0, probeFailures = 0) {
   await page.goto('/');
-  await page.evaluate(async ({ roomId, legacyReceiver, fallbackFailures }) => {
+  await page.evaluate(async ({ roomId, legacyReceiver, fallbackFailures, probeFailures }) => {
     const { MediaEngine, RoomWebSocketSignaling } = await import('/src/media/index.ts');
     const id = crypto.randomUUID();
     const signaling = new RoomWebSocketSignaling(id, `/api/v1/rooms/${roomId}/ws?peer_id=${id}`);
     const send = signaling.send.bind(signaling);
-    Object.assign(window, { __fallbackAttempts: 0 });
+    Object.assign(window, { __fallbackAttempts: 0, __probeAttempts: 0 });
     signaling.send = async signal => {
+      if (signal.type === 'signal' && signal.transport === 'native-camera' && signal.data.kind === 'native-screen-profile-query') {
+        (window as unknown as { __probeAttempts: number }).__probeAttempts++;
+        if (probeFailures-- > 0) return;
+      }
       if (signal.type === 'signal' && signal.transport === 'native-camera' && signal.data.kind === 'native-screen-fallback-request') {
         (window as unknown as { __fallbackAttempts: number }).__fallbackAttempts++;
         if (fallbackFailures-- > 0) throw new Error('Signaling temporarily unavailable');
@@ -88,7 +92,7 @@ async function join(page: Page, roomId: string, legacyReceiver = false, fallback
     });
     Object.assign(window, { __engine: engine });
     await signaling.connect();
-  }, { roomId, legacyReceiver, fallbackFailures });
+  }, { roomId, legacyReceiver, fallbackFailures, probeFailures });
 }
 
 async function startGlasses(page: Page, silentNative = false) {
@@ -152,7 +156,8 @@ test('glasses video reaches a client that cannot receive the native stream', asy
     await expect.poll(() => phonePage.evaluate(() => (window as unknown as { __engine: Internals }).__engine.peers.size)).toBe(1);
     await startGlasses(phonePage);
     await expect.poll(() => friendCamera(friendPage)).toEqual({ native: 0, cameras: 1 });
-    // The probe times out after three seconds; the ordinary camera must stay.
+    // The first probe times out after three seconds; fallback stays live while
+    // further probes retry. The full 30-second limit is covered by unit tests.
     await phonePage.waitForTimeout(4_000);
     expect(await phoneSendsCallCamera(phonePage)).toEqual([true]);
   } finally {
@@ -161,32 +166,36 @@ test('glasses video reaches a client that cannot receive the native stream', asy
   }
 });
 
-test('glasses video upgrades to the native stream and falls back when it drops', async ({ browser }) => {
-  test.setTimeout(60_000);
-  const phone = await browser.newContext({ baseURL });
-  const friend = await browser.newContext({ baseURL });
-  try {
-    const roomId = await sharedRoom(phone, friend);
-    const phonePage = await phone.newPage();
-    await fakeNativeSender(phonePage);
-    const friendPage = await friend.newPage();
-    await join(phonePage, roomId);
-    await join(friendPage, roomId);
-    await expect.poll(() => phonePage.evaluate(() => (window as unknown as { __engine: Internals }).__engine.peers.size)).toBe(1);
-    await startGlasses(phonePage);
-    await expect.poll(() => phoneSendsCallCamera(phonePage)).toEqual([false]);
-    await expect.poll(() => friendCamera(friendPage)).toEqual({ native: 1, cameras: 1 });
+for (const probeFailures of [0, 1]) {
+  test(`glasses video upgrades ${probeFailures ? 'after a lost capability query ' : ''}to the native stream and falls back when it drops`, async ({ browser }) => {
+    test.setTimeout(60_000);
+    const phone = await browser.newContext({ baseURL });
+    const friend = await browser.newContext({ baseURL });
+    try {
+      const roomId = await sharedRoom(phone, friend);
+      const phonePage = await phone.newPage();
+      await fakeNativeSender(phonePage);
+      const friendPage = await friend.newPage();
+      await join(phonePage, roomId, false, 0, probeFailures);
+      await join(friendPage, roomId);
+      await expect.poll(() => phonePage.evaluate(() => (window as unknown as { __engine: Internals }).__engine.peers.size)).toBe(1);
+      await startGlasses(phonePage);
+      await expect.poll(() => phoneSendsCallCamera(phonePage)).toEqual([false]);
+      await expect.poll(() => friendCamera(friendPage)).toEqual({ native: 1, cameras: 1 });
+      expect(await phonePage.evaluate(() => (window as unknown as { __probeAttempts: number }).__probeAttempts))
+        .toBe(probeFailures + 1);
 
-    await phonePage.evaluate(() => {
-      for (const pc of (window as unknown as { __nativeConnections: Map<string, RTCPeerConnection> }).__nativeConnections.values()) pc.close();
-    });
-    await expect.poll(() => phoneSendsCallCamera(phonePage), { timeout: 20_000 }).toEqual([true]);
-    await expect.poll(() => friendCamera(friendPage)).toEqual({ native: 0, cameras: 1 });
-  } finally {
-    await phone.close();
-    await friend.close();
-  }
-});
+      await phonePage.evaluate(() => {
+        for (const pc of (window as unknown as { __nativeConnections: Map<string, RTCPeerConnection> }).__nativeConnections.values()) pc.close();
+      });
+      await expect.poll(() => phoneSendsCallCamera(phonePage), { timeout: 20_000 }).toEqual([true]);
+      await expect.poll(() => friendCamera(friendPage)).toEqual({ native: 0, cameras: 1 });
+    } finally {
+      await phone.close();
+      await friend.close();
+    }
+  });
+}
 
 for (const failure of ['never sends frames', 'stops sending frames', 'stops sending frames during a signaling outage'] as const) {
   test(`glasses video falls back when a connected native sender ${failure}`, async ({ browser }) => {

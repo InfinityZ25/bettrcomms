@@ -47,6 +47,7 @@ const RECONNECTABLE_CLOSE_CODES = new Set([
 /** Adapter for the Bettercomms room WebSocket protocol. */
 export class RoomWebSocketSignaling extends EventTarget implements SignalingAdapter {
   private socket?: WebSocket;
+  private readonly stalledSockets = new Set<WebSocket>();
   private opening?: Promise<void>;
   private pingInterval?: number;
   private pingTimeout?: number;
@@ -80,6 +81,7 @@ export class RoomWebSocketSignaling extends EventTarget implements SignalingAdap
   ): void { super.addEventListener(type, listener, options); }
 
   connect(timeoutMs = 10_000): Promise<void> {
+    if (this.closing) return Promise.reject(new Error("Room WebSocket session has ended"));
     if (this.socket?.readyState === WebSocket.OPEN) return Promise.resolve();
     if (this.opening) return this.opening;
     this.opening = new Promise((resolve, reject) => {
@@ -101,7 +103,6 @@ export class RoomWebSocketSignaling extends EventTarget implements SignalingAdap
         this.opening = undefined;
         const resumed = this.reconnecting;
         this.reconnecting = false;
-        this.reconnectAttempt = 0;
         // A queued signal can reconnect before the backoff timer fires.
         window.clearTimeout(this.reconnectTimer);
         this.reconnectTimer = undefined;
@@ -116,7 +117,7 @@ export class RoomWebSocketSignaling extends EventTarget implements SignalingAdap
         if (socket.readyState !== WebSocket.OPEN) { this.opening = undefined; reject(new Error("Room WebSocket failed to connect")); }
       };
       socket.onclose = (event) => {
-        if (this.socket !== socket) return;
+        if (this.socket !== socket) { this.stalledSockets.delete(socket); return; }
         window.clearTimeout(timeout);
         this.stopTelemetry(true);
         this.socket = undefined;
@@ -129,8 +130,11 @@ export class RoomWebSocketSignaling extends EventTarget implements SignalingAdap
           return;
         }
         if (this.closing || !RECONNECTABLE_CLOSE_CODES.has(event.code)) {
+          const callerClosed = this.closing;
+          this.closing = true;
+          this.closeStalledSockets();
           this.dispatchEvent(new Event("close"));
-          if (!this.closing && !event.wasClean)
+          if (!callerClosed && !event.wasClean)
             this.dispatchEvent(new CustomEvent("error", { detail: event }));
           return;
         }
@@ -172,6 +176,8 @@ export class RoomWebSocketSignaling extends EventTarget implements SignalingAdap
     if (this.closing) return;
     if (this.reconnectAttempt >= RECONNECT_ATTEMPTS) {
       this.reconnecting = false;
+      this.closing = true;
+      this.closeStalledSockets();
       this.dispatchEvent(new Event("close"));
       return;
     }
@@ -192,6 +198,7 @@ export class RoomWebSocketSignaling extends EventTarget implements SignalingAdap
     window.clearTimeout(this.reconnectTimer);
     this.reconnectTimer = undefined;
     this.stopTelemetry(true);
+    this.closeStalledSockets();
     this.opening = undefined;
     // A caller that closes during the retry backoff has no socket to close and
     // tears its own session down; emitting "close" here would race that.
@@ -206,12 +213,19 @@ export class RoomWebSocketSignaling extends EventTarget implements SignalingAdap
       if (type === "pong") {
         const nonce = message.request_id;
         if (typeof nonce === "string" && nonce === this.pendingPing?.nonce) {
+          // Opening TCP alone does not prove a replacement can deliver data.
+          this.reconnectAttempt = 0;
           const rttMs = Math.max(0, performance.now() - this.pendingPing.sentAt);
           this.clearPingTimeout();
           this.pendingPing = undefined;
           this.dispatchEvent(new CustomEvent("latency", { detail: { rttMs } }));
         }
       } else if (type === "peers") {
+        this.reconnectAttempt = 0;
+        // The server sends this snapshot after reclaiming our peer identity.
+        // Closing the abandoned socket earlier would announce a departure and
+        // make other participants tear down their otherwise healthy media.
+        this.closeStalledSockets();
         const payload = message.payload as { peers?: unknown; identities?: unknown } | undefined;
         const peerIds = Array.isArray(payload?.peers) ? payload.peers.map(String) : [];
         const identities = payload?.identities && typeof payload.identities === 'object'
@@ -258,12 +272,26 @@ export class RoomWebSocketSignaling extends EventTarget implements SignalingAdap
       this.pendingPing = undefined;
       this.pingTimeout = undefined;
       this.dispatchEvent(new CustomEvent("latency", { detail: { rttMs: null } }));
+      // A network handoff may leave TCP open while no messages arrive. Retry
+      // without waiting for its close handshake or interrupting peer media.
+      this.socket = undefined;
+      this.opening = undefined;
+      this.stopTelemetry(false);
+      this.stalledSockets.add(socket);
+      this.reconnecting = true;
+      this.scheduleReconnect();
     }, 10_000);
   }
 
   private clearPingTimeout(): void {
     if (this.pingTimeout !== undefined) window.clearTimeout(this.pingTimeout);
     this.pingTimeout = undefined;
+  }
+
+  private closeStalledSockets(): void {
+    const sockets = [...this.stalledSockets];
+    this.stalledSockets.clear();
+    for (const socket of sockets) socket.close(4000, "signaling heartbeat timed out");
   }
 
   private stopTelemetry(markUnavailable: boolean): void {
