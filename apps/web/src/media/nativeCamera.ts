@@ -6,6 +6,9 @@ import type { MediaSignal, SignalingAdapter } from './types';
 /** Separate camera transport: never shares screen capture IDs, tracks, or stops. */
 export class NativeCameraTransport {
   private transport: NativeScreenTransport;
+  private readonly peerAttempts = new Map<string, AbortController>();
+  private readonly onSignalingDisconnected = () => this.trace('signaling-disconnected');
+  private readonly onSignalingReconnected = () => this.trace('signaling-reconnected');
   private readonly onSignalingError = (event: Event) => {
     const code = (event as CustomEvent<{ code?: string }>).detail?.code;
     this.trace(`signaling-error ${code ?? 'unknown'}`);
@@ -18,6 +21,8 @@ export class NativeCameraTransport {
       ? (event) => void callIOSMetaSender('native_camera_trace', { event }).catch(() => undefined)
       : () => undefined;
     (signaling as Partial<EventTarget>).addEventListener?.('error', this.onSignalingError);
+    (signaling as Partial<EventTarget>).addEventListener?.('disconnected', this.onSignalingDisconnected);
+    (signaling as Partial<EventTarget>).addEventListener?.('reconnected', this.onSignalingReconnected);
     this.transport = new NativeScreenTransport({
       localPeerId: signaling.localPeerId,
       send: async (signal) => {
@@ -61,26 +66,47 @@ export class NativeCameraTransport {
   async connectPeer(peerId: string): Promise<boolean> {
     const sessionId = this.transport.sessionId;
     if (!sessionId) return false;
-    if (!(await this.transport.probePeers([peerId], PROBE_TIMEOUT_MS)).has(peerId)) {
-      this.trace('peer-unsupported');
-      return false;
-    }
-    if (this.transport.sessionId !== sessionId) return false;
-    await this.transport.addPeer(peerId);
-    const deadline = Date.now() + CONNECT_TIMEOUT_MS;
-    while (Date.now() < deadline) {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      if (this.transport.sessionId !== sessionId || !this.transport.hasOutboundPeer(peerId)) return false;
-      const state = await callIOSMetaSender<{ connected?: boolean }>('native_screen_peer_connected',
-        { sessionId, peerId }).catch(() => undefined);
-      if (state?.connected) {
-        this.trace('peer-connected');
-        return true;
+    this.peerAttempts.get(peerId)?.abort();
+    const attempt = new AbortController();
+    this.peerAttempts.set(peerId, attempt);
+    const current = () => !attempt.signal.aborted && this.transport.sessionId === sessionId
+      && this.peerAttempts.get(peerId) === attempt;
+    try {
+      const probeDeadline = Date.now() + PROBE_RETRY_WINDOW_MS;
+      let supported = false;
+      while (current() && Date.now() < probeDeadline) {
+        supported = (await this.transport.probePeers([peerId],
+          Math.min(PROBE_TIMEOUT_MS, probeDeadline - Date.now()))).has(peerId);
+        if (!current()) return false;
+        if (supported) break;
+        if (Date.now() >= probeDeadline) break;
+        this.trace('peer-probe-retry');
+        await waitForRetry(Math.min(PROBE_RETRY_DELAY_MS, Math.max(0, probeDeadline - Date.now())), attempt.signal);
       }
+      if (!current()) return false;
+      if (!supported) {
+        this.trace('peer-no-capability-reply');
+        return false;
+      }
+      await this.transport.addPeer(peerId);
+      const deadline = Date.now() + CONNECT_TIMEOUT_MS;
+      while (Date.now() < deadline) {
+        await waitForRetry(500, attempt.signal);
+        if (!current() || !this.transport.hasOutboundPeer(peerId)) return false;
+        const state = await callIOSMetaSender<{ connected?: boolean }>('native_screen_peer_connected',
+          { sessionId, peerId }).catch(() => undefined);
+        if (!current()) return false;
+        if (state?.connected) {
+          this.trace('peer-connected');
+          return true;
+        }
+      }
+      this.trace('peer-connect-timeout');
+      await this.transport.endOutboundPeer(peerId);
+      return false;
+    } finally {
+      if (this.peerAttempts.get(peerId) === attempt) this.peerAttempts.delete(peerId);
     }
-    this.trace('peer-connect-timeout');
-    await this.transport.endOutboundPeer(peerId);
-    return false;
   }
 
   /** Resolves once a connected participant has stayed disconnected for several seconds. */
@@ -108,17 +134,43 @@ export class NativeCameraTransport {
     try { return await this.transport.handle({ ...signal, transport: 'native-screen' } as MediaSignal); }
     catch (error) { this.trace(`recv-failed ${signal.type}`); throw error; }
   }
-  removePeer(id: string) { return this.transport.removePeer(id); }
-  stop() { return this.transport.stop(); }
+  removePeer(id: string) {
+    this.peerAttempts.get(id)?.abort();
+    this.peerAttempts.delete(id);
+    return this.transport.removePeer(id);
+  }
+  stop() { this.cancelPeerAttempts(); return this.transport.stop(); }
   dispose() {
+    this.cancelPeerAttempts();
     (this.signaling as Partial<EventTarget>).removeEventListener?.('error', this.onSignalingError);
+    (this.signaling as Partial<EventTarget>).removeEventListener?.('disconnected', this.onSignalingDisconnected);
+    (this.signaling as Partial<EventTarget>).removeEventListener?.('reconnected', this.onSignalingReconnected);
     this.transport.dispose();
+  }
+  private cancelPeerAttempts() {
+    for (const attempt of this.peerAttempts.values()) attempt.abort();
+    this.peerAttempts.clear();
   }
   getDiagnostics() { return this.transport.getDiagnostics(); }
 }
 
 const PROBE_TIMEOUT_MS = 3_000;
+const PROBE_RETRY_WINDOW_MS = 30_000;
+const PROBE_RETRY_DELAY_MS = 1_000;
 const CONNECT_TIMEOUT_MS = 15_000;
+
+function waitForRetry(ms: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise(resolve => {
+    const finish = () => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', finish);
+      resolve();
+    };
+    const timer = setTimeout(finish, ms);
+    signal.addEventListener('abort', finish, { once: true });
+  });
+}
 
 const signalKind = (signal: MediaSignal) =>
   signal.type === 'signal' ? String((signal.data as { kind?: unknown } | undefined)?.kind ?? '').slice(0, 40) : '';

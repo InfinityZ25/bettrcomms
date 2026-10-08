@@ -1,3 +1,23 @@
+## Unreleased — call signaling handoff recovery
+
+A call now replaces a signaling socket that stops answering heartbeats after
+a network handoff, even if the browser still reports it as open. The previous
+socket remains until the server confirms participant takeover, preserving
+healthy peer media. Repeated replacements that open without delivering data
+have a bounded retry budget; ending the call or a policy rejection releases
+abandoned sockets and prevents later signals from reopening the session.
+
+Native glasses camera capability requests retry for up to 30 seconds while
+signaling recovers. Participants keep the ordinary camera until the native
+connection succeeds. Leaving, stopping capture and disposal cancel pending
+retries, and superseded capability replies cannot start another connection.
+Validation: web production build, all 499 unit tests, and 12 targeted Chromium
+checks over the local API/PostgreSQL passed, covering stalled signaling with
+live camera/screen/recording, lost offers/answers, native-camera capability
+retry/fallback, and same-account device replacement.
+Physical iPhone/glasses Wi-Fi handoff and remote video acceptance are still
+required; automated browser media and mocked native bindings do not prove them.
+
 ## Unreleased — unified room channels and attachments
 
 Rooms now contain ordered channels with shared membership and built-in owner,

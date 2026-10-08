@@ -123,7 +123,12 @@ it('keeps the session alive across a signaling restart and gives up only after r
     onclose?: (event: { code: number; wasClean: boolean }) => void;
     onerror?: (event: unknown) => void;
     onmessage?: (event: { data: string }) => void;
-    send = vi.fn();
+    send = vi.fn((raw: string) => {
+      const message = JSON.parse(raw);
+      if (message.type === 'ping') queueMicrotask(() => this.onmessage?.({
+        data: JSON.stringify({ type: 'pong', request_id: message.request_id }),
+      }));
+    });
     constructor(url: string) {
       this.url = url;
       sockets.push(this);
@@ -261,4 +266,111 @@ it('ends the session when the server closes it deliberately', async () => {
   expect(disconnected).not.toHaveBeenCalled();
   expect(sockets).toHaveLength(1);
   vi.useRealTimers();
+});
+
+function stalledSocketFixture() {
+  vi.useFakeTimers();
+  const sockets: FakeSocket[] = [];
+  class FakeSocket {
+    static OPEN = 1;
+    readyState = 0;
+    url: string;
+    reply = false;
+    onopen?: () => void;
+    onclose?: (event: { code: number; wasClean: boolean }) => void;
+    onmessage?: (event: { data: string }) => void;
+    send = vi.fn((raw: string) => {
+      const message = JSON.parse(raw);
+      if (this.reply && message.type === 'ping') queueMicrotask(() => this.receive({
+        type: 'pong', request_id: message.request_id,
+      }));
+    });
+    close = vi.fn(() => { this.readyState = 3; this.onclose?.({ code: 4000, wasClean: true }); });
+    constructor(url: string) {
+      this.url = url;
+      sockets.push(this);
+      queueMicrotask(() => { this.readyState = 1; this.onopen?.(); });
+    }
+    receive(message: unknown) { this.onmessage?.({ data: JSON.stringify(message) }); }
+  }
+  vi.stubGlobal('WebSocket', FakeSocket);
+  vi.stubGlobal('window', {
+    location: { href: 'http://localhost:5173' }, setTimeout, clearTimeout, setInterval, clearInterval,
+  });
+  const signaling = new RoomWebSocketSignaling('local', '/api/v1/rooms/test/ws?peer_id=local&join_mode=replace');
+  const disconnected = vi.fn(), reconnected = vi.fn(), closed = vi.fn();
+  signaling.addEventListener('disconnected', disconnected);
+  signaling.addEventListener('reconnected', reconnected);
+  signaling.addEventListener('close', closed);
+  return { signaling, sockets, disconnected, reconnected, closed };
+}
+
+it('replaces a stalled socket without announcing a departure or accepting its late messages', async () => {
+  const { signaling, sockets, disconnected, reconnected, closed } = stalledSocketFixture();
+  const signal = vi.fn();
+  signaling.addEventListener('signal', signal);
+  await signaling.connect();
+  await vi.advanceTimersByTimeAsync(11_000);
+  expect(disconnected).toHaveBeenCalledTimes(1);
+  expect(reconnected).toHaveBeenCalledTimes(1);
+  expect(closed).not.toHaveBeenCalled();
+  expect(sockets).toHaveLength(2);
+  expect(sockets[1].url).toContain('peer_id=local');
+  expect(sockets[1].url).toContain('join_mode=additional');
+  // Wait for identity takeover before closing the original registration.
+  expect(sockets[0].close).not.toHaveBeenCalled();
+  sockets[1].reply = true;
+  sockets[1].receive({ type: 'peers', payload: { peers: ['peer'] } });
+  sockets[1].receive({ type: 'pong', request_id: JSON.parse(sockets[1].send.mock.calls[0][0]).request_id });
+  expect(sockets[0].close).toHaveBeenCalledOnce();
+  sockets[0].receive({ type: 'offer', from: 'peer', to: 'local' });
+  sockets[0].onclose?.({ code: 1008, wasClean: false });
+  expect(signal).not.toHaveBeenCalled();
+  await signaling.send({ type: 'signal', to: 'peer', transport: 'native-camera', captureId: 'probe',
+    data: { kind: 'native-screen-profile-query' } });
+  expect(JSON.parse(sockets[1].send.mock.calls.at(-1)![0]).captureId).toBe('probe');
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(sockets).toHaveLength(2);
+  expect(closed).not.toHaveBeenCalled();
+  signaling.close();
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it('bounds retries even when every replacement opens but never delivers data', async () => {
+  const { signaling, sockets, disconnected, closed } = stalledSocketFixture();
+  await signaling.connect();
+  await vi.advanceTimersByTimeAsync(600_000);
+  expect(disconnected).toHaveBeenCalledTimes(12);
+  expect(sockets).toHaveLength(13);
+  expect(closed).toHaveBeenCalledOnce();
+  for (const socket of sockets) expect(socket.close).toHaveBeenCalledOnce();
+  expect(vi.getTimerCount()).toBe(0);
+  await expect(signaling.connect()).rejects.toThrow('session has ended');
+});
+
+it('closes abandoned sockets and cancels recovery when the call ends during backoff', async () => {
+  const { signaling, sockets } = stalledSocketFixture();
+  await signaling.connect();
+  await vi.advanceTimersByTimeAsync(10_000);
+  signaling.close();
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(sockets).toHaveLength(1);
+  expect(sockets[0].close).toHaveBeenCalledOnce();
+  expect(vi.getTimerCount()).toBe(0);
+  await expect(signaling.send({ type: 'offer', to: 'peer', description: { type: 'offer', sdp: '' } }))
+    .rejects.toThrow('session has ended');
+});
+
+it('honors a policy rejection on the replacement and releases every socket', async () => {
+  const { signaling, sockets, closed } = stalledSocketFixture();
+  await signaling.connect();
+  await vi.advanceTimersByTimeAsync(11_000);
+  sockets[1].readyState = 3;
+  sockets[1].onclose?.({ code: 1008, wasClean: false });
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(closed).toHaveBeenCalledOnce();
+  expect(sockets).toHaveLength(2);
+  expect(sockets[0].close).toHaveBeenCalledOnce();
+  expect(vi.getTimerCount()).toBe(0);
+  await expect(signaling.connect()).rejects.toThrow('session has ended');
 });
