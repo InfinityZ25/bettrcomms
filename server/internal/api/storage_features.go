@@ -168,8 +168,11 @@ func parseLibraryFilter(r *http.Request) (LibraryFilter, error) {
 	default:
 		return f, errors.New("invalid file type")
 	}
-	if f.Author != "" && !uuidPattern.MatchString(f.Author) || f.Cursor != "" && !uuidPattern.MatchString(f.Cursor) {
-		return f, errors.New("invalid author or cursor")
+	if f.Author != "" && !uuidPattern.MatchString(f.Author) {
+		return f, errors.New("invalid author")
+	}
+	if _, _, err := decodeLibraryCursor(f.Cursor); err != nil {
+		return f, err
 	}
 	if q.Get("limit") != "" {
 		value, err := strconv.Atoi(q.Get("limit"))

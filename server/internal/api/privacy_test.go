@@ -3,34 +3,14 @@ package api
 import (
 	"context"
 	"fmt"
-	"os"
 	"testing"
 	"time"
-
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestDMPrivacyIntegration(t *testing.T) {
-	url := os.Getenv("TEST_DATABASE_URL")
-	if url == "" {
-		t.Skip("TEST_DATABASE_URL not set")
-	}
 	ctx := context.Background()
-	db, err := pgxpool.New(ctx, url)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	for _, file := range []string{"001_init.sql", "002_direct_rooms.sql", "003_messaging.sql", "004_messaging_complete.sql", "005_attachment_cleanup_attempts.sql", "006_attachment_lifecycle.sql", "007_dm_privacy.sql", "008_web_push.sql", "009_social_basics.sql", "010_conversation_threads_pins.sql", "011_moderation.sql", "012_account_sessions.sql", "013_daily_communication.sql", "014_activity_thread_replies.sql", "015_attachment_limits.sql", "016_communities_channels_roles.sql"} {
-		data, readErr := os.ReadFile("../../migrations/" + file)
-		if readErr != nil {
-			t.Fatal(readErr)
-		}
-		if _, err = db.Exec(ctx, string(data)); err != nil {
-			t.Fatalf("%s: %v", file, err)
-		}
-	}
-	store := &PostgresStore{DB: db}
+	store := conversationTestStore(t)
+	db := store.DB
 	suffix := fmt.Sprint(time.Now().UnixNano())
 	alice, err := store.UpsertDevUser("privacy-a-"+suffix+"@example.test", "Alice")
 	if err != nil {

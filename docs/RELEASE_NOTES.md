@@ -6,7 +6,9 @@ files and upload references are kept on the device for recovery. Each channel
 has a file library with type, author and date filters, original downloads and a
 canvas PDF viewer (up to 20 MiB). Room administrators can inspect used/reserved
 storage, set a quota and configure attachment retention. Active stickers and
-soundboard assets are preserved by ordinary pending/retention cleanup.
+soundboard assets are preserved by ordinary pending/retention cleanup. Deleted
+accounts' assets are removed from S3 with retry on failure, releasing references
+and quota. Library pagination survives deletion of its last displayed file.
 
 Custom roles and private channels add explicit read, posting, voice and pin
 permissions without granting administrative rank. Per-channel denies take
@@ -22,6 +24,9 @@ Channel activities provide polls, scheduled events with RSVP and durable
 in-app reminders, reusable stickers, a soundboard, and Watch Together using
 authorized video attachments. Watch commands use a host, server time and
 revision checks, with explicit local playback and host transfer/recovery.
+Deleting the watched video permits starting a new session. Readable-channel
+moderators can close polls, cancel events and remove assets independently of
+posting permission. Concurrent sticker and text sends share the same lock order.
 Soundboard playback has its own volume/mute and stops on deafen or call exit;
 it never changes microphone or recording source tracks. Message edit history
 retains text versions from this release and erases them on deletion/moderation.

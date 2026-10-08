@@ -12,6 +12,8 @@ be withdrawn while open. The author or a moderator can end a poll; an optional
 deadline closes voting at the server, including requests racing the deadline.
 Results disclose counts and the viewer's own choice, without publishing voter
 identities. Read permission permits voting; posting permission permits creation.
+Authors and moderators with read access can close polls, cancel events and remove
+assets even when they cannot publish in that channel, including announcements.
 
 Scheduled events use a future date within one year and a local-time browser input
 that is stored as UTC. Members choose Going, Maybe or Can't make it. The creator
@@ -47,6 +49,8 @@ heartbeat, or immediately after the host loses posting/voice access, another
 permitted member can take over. Reload restores the persisted session and requires
 the viewer to enable playback again. Read or voice permission revocation removes
 the player from the activity snapshot.
+After the source video is deleted, starting another available video clears the
+unavailable session, so an invisible stale revision does not block its replacement.
 
 ## Stickers and soundboard
 
@@ -56,6 +60,10 @@ the ordinary private attachment pipeline, including its configured scanning and
 quota rules. Asset references retain the original object and prevent draft
 cleanup from deleting a reusable asset. The creator or a moderator can remove
 an asset, revoking its private preview and removing reusable message references.
+Account deletion and ownerless sources enter object cleanup even when registered
+as assets. Successful S3 deletion removes their asset and message references;
+failed deletion retains the cleanup record for retry. Healthy registered sources
+remain available beyond ordinary pending-upload and retention limits.
 
 Sending a sticker atomically creates a normal message with a reusable asset
 reference. An idempotency nonce prevents duplicate sends after an interrupted
@@ -83,7 +91,12 @@ transaction. Edits predating migration 019 have no recoverable prior text.
 `channel_activities_test.go` covers unique votes, closed polls, outsider denial,
 RSVP cancellation, durable reminder deduplication/dismissal, history erasure,
 reusable sticker authorization/idempotency, stale playback revisions, host
-transfer, and immediate host takeover after voice-only ACL revocation.
+transfer, immediate host takeover after voice-only ACL revocation, source-video
+deletion recovery, concurrent chat/sticker sends, and read-only moderation.
+
+`attachment_asset_cleanup_test.go` verifies account deletion, retry and healthy
+asset preservation. The file-library integration suite verifies pagination with
+identical timestamps after physical deletion of the cursor attachment.
 
 `features/activities/*.test.ts` covers monotonic playback anchors, deadlines,
 event validation/isolation, StrictMode mount cancellation and private-state

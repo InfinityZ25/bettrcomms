@@ -10,22 +10,40 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func (s *PostgresStore) activityTx(room, user string, post, voice bool) (pgx.Tx, error) {
+func (s *PostgresStore) activityTx(room, user string, post, voice bool, relatedUsers ...string) (pgx.Tx, error) {
 	ctx := context.Background()
 	tx, err := s.DB.Begin(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if post {
-		err = checkRoomPosting(ctx, tx, room, user, false)
-	} else {
+	// Account deletion owns the user before erasing messages and membership.
+	// Keep it ahead of those locks; KEY SHARE still permits profile updates.
+	for _, account := range append([]string{user}, relatedUsers...) {
+		var activeUser string
+		err = tx.QueryRow(ctx, `SELECT id::text FROM users WHERE id=$1 AND deleted_at IS NULL FOR KEY SHARE`, account).Scan(&activeUser)
+		if errors.Is(err, pgx.ErrNoRows) {
+			err = ErrForbidden
+		}
+		if err != nil {
+			break
+		}
+	}
+	// Match ordinary message writes: community, room order, then membership.
+	// Taking a member row before the room lock deadlocks a concurrent writer
+	// that already owns the room lock and is checking the same membership.
+	if err == nil {
 		err = lockRoomCommunity(ctx, tx, room)
-		if err == nil {
-			var member string
-			err = tx.QueryRow(ctx, `SELECT user_id::text FROM room_members WHERE room_id=$1 AND user_id=$2 AND can_access_room(room_id,$2) FOR SHARE`, room, user).Scan(&member)
-			if errors.Is(err, pgx.ErrNoRows) {
-				err = ErrForbidden
-			}
+	}
+	if err == nil {
+		_, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::uuid::text,0))`, room)
+	}
+	if err == nil && post {
+		err = checkRoomPosting(ctx, tx, room, user, false)
+	} else if err == nil {
+		var member string
+		err = tx.QueryRow(ctx, `SELECT user_id::text FROM room_members WHERE room_id=$1 AND user_id=$2 AND can_access_room(room_id,$2) FOR SHARE`, room, user).Scan(&member)
+		if errors.Is(err, pgx.ErrNoRows) {
+			err = ErrForbidden
 		}
 	}
 	if err == nil && voice {
@@ -168,7 +186,7 @@ func (s *PostgresStore) VoteChannelPoll(room, user, id string, option *int) erro
 	return tx.Commit(ctx)
 }
 func (s *PostgresStore) CloseChannelPoll(room, user, id string) error {
-	tx, err := s.activityTx(room, user, true, false)
+	tx, err := s.activityTx(room, user, false, false)
 	if err != nil {
 		return err
 	}
@@ -233,7 +251,7 @@ func (s *PostgresStore) RSVPScheduledEvent(room, user, id, response string) erro
 	return tx.Commit(ctx)
 }
 func (s *PostgresStore) CancelScheduledEvent(room, user, id string) error {
-	tx, err := s.activityTx(room, user, true, false)
+	tx, err := s.activityTx(room, user, false, false)
 	if err != nil {
 		return err
 	}
@@ -319,13 +337,23 @@ func (s *PostgresStore) CreateChannelMediaAsset(room, user, attachment, name, ki
 	return tx.Commit(ctx)
 }
 func (s *PostgresStore) DeleteChannelMediaAsset(room, user, id string) error {
-	tx, err := s.activityTx(room, user, true, false)
+	tx, err := s.activityTx(room, user, false, false)
 	if err != nil {
 		return err
 	}
 	ctx := context.Background()
 	defer tx.Rollback(ctx)
 	var attachment string
+	err = tx.QueryRow(ctx, `SELECT attachment_id::text FROM channel_media_assets WHERE room_id=$1 AND id=$3 AND (creator_id=$2 OR room_has_permission($1,$2,'moderate'))`, room, user, id).Scan(&attachment)
+	if err != nil {
+		return norm(err)
+	}
+	// Cleanup locks the source attachment before its cascading asset rows.
+	var locked string
+	err = tx.QueryRow(ctx, `SELECT id::text FROM message_attachments WHERE id=$1 FOR UPDATE`, attachment).Scan(&locked)
+	if err != nil {
+		return norm(err)
+	}
 	err = tx.QueryRow(ctx, `DELETE FROM channel_media_assets WHERE room_id=$1 AND id=$3 AND (creator_id=$2 OR room_has_permission($1,$2,'moderate')) RETURNING attachment_id::text`, room, user, id).Scan(&attachment)
 	if err != nil {
 		return norm(err)
@@ -343,9 +371,6 @@ func (s *PostgresStore) SendStickerMessage(room, user, id, nonce string) (Messag
 		return Message{}, false, err
 	}
 	defer tx.Rollback(ctx)
-	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::uuid::text,0))`, room); err != nil {
-		return Message{}, false, err
-	}
 	var existing, existingAsset string
 	err = tx.QueryRow(ctx, `SELECT m.id::text,COALESCE(l.asset_id::text,'') FROM messages m LEFT JOIN message_asset_links l ON l.message_id=m.id WHERE m.room_id=$1 AND m.author_id=$2 AND m.client_nonce=$3`, room, user, nonce).Scan(&existing, &existingAsset)
 	if err == nil {
@@ -361,8 +386,13 @@ func (s *PostgresStore) SendStickerMessage(room, user, id, nonce string) (Messag
 	if err = checkRoomPosting(ctx, tx, room, user, true); err != nil {
 		return Message{}, false, err
 	}
+	var attachment string
+	err = tx.QueryRow(ctx, `SELECT f.id::text FROM channel_media_assets a JOIN message_attachments f ON f.id=a.attachment_id WHERE a.room_id=$1 AND a.id=$2 AND a.kind='sticker' AND f.upload_state='ready' AND f.scan_state IN('not_required','clean') AND f.deleted_at IS NULL FOR SHARE OF f`, room, id).Scan(&attachment)
+	if err != nil {
+		return Message{}, false, norm(err)
+	}
 	var name string
-	err = tx.QueryRow(ctx, `SELECT a.name FROM channel_media_assets a JOIN message_attachments f ON f.id=a.attachment_id WHERE a.room_id=$1 AND a.id=$2 AND a.kind='sticker' AND f.upload_state='ready' AND f.scan_state IN('not_required','clean') AND f.deleted_at IS NULL FOR SHARE OF a,f`, room, id).Scan(&name)
+	err = tx.QueryRow(ctx, `SELECT name FROM channel_media_assets WHERE room_id=$1 AND id=$2 AND attachment_id=$3 AND kind='sticker' FOR SHARE`, room, id, attachment).Scan(&name)
 	if err != nil {
 		return Message{}, false, norm(err)
 	}
@@ -412,6 +442,8 @@ func (s *PostgresStore) MessageEditHistory(room, user, id string) ([]MessageEdit
 
 const watchSelect = `SELECT w.room_id::text,a.id::text,a.filename,a.content_type,a.size_bytes,w.host_id::text,w.paused,w.position_seconds,w.revision,w.updated_at,clock_timestamp(),(w.host_id IS NULL OR NOT room_has_permission(w.room_id,w.host_id,'join_voice') OR NOT room_has_permission(w.room_id,w.host_id,'post') OR w.host_seen_at<clock_timestamp()-interval '60 seconds') FROM channel_watch_sessions w JOIN message_attachments a ON a.id=w.attachment_id JOIN messages m ON m.id=a.message_id`
 
+const watchSourceAvailable = `a.room_id=w.room_id AND m.room_id=w.room_id AND a.upload_state='ready' AND a.scan_state IN('not_required','clean') AND a.deleted_at IS NULL AND m.deleted_at IS NULL AND a.content_type LIKE 'video/%' AND EXISTS(SELECT 1 FROM users uploader WHERE uploader.id=a.uploader_id AND uploader.deleted_at IS NULL)`
+
 func scanWatch(row pgx.Row) (*WatchTogetherState, error) {
 	v := &WatchTogetherState{}
 	err := row.Scan(&v.RoomID, &v.Attachment.ID, &v.Attachment.Filename, &v.Attachment.ContentType, &v.Attachment.SizeBytes, &v.HostID, &v.Paused, &v.PositionSeconds, &v.Revision, &v.UpdatedAt, &v.ServerTime, &v.CanClaim)
@@ -421,13 +453,17 @@ func scanWatch(row pgx.Row) (*WatchTogetherState, error) {
 	return v, nil
 }
 func (s *PostgresStore) watchTogether(room, user string) (*WatchTogetherState, error) {
-	return scanWatch(s.DB.QueryRow(context.Background(), watchSelect+` WHERE w.room_id=$1 AND room_has_permission(w.room_id,$2,'join_voice') AND a.upload_state='ready' AND a.scan_state IN('not_required','clean') AND a.deleted_at IS NULL AND m.deleted_at IS NULL`, room, user))
+	return scanWatch(s.DB.QueryRow(context.Background(), watchSelect+` WHERE w.room_id=$1 AND room_has_permission(w.room_id,$2,'join_voice') AND `+watchSourceAvailable, room, user))
 }
 func (s *PostgresStore) ChangeWatchTogether(room, user string, in WatchTogetherCommand) (*WatchTogetherState, error) {
 	if !validWatchCommand(in) {
 		return nil, ErrForbidden
 	}
-	tx, err := s.activityTx(room, user, true, true)
+	var relatedUsers []string
+	if in.Action == "transfer" && in.HostID != user {
+		relatedUsers = []string{in.HostID}
+	}
+	tx, err := s.activityTx(room, user, true, true, relatedUsers...)
 	if err != nil {
 		return nil, err
 	}
@@ -436,13 +472,44 @@ func (s *PostgresStore) ChangeWatchTogether(room, user string, in WatchTogetherC
 	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::uuid::text,5))`, room); err != nil {
 		return nil, err
 	}
+	if in.Action == "start" {
+		// Cleanup owns attachments before cascading into watch sessions, while
+		// file deletion owns messages before attachments. Lock the target in
+		// that order before owning the watch row, including replacement starts.
+		var message, found string
+		err = tx.QueryRow(ctx, `SELECT m.id::text FROM message_attachments a JOIN messages m ON m.id=a.message_id WHERE a.room_id=$1 AND a.id=$2 AND m.room_id=$1 AND m.deleted_at IS NULL FOR SHARE OF m`, room, in.AttachmentID).Scan(&message)
+		if err != nil {
+			return nil, norm(err)
+		}
+		err = tx.QueryRow(ctx, `SELECT id::text FROM message_attachments a WHERE room_id=$1 AND id=$2 AND message_id=$3 AND upload_state='ready' AND scan_state IN('not_required','clean') AND deleted_at IS NULL AND content_type LIKE 'video/%' AND EXISTS(SELECT 1 FROM users uploader WHERE uploader.id=a.uploader_id AND uploader.deleted_at IS NULL) FOR SHARE`, room, in.AttachmentID, message).Scan(&found)
+		if err != nil {
+			return nil, norm(err)
+		}
+	}
 	var host *string
 	var revision int64
-	var claim bool
-	err = tx.QueryRow(ctx, `SELECT host_id::text,revision,(host_id IS NULL OR NOT room_has_permission(room_id,host_id,'join_voice') OR NOT room_has_permission(room_id,host_id,'post') OR host_seen_at<clock_timestamp()-interval '60 seconds') FROM channel_watch_sessions WHERE room_id=$1 FOR UPDATE`, room).Scan(&host, &revision, &claim)
+	var claim, available bool
+	err = tx.QueryRow(ctx, `SELECT w.host_id::text,w.revision,(w.host_id IS NULL OR NOT room_has_permission(w.room_id,w.host_id,'join_voice') OR NOT room_has_permission(w.room_id,w.host_id,'post') OR w.host_seen_at<clock_timestamp()-interval '60 seconds'),EXISTS(SELECT 1 FROM message_attachments a JOIN messages m ON m.id=a.message_id WHERE a.id=w.attachment_id AND `+watchSourceAvailable+`) FROM channel_watch_sessions w WHERE w.room_id=$1 FOR UPDATE`, room).Scan(&host, &revision, &claim, &available)
+	removed := err == nil && !available
+	if removed {
+		// Readers expose an unavailable source as watch:null. Clear its hidden
+		// revision and host lease before comparing the next client's revision.
+		if _, err = tx.Exec(ctx, `DELETE FROM channel_watch_sessions WHERE room_id=$1`, room); err != nil {
+			return nil, err
+		}
+		err = pgx.ErrNoRows
+	}
 	if errors.Is(err, pgx.ErrNoRows) {
-		if in.Action != "start" {
-			return nil, ErrNotFound
+		if in.Action != "start" || in.Revision != 0 {
+			if removed {
+				if err = tx.Commit(ctx); err != nil {
+					return nil, err
+				}
+			}
+			if in.Action != "start" {
+				return nil, ErrNotFound
+			}
+			return nil, ErrConflict
 		}
 	} else if err != nil {
 		return nil, err
@@ -461,11 +528,6 @@ func (s *PostgresStore) ChangeWatchTogether(room, user string, in WatchTogetherC
 	}
 	switch in.Action {
 	case "start":
-		var found string
-		err = tx.QueryRow(ctx, `SELECT a.id::text FROM message_attachments a JOIN messages m ON m.id=a.message_id WHERE a.room_id=$1 AND a.id=$2 AND a.upload_state='ready' AND a.scan_state IN('not_required','clean') AND a.deleted_at IS NULL AND m.deleted_at IS NULL AND a.content_type LIKE 'video/%' FOR SHARE OF a,m`, room, in.AttachmentID).Scan(&found)
-		if err != nil {
-			return nil, norm(err)
-		}
 		_, err = tx.Exec(ctx, `INSERT INTO channel_watch_sessions(room_id,attachment_id,host_id) VALUES($1,$2,$3) ON CONFLICT(room_id) DO UPDATE SET attachment_id=EXCLUDED.attachment_id,host_id=EXCLUDED.host_id,paused=true,position_seconds=0,revision=channel_watch_sessions.revision+1,updated_at=clock_timestamp(),host_seen_at=clock_timestamp()`, room, in.AttachmentID, user)
 	case "stop":
 		_, err = tx.Exec(ctx, `DELETE FROM channel_watch_sessions WHERE room_id=$1`, room)
@@ -491,7 +553,7 @@ func (s *PostgresStore) ChangeWatchTogether(room, user string, in WatchTogetherC
 	}
 	var value *WatchTogetherState
 	if in.Action != "stop" {
-		value, err = scanWatch(tx.QueryRow(ctx, watchSelect+` WHERE w.room_id=$1 AND a.deleted_at IS NULL AND m.deleted_at IS NULL`, room))
+		value, err = scanWatch(tx.QueryRow(ctx, watchSelect+` WHERE w.room_id=$1 AND `+watchSourceAvailable, room))
 		if err != nil {
 			return nil, err
 		}

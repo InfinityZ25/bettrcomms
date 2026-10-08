@@ -15,14 +15,10 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestAvatarNormalization(t *testing.T) {
@@ -98,29 +94,7 @@ func TestPresenceAggregatesDevicesAndHidesInvisible(t *testing.T) {
 
 func socialDatabase(t *testing.T) *PostgresStore {
 	t.Helper()
-	url := os.Getenv("TEST_DATABASE_URL")
-	if url == "" {
-		t.Skip("TEST_DATABASE_URL not set")
-	}
-	db, err := pgxpool.New(context.Background(), url)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(db.Close)
-	files, err := filepath.Glob("../../migrations/*.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, file := range files {
-		data, err := os.ReadFile(file)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err = db.Exec(context.Background(), string(data)); err != nil {
-			t.Fatalf("%s: %v", file, err)
-		}
-	}
-	return &PostgresStore{DB: db}
+	return conversationTestStore(t)
 }
 func socialUsers(t *testing.T, s *PostgresStore, count int) []User {
 	t.Helper()

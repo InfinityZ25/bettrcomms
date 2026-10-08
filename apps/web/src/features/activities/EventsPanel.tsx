@@ -185,7 +185,6 @@ export function EventsPanel({
             </span>
           </div>
           {!event.cancelled_at &&
-            canPost &&
             (event.author_id === user.id || room.permissions?.moderate) && (
               <Button
                 variant="ghost"

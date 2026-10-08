@@ -67,7 +67,18 @@ func (s *PostgresStore) CleanPendingAttachments(ctx context.Context, storage Att
 		return err
 	}
 	defer tx.Rollback(ctx)
-	rows, err := tx.Query(ctx, `SELECT a.id::text,a.object_key FROM message_attachments a WHERE NOT EXISTS(SELECT 1 FROM channel_media_assets asset WHERE asset.attachment_id=a.id) AND NOT EXISTS(SELECT 1 FROM attachment_uploads upload WHERE upload.id=a.id AND (upload.finalize_until>clock_timestamp() OR upload.state NOT IN('complete','cancelled','rejected') OR (upload.state IN('cancelled','rejected') AND upload.multipart_id IS NOT NULL))) AND ((a.message_id IS NULL AND a.created_at<now()-interval '24 hours') OR (a.upload_state='ready' AND (a.room_id IS NULL OR a.uploader_id IS NULL OR a.deleted_at IS NOT NULL))) ORDER BY COALESCE(a.cleanup_attempted_at,a.created_at) LIMIT 50 FOR UPDATE OF a SKIP LOCKED`)
+	// Registration keeps healthy sources beyond upload expiry. Deleted or
+	// ownerless sources still need physical cleanup; deleting their attachment
+	// cascades through the asset and its message links only after S3 succeeds.
+	rows, err := tx.Query(ctx, `SELECT a.id::text,a.object_key FROM message_attachments a
+ WHERE NOT EXISTS(SELECT 1 FROM channel_media_assets asset
+   WHERE asset.attachment_id=a.id AND asset.room_id=a.room_id
+     AND a.upload_state='ready' AND a.scan_state IN('not_required','clean')
+     AND a.deleted_at IS NULL AND a.uploader_id IS NOT NULL
+     AND EXISTS(SELECT 1 FROM users uploader WHERE uploader.id=a.uploader_id AND uploader.deleted_at IS NULL))
+ AND NOT EXISTS(SELECT 1 FROM attachment_uploads upload WHERE upload.id=a.id AND (upload.finalize_until>clock_timestamp() OR upload.state NOT IN('complete','cancelled','rejected') OR (upload.state IN('cancelled','rejected') AND upload.multipart_id IS NOT NULL)))
+ AND ((a.message_id IS NULL AND a.created_at<now()-interval '24 hours') OR (a.upload_state='ready' AND (a.room_id IS NULL OR a.uploader_id IS NULL OR a.deleted_at IS NOT NULL)))
+ ORDER BY COALESCE(a.cleanup_attempted_at,a.created_at) LIMIT 50 FOR UPDATE OF a SKIP LOCKED`)
 	if err != nil {
 		return err
 	}

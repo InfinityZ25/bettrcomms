@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -309,6 +310,69 @@ func storageTestAPI(t *testing.T) (*PostgresStore, *API, User, Room, *http.Cooki
 	a.Attachments = storage
 	return store, a, user, room, cookie, storage
 }
+
+func TestFileLibraryPaginationSurvivesDeletedCursorIntegration(t *testing.T) {
+	store, a, user, room, cookie, _ := storageTestAPI(t)
+	ctx := context.Background()
+	createdAt := time.Date(2026, 10, 1, 12, 0, 0, 123456000, time.UTC)
+	want := make(map[string]bool)
+	for range 5 {
+		upload := startUploadTest(t, a, cookie, room.ID, 5)
+		if response := chunkRequest(a, cookie, room.ID, upload.ID, 0, []byte("hello")); response.Code != http.StatusOK {
+			t.Fatal(response.Body.String())
+		}
+		accountHTTP(t, a, cookie, "POST", "/rooms/"+room.ID+"/uploads/"+upload.ID+"/complete", "{}", http.StatusOK)
+		if _, _, err := store.SendThreadMessage(room.ID, user.ID, "shared file", "", "", []string{upload.ID}, ""); err != nil {
+			t.Fatal(err)
+		}
+		// Identical timestamps exercise the UUID tie-breaker as well as deletion.
+		if _, err := store.DB.Exec(ctx, `UPDATE message_attachments SET created_at=$2 WHERE id=$1`, upload.ID, createdAt); err != nil {
+			t.Fatal(err)
+		}
+		want[upload.ID] = true
+	}
+	readPage := func(cursor string) FileLibraryPage {
+		t.Helper()
+		response := accountHTTP(t, a, cookie, "GET", "/rooms/"+room.ID+"/files?limit=2&cursor="+url.QueryEscape(cursor), "", http.StatusOK)
+		var page FileLibraryPage
+		if err := json.Unmarshal(response.Body.Bytes(), &page); err != nil {
+			t.Fatal(err)
+		}
+		return page
+	}
+	first := readPage("")
+	if len(first.Files) != 2 || first.Cursor == "" {
+		t.Fatal("missing first page or cursor", first)
+	}
+	deletedID := first.Files[1].ID
+	accountHTTP(t, a, cookie, "DELETE", "/rooms/"+room.ID+"/files/"+deletedID, "", http.StatusNoContent)
+	var exists bool
+	if err := store.DB.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM message_attachments WHERE id=$1)`, deletedID).Scan(&exists); err != nil || exists {
+		t.Fatal("cursor attachment was not physically deleted", exists, err)
+	}
+	second := readPage(first.Cursor)
+	if len(second.Files) != 2 || second.Cursor == "" {
+		t.Fatal("deleting the cursor lost older files", second)
+	}
+	third := readPage(second.Cursor)
+	if len(third.Files) != 1 || third.Cursor != "" {
+		t.Fatal("incorrect last page", third)
+	}
+	seen := make(map[string]bool)
+	for _, page := range []FileLibraryPage{first, second, third} {
+		for _, file := range page.Files {
+			if !want[file.ID] || seen[file.ID] {
+				t.Fatal("pagination returned an unknown or repeated attachment", file.ID)
+			}
+			seen[file.ID] = true
+		}
+	}
+	if len(seen) != len(want) {
+		t.Fatal("pagination omitted an attachment", seen, want)
+	}
+	accountHTTP(t, a, cookie, "GET", "/rooms/"+room.ID+"/files?cursor=invalid", "", http.StatusBadRequest)
+}
+
 func TestResumableUploadPersistsOffsetsAcrossAPIRestartIntegration(t *testing.T) {
 	store, a, user, room, cookie, storage := storageTestAPI(t)
 	first := bytes.Repeat([]byte("a"), int(AttachmentChunkBytes))

@@ -247,7 +247,6 @@ export function PollsPanel({
                   </Button>
                 )}
                 {!closed &&
-                  canPost &&
                   (poll.author_id === user.id ||
                     room.permissions?.moderate) && (
                     <Button

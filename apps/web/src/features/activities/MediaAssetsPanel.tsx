@@ -293,21 +293,19 @@ export function MediaAssetsPanel({
                   Play
                 </Button>
               )}
-              {canPost &&
-                (asset.creator_id === user.id ||
-                  room.permissions?.moderate) && (
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={`Remove ${asset.name}`}
-                    disabled={busy || uploading || Boolean(sending)}
-                    onClick={() =>
-                      void act(`/media-assets/${asset.id}`, undefined, 'DELETE')
-                    }
-                  >
-                    <Trash2 size={14} />
-                  </Button>
-                )}
+              {(asset.creator_id === user.id || room.permissions?.moderate) && (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={`Remove ${asset.name}`}
+                  disabled={busy || uploading || Boolean(sending)}
+                  onClick={() =>
+                    void act(`/media-assets/${asset.id}`, undefined, 'DELETE')
+                  }
+                >
+                  <Trash2 size={14} />
+                </Button>
+              )}
             </div>
           </li>
         ))}

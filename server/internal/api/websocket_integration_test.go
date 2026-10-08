@@ -7,36 +7,17 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestWebSocketSignalIntegration(t *testing.T) {
-	dbURL := os.Getenv("TEST_DATABASE_URL")
-	if dbURL == "" {
-		t.Skip("TEST_DATABASE_URL not set")
-	}
 	ctx := context.Background()
-	pool, e := pgxpool.New(ctx, dbURL)
-	if e != nil {
-		t.Fatal(e)
-	}
-	defer pool.Close()
-	for _, path := range []string{"../../migrations/001_init.sql", "../../migrations/002_direct_rooms.sql", "../../migrations/003_messaging.sql", "../../migrations/004_messaging_complete.sql", "../../migrations/005_attachment_cleanup_attempts.sql", "../../migrations/006_attachment_lifecycle.sql", "../../migrations/007_dm_privacy.sql", "../../migrations/008_web_push.sql", "../../migrations/009_social_basics.sql", "../../migrations/010_conversation_threads_pins.sql", "../../migrations/011_moderation.sql", "../../migrations/012_account_sessions.sql", "../../migrations/013_daily_communication.sql", "../../migrations/014_activity_thread_replies.sql", "../../migrations/015_attachment_limits.sql", "../../migrations/016_communities_channels_roles.sql"} {
-		migration, e := os.ReadFile(path)
-		if e != nil {
-			t.Fatal(e)
-		}
-		if _, e = pool.Exec(ctx, string(migration)); e != nil {
-			t.Fatal(e)
-		}
-	}
-	store := &PostgresStore{DB: pool}
+	store := conversationTestStore(t)
+	pool := store.DB
 	suffix := time.Now().Format("150405.000000000")
 	u1, e := store.UpsertDevUser("ws-a-"+suffix+"@example.test", "WS A")
 	if e != nil {
@@ -236,26 +217,9 @@ func TestWebSocketSignalIntegration(t *testing.T) {
 }
 
 func TestRoomManagementAuthorization(t *testing.T) {
-	dbURL := os.Getenv("TEST_DATABASE_URL")
-	if dbURL == "" {
-		t.Skip("TEST_DATABASE_URL not set")
-	}
 	ctx := context.Background()
-	pool, e := pgxpool.New(ctx, dbURL)
-	if e != nil {
-		t.Fatal(e)
-	}
-	defer pool.Close()
-	for _, path := range []string{"../../migrations/001_init.sql", "../../migrations/002_direct_rooms.sql", "../../migrations/003_messaging.sql", "../../migrations/004_messaging_complete.sql", "../../migrations/005_attachment_cleanup_attempts.sql", "../../migrations/006_attachment_lifecycle.sql", "../../migrations/007_dm_privacy.sql", "../../migrations/008_web_push.sql", "../../migrations/009_social_basics.sql", "../../migrations/010_conversation_threads_pins.sql", "../../migrations/011_moderation.sql", "../../migrations/012_account_sessions.sql", "../../migrations/013_daily_communication.sql", "../../migrations/014_activity_thread_replies.sql", "../../migrations/015_attachment_limits.sql", "../../migrations/016_communities_channels_roles.sql"} {
-		sql, e := os.ReadFile(path)
-		if e != nil {
-			t.Fatal(e)
-		}
-		if _, e = pool.Exec(ctx, string(sql)); e != nil {
-			t.Fatal(e)
-		}
-	}
-	s := &PostgresStore{DB: pool}
+	s := conversationTestStore(t)
+	pool := s.DB
 	suffix := time.Now().Format("150405.000000000")
 	owner, e := s.UpsertDevUser("owner-"+suffix+"@example.test", "Owner")
 	if e != nil {

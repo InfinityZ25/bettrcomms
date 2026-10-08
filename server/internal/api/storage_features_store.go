@@ -2,9 +2,12 @@ package api
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
-	"github.com/jackc/pgx/v5"
+	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 var ErrStorageQuota = errors.New("room storage quota exceeded")
@@ -204,12 +207,42 @@ type FileLibraryPage struct {
 	Cursor string        `json:"next_cursor,omitempty"`
 }
 
+func decodeLibraryCursor(cursor string) (*time.Time, string, error) {
+	if cursor == "" {
+		return nil, "", nil
+	}
+	if len(cursor) > 160 {
+		return nil, "", errors.New("invalid file cursor")
+	}
+	data, err := base64.RawURLEncoding.DecodeString(cursor)
+	if err != nil {
+		return nil, "", errors.New("invalid file cursor")
+	}
+	parts := strings.Split(string(data), "\n")
+	if len(parts) != 2 || !uuidPattern.MatchString(parts[1]) {
+		return nil, "", errors.New("invalid file cursor")
+	}
+	createdAt, err := time.Parse(time.RFC3339Nano, parts[0])
+	if err != nil {
+		return nil, "", errors.New("invalid file cursor")
+	}
+	return &createdAt, parts[1], nil
+}
+
+func encodeLibraryCursor(file LibraryFile) string {
+	return base64.RawURLEncoding.EncodeToString([]byte(file.CreatedAt.UTC().Format(time.RFC3339Nano) + "\n" + file.ID))
+}
+
 func (s *PostgresStore) ChannelFiles(ctx context.Context, room, user string, filter LibraryFilter) (FileLibraryPage, error) {
 	page := FileLibraryPage{Files: []LibraryFile{}}
 	if _, err := s.RoomForMember(room, user); err != nil {
 		return page, err
 	}
-	rows, err := s.DB.Query(ctx, `SELECT a.id::text,a.filename,a.content_type,a.size_bytes,a.room_id::text,a.message_id::text,a.uploader_id::text,COALESCE(u.name,'Deleted account'),a.created_at FROM message_attachments a LEFT JOIN users u ON u.id=a.uploader_id LEFT JOIN messages m ON m.id=a.message_id WHERE a.room_id=$1 AND can_access_room(a.room_id,$2) AND a.upload_state='ready' AND a.scan_state IN('not_required','clean') AND a.deleted_at IS NULL AND ((a.message_id IS NOT NULL AND m.deleted_at IS NULL) OR EXISTS(SELECT 1 FROM channel_media_assets asset WHERE asset.attachment_id=a.id AND asset.room_id=a.room_id)) AND ($3='' OR a.content_type LIKE $3||'%' OR ($3='document' AND a.content_type NOT LIKE 'image/%' AND a.content_type NOT LIKE 'audio/%' AND a.content_type NOT LIKE 'video/%')) AND ($4='' OR a.uploader_id=NULLIF($4,'')::uuid) AND ($5::timestamptz IS NULL OR a.created_at>=$5) AND ($6::timestamptz IS NULL OR a.created_at<$6) AND ($7='' OR (a.created_at,a.id)<(SELECT created_at,id FROM message_attachments WHERE id=NULLIF($7,'')::uuid AND room_id=$1)) ORDER BY a.created_at DESC,a.id DESC LIMIT $8`, room, user, filter.Kind, filter.Author, filter.From, filter.To, filter.Cursor, filter.Limit+1)
+	cursorTime, cursorID, err := decodeLibraryCursor(filter.Cursor)
+	if err != nil {
+		return page, err
+	}
+	rows, err := s.DB.Query(ctx, `SELECT a.id::text,a.filename,a.content_type,a.size_bytes,a.room_id::text,a.message_id::text,a.uploader_id::text,COALESCE(u.name,'Deleted account'),a.created_at FROM message_attachments a LEFT JOIN users u ON u.id=a.uploader_id LEFT JOIN messages m ON m.id=a.message_id WHERE a.room_id=$1 AND can_access_room(a.room_id,$2) AND a.upload_state='ready' AND a.scan_state IN('not_required','clean') AND a.deleted_at IS NULL AND ((a.message_id IS NOT NULL AND m.deleted_at IS NULL) OR EXISTS(SELECT 1 FROM channel_media_assets asset WHERE asset.attachment_id=a.id AND asset.room_id=a.room_id)) AND ($3='' OR a.content_type LIKE $3||'%' OR ($3='document' AND a.content_type NOT LIKE 'image/%' AND a.content_type NOT LIKE 'audio/%' AND a.content_type NOT LIKE 'video/%')) AND ($4='' OR a.uploader_id=NULLIF($4,'')::uuid) AND ($5::timestamptz IS NULL OR a.created_at>=$5) AND ($6::timestamptz IS NULL OR a.created_at<$6) AND ($7::timestamptz IS NULL OR (a.created_at,a.id)<($7,NULLIF($8,'')::uuid)) ORDER BY a.created_at DESC,a.id DESC LIMIT $9`, room, user, filter.Kind, filter.Author, filter.From, filter.To, cursorTime, cursorID, filter.Limit+1)
 	if err != nil {
 		return page, err
 	}
@@ -226,7 +259,7 @@ func (s *PostgresStore) ChannelFiles(ctx context.Context, room, user string, fil
 	}
 	if len(page.Files) > filter.Limit {
 		page.Files = page.Files[:filter.Limit]
-		page.Cursor = page.Files[len(page.Files)-1].ID
+		page.Cursor = encodeLibraryCursor(page.Files[len(page.Files)-1])
 	}
 	return page, nil
 }
