@@ -2,10 +2,12 @@
 
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
+#import <AVFoundation/AVFoundation.h>
 #import <MWDATCore/MWDATCore-Swift.h>
 #import <MWDATCamera/MWDATCamera-Swift.h>
 #import <os/log.h>
 #import "meta_camera_retry.h"
+#import "meta_camera_watchdog.h"
 #import "meta_video_encoder.h"
 extern void bc_meta_sender_ended(void);
 extern int bc_meta_encoder_control(int *force_keyframe);
@@ -53,6 +55,8 @@ static void BCMetaEmit(NSDictionary *detail) {
 @property (atomic, strong) BCMetaVideoEncoder *videoEncoder;
 @property (atomic, assign) BOOL publishing;
 @property (atomic, assign) BOOL foreground;
+@property (atomic, assign) double lastInputFrameTime;
+@property (atomic, assign) BOOL receivedInputFrame;
 @property (nonatomic, assign) BOOL configured;
 @property (nonatomic, assign) BOOL registrationInFlight;
 @property (nonatomic, assign) BOOL unregistrationInFlight;
@@ -81,6 +85,7 @@ static void BCMetaEmit(NSDictionary *detail) {
 - (void)requestCameraPermissionForSession:(MWDATDeviceSession *)session;
 - (void)beginCameraWhenActive:(MWDATDeviceSession *)session;
 - (void)addCameraToSession:(MWDATDeviceSession *)session;
+- (void)watchFramesForStream:(MWDATStream *)stream started:(double)started;
 - (void)waitForDevice;
 - (void)start;
 - (void)stop;
@@ -112,6 +117,12 @@ static void BCMetaEmit(NSDictionary *detail) {
         [[NSNotificationCenter defaultCenter] addObserver:instance
             selector:@selector(appBackgrounded:)
             name:UIApplicationDidEnterBackgroundNotification object:nil];
+        [[NSNotificationCenter defaultCenter] addObserver:instance
+            selector:@selector(audioChanged:)
+            name:AVAudioSessionRouteChangeNotification object:nil];
+        [[NSNotificationCenter defaultCenter] addObserver:instance
+            selector:@selector(audioChanged:)
+            name:AVAudioSessionInterruptionNotification object:nil];
     });
     return instance;
 }
@@ -359,8 +370,19 @@ static void BCMetaEmit(NSDictionary *detail) {
     }
     self.session = session;
     [self.sessionListener cancel];
+    __weak BCMetaCamera *weakSelf = self;
+    __weak MWDATDeviceSession *expectedSession = session;
     self.sessionListener = [session addStateListener:^(MWDATDeviceSessionState state) {
-        os_log_info(OS_LOG_DEFAULT, "BetterComms Meta: session state=%ld", (long)state);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            BCMetaCamera *owner = weakSelf;
+            if (!expectedSession || owner.session != expectedSession) return;
+            BCNativeVideoLog([NSString stringWithFormat:@"session state=%ld", (long)state]);
+            if (state == MWDATDeviceSessionStateStopped &&
+                expectedSession.state == MWDATDeviceSessionStateStopped && owner.stream) {
+                [owner reportError:@"Meta ended the glasses camera session. Call audio can continue; try glasses video again."];
+                [owner stop];
+            }
+        });
     }];
     NSLog(@"BetterComms Meta: device session created (selectedMatches=%d)",
           [session.deviceIdentifier isEqualToString:selectedDevice]);
@@ -406,7 +428,7 @@ static void BCMetaEmit(NSDictionary *detail) {
         self.retiringSession = session;
         self.session = nil;
         if (retryable && self.sessionCreateRetries >= 2) {
-            [self reportError:@"The glasses rejected the camera session three times. If Meta AI shows an active broadcast, end it there, then try Preview again."];
+            [self reportError:@"Meta could not reopen the glasses camera after three attempts. If Meta AI still shows an active broadcast, end it there before trying video again."];
             [self stop];
         } else if (retryable) {
             self.sessionCreateRetries++;
@@ -509,6 +531,8 @@ static void BCMetaEmit(NSDictionary *detail) {
     }
     self.camera = camera;
     self.stream = camera.stream;
+    self.receivedInputFrame = NO;
+    self.lastInputFrameTime = 0;
     self.videoEncoder = [BCMetaVideoEncoder new];
     [self.videoEncoder appForegroundChanged:self.foreground];
     __weak BCMetaCamera *weakSelf = self;
@@ -524,6 +548,8 @@ static void BCMetaEmit(NSDictionary *detail) {
     self.stream.onVideoFrame = ^(MWDATVideoFrame *frame) {
         BCMetaCamera *owner = weakSelf;
         if (!owner || owner.videoEncoder != encoder) return;
+        owner.lastInputFrameTime = NSProcessInfo.processInfo.systemUptime;
+        owner.receivedInputFrame = YES;
         // Native encode/send never waits for JavaScript or the preview image.
         BOOL preview = owner.foreground;
         @synchronized(owner) { preview = preview && !owner.framePending && CFAbsoluteTimeGetCurrent() - owner.lastFrame >= 0.1; }
@@ -538,13 +564,58 @@ static void BCMetaEmit(NSDictionary *detail) {
     self.stream.onError = ^(enum MWDATStreamError streamError) {
         dispatch_async(dispatch_get_main_queue(), ^{
             if (!expectedStream || weakSelf.stream != expectedStream) return;
+            BCNativeVideoLog([NSString stringWithFormat:@"stream error=%ld foreground=%d",
+                (long)streamError, weakSelf.foreground]);
             [weakSelf reportError:[NSString stringWithFormat:
                 @"Glasses stream stopped (error %ld).", (long)streamError]];
             [weakSelf stop];
         });
     };
+    self.stream.onStateChanged = ^(enum MWDATStreamState state) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            BCMetaCamera *owner = weakSelf;
+            if (!expectedStream || owner.stream != expectedStream) return;
+            BCNativeVideoLog([NSString stringWithFormat:@"stream state=%ld foreground=%d receivedFrame=%d",
+                (long)state, owner.foreground, owner.receivedInputFrame]);
+            // The initial stopped state can be delivered during start. Only a
+            // current terminal state after frames have arrived ends capture.
+            if (state == MWDATStreamStateStopped && owner.receivedInputFrame &&
+                expectedStream.state == MWDATStreamStateStopped) {
+                [owner reportError:@"Meta stopped glasses video. Call audio can continue; try video again."];
+                [owner stop];
+            }
+        });
+    };
     [self.stream start];
+    [self watchFramesForStream:self.stream started:NSProcessInfo.processInfo.systemUptime];
     BCMetaEmit(@{@"kind": @"streaming"});
+}
+
+- (void)watchFramesForStream:(MWDATStream *)stream started:(double)started {
+    if (self.stream != stream) return;
+    double now = NSProcessInfo.processInfo.systemUptime;
+    if (BCMetaCameraFramesExpired(now, started, self.lastInputFrameTime, self.receivedInputFrame)) {
+        BCNativeVideoLog([NSString stringWithFormat:@"capture stalled state=%ld foreground=%d receivedFrame=%d",
+            (long)stream.state, self.foreground, self.receivedInputFrame]);
+        [self reportError:@"The glasses stopped sending video. The camera session has been ended; call audio can continue. Try glasses video again."];
+        [self stop];
+        return;
+    }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC),
+        dispatch_get_main_queue(), ^{ [self watchFramesForStream:stream started:started]; });
+}
+
+- (void)audioChanged:(NSNotification *)notification {
+    // Numeric event codes and port types only: never device names/identifiers.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (!self.stream) return;
+        AVAudioSession *audio = AVAudioSession.sharedInstance;
+        BOOL route = [notification.name isEqualToString:AVAudioSessionRouteChangeNotification];
+        NSNumber *code = notification.userInfo[route ? AVAudioSessionRouteChangeReasonKey : AVAudioSessionInterruptionTypeKey];
+        BCNativeVideoLog([NSString stringWithFormat:@"audio event=%@ code=%ld category=%@ mode=%@ streamState=%ld foreground=%d",
+            route ? @"route" : @"interruption", (long)code.integerValue,
+            audio.category, audio.mode, (long)self.stream.state, self.foreground]);
+    });
 }
 
 - (void)publishImage:(UIImage *)image {
@@ -607,6 +678,7 @@ static void BCMetaEmit(NSDictionary *detail) {
     self.deviceSelector = nil;
     self.stream.onVideoFrame = nil;
     self.stream.onError = nil;
+    self.stream.onStateChanged = nil;
     // Session.stop cascades to the camera and stream. Do not concurrently
     // detach the child camera while its parent is ending the device session.
     // Retain all three until the terminal stopped state arrives.

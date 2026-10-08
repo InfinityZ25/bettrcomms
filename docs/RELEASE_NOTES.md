@@ -1,3 +1,22 @@
+## Unreleased — glasses camera stall cleanup
+
+The iPhone bridge now observes terminal glasses session/stream states and ends
+the camera session when source frames silently stop for 30 seconds. Startup
+has a separate 60-second deadline. Short interruptions and app switches do not
+reset or shorten those deadlines; peer count and preview activity do not control
+capture health. Cleanup releases the native video sender and camera resources
+without ending call audio. New video requests still wait for the retired parent
+session to stop, and stale callbacks cannot stop a replacement stream.
+
+Private native diagnostics now include stream/session states, numeric stream
+errors, and audio-route/interruption events without device identifiers. The
+three-attempt error now describes a failed reopen rather than asserting that
+the glasses rejected a request. This addresses abandoned local capture after
+a silent stall; it does not establish why Meta stopped delivering frames or
+prove that the glasses-side active session always clears. Physical acceptance
+must cover a second participant joining, audio use during an app switch,
+continued remote video, and restarting video after a drop without rebooting.
+
 ## Unreleased — call signaling handoff recovery
 
 A call now replaces a signaling socket that stops answering heartbeats after
