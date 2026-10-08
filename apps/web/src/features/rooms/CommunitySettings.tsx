@@ -21,13 +21,17 @@ import ChannelEditor from './ChannelEditor';
 import CommunityReports from './CommunityReports';
 import ModerationSettings from './ModerationSettings';
 import RoomInviteLinks from './RoomInviteLinks';
+import RoomStorageSettings from '@/features/chat/RoomStorageSettings';
 import { canManageRole, canModerateRole } from './communityRoles';
+import CustomRoleSettings from './CustomRoleSettings';
+import MemberCustomRoles from './MemberCustomRoles';
+import type { CustomRole } from './channelPermissions';
 import {
   callPresenceSnapshot,
   subscribeCallPresence,
 } from '@/features/call/useCallPresence';
 
-type Section = 'overview' | 'channels' | 'members' | 'moderation';
+type Section = 'overview' | 'channels' | 'members' | 'roles' | 'moderation' | 'storage';
 type Confirmation =
   | { kind: 'remove'; member: RoomMember }
   | { kind: 'transfer'; member: RoomMember }
@@ -47,6 +51,7 @@ export default function CommunitySettings({
   const id = room.community_id!;
   const [community, setCommunity] = useState<Community | null>(null);
   const [members, setMembers] = useState<RoomMember[]>([]);
+  const [customRoles, setCustomRoles] = useState<CustomRole[]>([]);
   const [friends, setFriends] = useState<User[]>([]);
   const [name, setName] = useState(room.community_name ?? room.name);
   const [description, setDescription] = useState('');
@@ -66,7 +71,7 @@ export default function CommunitySettings({
   async function load(initial = false) {
     const signal = signalForRequest();
     const generation = ++loadGeneration.current;
-    const [info, people, accepted] = await Promise.all([
+    const [info, people, accepted, roles] = await Promise.all([
       api<{ community: Community }>(path, undefined, 'GET', signal),
       api<{ members: RoomMember[] }>(
         `${path}/members`,
@@ -77,11 +82,13 @@ export default function CommunitySettings({
       room.permissions?.manage_members
         ? api<{ friends: User[] }>('/friends', undefined, 'GET', signal)
         : Promise.resolve({ friends: [] }),
+      api<{ roles: CustomRole[] }>(`${path}/roles`, undefined, 'GET', signal),
     ]);
     if (signal.aborted || generation !== loadGeneration.current) return;
     setCommunity(info.community);
     setMembers(people.members);
     setFriends(accepted.friends);
+    setCustomRoles(roles.roles);
     if (initial || !draftInitialized.current) {
       draftInitialized.current = true;
       setName(info.community.name);
@@ -174,6 +181,8 @@ export default function CommunitySettings({
       value: 'members',
       label: `Members${members.length ? ` · ${members.length}` : ''}`,
     },
+    ...(administrator ? [{ value: 'roles' as const, label: 'Roles' }] : []),
+    ...(administrator ? [{ value: 'storage' as const, label: 'Storage' }] : []),
     ...(moderator
       ? [{ value: 'moderation' as const, label: 'Moderation' }]
       : []),
@@ -217,7 +226,7 @@ export default function CommunitySettings({
         if (!open && !busy) onClose();
       }}
       title={community?.name ?? name}
-      description="Channels share one membership and one set of room roles."
+      description="Channels share room membership, with roles and access settings for each channel."
       className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-3xl"
     >
       <div className="mt-3 space-y-5">
@@ -260,6 +269,7 @@ export default function CommunitySettings({
             )}
           </p>
         )}
+        {!loading && community && section === 'storage' && administrator && <RoomStorageSettings communityId={id} onError={setError} />}
         {!loading && community && section === 'overview' && (
           <div className="space-y-5">
             <form
@@ -358,7 +368,8 @@ export default function CommunitySettings({
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-3">
               <p className="text-xs leading-5 text-muted-foreground">
-                All channels share this room's members and roles.
+                Keep text and voice together. Private channels and role
+                overrides control access.
               </p>
               {administrator && (
                 <Button size="sm" onClick={() => setCreating(true)}>
@@ -369,7 +380,7 @@ export default function CommunitySettings({
             </div>
             {channels.map((channel, index) => (
               <ChannelEditor
-                key={`${channel.id}:${channel.name}:${channel.topic}:${channel.channel_type}`}
+                key={`${channel.id}:${channel.name}:${channel.topic}:${channel.channel_type}:${channel.is_private}`}
                 communityId={id}
                 room={channel}
                 index={index}
@@ -380,9 +391,17 @@ export default function CommunitySettings({
                 endChange={endChannelChange}
                 onChanged={channelsChanged}
                 onError={setError}
+                roles={customRoles}
               />
             ))}
           </div>
+        )}
+        {!loading && community && section === 'roles' && administrator && (
+          <CustomRoleSettings
+            communityId={id}
+            roles={customRoles}
+            onChanged={channelsChanged}
+          />
         )}
         {!loading && community && section === 'members' && (
           <div className="space-y-5">
@@ -424,6 +443,26 @@ export default function CommunitySettings({
                       <small className="capitalize text-muted-foreground">
                         {member.role}
                       </small>
+                      {!!member.custom_role_ids?.length && (
+                        <span className="mt-1 flex flex-wrap gap-1">
+                          {customRoles
+                            .filter((customRole) =>
+                              member.custom_role_ids?.includes(customRole.id),
+                            )
+                            .map((customRole) => (
+                              <span
+                                key={customRole.id}
+                                className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px]"
+                              >
+                                <span
+                                  className="size-1.5 rounded-full"
+                                  style={{ backgroundColor: customRole.color }}
+                                />
+                                {customRole.name}
+                              </span>
+                            ))}
+                        </span>
+                      )}
                     </span>
                     {manage && (
                       <label className="text-xs">
@@ -453,6 +492,14 @@ export default function CommunitySettings({
                           ))}
                         </select>
                       </label>
+                    )}
+                    {manage && (
+                      <MemberCustomRoles
+                        communityId={id}
+                        member={member}
+                        roles={customRoles}
+                        onChanged={channelsChanged}
+                      />
                     )}
                     {owner && member.user.id !== user.id && (
                       <Button

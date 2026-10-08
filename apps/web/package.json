@@ -30,6 +30,7 @@
     "lucide-react": "^0.577.0",
     "mediabunny": "^1.55.7",
     "motion": "^13.2.0",
+    "pdfjs-dist": "^6.4.299",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-markdown": "^10.1.0",

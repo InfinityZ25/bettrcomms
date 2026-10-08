@@ -54,16 +54,17 @@ type API struct {
 	// statePairings binds an OAuth state to the desktop pairing that started
 	// it, so the callback knows the result belongs to a waiting desktop process
 	// rather than to the browser it arrived in.
-	statePairings map[string]string
-	stateMu       sync.Mutex
-	pairings      map[string]*desktopPairing
-	pairingMu     sync.Mutex
-	limiter       *rateLimiter
-	Attachments   AttachmentStorage
-	accessMu      sync.RWMutex
-	sfuMu         sync.Mutex
-	sfuLeases     map[*sfuLease]struct{}
-	presenceMu    sync.Mutex
+	statePairings   map[string]string
+	stateMu         sync.Mutex
+	pairings        map[string]*desktopPairing
+	pairingMu       sync.Mutex
+	limiter         *rateLimiter
+	Attachments     AttachmentStorage
+	StorageFeatures *StorageFeatureOptions
+	accessMu        sync.RWMutex
+	sfuMu           sync.Mutex
+	sfuLeases       map[*sfuLease]struct{}
+	presenceMu      sync.Mutex
 }
 type apiError struct {
 	Code    string `json:"code"`
@@ -242,7 +243,7 @@ func (a *API) authed(w http.ResponseWriter, r *http.Request) {
 	// A small shared boundary covers ACL/session changes and socket admission.
 	// JSON is bounded before taking it; uploads never hold it across S3 I/O.
 	stream := p == "events" || strings.HasSuffix(p, "/ws") || strings.HasSuffix(p, "/voice-relay")
-	upload := strings.HasSuffix(p, "/attachments") && r.Method == http.MethodPost
+	upload := r.Method == http.MethodPost && (strings.HasSuffix(p, "/attachments") || strings.Contains(p, "/uploads/") && (strings.HasSuffix(p, "/chunks") || strings.HasSuffix(p, "/complete")))
 	if !stream && !upload {
 		if r.Body != nil && r.Method != http.MethodGet && r.Method != http.MethodHead {
 			body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
@@ -265,6 +266,9 @@ func (a *API) authed(w http.ResponseWriter, r *http.Request) {
 			a.fail(w, 401, "unauthenticated", "sign in required")
 			return
 		}
+	}
+	if a.routeAttachmentFeatures(w, r, p, u) || a.routeActivityFeatures(w, r, strings.Split(p, "/"), u) {
+		return
 	}
 	switch {
 	case p == "me/status" || p == "me/conversations" || p == "me/preferences" || p == "me/activity" || strings.HasPrefix(p, "users/") && strings.HasSuffix(p, "/profile"):
@@ -697,6 +701,7 @@ func (a *API) room(w http.ResponseWriter, r *http.Request, u User, p []string) {
 				a.Realtime.unsubscribeUser(rid, target)
 				a.Hub.disconnectRoomUser(rid, target)
 				a.revokeSFU(rid, target, "")
+				a.Realtime.publishUser(target, wire{Type: "rooms.changed"})
 			}
 		}
 		a.result(w, map[string]bool{"ok": true}, e)

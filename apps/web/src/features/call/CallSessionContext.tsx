@@ -10,6 +10,8 @@ import { useCallSession } from './useCallSession';
 import { RemoteAudio } from './PeerAudio';
 import { CopilotNativeOverlay } from './CopilotNativeOverlay';
 import { useMountEffect } from '@/hooks/useMountEffect';
+import { ClipSessionProvider } from '@/features/clips/ClipSession';
+import { ActiveCallSoundboardPlayback } from '@/features/activities/RoomSoundboardPlayback';
 import {
   EMPTY_CALL_PRESENCE,
   type CallPresence,
@@ -155,11 +157,11 @@ export function CallSessionProvider({
         onLeave={() => latestSession.current.leave()}
       />
       <CallChromeReporter
-        key={`${joined}:${joined ? (room?.id ?? '') : ''}:${session.recording}`}
+        key={`${joined}:${joined ? (room?.id ?? '') : ''}:${session.recording || session.clipping}`}
         chrome={{
           joined,
           room: joined ? room : null,
-          recording: session.recording,
+          recording: session.recording || session.clipping,
         }}
         onChange={onCallChange}
       />
@@ -186,7 +188,8 @@ export function CallSessionProvider({
             balanced={balanced}
           />
         ))}
-      {children}
+      <ActiveCallSoundboardPlayback />
+      <ClipSessionProvider user={user}>{children}</ClipSessionProvider>
     </CallSessionContext.Provider>
   );
 }

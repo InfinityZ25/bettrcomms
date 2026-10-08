@@ -1,3 +1,55 @@
+## Unreleased — community tools and clips
+
+Uploads now transfer in checked 8 MiB S3 multipart parts and resume from the
+last committed offset after interruption or an API restart. Pending composer
+files and upload references are kept on the device for recovery. Each channel
+has a file library with type, author and date filters, original downloads and a
+canvas PDF viewer (up to 20 MiB). Room administrators can inspect used/reserved
+storage, set a quota and configure attachment retention. Active stickers and
+soundboard assets are preserved by ordinary pending/retention cleanup. Deleted
+accounts' assets are removed from S3 with retry on failure, releasing references
+and quota. Library pagination survives deletion of its last displayed file.
+
+Custom roles and private channels add explicit read, posting, voice and pin
+permissions without granting administrative rank. Per-channel denies take
+precedence; owners/admins retain access to fix settings. Permission changes
+reconcile active calls, SFU leases, realtime subscriptions and queued events.
+Announcements continue to disable voice and restrict posting to owners/admins.
+
+Removing a member from a group DM also sends that user a payload-free room refresh
+after unsubscribing them. Private queued events stay blocked while the conversation
+disappears from their active screen.
+
+Channel activities provide polls, scheduled events with RSVP and durable
+in-app reminders, reusable stickers, a soundboard, and Watch Together using
+authorized video attachments. Watch commands use a host, server time and
+revision checks, with explicit local playback and host transfer/recovery.
+Deleting the watched video permits starting a new session. Readable-channel
+moderators can close polls, cancel events and remove assets independently of
+posting permission. Concurrent sticker and text sends share the same lock order.
+Soundboard playback has its own volume/mute and stops on deafen or call exit;
+it never changes microphone or recording source tracks. Message edit history
+retains text versions from this release and erases them on deletion/moderation.
+
+Clips follow a capture → trim → title → preview → publish/download workflow.
+An explicit, local 90-second buffer records independent browser source tracks
+in playable segments. The editor selects a video source and audio sources,
+starts with the latest 30 seconds and exports clips up to 60 seconds. Live call
+playback volume never enters the export. The buffer is bounded to 128 MiB,
+remains in memory, signals recording presence and clears on stop/call exit.
+Export currently takes approximately the clip's duration and produces a
+browser-supported WebM or MP4. This does not establish native process capture,
+GPU encoding, crash recovery or a full rewind timeline.
+
+Optional ClamAV scanning quarantines uploads until clean and rejects infected
+files. When enabled, scanner failures prevent completion. Set
+`ATTACHMENT_SCAN_MODE=clamav` and `CLAMAV_ADDRESS`; the storage panel reports
+whether the daemon is reachable. An optional local Docker scanner profile is
+provided. Scanning remains disabled unless a daemon is configured.
+
+Migrations 017–019 add durable uploads, storage policies, custom access rules,
+activities and message versions while preserving existing room/message IDs.
+
 ## Unreleased — unified room channels and attachments
 
 Rooms now contain ordered channels with shared membership and built-in owner,

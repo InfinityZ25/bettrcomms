@@ -18,22 +18,24 @@ import (
 )
 
 type wire struct {
-	Type        string          `json:"type"`
-	To          string          `json:"to,omitempty"`
-	From        string          `json:"from,omitempty"`
-	RequestID   string          `json:"request_id,omitempty"`
-	Payload     json.RawMessage `json:"payload,omitempty"`
-	Description json.RawMessage `json:"description,omitempty"`
-	Candidate   json.RawMessage `json:"candidate,omitempty"`
-	Tracks      json.RawMessage `json:"tracks,omitempty"`
-	Transport   string          `json:"transport,omitempty"`
-	CaptureID   string          `json:"captureId,omitempty"`
-	Data        json.RawMessage `json:"data,omitempty"`
-	Error       *apiError       `json:"error,omitempty"`
-	Muted       *bool           `json:"muted,omitempty"`
-	Deafened    *bool           `json:"deafened,omitempty"`
-	UserID      string          `json:"user_id,omitempty"`
-	Name        string          `json:"name,omitempty"`
+	// Server-only audience metadata survives the queue without entering JSON.
+	audienceRoom string
+	Type         string          `json:"type"`
+	To           string          `json:"to,omitempty"`
+	From         string          `json:"from,omitempty"`
+	RequestID    string          `json:"request_id,omitempty"`
+	Payload      json.RawMessage `json:"payload,omitempty"`
+	Description  json.RawMessage `json:"description,omitempty"`
+	Candidate    json.RawMessage `json:"candidate,omitempty"`
+	Tracks       json.RawMessage `json:"tracks,omitempty"`
+	Transport    string          `json:"transport,omitempty"`
+	CaptureID    string          `json:"captureId,omitempty"`
+	Data         json.RawMessage `json:"data,omitempty"`
+	Error        *apiError       `json:"error,omitempty"`
+	Muted        *bool           `json:"muted,omitempty"`
+	Deafened     *bool           `json:"deafened,omitempty"`
+	UserID       string          `json:"user_id,omitempty"`
+	Name         string          `json:"name,omitempty"`
 }
 type client struct {
 	session  string

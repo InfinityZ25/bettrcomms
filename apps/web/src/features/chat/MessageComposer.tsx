@@ -264,7 +264,7 @@ function ScopedMessageComposer({
         >
           {attachments.map((attachment, index) => (
             <PendingAttachmentCard
-              key={attachment.localId || attachment.id}
+              key={`${attachment.localId || attachment.id}:${attachment.file ? 'local' : 'remote'}`}
               attachment={attachment}
               roomId={roomId}
               removable={attachmentsMutable}

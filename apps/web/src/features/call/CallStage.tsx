@@ -243,7 +243,7 @@ export default function CallStage({
         <CopilotPanel copilot={call.engine.copilot} names={names} />
       )}
       <RecordingFlag
-        recording={call.recording}
+        recording={call.recording || call.clipping}
         remoteRecording={call.remoteRecording}
         names={names}
       />

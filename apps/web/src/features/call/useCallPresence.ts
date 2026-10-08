@@ -11,6 +11,7 @@ import { contactStatus, receiveOwnPresence, startPresenceSession, type ContactSt
 import { receiveConversationPreference, reconcileConversationPreferences } from '@/features/rooms/conversationPreferences';
 import { receiveCustomStatus, reconcileCustomStatus } from '@/features/settings/customStatusStore';
 import { receiveAccountPreferences, reconcileAccountPreferences } from '@/features/settings/accountPreferences';
+import { receiveActivityEvent } from '@/features/activities/activityEvents';
 
 type RoomPresence = { room_id: string; participants: CallParticipant[] };
 type RealtimeMessage = { sequence: number; value: Message };
@@ -105,6 +106,8 @@ export function startRealtimeSession(user: User) {
             known: true, rooms: Object.fromEntries((payload?.presence ?? []).map((room) => [room.room_id, room.participants])),
             onlineUsers, contactStatuses, syncRevision: state.syncRevision + 1,
           });
+        } else if (message.type === 'channel.activity' || message.type === 'soundboard.play') {
+          receiveActivityEvent(message.type, message.payload);
         } else if (message.type === 'call.presence') {
           const room = message.payload as RoomPresence;
           if (!room?.room_id || !Array.isArray(room.participants)) return;

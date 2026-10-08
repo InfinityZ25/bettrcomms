@@ -21,6 +21,7 @@ export default function ChannelDialog({
   const [name, setName] = useState('');
   const [topic, setTopic] = useState('');
   const [type, setType] = useState<ChannelType>('hybrid');
+  const [isPrivate, setPrivate] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const signalForRequest = useLifetimeSignal();
@@ -36,6 +37,7 @@ export default function ChannelDialog({
           name: name.trim(),
           topic: topic.trim(),
           channel_type: type,
+          is_private: isPrivate,
         },
         'POST',
         signal,
@@ -123,6 +125,22 @@ export default function ChannelDialog({
             </label>
           ))}
         </fieldset>
+        <label className="flex items-start gap-3 rounded-xl border p-3 text-sm">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={isPrivate}
+            onChange={(event) => setPrivate(event.target.checked)}
+            disabled={busy}
+          />
+          <span>
+            <strong className="block">Private channel</strong>
+            <small className="block text-xs leading-5 text-muted-foreground">
+              Start with access for the owner and admins. Allow other roles in
+              channel settings after creating it.
+            </small>
+          </span>
+        </label>
         {error && (
           <p className="text-sm text-destructive" role="alert">
             {error}

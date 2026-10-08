@@ -32,6 +32,7 @@ export interface User extends PublicUser {
 export type CommunityRole = 'owner' | 'admin' | 'moderator' | 'member';
 export type ChannelType = 'hybrid' | 'announcement';
 export interface RoomPermissions {
+  read?: boolean;
   manage_channels: boolean;
   manage_members: boolean;
   manage_roles: boolean;
@@ -43,6 +44,7 @@ export interface RoomPermissions {
   pin_messages: boolean;
 }
 export interface Room {
+  is_private?: boolean;
   slow_mode_seconds?: number;
   id: string;
   name: string;
@@ -72,6 +74,7 @@ export interface Community {
   channels: Room[];
 }
 export interface RoomMember {
+  custom_role_ids?: string[];
   user: PublicUser;
   role: CommunityRole;
   restricted_until?: string;
@@ -176,6 +179,13 @@ export async function uploadMessageAttachment(
   signal?: AbortSignal,
   options?: { voiceNote: boolean; durationMs: number },
 ): Promise<MessageAttachment> {
+  if (!options?.voiceNote) {
+    const { uploadAttachmentWithProgress } = await import('@/features/chat/attachmentFiles');
+    return uploadAttachmentWithProgress(roomId, file, {
+      signal: signal ?? new AbortController().signal,
+      onProgress: () => {},
+    });
+  }
   const generation = sessionGeneration();
   const body = new FormData();
   body.append('file', file);

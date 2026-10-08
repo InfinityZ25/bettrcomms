@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import {
   CheckCheck,
   ChevronLeft,
@@ -12,6 +12,7 @@ import {
   Headphones,
   Megaphone,
   Settings2,
+  FolderOpen,
 } from 'lucide-react';
 import { type Message, type Room, type User } from '@/api';
 import { Avatar } from '@/components/avatar';
@@ -28,6 +29,8 @@ import MessageThread from './MessageThread';
 import { openMessageSearch } from './searchEvents';
 import { conversationSnapshot, markRead } from './messageStore';
 import { openConversationPanel } from './conversationPanels';
+import { ChannelActivities } from '@/features/activities/ChannelActivities';
+import ChannelFileLibrary from './ChannelFileLibrary';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -73,6 +76,7 @@ export default function DirectConversation({
   targetId?: string;
 }) {
   const call = useActiveCall();
+  const [filesOpen, setFilesOpen] = useState(false);
   const name = roomLabel(room);
   const inThisCall = call.joined && call.callRoom?.id === room.id;
   const channel = (room.kind ?? 'channel') === 'channel';
@@ -92,7 +96,7 @@ export default function DirectConversation({
   return (
     <section
       className={cn(
-        'flex min-w-0 flex-1 flex-col overflow-hidden bg-background',
+        '@container/conversation flex min-w-0 flex-1 flex-col overflow-hidden bg-background',
         docked && 'pb-24 phone:pb-0',
         variant === 'screen'
           ? 'content-canvas rounded-3xl border border-border/60 shadow-[0_20px_60px_rgb(0_0_0/0.16)]'
@@ -109,7 +113,7 @@ export default function DirectConversation({
           <Button
             variant="ghost"
             size="icon"
-            className="hidden shrink-0 phone:inline-flex phone:size-11"
+            className="hidden shrink-0 phone:inline-flex phone:size-11 @max-[480px]/conversation:inline-flex @max-[480px]/conversation:size-11"
             aria-label={
               onClose
                 ? 'Back to call'
@@ -123,7 +127,7 @@ export default function DirectConversation({
           </Button>
         )}
         {channel ? (
-          <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-muted">
+          <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-muted phone:hidden @max-[480px]/conversation:hidden">
             {announcement ? <Megaphone size={18} /> : <Hash size={20} />}
           </span>
         ) : (
@@ -132,7 +136,7 @@ export default function DirectConversation({
         <div className="min-w-0 flex-1">
           <h2 className="block truncate text-sm font-semibold phone:text-base">
             {channel && (
-              <span className="mr-1 font-normal text-muted-foreground">
+              <span className="mr-1 font-normal text-muted-foreground phone:hidden @max-[480px]/conversation:hidden">
                 {room.community_name} /
               </span>
             )}
@@ -162,7 +166,10 @@ export default function DirectConversation({
           <Button
             variant="secondary"
             size="sm"
-            className="shrink-0 phone:h-11 phone:rounded-full"
+            className="shrink-0 phone:size-11 phone:rounded-full phone:px-0 @max-[480px]/conversation:size-11 @max-[480px]/conversation:px-0"
+            aria-label={
+              channel ? (inThisCall ? 'Open voice' : 'Join voice') : 'Call'
+            }
             disabled={!user || call.busy}
             onClick={() => {
               if (!inThisCall)
@@ -173,7 +180,9 @@ export default function DirectConversation({
             }}
           >
             {channel ? <Headphones size={15} /> : <Phone size={15} />}{' '}
-            {channel ? (inThisCall ? 'Open voice' : 'Join voice') : 'Call'}
+            <span className="phone:hidden @max-[480px]/conversation:hidden">
+              {channel ? (inThisCall ? 'Open voice' : 'Join voice') : 'Call'}
+            </span>
           </Button>
         )}
         {room.kind === 'group' && onGroupInfo && (
@@ -190,10 +199,29 @@ export default function DirectConversation({
           <Button
             variant="ghost"
             size="icon"
+            className="phone:hidden @max-[480px]/conversation:hidden"
             aria-label="Room settings"
             onClick={onGroupInfo}
           >
             <Settings2 size={18} />
+          </Button>
+        )}
+        {channel && user && (
+          <ChannelActivities
+            key={`${user.id}:${room.id}`}
+            room={room}
+            user={user}
+          />
+        )}
+        {user && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="phone:hidden @max-[480px]/conversation:hidden"
+            aria-label="Channel file library"
+            onClick={() => setFilesOpen(true)}
+          >
+            <FolderOpen size={17} />
           </Button>
         )}
         <DropdownMenu>
@@ -202,7 +230,7 @@ export default function DirectConversation({
               <Button
                 variant="ghost"
                 size="icon"
-                className="hidden shrink-0 phone:inline-flex phone:size-11"
+                className="hidden shrink-0 phone:inline-flex phone:size-11 @max-[480px]/conversation:inline-flex @max-[480px]/conversation:size-11"
                 aria-label="Conversation options"
               />
             }
@@ -210,6 +238,19 @@ export default function DirectConversation({
             <MoreHorizontal size={21} />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="min-w-52">
+            {user && (
+              <DropdownMenuItem
+                className="min-h-11"
+                onClick={() => setFilesOpen(true)}
+              >
+                <FolderOpen /> Channel file library
+              </DropdownMenuItem>
+            )}
+            {channel && onGroupInfo && (
+              <DropdownMenuItem className="min-h-11" onClick={onGroupInfo}>
+                <Settings2 /> Room settings
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem
               className="min-h-11"
               onClick={() => openMessageSearch(room.id)}
@@ -285,6 +326,16 @@ export default function DirectConversation({
           }
           targetId={targetId}
           onError={onError}
+        />
+      )}
+      {filesOpen && user && (
+        <ChannelFileLibrary
+          key={`${user.id}:${room.id}`}
+          roomId={room.id}
+          userId={user.id}
+          canModerate={room.permissions?.moderate}
+          onError={onError}
+          onClose={() => setFilesOpen(false)}
         />
       )}
     </section>

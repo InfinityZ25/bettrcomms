@@ -18,26 +18,9 @@ import (
 )
 
 func TestMessagingIntegration(t *testing.T) {
-	url := os.Getenv("TEST_DATABASE_URL")
-	if url == "" {
-		t.Skip("TEST_DATABASE_URL not set")
-	}
 	ctx := context.Background()
-	db, err := pgxpool.New(ctx, url)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	for _, file := range []string{"001_init.sql", "002_direct_rooms.sql", "003_messaging.sql", "004_messaging_complete.sql", "005_attachment_cleanup_attempts.sql", "006_attachment_lifecycle.sql", "007_dm_privacy.sql", "008_web_push.sql", "009_social_basics.sql", "010_conversation_threads_pins.sql", "011_moderation.sql", "012_account_sessions.sql", "013_daily_communication.sql", "014_activity_thread_replies.sql", "015_attachment_limits.sql", "016_communities_channels_roles.sql"} {
-		data, e := os.ReadFile("../../migrations/" + file)
-		if e != nil {
-			t.Fatal(e)
-		}
-		if _, e = db.Exec(ctx, string(data)); e != nil {
-			t.Fatal(e)
-		}
-	}
-	store := &PostgresStore{DB: db}
+	store := conversationTestStore(t)
+	db := store.DB
 	suffix := fmt.Sprint(time.Now().UnixNano())
 	alice, _ := store.UpsertDevUser("msg-a-"+suffix+"@example.test", "Alice")
 	bob, _ := store.UpsertDevUser("msg-b-"+suffix+"@example.test", "Bob")
@@ -46,7 +29,7 @@ func TestMessagingIntegration(t *testing.T) {
 	private, _ := store.CreateRoom(outsider.ID, "Private")
 	defer db.Exec(ctx, `DELETE FROM users WHERE id=$1 OR id=$2 OR id=$3`, alice.ID, bob.ID, outsider.ID)
 	defer db.Exec(ctx, `DELETE FROM rooms WHERE id=$1 OR id=$2`, room.ID, private.ID)
-	if _, err = db.Exec(ctx, `INSERT INTO room_members(room_id,user_id) VALUES($1,$2)`, room.ID, bob.ID); err != nil {
+	if _, err := db.Exec(ctx, `INSERT INTO room_members(room_id,user_id) VALUES($1,$2)`, room.ID, bob.ID); err != nil {
 		t.Fatal(err)
 	}
 	// The invitation trigger hashes PostgreSQL's canonical UUID text. A writer
@@ -473,6 +456,9 @@ func TestMessagingMigrationWithExistingHistory(t *testing.T) {
 	apply("014_activity_thread_replies.sql")
 	apply("015_attachment_limits.sql")
 	apply("016_communities_channels_roles.sql")
+	apply("017_storage_features.sql")
+	apply("018_custom_permissions.sql")
+	apply("019_channel_activities.sql")
 	store := &PostgresStore{DB: db}
 	seen := []string{}
 	cursor := ""

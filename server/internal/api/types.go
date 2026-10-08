@@ -17,6 +17,7 @@ type User struct {
 	CreatedAt      time.Time     `json:"created_at"`
 }
 type Room struct {
+	IsPrivate       bool            `json:"is_private"`
 	CommunityID     *string         `json:"community_id,omitempty"`
 	CommunityName   *string         `json:"community_name,omitempty"`
 	ChannelType     string          `json:"channel_type,omitempty"`
@@ -35,6 +36,7 @@ type Room struct {
 }
 
 type RoomPermissions struct {
+	Read            bool `json:"read"`
 	ManageCommunity bool `json:"manage_community"`
 	ManageChannels  bool `json:"manage_channels"`
 	ManageMembers   bool `json:"manage_members"`
@@ -109,6 +111,7 @@ type FriendRequest struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 type RoomMember struct {
+	CustomRoleIDs   []string   `json:"custom_role_ids"`
 	RestrictedUntil *time.Time `json:"restricted_until,omitempty"`
 	User            User       `json:"user"`
 	Role            string     `json:"role"`

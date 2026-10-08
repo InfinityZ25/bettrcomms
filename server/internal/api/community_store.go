@@ -26,6 +26,7 @@ type ChannelUpdate struct {
 	Topic       *string `json:"topic"`
 	ChannelType *string `json:"channel_type"`
 	Position    *int    `json:"position"`
+	IsPrivate   *bool   `json:"is_private"`
 }
 
 func communityRank(role string) int {
@@ -46,11 +47,11 @@ func communityRank(role string) int {
 func permissionsForRoom(r Room) RoomPermissions {
 	if r.Kind != "channel" {
 		manage := r.Kind == "group" && r.Role == "owner"
-		return RoomPermissions{ManageMembers: manage, Moderate: manage, PinMessages: true, Post: true, JoinVoice: true}
+		return RoomPermissions{Read: true, ManageMembers: manage, Moderate: manage, PinMessages: true, Post: true, JoinVoice: true}
 	}
 	admin := communityRank(r.Role) >= 3
 	moderator := communityRank(r.Role) >= 2
-	return RoomPermissions{ManageCommunity: admin, ManageChannels: admin, ManageMembers: moderator, ManageRoles: admin,
+	return RoomPermissions{Read: true, ManageCommunity: admin, ManageChannels: admin, ManageMembers: moderator, ManageRoles: admin,
 		Moderate: moderator, ManageInvites: moderator, PinMessages: moderator,
 		Post: r.ChannelType != "announcement" || admin, JoinVoice: r.ChannelType != "announcement"}
 }
@@ -58,15 +59,18 @@ func permissionsForRoom(r Room) RoomPermissions {
 const roomSelect = `SELECT r.id::text,r.name,r.owner_id::text,COALESCE(cm.role,rm.role),r.kind,r.created_at,r.slow_mode_seconds,
  CASE WHEN r.kind='direct' THEN (SELECT u.name FROM room_members other JOIN users u ON u.id=other.user_id WHERE other.room_id=r.id AND other.user_id<>$1 ORDER BY other.joined_at LIMIT 1) END,
  COALESCE((SELECT m.created_at FROM messages m WHERE m.room_id=r.id ORDER BY m.sequence DESC LIMIT 1),r.created_at),
- r.community_id::text,c.name,r.channel_type,r.topic,r.position
+ r.community_id::text,c.name,r.channel_type,r.topic,r.position,r.is_private,
+ room_has_permission(r.id,$1,'read'),room_has_permission(r.id,$1,'manage_community'),room_has_permission(r.id,$1,'manage_channels'),room_has_permission(r.id,$1,'manage_members'),room_has_permission(r.id,$1,'manage_roles'),
+ room_has_permission(r.id,$1,'moderate'),room_has_permission(r.id,$1,'manage_invites'),room_has_permission(r.id,$1,'pin_messages'),room_has_permission(r.id,$1,'post'),room_has_permission(r.id,$1,'join_voice')
  FROM rooms r JOIN room_members rm ON rm.room_id=r.id
  LEFT JOIN communities c ON c.id=r.community_id LEFT JOIN community_members cm ON cm.community_id=c.id AND cm.user_id=rm.user_id`
 
 func scanRoom(row pgx.Row) (Room, error) {
 	var r Room
 	err := row.Scan(&r.ID, &r.Name, &r.OwnerID, &r.Role, &r.Kind, &r.CreatedAt, &r.SlowModeSeconds,
-		&r.DisplayName, &r.ActivityAt, &r.CommunityID, &r.CommunityName, &r.ChannelType, &r.Topic, &r.Position)
-	r.Permissions = permissionsForRoom(r)
+		&r.DisplayName, &r.ActivityAt, &r.CommunityID, &r.CommunityName, &r.ChannelType, &r.Topic, &r.Position, &r.IsPrivate,
+		&r.Permissions.Read, &r.Permissions.ManageCommunity, &r.Permissions.ManageChannels, &r.Permissions.ManageMembers, &r.Permissions.ManageRoles,
+		&r.Permissions.Moderate, &r.Permissions.ManageInvites, &r.Permissions.PinMessages, &r.Permissions.Post, &r.Permissions.JoinVoice)
 	return r, norm(err)
 }
 
@@ -208,6 +212,10 @@ func (s *PostgresStore) DeleteCommunity(id, actor string) error {
 }
 
 func (s *PostgresStore) CreateChannel(id, actor, name, topic, channelType string) (Room, error) {
+	return s.CreateChannelWithPrivacy(id, actor, name, topic, channelType, false)
+}
+
+func (s *PostgresStore) CreateChannelWithPrivacy(id, actor, name, topic, channelType string, private bool) (Room, error) {
 	ctx := context.Background()
 	tx, err := s.DB.Begin(ctx)
 	if err != nil {
@@ -219,7 +227,7 @@ func (s *PostgresStore) CreateChannel(id, actor, name, topic, channelType string
 		return Room{}, err
 	}
 	var room string
-	if err = tx.QueryRow(ctx, `INSERT INTO rooms(name,owner_id,kind,community_id,channel_type,topic,position) SELECT $2,$3,'channel',$1,$4,$5,COALESCE(max(position)+1,0) FROM rooms WHERE community_id=$1 RETURNING id::text`, id, name, owner, channelType, topic).Scan(&room); err != nil {
+	if err = tx.QueryRow(ctx, `INSERT INTO rooms(name,owner_id,kind,community_id,channel_type,topic,position,is_private) SELECT $2,$3,'channel',$1,$4,$5,COALESCE(max(position)+1,0),$6 FROM rooms WHERE community_id=$1 RETURNING id::text`, id, name, owner, channelType, topic, private).Scan(&room); err != nil {
 		return Room{}, err
 	}
 	if err = auditCommunity(ctx, tx, id, actor, "", "create_channel", room); err != nil {
@@ -241,12 +249,19 @@ func (s *PostgresStore) UpdateChannel(id, room, actor string, in ChannelUpdate) 
 	if _, err = lockCommunity(ctx, tx, id, actor, 3); err != nil {
 		return Room{}, err
 	}
-	tag, err := tx.Exec(ctx, `UPDATE rooms SET name=COALESCE($3,name),topic=COALESCE($4,topic),channel_type=COALESCE($5,channel_type),position=COALESCE($6,position) WHERE id=$2 AND community_id=$1`, id, room, in.Name, in.Topic, in.ChannelType, in.Position)
+	tag, err := tx.Exec(ctx, `UPDATE rooms SET name=COALESCE($3,name),topic=COALESCE($4,topic),channel_type=COALESCE($5,channel_type),position=COALESCE($6,position),is_private=COALESCE($7,is_private) WHERE id=$2 AND community_id=$1`, id, room, in.Name, in.Topic, in.ChannelType, in.Position, in.IsPrivate)
 	if err != nil {
 		return Room{}, err
 	}
 	if tag.RowsAffected() == 0 {
 		return Room{}, ErrNotFound
+	}
+	if in.ChannelType != nil && *in.ChannelType == "announcement" {
+		// Returning to hybrid starts a fresh activity rather than reviving an
+		// obsolete playback anchor from before voice admission was disabled.
+		if _, err = tx.Exec(ctx, `DELETE FROM channel_watch_sessions WHERE room_id=$1`, room); err != nil {
+			return Room{}, err
+		}
 	}
 	if err = auditCommunity(ctx, tx, id, actor, "", "update_channel", room); err != nil {
 		return Room{}, err
@@ -325,7 +340,7 @@ func (s *PostgresStore) CommunityMembers(id, user string) ([]RoomMember, error) 
 	if _, err := s.CommunityForMember(id, user); err != nil {
 		return nil, err
 	}
-	rows, err := s.DB.Query(context.Background(), `SELECT u.id::text,u.email,u.name,u.avatar_url,u.created_at,u.username,u.bio,u.profile_version,m.role,m.joined_at,m.posting_restricted_until
+	rows, err := s.DB.Query(context.Background(), `SELECT u.id::text,u.email,u.name,u.avatar_url,u.created_at,u.username,u.bio,u.profile_version,m.role,m.joined_at,m.posting_restricted_until,ARRAY(SELECT mr.role_id::text FROM community_member_roles mr WHERE mr.community_id=m.community_id AND mr.user_id=m.user_id ORDER BY mr.role_id)
  FROM community_members m JOIN users u ON u.id=m.user_id WHERE m.community_id=$1 AND u.deleted_at IS NULL ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 WHEN 'moderator' THEN 2 ELSE 3 END,u.name,u.id`, id)
 	if err != nil {
 		return nil, err
@@ -334,7 +349,7 @@ func (s *PostgresStore) CommunityMembers(id, user string) ([]RoomMember, error) 
 	out := []RoomMember{}
 	for rows.Next() {
 		var m RoomMember
-		if err = rows.Scan(&m.User.ID, &m.User.Email, &m.User.Name, &m.User.AvatarURL, &m.User.CreatedAt, &m.User.Username, &m.User.Bio, &m.User.ProfileVersion, &m.Role, &m.JoinedAt, &m.RestrictedUntil); err != nil {
+		if err = rows.Scan(&m.User.ID, &m.User.Email, &m.User.Name, &m.User.AvatarURL, &m.User.CreatedAt, &m.User.Username, &m.User.Bio, &m.User.ProfileVersion, &m.Role, &m.JoinedAt, &m.RestrictedUntil, &m.CustomRoleIDs); err != nil {
 			return nil, err
 		}
 		out = append(out, m)

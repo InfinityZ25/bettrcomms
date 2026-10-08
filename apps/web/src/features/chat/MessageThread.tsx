@@ -58,6 +58,8 @@ import {
   loadAttachmentLimits,
   uploadAttachmentWithProgress,
 } from './attachmentFiles';
+import { cancelResumableUpload } from './resumableUploads';
+import { persistDraftFiles, restoreDraftFiles } from './attachmentDraftFiles';
 
 function StopRestrictedUploads({ cancel }: { cancel: () => void }) {
   useMountEffect(() => {
@@ -115,6 +117,7 @@ function MessageTimeline({
   );
   const attachmentsRef = useRef(attachments);
   const draftRef = useRef(draft);
+  const draftFilesWarning = useRef(false);
   draftRef.current = draft;
   const uploadControllers = useRef(new Map<string, AbortController>());
   const [attachmentLimits, setAttachmentLimits] = useState(
@@ -132,6 +135,30 @@ function MessageTimeline({
   };
   useMountEffect(() => {
     const controller = new AbortController();
+    void restoreDraftFiles(
+      user.id,
+      roomId,
+      savedDraft.attachments,
+      threadRootId,
+    )
+      .then((restored) => {
+        if (controller.signal.aborted) return;
+        const next = attachmentsRef.current.map((current) => {
+          const recovered = restored.find(
+            (item) => item.localId && item.localId === current.localId,
+          );
+          return recovered && !current.file
+            ? {
+                ...current,
+                file: recovered.file,
+                uploadError: recovered.uploadError,
+              }
+            : current;
+        });
+        attachmentsRef.current = next;
+        setAttachments(next);
+      })
+      .catch(() => {});
     void loadAttachmentLimits(controller.signal)
       .then((limits) => {
         if (!controller.signal.aborted) setAttachmentLimits(limits);
@@ -232,6 +259,15 @@ function MessageTimeline({
         { body: draftRef.current, attachments: next },
         threadRootId,
       );
+    if (persist)
+      void persistDraftFiles(user.id, roomId, next, threadRootId).catch(() => {
+        if (!lifetime().aborted && !draftFilesWarning.current) {
+          draftFilesWarning.current = true;
+          onError(
+            'Your browser could not save draft file bytes. Keep this conversation open until you send, or choose the files again after reloading.',
+          );
+        }
+      });
   };
   const addFiles = (files: FileList | null) => {
     if (
@@ -244,6 +280,7 @@ function MessageTimeline({
     const remaining =
       attachmentLimits.max_per_message - attachmentsRef.current.length;
     const selected: File[] = [];
+    const recovered = new Map<string, File>();
     const rejected: string[] = [];
     for (const file of Array.from(files)) {
       if (file.size < 1) rejected.push(`${file.name} is empty.`);
@@ -251,16 +288,46 @@ function MessageTimeline({
         rejected.push(
           `${file.name} exceeds ${attachmentSize(attachmentLimits.max_file_bytes)}.`,
         );
-      else if (selected.length >= remaining)
+      else if (
+        attachmentsRef.current.some(
+          (item) =>
+            !item.id &&
+            !item.file &&
+            item.localId &&
+            !recovered.has(item.localId) &&
+            item.filename === file.name &&
+            item.size_bytes === file.size,
+        )
+      ) {
+        const item = attachmentsRef.current.find(
+          (item) =>
+            !item.id &&
+            !item.file &&
+            item.localId &&
+            !recovered.has(item.localId) &&
+            item.filename === file.name &&
+            item.size_bytes === file.size,
+        )!;
+        recovered.set(item.localId!, file);
+      } else if (selected.length >= remaining)
         rejected.push(
           `A message can include ${attachmentLimits.max_per_message} files.`,
         );
       else selected.push(file);
     }
     if (rejected.length) onError([...new Set(rejected)].slice(0, 3).join(' '));
-    if (!selected.length) return;
+    if (!selected.length && !recovered.size) return;
     const next: PendingAttachment[] = [
-      ...attachmentsRef.current,
+      ...attachmentsRef.current.map((item) =>
+        item.localId && recovered.has(item.localId)
+          ? {
+              ...item,
+              file: recovered.get(item.localId),
+              uploadState: 'queued' as const,
+              uploadError: undefined,
+            }
+          : item,
+      ),
       ...selected.map((file) => ({
         id: '',
         localId: crypto.randomUUID(),
@@ -296,6 +363,10 @@ function MessageTimeline({
               'The file was removed from your draft. Storage cleanup will retry automatically.',
             );
         },
+      );
+    else if (attachment.uploadId)
+      void cancelResumableUpload(roomId, attachment.uploadId, lifetime()).catch(
+        () => {},
       );
   };
   const addVoiceFile = (file: File, durationMs: number) => {
@@ -368,6 +439,9 @@ function MessageTimeline({
           signal: controller.signal,
           voiceNote: attachment.voice_note,
           durationMs: attachment.duration_ms,
+          resumeId: attachment.uploadId,
+          resumable: attachmentLimits.resumable,
+          onSession: (uploadId) => updateFile({ uploadId }),
           onProgress: (progress) => updateFile({ progress }, false),
         },
       );

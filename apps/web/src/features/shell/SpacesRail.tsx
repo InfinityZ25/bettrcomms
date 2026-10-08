@@ -12,6 +12,7 @@ import {
 import { Avatar } from '@/components/avatar';
 import { useOwnFace } from '@/features/settings/blobatarIdentity';
 import { useSyncExternalStore } from 'react';
+import type { ReactNode } from 'react';
 import AccountPresenceSelector from '@/features/settings/AccountPresenceSelector';
 import {
   ownPresenceSnapshot,
@@ -70,6 +71,7 @@ export default function SpacesRail({
   onSignOut,
   onHome,
   onActivity,
+  reminders,
 }: {
   user: User | null;
   screen: Screen;
@@ -86,6 +88,7 @@ export default function SpacesRail({
   onSignOut: () => void;
   onHome: () => void;
   onActivity: () => void;
+  reminders?: ReactNode;
 }) {
   // A section button is current when the sidebar is showing it and no other
   // screen has taken over.
@@ -164,6 +167,7 @@ export default function SpacesRail({
       >
         <Phone size={20} />
       </RailButton>
+      {reminders}
       <div className="phone:hidden">
         <RailButton
           label="Recordings"

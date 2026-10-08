@@ -644,7 +644,9 @@ func TestDailyVoiceContainers(t *testing.T) {
 	}
 }
 func TestDailyVoiceAttachmentLifecycleIntegration(t *testing.T) {
-	s := socialDatabase(t)
+	// Cleanup sweeps the whole schema; isolate this fixture from other tests
+	// and the development API's cleanup worker.
+	s := conversationTestStore(t)
 	users := socialUsers(t, s, 2)
 	alice, bob := users[0], users[1]
 	socialFriend(t, s, alice.ID, bob.ID)
@@ -682,8 +684,8 @@ func TestDailyVoiceAttachmentLifecycleIntegration(t *testing.T) {
 		return response.Attachment
 	}
 	upload(voiceWebMFixture(1), 415)
-	if storage.putCount != 0 {
-		t.Fatal("invalid recording reached S3")
+	if storage.putCount != 0 || len(storage.deleted) != 0 {
+		t.Fatalf("invalid recording reached S3: puts=%d deleted=%v", storage.putCount, storage.deleted)
 	}
 	attachment := upload(voiceWebMFixture(2), 201)
 	if !attachment.VoiceNote || attachment.DurationMS == nil || *attachment.DurationMS != 1000 || attachment.ContentType != "audio/webm" {
@@ -708,7 +710,12 @@ func TestDailyVoiceAttachmentLifecycleIntegration(t *testing.T) {
 	if e = s.CleanPendingAttachments(context.Background(), storage); e != nil {
 		t.Fatal(e)
 	}
-	if len(storage.deleted) != 1 {
-		t.Fatal("deleted voice recording not removed from S3")
+	key := "messages/" + attachment.ID
+	if len(storage.deleted) != 1 || storage.deleted[0] != key {
+		t.Fatalf("deleted voice recording cleanup: deleted=%v wanted=[%s]", storage.deleted, key)
+	}
+	var remaining int
+	if e = s.DB.QueryRow(context.Background(), `SELECT count(*) FROM message_attachments WHERE id=$1`, attachment.ID).Scan(&remaining); e != nil || remaining != 0 {
+		t.Fatalf("deleted recording retained its attachment row: remaining=%d error=%v", remaining, e)
 	}
 }

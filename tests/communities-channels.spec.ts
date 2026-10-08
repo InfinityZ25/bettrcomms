@@ -48,14 +48,17 @@ test('room roles govern shared hybrid channels, announcements and live revocatio
     await settings.getByRole('button', { name: /^Members(?: ·|$)/ }).click();
     await settings.getByRole('combobox', { name: `Role for ${users[1].name}`, exact: true }).selectOption('admin');
     await expect(adminPage.getByRole('button', { name: `Create channel in ${community.name}`, exact: true })).toBeVisible();
-    await settings.getByRole('combobox', { name: `Role for ${users[2].name}`, exact: true }).selectOption('moderator');
+    const moderatorRole = settings.getByRole('combobox', { name: `Role for ${users[2].name}`, exact: true });
+    await moderatorRole.selectOption('moderator');
+    // The parent ignores dismissal until the role update and reload finish.
+    await expect(moderatorRole).toBeEnabled();
     await settings.getByRole('button', { name: /^Channels(?: ·|$)/ }).click();
     await settings.getByRole('button', { name: 'New channel', exact: true }).click();
-    const channelDialog = ownerPage.getByRole('dialog', { name: 'Create a channel', exact: true });
+    const channelDialog = ownerPage.getByRole('dialog', { name: 'Create a channel', exact: true, includeHidden: true });
     await channelDialog.getByRole('textbox', { name: 'Channel name', exact: true }).fill('updates');
     await channelDialog.getByRole('radio', { name: /Announcements/ }).check();
     await channelDialog.getByRole('button', { name: 'Create channel', exact: true }).click();
-    await expect(channelDialog).toBeHidden();
+    await expect(channelDialog).toHaveCount(0);
     await ownerPage.keyboard.press('Escape');
     await expect(settings).toBeHidden();
     const latest = (await value<{ community: Community }>(await owner.request.get(`/api/v1/communities/${communityId}`))).community;

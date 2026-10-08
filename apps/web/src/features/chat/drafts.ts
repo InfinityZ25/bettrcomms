@@ -1,8 +1,10 @@
 import type { MessageAttachment } from '@/api';
+import { clearDraftFiles } from './attachmentDraftFiles';
 
 export type PendingAttachment = MessageAttachment & {
   file?: File;
   localId?: string;
+  uploadId?: string;
   uploadState?: 'queued' | 'uploading' | 'ready' | 'failed' | 'cancelled';
   progress?: number;
   uploadError?: string;
@@ -38,7 +40,7 @@ export function readDraft(
                 (item) =>
                   item &&
                   typeof item.id === 'string' &&
-                  item.id &&
+                  (item.id || typeof item.localId === 'string') &&
                   typeof item.filename === 'string' &&
                   typeof item.content_type === 'string' &&
                   Number.isFinite(item.size_bytes) &&
@@ -47,6 +49,10 @@ export function readDraft(
               .slice(0, 4)
               .map((item) => ({
                 id: item.id,
+                localId:
+                  typeof item.localId === 'string' ? item.localId : undefined,
+                uploadId:
+                  typeof item.uploadId === 'string' ? item.uploadId : undefined,
                 filename: item.filename,
                 content_type: item.content_type,
                 size_bytes: item.size_bytes,
@@ -55,7 +61,7 @@ export function readDraft(
                   typeof item.duration_ms === 'number'
                     ? item.duration_ms
                     : undefined,
-                uploadState: 'ready' as const,
+                uploadState: item.id ? ('ready' as const) : ('queued' as const),
               }))
           : [],
       nonce: value.nonce,
@@ -79,9 +85,11 @@ export function saveDraft(
         ...draft,
         savedAt: Date.now(),
         attachments: draft.attachments
-          .filter((item) => item.id)
+          .filter((item) => item.id || item.localId)
           .map((item) => ({
             id: item.id,
+            localId: item.localId,
+            uploadId: item.uploadId,
             filename: item.filename,
             content_type: item.content_type,
             size_bytes: item.size_bytes,
@@ -96,6 +104,7 @@ export function saveDraft(
 }
 
 export function clearDraft(user: string, room: string, root?: string) {
+  clearDraftFiles(user, room, root);
   try {
     localStorage.removeItem(key(user, room, root));
   } catch {

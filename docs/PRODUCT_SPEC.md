@@ -12,7 +12,7 @@ The browser is the reference client. Windows desktop uses a Wails v3 shell with 
 
 The primary rail contains Home/Friends, direct conversations, and Rooms (persistent communities). A room owns roles, members, and ordered channels. Every ordinary channel combines text and voice: opening it shows its durable message history, and Join voice starts its ephemeral call session in one action. Owners and admins can mark a channel as Announcements, which disables voice and limits publication to owners/admins while keeping history readable to all members. There are no separate text-only and voice-only channel trees or secondary chats inside voice channels. Direct conversations are first-class and may be one-to-one or group DMs. Search spans content the current user is authorized to read.
 
-Built-in room roles are owner, admin, moderator, and member. Owners manage ownership and admins; admins manage room settings, channels and lower roles; moderators manage lower-ranked members, reports, pins, invitation links and posting restrictions; members chat and join voice in ordinary channels. Membership and role changes apply to every channel, and bans/removal revoke active media and signaling access. Custom roles and per-channel permission overrides remain future work.
+Built-in room roles are owner, admin, moderator, and member. Owners manage ownership and admins; admins manage room settings, channels and lower roles; moderators manage lower-ranked members, reports, pins, invitation links and posting restrictions; members chat and join voice in ordinary channels. Membership and role changes apply to every channel, and bans/removal revoke active media and signaling access. Custom roles configure read, posting, voice and pin permissions without administrative escalation. Private channels require an explicit read allow; matching channel denies win, and owners/admins retain access to correct settings. All access paths, including search, files, realtime delivery and media admission, enforce effective server permissions.
 
 The conversation column contains message history, composer, replies, reactions, attachments, edit history markers, and unread boundaries. Presence has online, idle, do-not-disturb, and offline states. Read state is per user and per conversation. Blocking prevents new direct contact and suppresses presence; community moderation remains role-controlled.
 
@@ -47,6 +47,37 @@ The stage places the active camera strip at the top or either side and content i
 The layout engine preserves the content aspect ratio and prevents zero-sized panes. Double-click resets fit; Esc exits focused/fullscreen content. When the window narrows, camera tiles reduce before the content viewport. Active-speaker changes do not steal a manual pin.
 
 ## Capture, recording, and rewind
+
+The current browser clip workflow keeps an opt-in 90-second/128 MiB memory
+window of independently recorded sources in playable segments. Create clip
+opens a 30-second selection with title, source choice, preview, trim (up to 60
+seconds), download and explicit channel publication. Clips are derived exports;
+live playback gain never alters the captured tracks. Stop, call exit and account
+changes release recorders and discard the local window. Nothing is uploaded
+before publication. Full viewer rewind, configurable disk buffering, encrypted
+retention and crash recovery below remain separate implementation targets.
+
+## Files and channel activities
+
+Ordinary uploads use durable S3 multipart state and SHA-256 checked 8 MiB
+parts, with authorization before and after storage work. The channel library
+filters by type, author and date, renews private downloads and renders PDFs up
+to 20 MiB as canvas pages. Room quotas reserve in-progress file sizes atomically;
+retention removes expired attachments while preserving registered media assets.
+Optional ClamAV scanning keeps new uploads unavailable until clean and fails
+closed when its configured daemon cannot scan them.
+
+Polls allow one current vote per member and a closing time or manual closure.
+Scheduled events include Going/Maybe/Declined responses and deduplicated in-app
+reminders ten minutes before an event, surviving reconnects and reloads.
+Watch Together synchronizes a private video attachment through authoritative
+play/pause/seek state, revision checks and host transfer/lease recovery. Each
+viewer explicitly starts local playback. Stickers reuse private assets in chat;
+soundboard triggers require a live voice participant and have independently
+controlled local volume/mute. Message edit versions remain accessible only to
+authorized readers and disappear when the message is deleted or moderated.
+
+## Capture implementation boundaries
 
 Browser capture uses `getUserMedia` and `getDisplayMedia`. The initial native Windows goal is game-only video capture plus audio from the selected game process and its child process tree. Selection is explicit and revocable. Protected content, elevated processes, anti-cheat restrictions, exclusive fullscreen, and apps that opt out may be unavailable and must yield a specific reason. System-wide audio is not silently substituted for process audio.
 

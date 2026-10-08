@@ -1,10 +1,19 @@
 import { useState } from 'react';
-import { ArrowDown, ArrowUp, Hash, Megaphone, Trash2 } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowUp,
+  Hash,
+  LockKeyhole,
+  Megaphone,
+  Trash2,
+} from 'lucide-react';
 import { api, type ChannelType, type Room } from '@/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useLifetimeSignal } from '@/hooks/useLifetimeSignal';
 import { errorMessage } from '@/lib/errors';
+import ChannelAccessEditor from './ChannelAccessEditor';
+import type { CustomRole } from './channelPermissions';
 
 export default function ChannelEditor({
   communityId,
@@ -17,6 +26,7 @@ export default function ChannelEditor({
   endChange,
   onChanged,
   onError,
+  roles,
 }: {
   communityId: string;
   room: Room;
@@ -28,6 +38,7 @@ export default function ChannelEditor({
   locked: boolean;
   beginChange: () => boolean;
   endChange: () => void;
+  roles: CustomRole[];
 }) {
   const [name, setName] = useState(room.name);
   const [topic, setTopic] = useState(room.topic ?? '');
@@ -35,6 +46,7 @@ export default function ChannelEditor({
   const [busy, setBusy] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [confirmType, setConfirmType] = useState(false);
+  const [editingAccess, setEditingAccess] = useState(false);
   const signalForRequest = useLifetimeSignal();
   async function run(task: (signal: AbortSignal) => Promise<unknown>) {
     if (busy || !beginChange()) return;
@@ -84,8 +96,24 @@ export default function ChannelEditor({
         <h4 className="min-w-0 flex-1 truncate text-sm font-semibold">
           {room.name}
         </h4>
+        {room.is_private && (
+          <LockKeyhole
+            size={14}
+            aria-label="Private channel"
+            className="text-muted-foreground"
+          />
+        )}
         {editable && (
           <>
+            <Button
+              size="icon"
+              variant="ghost"
+              aria-label={`Manage access to ${room.name}`}
+              disabled={disabled}
+              onClick={() => setEditingAccess(true)}
+            >
+              <LockKeyhole size={15} />
+            </Button>
             <Button
               size="icon"
               variant="ghost"
@@ -182,8 +210,8 @@ export default function ChannelEditor({
           </label>
           <p className="text-xs leading-5 text-muted-foreground">
             {type === 'hybrid'
-              ? 'Everyone can chat and join voice in this channel.'
-              : 'Everyone can read. Only the owner and admins publish. Voice is disabled.'}
+              ? 'Text and voice share this channel. Access settings control who can view, post or join.'
+              : 'Only the owner and admins publish. Voice is disabled. Access settings control who can read.'}
           </p>
           {confirmType && (
             <p role="status" className="text-xs text-destructive">
@@ -241,6 +269,15 @@ export default function ChannelEditor({
             </Button>
           </div>
         </div>
+      )}
+      {editingAccess && (
+        <ChannelAccessEditor
+          communityId={communityId}
+          room={room}
+          roles={roles}
+          onClose={() => setEditingAccess(false)}
+          onChanged={onChanged}
+        />
       )}
     </article>
   );

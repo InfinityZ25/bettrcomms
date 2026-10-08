@@ -2,7 +2,9 @@ import { expect, test } from '@playwright/test';
 
 const baseURL = process.env.E2E_BASE_URL ?? 'http://127.0.0.1:5173';
 
-test('element playback follows centralized and per-element volume without altering media', async ({ page }) => {
+test('element playback follows centralized and per-element volume without altering media', async ({
+  page,
+}) => {
   await page.goto(baseURL);
   const result = await page.evaluate(async () => {
     const makeWav = () => {
@@ -11,14 +13,28 @@ test('element playback follows centralized and per-element volume without alteri
       const bytes = new Uint8Array(44 + sampleCount * 2);
       const view = new DataView(bytes.buffer);
       const text = (offset: number, value: string) =>
-        [...value].forEach((character, index) => view.setUint8(offset + index, character.charCodeAt(0)));
-      text(0, 'RIFF'); view.setUint32(4, bytes.length - 8, true); text(8, 'WAVE');
-      text(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true);
-      view.setUint16(22, 1, true); view.setUint32(24, sampleRate, true);
-      view.setUint32(28, sampleRate * 2, true); view.setUint16(32, 2, true);
-      view.setUint16(34, 16, true); text(36, 'data'); view.setUint32(40, sampleCount * 2, true);
+        [...value].forEach((character, index) =>
+          view.setUint8(offset + index, character.charCodeAt(0)),
+        );
+      text(0, 'RIFF');
+      view.setUint32(4, bytes.length - 8, true);
+      text(8, 'WAVE');
+      text(12, 'fmt ');
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true);
+      view.setUint16(22, 1, true);
+      view.setUint32(24, sampleRate, true);
+      view.setUint32(28, sampleRate * 2, true);
+      view.setUint16(32, 2, true);
+      view.setUint16(34, 16, true);
+      text(36, 'data');
+      view.setUint32(40, sampleCount * 2, true);
       for (let index = 0; index < sampleCount; index += 1)
-        view.setInt16(44 + index * 2, Math.sin(index * 2 * Math.PI * 440 / sampleRate) * 12_000, true);
+        view.setInt16(
+          44 + index * 2,
+          Math.sin((index * 2 * Math.PI * 440) / sampleRate) * 12_000,
+          true,
+        );
       return bytes;
     };
     const original = makeWav();
@@ -38,12 +54,17 @@ test('element playback follows centralized and per-element volume without alteri
         const context = Reflect.construct(Target, args) as AudioContext;
         contexts.push(context);
         const createGain = context.createGain.bind(context);
-        Object.defineProperty(context, 'createGain', { value: () => {
-          const gain = createGain();
-          analyser = new AnalyserNode(context, { fftSize: 2048, smoothingTimeConstant: 0 });
-          gain.connect(analyser);
-          return gain;
-        } });
+        Object.defineProperty(context, 'createGain', {
+          value: () => {
+            const gain = createGain();
+            analyser = new AnalyserNode(context, {
+              fftSize: 2048,
+              smoothingTimeConstant: 0,
+            });
+            gain.connect(analyser);
+            return gain;
+          },
+        });
         return context;
       },
     });
@@ -51,50 +72,81 @@ test('element playback follows centralized and per-element volume without alteri
     const { setOutputVolume } = await import('/src/media/volumeSettings.ts');
     const errors: string[] = [];
     setOutputVolume(1);
-    const releaseStrictMount = followElementOutput(element, (error) => errors.push(error.message));
+    const releaseStrictMount = followElementOutput(element, (error) =>
+      errors.push(error.message),
+    );
     releaseStrictMount();
-    const release = followElementOutput(element, (error) => errors.push(error.message));
+    const release = followElementOutput(element, (error) =>
+      errors.push(error.message),
+    );
     await element.play();
-    // Wait for the analyser window to contain decoded samples, not startup zeros.
-    await new Promise((resolve) => setTimeout(resolve, 300));
 
-    const sample = async () => {
+    const sample = async (audible = true) => {
+      const context = contexts[0];
       const values = new Float32Array(analyser!.fftSize);
-      let measured = 0;
+      const windowSeconds = values.length / context.sampleRate;
+      let nextWindowAt = context.currentTime + windowSeconds;
+      const readings: number[] = [];
       const deadline = performance.now() + 2_000;
-      while (performance.now() < deadline && measured < 0.0001) {
+      while (performance.now() < deadline) {
+        // Audio time, rather than a startup sleep, guarantees fresh, complete windows.
+        if (context.state !== 'running' || context.currentTime < nextWindowAt) {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          continue;
+        }
         analyser!.getFloatTimeDomainData(values);
-        measured = Math.sqrt(values.reduce((sum, value) => sum + value * value, 0) / values.length);
-        if (measured < 0.0001) await new Promise((resolve) => setTimeout(resolve, 25));
+        const measured = Math.sqrt(
+          values.reduce((sum, value) => sum + value * value, 0) / values.length,
+        );
+        nextWindowAt = context.currentTime + windowSeconds;
+        readings.push(measured);
+        if (readings.length > 5) readings.shift();
+        if (readings.length === 5) {
+          const minimum = Math.min(...readings);
+          const maximum = Math.max(...readings);
+          if (
+            (!audible || minimum > 0.0001) &&
+            maximum - minimum <= Math.max(0.0000001, maximum * 0.05)
+          ) {
+            return [...readings].sort((left, right) => left - right)[2];
+          }
+        }
       }
-      return measured;
+      throw new Error(
+        `Audio did not produce five stable analyser windows within 2s: ${readings.join(', ')}`,
+      );
     };
     const defaultRms = await sample();
     setOutputVolume(2);
-    await new Promise((resolve) => setTimeout(resolve, 150));
     const doubledRms = await sample();
     element.volume = 0.5;
-    await new Promise((resolve) => setTimeout(resolve, 100));
     const halfElementAtDoubleMaster = await sample();
     element.muted = true;
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    const mutedRms = await sample();
+    const mutedRms = await sample(false);
     element.muted = false;
     element.volume = 1;
     setOutputVolume(0);
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    const zeroMasterRms = await sample();
+    const zeroMasterRms = await sample(false);
 
-    const bytesUnchanged = snapshot.every((value, index) => original[index] === value)
-      && (await blob.arrayBuffer()).byteLength === original.byteLength;
+    const bytesUnchanged =
+      snapshot.every((value, index) => original[index] === value) &&
+      (await blob.arrayBuffer()).byteLength === original.byteLength;
     release();
     await new Promise((resolve) => setTimeout(resolve, 50));
     const statesAfterCleanup = contexts.map((context) => context.state);
-    element.pause(); element.remove(); URL.revokeObjectURL(url);
+    element.pause();
+    element.remove();
+    URL.revokeObjectURL(url);
     return {
-      defaultRms, doubledRms, halfElementAtDoubleMaster, mutedRms,
-      zeroMasterRms, bytesUnchanged, contextCount: contexts.length,
-      statesAfterCleanup, errors,
+      defaultRms,
+      doubledRms,
+      halfElementAtDoubleMaster,
+      mutedRms,
+      zeroMasterRms,
+      bytesUnchanged,
+      contextCount: contexts.length,
+      statesAfterCleanup,
+      errors,
     };
   });
 
@@ -103,8 +155,12 @@ test('element playback follows centralized and per-element volume without alteri
   expect(result.defaultRms).toBeGreaterThan(0.05);
   expect(result.doubledRms / result.defaultRms).toBeGreaterThan(1.8);
   expect(result.doubledRms / result.defaultRms).toBeLessThan(2.2);
-  expect(result.halfElementAtDoubleMaster / result.defaultRms).toBeGreaterThan(0.9);
-  expect(result.halfElementAtDoubleMaster / result.defaultRms).toBeLessThan(1.1);
+  expect(result.halfElementAtDoubleMaster / result.defaultRms).toBeGreaterThan(
+    0.9,
+  );
+  expect(result.halfElementAtDoubleMaster / result.defaultRms).toBeLessThan(
+    1.1,
+  );
   expect(result.mutedRms).toBeLessThan(0.00002);
   expect(result.zeroMasterRms).toBeLessThan(0.00002);
   expect(result.bytesUnchanged).toBe(true);

@@ -13,6 +13,8 @@ import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import CameraSourceMenu from './CameraSourceMenu';
 import { hasIOSBroadcast } from '@/media/iosBroadcast';
+import { ClipControls } from '@/features/clips/ClipSession';
+import { SoundboardSettingsButton } from '@/features/activities/RoomSoundboardPlayback';
 
 /** The microphone, headphones, camera, share, record and leave row. */
 export default function CallControls({
@@ -118,6 +120,7 @@ export default function CallControls({
               {recording ? <Square size={16} /> : <Circle size={17} />}
             </Button>
           )}
+          {!more && <><ClipControls /><SoundboardSettingsButton /></>}
           {more ? (
             <Button variant="destructive" size="icon" aria-label="Leave call" onClick={onLeave}>
               <PhoneOff size={18} />

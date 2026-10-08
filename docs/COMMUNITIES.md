@@ -22,8 +22,37 @@ must retain at least one channel. New rooms start with hybrid #general.
 Only owners can assign admins. Nobody assigns the owner role through role updates
 or changes their own role. Removal, bans and timeouts affect all sibling channels;
 invitations join the parent room and cannot bypass bans. Ownership transfer is
-explicit and leaves the previous owner as an admin. Custom roles and channel
-permission overrides are not included in this batch.
+explicit and leaves the previous owner as an admin.
+
+Migration `018_custom_permissions.sql` adds custom roles and private channels.
+Custom roles complement a member's built-in role; they cannot grant ownership,
+administration, moderation, invitation management or role management. Owners and
+admins create, rename, color and delete up to 50 custom roles, and assign them only
+to members below their built-in rank. Self assignment and cross-room role IDs are
+rejected. Room settings expose role defaults and per-member assignment.
+
+Role defaults can restrict viewing, posting or voice and grant pinning. A private
+channel starts visible only to owners/admins; an explicit channel `read: allow`
+override grants a selected custom or built-in role visibility. Channel overrides
+are keyed by `everyone`, `member`, `moderator` or a custom role UUID. For each
+permission, a matching deny wins over other matching allowances; explicit channel
+allowances then take precedence over role defaults. A denied role default wins
+when several custom roles apply. Private access still needs an explicit channel
+allowance, even when a role's default viewing permission is allowed.
+
+Owners/admins retain channel access to prevent lockout. Announcements always
+disable voice and reserve posting for owners/admins, including when an override
+attempts to allow other roles. A channel remains one shared text/voice location
+regardless of privacy or voice admission rules.
+
+The Go access functions resolve visibility centrally for channel lists, history,
+search, threads, files, notification delivery and media authorization. ACL/role
+changes reconcile live subscriptions and revoke voice/SFU leases when admission
+is lost; denying voice alone preserves readable message history. Member removal
+also revokes private sibling channels that are hidden to the moderator. Invites
+join the parent without bypassing a private ACL and open an accessible sibling;
+an entirely private community rejects redemption without consuming a use or
+creating a hidden membership.
 
 REST resources live below `/api/v1`:
 
@@ -38,6 +67,10 @@ REST resources live below `/api/v1`:
 | `POST /communities/{id}/channels` | Create hybrid/announcement channel |
 | `PATCH/DELETE /communities/{id}/channels/{channel}` | Update or delete child channel |
 | `POST /communities/{id}/channels/reorder` | Atomically reorder the full channel ID list |
+| `GET/POST /communities/{id}/roles` | List / create custom roles |
+| `PATCH/DELETE /communities/{id}/roles/{role}` | Edit / delete a custom role and its assignments/overrides |
+| `PUT /communities/{id}/members/{user}/custom-roles` | Replace the member's custom role ID list |
+| `GET/PUT /communities/{id}/channels/{channel}/permissions` | Read / replace privacy and channel overrides |
 
 Channel responses include parent metadata and resolved permissions. Clients use
 those permissions for affordances; the Go API independently authorizes every

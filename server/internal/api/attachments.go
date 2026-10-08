@@ -41,11 +41,15 @@ func (a *API) attachmentMaxBytes() int64 {
 }
 
 func (a *API) attachmentConfig() map[string]any {
+	_, resumable := a.Attachments.(MultipartAttachmentStorage)
 	return map[string]any{
 		"available":            a.Attachments != nil,
 		"max_file_bytes":       a.attachmentMaxBytes(),
 		"max_voice_note_bytes": maxVoiceNoteBytes,
 		"max_per_message":      4,
+		"resumable":            resumable,
+		"chunk_bytes":          AttachmentChunkBytes,
+		"scanner":              a.scannerConfig(),
 	}
 }
 
@@ -447,11 +451,35 @@ func (a *API) uploadAttachment(w http.ResponseWriter, r *http.Request, user User
 		a.fail(w, 401, "unauthenticated", "session was revoked during upload")
 		return
 	}
-	err = store.SavePendingAttachment(room, user.ID, key, attachment)
+	scanState := "not_required"
+	if a.scanner() != nil {
+		scanState = "pending"
+	}
+	err = store.SavePendingAttachmentWithPolicy(room, user.ID, key, attachment, scanState)
 	a.accessMu.RUnlock()
 	if err != nil {
-		a.result(w, nil, err)
+		a.storageError(w, err)
 		return
+	}
+	if scanner := a.scanner(); scanner != nil {
+		if err = scanner.Scan(r.Context(), file, upload.size); err != nil {
+			if errors.Is(err, ErrAttachmentInfected) {
+				_, _ = store.DB.Exec(context.Background(), `UPDATE message_attachments SET scan_state='rejected' WHERE id=$1`, id)
+			}
+			a.discardFailedAttachment(store, id, key)
+			a.storageError(w, err)
+			return
+		}
+		if _, err = store.DB.Exec(r.Context(), `UPDATE message_attachments SET scan_state='clean' WHERE id=$1 AND deleted_at IS NULL`, id); err != nil {
+			a.discardFailedAttachment(store, id, key)
+			a.storageError(w, err)
+			return
+		}
+		if _, err = file.Seek(0, io.SeekStart); err != nil {
+			a.discardFailedAttachment(store, id, key)
+			a.storageError(w, err)
+			return
+		}
 	}
 	// Persist the pending key before S3 receives bytes. If the client drops or
 	// S3 fails after storing the object, the periodic cleanup can still find it.
