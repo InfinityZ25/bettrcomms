@@ -1,7 +1,13 @@
 export type YouTubePlayerEvent =
   | { type: 'ready' | 'ended' | 'buffering' | 'autoplay-blocked' }
   | { type: 'position'; position: number; duration: number; state: number }
-  | { type: 'user-state'; paused: boolean; position: number }
+  | {
+      type: 'user-state';
+      paused: boolean;
+      position: number;
+      revision: number;
+      intent?: 'seek';
+    }
   | { type: 'error'; code: number }
   | { type: 'bootstrap-error'; message: string };
 export interface YouTubePlayback {
@@ -12,6 +18,39 @@ export interface YouTubePlayback {
   muted: boolean;
   force: boolean;
   revision: number;
+}
+/** A host's SDK controls must be able to settle before their callbacks arrive. */
+export function shouldApplyYouTubePlayback(
+  next: YouTubePlayback,
+  previous: YouTubePlayback | undefined,
+  host: boolean,
+): boolean {
+  return (
+    !host ||
+    !previous ||
+    next.force ||
+    next.revision !== previous.revision ||
+    next.enabled !== previous.enabled ||
+    next.volume !== previous.volume ||
+    next.muted !== previous.muted
+  );
+}
+/** Official controls mutate shared state only after a meaningful change. */
+export function youtubeHostAction(
+  event: Extract<YouTubePlayerEvent, { type: 'user-state' }>,
+  current: { paused: boolean; position: number; revision: number },
+): 'play' | 'pause' | 'seek' | undefined {
+  if (event.revision !== current.revision) return;
+  if (event.paused !== current.paused) return event.paused ? 'pause' : 'play';
+  if (Math.abs(event.position - current.position) > 1.5) return 'seek';
+}
+/** Seeking changes position without granting or revoking local playback consent. */
+export function youtubeLocalPlaybackChange(
+  event: Extract<YouTubePlayerEvent, { type: 'user-state' }>,
+  host: boolean,
+): boolean | undefined {
+  if (event.intent === 'seek' || (host && event.paused)) return;
+  return !event.paused;
 }
 const finite = (value: unknown, max: number) =>
   typeof value === 'number' &&
@@ -44,9 +83,13 @@ export function validPlayerEvent(
       );
     case 'user-state':
       return (
-        hasOnly('position', 'paused') &&
+        hasOnly('position', 'paused', 'revision', 'intent') &&
         finite(event.position, 604800) &&
-        typeof event.paused === 'boolean'
+        typeof event.paused === 'boolean' &&
+        (event.intent === undefined || event.intent === 'seek') &&
+        typeof event.revision === 'number' &&
+        Number.isSafeInteger(event.revision) &&
+        event.revision >= 0
       );
     case 'error':
       return (

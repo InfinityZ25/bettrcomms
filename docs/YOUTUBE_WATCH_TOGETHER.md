@@ -59,6 +59,16 @@ configuration are still pending.
 
 A fresh nonce and MessageChannel bind each instance to the exact iframe window
 and helper origin. Commands/events have a fixed allowlist and numeric bounds.
+Playback commands carry the authoritative revision. Old callbacks and unchanged
+provider echoes do not create host mutations; programmatic seeks wait for the
+requested playback state. A matching initial cue is left untouched so it cannot
+start the video before a host command. Shared actions wait for the final queued
+activity read, and keyboard focus changes do not send seeks. The host reapplies
+playback for authoritative revisions, explicit sync and local settings changes;
+viewers continue periodic correction. This lets the official controls settle
+before their callbacks update the shared state.
+Seek callbacks carry their intent so changing position preserves Pause on this
+device without granting local playback consent or changing host seek semantics.
 An authenticated, scoped bootstrap ticket is hashed in PostgreSQL, expires
 after 60 seconds and can be claimed once; claim rechecks session, membership and
 playback. It authorizes only a public video ID. Session, API and native page
@@ -122,7 +132,15 @@ consent flow. Focused HTTP proof tests exercise the installed SDK's window,
 binding, chunked calls and legacy GET shape. Those Node/handler tests do not
 establish provider playback or packaged native isolation.
 
-Acceptance still requires the real official player over HTTPS with two viewers.
+Local browser acceptance uses the real official player over two isolated HTTPS
+hosts with two accounts. It exercises repeated shared play/pause, a held-key
+seek, official Play/Pause controls by keyboard, host transfer, 375-pixel layout,
+consent, credential-route denial and cleanup. A local certificate exception does
+not establish public-domain HTTPS acceptance. Pointer controls in the nested
+provider frame also remain unverified: the automated mouse attempt did not
+produce an observed provider state change. These outstanding checks must be
+completed on the public helper before claiming complete browser acceptance.
+
 Windows requires a real packaged Wails run for playback, controls, transfer,
 CSP, identification and rejection of credentials/native functions. The current
 macOS package must verify the intentional gate, no helper request/frame, and

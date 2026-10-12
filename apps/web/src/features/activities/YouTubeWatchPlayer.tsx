@@ -8,7 +8,11 @@ import { watchPosition, type WatchTogetherState } from './activityApi';
 import {
   connectYouTubeBridge,
   youtubeError,
+  youtubeHostAction,
+  youtubeLocalPlaybackChange,
+  shouldApplyYouTubePlayback,
   type YouTubePlayerEvent,
+  type YouTubePlayback,
 } from './youtubeBridge';
 import type { ActivityAction } from './PollsPanel';
 import { youtubeRequiresBrowser } from './youtubePlatform';
@@ -23,6 +27,17 @@ type PlayerProps = {
   act: ActivityAction;
   busy: boolean;
 };
+
+const seekNavigationKeys = new Set([
+  'ArrowLeft',
+  'ArrowRight',
+  'ArrowUp',
+  'ArrowDown',
+  'Home',
+  'End',
+  'PageUp',
+  'PageDown',
+]);
 
 export function YouTubeWatchPlayer(props: PlayerProps) {
   if (youtubeRequiresBrowser()) return <YouTubeBrowserRequired />;
@@ -58,22 +73,31 @@ function AvailableYouTubeWatchPlayer({
     undefined,
   );
   const endedPlayback = useRef('');
-  const lastRevision = useRef(-1);
+  const lastApplied = useRef<YouTubePlayback | undefined>(undefined);
   const dragging = useRef(false);
   const lifetime = useLifetimeSignal();
   const canPost = room.permissions?.post ?? room.can_post ?? true;
   const host = state.host_id === user.id && canPost;
   const apply = (force = false) => {
-    bridge.current?.apply({
+    // Keep an official control gesture in place until its host mutation and
+    // authoritative revision have reconciled, rather than immediately undoing it.
+    if (host && busy && !force) return;
+    const playback: YouTubePlayback = {
       position: watchPosition(state, receivedAt),
       paused: state.paused,
       enabled,
       volume,
       muted,
-      force: force || lastRevision.current !== state.revision,
+      force: force || lastApplied.current?.revision !== state.revision,
       revision: state.revision,
-    });
-    lastRevision.current = state.revision;
+    };
+    if (
+      !bridge.current ||
+      !shouldApplyYouTubePlayback(playback, lastApplied.current, host)
+    )
+      return;
+    bridge.current.apply(playback);
+    lastApplied.current = playback;
   };
   const synchronize = useEffectEvent(() => apply());
   const receive = useEffectEvent((event: YouTubePlayerEvent) => {
@@ -116,13 +140,21 @@ function AvailableYouTubeWatchPlayer({
         setLoading(false);
         setError(event.message);
         break;
-      case 'user-state':
+      case 'user-state': {
+        if (event.revision !== state.revision) break;
         setBuffering(false);
-        if (!event.paused) setEnabled(true);
-        else if (!host) setEnabled(false);
-        if (host && !busy)
-          void command(event.paused ? 'pause' : 'play', event.position);
+        const localPlayback = youtubeLocalPlaybackChange(event, host);
+        if (localPlayback !== undefined) setEnabled(localPlayback);
+        if (host && !busy) {
+          const action = youtubeHostAction(event, {
+            paused: state.paused,
+            position: watchPosition(state, receivedAt),
+            revision: state.revision,
+          });
+          if (action) void command(action, event.position);
+        }
         break;
+      }
       case 'ended':
         if (
           host &&
@@ -253,6 +285,11 @@ function AvailableYouTubeWatchPlayer({
       'PUT',
     );
   }
+  function cancelSeek() {
+    if (!dragging.current) return;
+    dragging.current = false;
+    apply(true);
+  }
   return (
     <div ref={playerContainer} className="space-y-3 [&_button]:min-h-11">
       <div className="overflow-hidden rounded-xl border bg-black">
@@ -341,6 +378,7 @@ function AvailableYouTubeWatchPlayer({
       {host && (
         <div className="flex flex-wrap items-center gap-2">
           <Button
+            key={state.paused ? 'play' : 'pause'}
             size="sm"
             disabled={!ready || busy}
             onClick={() => void command(state.paused ? 'play' : 'pause')}
@@ -348,8 +386,8 @@ function AvailableYouTubeWatchPlayer({
             {state.paused ? <Play size={14} /> : <Pause size={14} />}
             {state.paused ? 'Play for everyone' : 'Pause for everyone'}
           </Button>
-          <label className="flex min-w-0 flex-1 items-center gap-2 text-xs">
-            Shared position
+          <label className="order-last flex min-w-0 basis-full items-center gap-2 text-xs sm:order-none sm:flex-1 sm:basis-auto">
+            <span className="shrink-0">Shared position</span>
             <input
               type="range"
               min="0"
@@ -363,19 +401,28 @@ function AvailableYouTubeWatchPlayer({
                 dragging.current = true;
               }}
               onPointerUp={() => {
+                if (!dragging.current) return;
                 dragging.current = false;
                 void command('seek', position);
               }}
-              onPointerCancel={() => {
-                dragging.current = false;
-                apply(true);
+              onPointerCancel={cancelSeek}
+              onLostPointerCapture={cancelSeek}
+              onBlur={cancelSeek}
+              onKeyDown={(event) => {
+                if (
+                  seekNavigationKeys.has(event.key) &&
+                  !event.altKey &&
+                  !event.ctrlKey &&
+                  !event.metaKey
+                )
+                  dragging.current = true;
               }}
-              onKeyDown={() => {
-                dragging.current = true;
-              }}
-              onKeyUp={() => {
+              onKeyUp={(event) => {
+                if (!seekNavigationKeys.has(event.key) || !dragging.current)
+                  return;
                 dragging.current = false;
-                void command('seek', position);
+                if (event.altKey || event.ctrlKey || event.metaKey) apply(true);
+                else void command('seek', position);
               }}
               onChange={(event) => setPosition(Number(event.target.value))}
             />

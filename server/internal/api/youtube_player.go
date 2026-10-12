@@ -218,21 +218,50 @@ func (a *API) claimYouTubePlayer(w http.ResponseWriter, r *http.Request) {
 
 const playerHTML = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BetterComms YouTube player</title><style>html,body{margin:0;width:100%;height:100%;min-height:200px;background:#000;color:white}#player,iframe{border:0;width:100%;height:100%;min-height:200px}</style><script defer src="/player.js"></script></head><body><div id="player"></div></body></html>`
 const playerJavaScript = `"use strict";
-let port,nonce,player,timer,script,claimRequest,booted=false,ready=false,disposed=false,applyingUntil=0;
+let port,nonce,player,timer,script,claimRequest,booted=false,ready=false,disposed=false,appliedRevision=-1,pendingState,seekTarget,lastPlayback;
 const send=(type,value={})=>port?.postMessage({type,nonce,...value});
 function cleanup(){disposed=true;ready=false;claimRequest?.abort();clearInterval(timer);script?.remove?.();try{player?.destroy()}catch{}player=undefined;port?.close();port=undefined;window.onYouTubeIframeAPIReady=undefined;window.removeEventListener('message',bootstrap)}
 function bounded(v,min,max){return typeof v==='number'&&Number.isFinite(v)&&v>=min&&v<=max}
 function command(event){const v=event.data;if(disposed||!v||v.nonce!==nonce||v.type!=='playback'||!ready)return;
- if(Object.keys(v).some(k=>!['type','nonce','position','paused','enabled','volume','muted','force','revision'].includes(k))||!bounded(v.position,0,604800)||!bounded(v.volume,0,1)||typeof v.paused!=='boolean'||typeof v.enabled!=='boolean'||typeof v.muted!=='boolean')return;
+ if(Object.keys(v).some(k=>!['type','nonce','position','paused','enabled','volume','muted','force','revision'].includes(k))||!bounded(v.position,0,604800)||!bounded(v.volume,0,1)||typeof v.paused!=='boolean'||typeof v.enabled!=='boolean'||typeof v.muted!=='boolean'||typeof v.force!=='boolean'||!Number.isSafeInteger(v.revision)||v.revision<0||v.revision<appliedRevision)return;
+ const wantedState=!v.enabled||v.paused?2:1;
+ const superseded=pendingState!==undefined&&pendingState!==wantedState;
+ appliedRevision=v.revision;lastPlayback={position:v.position,paused:v.paused,at:performance.now()};
  player.setVolume(v.volume*100);v.muted?player.mute():player.unMute();
- if(v.force||Math.abs(player.getCurrentTime()-v.position)>1.5){applyingUntil=performance.now()+1200;player.seekTo(v.position,true)}
- if(!v.enabled||v.paused){if(player.getPlayerState()===1){applyingUntil=performance.now()+1200;player.pauseVideo()}}else if(player.getPlayerState()!==1&&player.getPlayerState()!==3){applyingUntil=performance.now()+1200;player.playVideo()}
+ const distance=Math.abs(player.getCurrentTime()-v.position);
+ // seekTo starts a cued video. Do not turn an already-matching initial
+ // position into an unsolicited Play, even when the parent requests force.
+ const seeking=distance>1.5||(v.force&&distance>0.05);
+ if(seeking){seekTarget={position:v.position,state:wantedState};pendingState=wantedState;player.seekTo(v.position,true)}
+ else if(seekTarget){seekTarget.position=v.position;seekTarget.state=wantedState}
+ const state=player.getPlayerState();
+ // Reassert the desired state after a real seek regardless of cached SDK
+ // state. Only a provider state acknowledgement clears this expectation.
+ if(wantedState===2){if(state===1||state===3||seeking||superseded){pendingState=2;player.pauseVideo()}}else if((state!==1&&state!==3)||seeking||superseded){pendingState=1;player.playVideo()}
+}
+function observePausedSeek(){
+ // A seek from PAUSED can stay in that state without emitting a new state
+ // event, or its event can precede the time update. Observe both SDK facts.
+ // Playing seeks still require their terminal event: cached PLAYING alone
+ // cannot acknowledge a seek that may yet report a transient PAUSED state.
+ if(seekTarget?.state===2&&player.getPlayerState()===2&&Math.abs(player.getCurrentTime()-seekTarget.position)<=1.5){seekTarget=undefined;if(pendingState===2)pendingState=undefined}
+}
+function stateChanged(event){if(disposed||!ready||!player||(event.target&&event.target!==player)||event.data!==player.getPlayerState())return;
+ const state=event.data,position=player.getCurrentTime();
+ if(state===3)send('buffering');
+ if(seekTarget!==undefined){if(Math.abs(position-seekTarget.position)>1.5||state!==seekTarget.state)return;seekTarget=undefined;if(state===pendingState)pendingState=undefined;return}
+ // A provider acknowledgement stays programmatic however long buffering took.
+ if(pendingState!==undefined){if(state===pendingState)pendingState=undefined;return}
+ if(state===0){send('ended');return}
+ if(appliedRevision<0)return;
+ if(state===1||state===2)send('user-state',{paused:state===2,position,revision:appliedRevision});
+ else if(state===3&&lastPlayback){const expected=lastPlayback.position+(lastPlayback.paused?0:(performance.now()-lastPlayback.at)/1000);if(Math.abs(position-expected)>1.5)send('user-state',{paused:lastPlayback.paused,position,revision:appliedRevision,intent:'seek'})}
 }
 async function bootstrap(event){const v=event.data;
  if(disposed||booted||event.source!==window.parent||!allowedParents.includes(event.origin)||!v||v.type!=='bootstrap'||typeof v.ticket!=='string'||v.ticket.length!==43||typeof v.nonce!=='string'||!/^[A-Za-z0-9_-]{16,80}$/.test(v.nonce)||event.ports.length!==1||Object.keys(v).some(k=>!['type','ticket','nonce'].includes(k)))return;
  booted=true;nonce=v.nonce;port=event.ports[0];port.onmessage=command;port.start();
  try{claimRequest=new AbortController();const response=await fetch('/claim',{method:'POST',credentials:'omit',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticket:v.ticket,nonce,parent_origin:event.origin}),signal:claimRequest.signal});if(disposed)return;if(!response.ok)throw Error('Player ticket expired. Reopen the player.');const data=await response.json();if(disposed)return;if(data.nonce!==nonce||data.parent_origin!==event.origin||!/^[A-Za-z0-9_-]{11}$/.test(data.video_id))throw Error('Invalid player response');
- window.onYouTubeIframeAPIReady=()=>{if(disposed)return;player=new YT.Player('player',{host:'https://www.youtube-nocookie.com',width:'100%',height:'100%',videoId:data.video_id,playerVars:{origin:location.origin,playsinline:1,controls:1,autoplay:0},events:{onReady:()=>{if(disposed)return;ready=true;send('ready');timer=setInterval(()=>{if(!disposed&&player)send('position',{position:player.getCurrentTime(),duration:player.getDuration(),state:player.getPlayerState()})},500)},onStateChange:e=>{if(disposed)return;if(e.data===0)send('ended');else if(e.data===3)send('buffering');else if(performance.now()>applyingUntil&&(e.data===1||e.data===2))send('user-state',{paused:e.data===2,position:player.getCurrentTime()})},onError:e=>{if(!disposed)send('error',{code:e.data})},onAutoplayBlocked:()=>{if(!disposed)send('autoplay-blocked')}}})};
+ window.onYouTubeIframeAPIReady=()=>{if(disposed||player)return;player=new YT.Player('player',{host:'https://www.youtube-nocookie.com',width:'100%',height:'100%',videoId:data.video_id,playerVars:{origin:location.origin,playsinline:1,controls:1,autoplay:0},events:{onReady:()=>{if(disposed||ready)return;ready=true;send('ready');timer=setInterval(()=>{if(!disposed&&player){observePausedSeek();send('position',{position:player.getCurrentTime(),duration:player.getDuration(),state:player.getPlayerState()})}},500)},onStateChange:stateChanged,onError:e=>{if(!disposed)send('error',{code:e.data})},onAutoplayBlocked:()=>{if(!disposed){pendingState=undefined;send('autoplay-blocked')}}}})};
  script=document.createElement('script');script.src='https://www.youtube.com/iframe_api';script.onerror=()=>{if(!disposed)send('error',{code:153})};document.head.append(script);
  }catch(error){if(!disposed)send('bootstrap-error',{message:error instanceof Error?error.message:'Player could not start'});cleanup()}
 }

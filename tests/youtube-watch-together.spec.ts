@@ -89,7 +89,7 @@ async function state(context: BrowserContext, room: string) {
 
 test('real HTTPS YouTube player synchronizes two viewers, transfers host and isolates credentials', async ({
   browser,
-}) => {
+}, testInfo) => {
   test.setTimeout(180000);
   const owner = await browser.newContext({
     baseURL,
@@ -133,6 +133,18 @@ test('real HTTPS YouTube player synchronizes two viewers, transfers host and iso
     const first = await owner.newPage();
     const second = await member.newPage();
     const requests: string[] = [];
+    const watchWrites: { action: string; status: number }[] = [];
+    first.on('response', (response) => {
+      const request = response.request();
+      if (
+        request.method() === 'PUT' &&
+        new URL(request.url()).pathname.endsWith('/watch-together')
+      )
+        watchWrites.push({
+          action: request.postDataJSON().action,
+          status: response.status(),
+        });
+    });
     first.on('request', (request) => {
       if (
         request.url().includes('youtube.com') ||
@@ -206,30 +218,121 @@ test('real HTTPS YouTube player synchronizes two viewers, transfers host and iso
       sdk: true,
     });
     expect(await first.evaluate(() => 'YT' in window)).toBe(false);
-    await host
-      .getByRole('button', { name: 'Play for everyone', exact: true })
-      .click();
+    expect(watchWrites.filter((write) => write.action !== 'heartbeat')).toEqual(
+      [],
+    );
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      const revisionBeforePlay = (await state(owner, room))!.revision;
+      await host
+        .getByRole('button', { name: 'Play for everyone', exact: true })
+        .click();
+      await expect
+        .poll(async () => (await state(owner, room))?.paused)
+        .toBe(false);
+      await expect
+        .poll(async () => helper.evaluate('player?.getPlayerState()'))
+        .toBe(1);
+      await expect
+        .poll(async () => viewerHelper.evaluate('player?.getPlayerState()'))
+        .toBe(1);
+      await host
+        .getByRole('button', { name: 'Pause for everyone', exact: true })
+        .click();
+      await expect
+        .poll(async () => (await state(owner, room))?.paused)
+        .toBe(true);
+      await expect
+        .poll(async () => helper.evaluate('player?.getPlayerState()'))
+        .toBe(2);
+      await expect
+        .poll(async () => viewerHelper.evaluate('player?.getPlayerState()'))
+        .toBe(2);
+      const paused = (await state(owner, room))!;
+      expect(paused.revision).toBe(revisionBeforePlay + 2);
+      expect(
+        watchWrites.filter((write) => write.action !== 'heartbeat'),
+      ).toEqual(
+        Array.from({ length: cycle + 1 }).flatMap(() => [
+          { action: 'play', status: 200 },
+          { action: 'pause', status: 200 },
+        ]),
+      );
+    }
+    const sharedPosition = host.getByRole('slider', {
+      name: 'YouTube shared position',
+      exact: true,
+    });
+    await expect(sharedPosition).toBeEnabled();
+    await sharedPosition.focus();
+    for (let step = 0; step < 3; step += 1)
+      await first.keyboard.down('ArrowRight');
+    const seekTo = Number(await sharedPosition.inputValue());
+    await first.keyboard.up('ArrowRight');
+    await expect
+      .poll(async () => (await state(owner, room))?.position_seconds)
+      .toBe(seekTo);
+    await expect
+      .poll(async () =>
+        Math.abs(
+          (await helper.evaluate<number>('player?.getCurrentTime()')) - seekTo,
+        ),
+      )
+      .toBeLessThan(1.5);
+    await expect
+      .poll(async () =>
+        Math.abs(
+          (await viewerHelper.evaluate<number>('player?.getCurrentTime()')) -
+            seekTo,
+        ),
+      )
+      .toBeLessThan(1.5);
+    await expect(sharedPosition).toBeEnabled();
+    await first.keyboard.press('Tab');
+    await expect(
+      host.getByRole('button', { name: 'End session', exact: true }),
+    ).toBeFocused();
+    await first.bringToFront();
+    const officialFrame = helper
+      .childFrames()
+      .find((frame) =>
+        frame.url().startsWith('https://www.youtube-nocookie.com/embed/'),
+      )!;
+    await host.locator('iframe').scrollIntoViewIfNeeded();
+    await officialFrame.locator('#player-controls').hover();
+    await officialFrame
+      .getByRole('button', { name: 'Play video', exact: true })
+      .press('Space');
     await expect
       .poll(async () => (await state(owner, room))?.paused)
       .toBe(false);
     await expect
-      .poll(async () => helper.evaluate('player?.getPlayerState()'))
+      .poll(() => viewerHelper.evaluate('player?.getPlayerState()'))
       .toBe(1);
-    await expect
-      .poll(async () => viewerHelper.evaluate('player?.getPlayerState()'))
-      .toBe(1);
-    await host
-      .getByRole('button', { name: 'Pause for everyone', exact: true })
-      .click();
+    await expect(
+      host.getByRole('button', { name: 'Pause for everyone', exact: true }),
+    ).toBeEnabled();
+    await host.locator('iframe').scrollIntoViewIfNeeded();
+    await officialFrame.locator('#player-controls').hover();
+    await officialFrame
+      .getByRole('button', { name: 'Pause video', exact: true })
+      .press('Space');
     await expect
       .poll(async () => (await state(owner, room))?.paused)
       .toBe(true);
     await expect
-      .poll(async () => helper.evaluate('player?.getPlayerState()'))
+      .poll(() => viewerHelper.evaluate('player?.getPlayerState()'))
       .toBe(2);
-    await expect
-      .poll(async () => viewerHelper.evaluate('player?.getPlayerState()'))
-      .toBe(2);
+    expect(watchWrites.filter((write) => write.action !== 'heartbeat')).toEqual(
+      [
+        ...Array.from({ length: 3 }).flatMap(() => [
+          { action: 'play', status: 200 },
+          { action: 'pause', status: 200 },
+        ]),
+        { action: 'seek', status: 200 },
+        { action: 'play', status: 200 },
+        { action: 'pause', status: 200 },
+      ],
+    );
     await host
       .getByLabel('YouTube next host', { exact: true })
       .selectOption(secondUser.id);
@@ -245,6 +348,9 @@ test('real HTTPS YouTube player synchronizes two viewers, transfers host and iso
     await expect(
       host.getByRole('button', { name: 'Play for everyone', exact: true }),
     ).toHaveCount(0);
+    expect(watchWrites.filter((write) => write.action === 'seek')).toEqual([
+      { action: 'seek', status: 200 },
+    ]);
     await second.setViewportSize({ width: 375, height: 812 });
     const rectangle = await viewer.locator('iframe').boundingBox();
     expect(rectangle?.height).toBeGreaterThanOrEqual(200);
@@ -255,7 +361,7 @@ test('real HTTPS YouTube player synchronizes two viewers, transfers host and iso
       ),
     ).toBe(true);
     await viewer.screenshot({
-      path: '.local/implementation-20261011/youtube-mobile-real.png',
+      path: testInfo.outputPath('youtube-mobile-real.png'),
     });
     await first.keyboard.press('Escape');
     await expect(first.locator('iframe')).toHaveCount(0);

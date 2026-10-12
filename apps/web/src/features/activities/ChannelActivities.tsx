@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore } from 'react';
+import { useRef, useState, useSyncExternalStore } from 'react';
 import {
   BarChart3,
   CalendarDays,
@@ -44,12 +44,14 @@ function ActivitiesDialog({
   );
   const [view, setView] = useState<View>('polls');
   const [busy, setBusy] = useState(false);
+  const actionInFlight = useRef(false);
   const [error, setError] = useState('');
   const lifetime = useLifetimeSignal();
   useMountEffect(store.start);
   const act: ActivityAction = async (path, body, method) => {
-    if (busy) return false;
     const signal = lifetime();
+    if (actionInFlight.current || signal.aborted) return false;
+    actionInFlight.current = true;
     setBusy(true);
     setError('');
     try {
@@ -68,6 +70,7 @@ function ActivitiesDialog({
       }
       return false;
     } finally {
+      actionInFlight.current = false;
       if (!signal.aborted) setBusy(false);
     }
   };

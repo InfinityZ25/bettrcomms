@@ -1,7 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it, vi } from 'vitest';
-import { connectYouTubeBridge } from './youtubeBridge';
+import {
+  connectYouTubeBridge,
+  shouldApplyYouTubePlayback,
+  validPlayerEvent,
+  youtubeHostAction,
+  youtubeLocalPlaybackChange,
+  type YouTubePlayback,
+} from './youtubeBridge';
 
 // Exercise the exact script delivered by the credential-free player host.
 const helperSource = readFileSync(
@@ -16,7 +23,11 @@ const helperScript = helperSource.match(
 )?.[1];
 if (!helperScript) throw new Error('Player helper script was not found');
 
-function helper(fetch: ReturnType<typeof vi.fn>) {
+function helper(
+  fetch: ReturnType<typeof vi.fn>,
+  initialState = 2,
+  seekSettlesImmediately = true,
+) {
   const events = new Map<string, (...args: unknown[]) => unknown>();
   const parent = {};
   const window: Record<string, unknown> = {
@@ -33,10 +44,27 @@ function helper(fetch: ReturnType<typeof vi.fn>) {
     },
   };
   const append = vi.fn();
-  const startTimer = vi.fn(() => 1);
+  const startTimer = vi.fn((_callback: () => void) => 1);
   const destroy = vi.fn();
   const playerCreated = vi.fn();
-  let playerEvents: { onReady: () => void } | undefined;
+  let currentState = initialState;
+  let position = 0;
+  let now = 2000;
+  let playerInstance: object | undefined;
+  const playVideo = vi.fn();
+  const pauseVideo = vi.fn();
+  const setVolume = vi.fn();
+  const mute = vi.fn();
+  const unMute = vi.fn();
+  const seekTo = vi.fn((seconds: number) => {
+    if (seekSettlesImmediately) position = seconds;
+  });
+  let playerEvents:
+    | {
+        onReady: () => void;
+        onStateChange: (event: { data: number; target?: object }) => void;
+      }
+    | undefined;
   runInNewContext(helperScript!, {
     allowedParents: ['https://app.example.test', 'null'],
     window,
@@ -44,7 +72,7 @@ function helper(fetch: ReturnType<typeof vi.fn>) {
     document: { createElement: () => ({}), head: { append } },
     fetch,
     AbortController,
-    performance: { now: () => 2000 },
+    performance: { now: () => now },
     setInterval: startTimer,
     clearInterval: vi.fn(),
     YT: {
@@ -52,13 +80,23 @@ function helper(fetch: ReturnType<typeof vi.fn>) {
         constructor(_target: string, options: { events: typeof playerEvents }) {
           playerCreated();
           playerEvents = options.events;
+          playerInstance = this;
         }
         destroy = destroy;
+        getPlayerState = () => currentState;
+        getCurrentTime = () => position;
+        getDuration = () => 60;
+        playVideo = playVideo;
+        pauseVideo = pauseVideo;
+        setVolume = setVolume;
+        mute = mute;
+        unMute = unMute;
+        seekTo = seekTo;
       },
     },
   });
   const port = {
-    onmessage: undefined,
+    onmessage: null as ((event: { data: unknown }) => void) | null,
     start: vi.fn(),
     close: vi.fn(),
     postMessage: vi.fn(),
@@ -82,6 +120,44 @@ function helper(fetch: ReturnType<typeof vi.fn>) {
     apiCallback: () =>
       window.onYouTubeIframeAPIReady as (() => void) | undefined,
     playerReady: () => playerEvents?.onReady(),
+    command: (value: Partial<YouTubePlayback> = {}) =>
+      port.onmessage?.({
+        data: {
+          type: 'playback',
+          nonce: event.data.nonce,
+          position: 0,
+          paused: false,
+          enabled: true,
+          volume: 0.7,
+          muted: false,
+          force: false,
+          revision: 1,
+          ...value,
+        },
+      }),
+    stateChange: (state: number, seconds = position) => {
+      currentState = state;
+      position = seconds;
+      playerEvents?.onStateChange({ data: state, target: playerInstance });
+    },
+    staleStateChange: (state: number) =>
+      playerEvents?.onStateChange({ data: state, target: playerInstance }),
+    advance: (milliseconds: number) => {
+      now += milliseconds;
+    },
+    settlePosition: (seconds: number) => {
+      position = seconds;
+    },
+    cacheState: (state: number) => {
+      currentState = state;
+    },
+    tick: () => startTimer.mock.calls.at(-1)?.[0](),
+    playVideo,
+    pauseVideo,
+    setVolume,
+    mute,
+    unMute,
+    seekTo,
     event,
     append,
     startTimer,
@@ -96,6 +172,302 @@ const claim = () => ({
     nonce: 'review-instance-123456',
     parent_origin: 'https://app.example.test',
   }),
+});
+
+describe('authoritative YouTube controls in the exact helper', () => {
+  async function readyPlayer(initialState = 2, seekSettlesImmediately = true) {
+    const player = helper(
+      vi.fn().mockResolvedValue(claim()),
+      initialState,
+      seekSettlesImmediately,
+    );
+    await player.bootstrap();
+    player.apiReady();
+    player.playerReady();
+    return player;
+  }
+  function userStates(player: Awaited<ReturnType<typeof readyPlayer>>) {
+    return player.port.postMessage.mock.calls
+      .map(([event]) => event)
+      .filter((event) => event.type === 'user-state');
+  }
+
+  it('does not reassert a host pause while an official Play gesture updates SDK cache before its callback arrives', async () => {
+    const player = await readyPlayer();
+    let previous: YouTubePlayback | undefined;
+    function synchronize(next: YouTubePlayback) {
+      if (!shouldApplyYouTubePlayback(next, previous, true)) return;
+      player.command(next);
+      previous = next;
+    }
+    const paused: YouTubePlayback = {
+      position: 10,
+      paused: true,
+      enabled: true,
+      volume: 0.7,
+      muted: false,
+      force: true,
+      revision: 8,
+    };
+    synchronize(paused);
+    player.stateChange(2, 10);
+    player.port.postMessage.mockClear();
+    player.pauseVideo.mockClear();
+    // The provider's internal state changes before it delivers the callback.
+    player.cacheState(3);
+    synchronize({ ...paused, force: false });
+    player.cacheState(1);
+    synchronize({ ...paused, force: false });
+    expect(player.pauseVideo).not.toHaveBeenCalled();
+    player.stateChange(1, 10);
+    expect(userStates(player)).toEqual([
+      {
+        type: 'user-state',
+        nonce: player.event.data.nonce,
+        paused: false,
+        position: 10,
+        revision: 8,
+      },
+    ]);
+    player.port.postMessage.mockClear();
+    synchronize({ ...paused, paused: false, force: true, revision: 9 });
+    player.cacheState(2);
+    synchronize({
+      ...paused,
+      paused: false,
+      force: false,
+      revision: 9,
+      position: 10.2,
+    });
+    expect(player.playVideo).not.toHaveBeenCalled();
+    player.stateChange(2, 10.2);
+    expect(userStates(player)).toEqual([
+      {
+        type: 'user-state',
+        nonce: player.event.data.nonce,
+        paused: true,
+        position: 10.2,
+        revision: 9,
+      },
+    ]);
+  });
+
+  it.each([-1, 5])(
+    'does not seek or implicitly start an already-positioned initial SDK state %s',
+    async (initialState) => {
+      const player = await readyPlayer(initialState);
+      player.command({ revision: 1, paused: true, force: true, position: 0 });
+      expect(player.seekTo).not.toHaveBeenCalled();
+      expect(player.playVideo).not.toHaveBeenCalled();
+      expect(player.pauseVideo).not.toHaveBeenCalled();
+      expect(userStates(player)).toEqual([]);
+      player.command({ revision: 2, paused: false, force: true });
+      expect(player.playVideo).toHaveBeenCalledOnce();
+      player.stateChange(3);
+      player.stateChange(1);
+      expect(userStates(player)).toEqual([]);
+      player.stateChange(2);
+      expect(userStates(player)).toHaveLength(1);
+    },
+  );
+
+  it('keeps an actual paused seek from CUED programmatic until the requested pause is acknowledged', async () => {
+    const player = await readyPlayer(5);
+    player.command({ revision: 1, paused: true, force: true, position: 10 });
+    expect(player.seekTo).toHaveBeenCalledWith(10, true);
+    expect(player.pauseVideo).toHaveBeenCalledOnce();
+    player.stateChange(3, 10);
+    player.stateChange(1, 10);
+    expect(userStates(player)).toEqual([]);
+    player.command({ revision: 1, paused: true, position: 10 });
+    player.stateChange(2, 10);
+    expect(userStates(player)).toEqual([]);
+    player.stateChange(1, 10);
+    expect(userStates(player)).toEqual([
+      {
+        type: 'user-state',
+        nonce: player.event.data.nonce,
+        paused: false,
+        position: 10,
+        revision: 1,
+      },
+    ]);
+  });
+
+  it.each([false, true])(
+    'restores official controls when paused seek position settles without another state event (early PAUSED event: %s)',
+    async (earlyPaused) => {
+      const player = await readyPlayer(2, false);
+      player.command({ revision: 12, paused: true, force: true, position: 10 });
+      if (earlyPaused) player.stateChange(2, 0);
+      expect(userStates(player)).toEqual([]);
+      player.settlePosition(10);
+      player.tick();
+      expect(player.port.postMessage).toHaveBeenLastCalledWith({
+        type: 'position',
+        nonce: player.event.data.nonce,
+        position: 10,
+        duration: 60,
+        state: 2,
+      });
+      player.stateChange(1, 10);
+      expect(userStates(player)).toEqual([
+        {
+          type: 'user-state',
+          nonce: player.event.data.nonce,
+          paused: false,
+          position: 10,
+          revision: 12,
+        },
+      ]);
+    },
+  );
+
+  it('does not acknowledge a playing seek from a cached timer sample before its transient pause and provider state acknowledgement', async () => {
+    const player = await readyPlayer(1, false);
+    player.command({ revision: 13, paused: false, force: true, position: 10 });
+    player.settlePosition(10);
+    player.tick();
+    player.stateChange(2, 10);
+    expect(userStates(player)).toEqual([]);
+    player.stateChange(1, 10);
+    expect(userStates(player)).toEqual([]);
+    player.stateChange(2, 10);
+    expect(userStates(player)).toEqual([
+      {
+        type: 'user-state',
+        nonce: player.event.data.nonce,
+        paused: true,
+        position: 10,
+        revision: 13,
+      },
+    ]);
+  });
+
+  it('does not clear a playing seek expectation from cached PLAYING or report its transient PAUSED callback as a user pause', async () => {
+    const player = await readyPlayer(1);
+    player.command({ revision: 3, paused: false, force: true, position: 10 });
+    expect(player.playVideo).toHaveBeenCalledOnce();
+    player.command({ revision: 3, paused: false, position: 10 });
+    player.stateChange(2, 10);
+    expect(userStates(player)).toEqual([]);
+    player.stateChange(3, 10);
+    player.stateChange(1, 10);
+    expect(userStates(player)).toEqual([]);
+    player.stateChange(2, 10);
+    expect(userStates(player)).toEqual([
+      {
+        type: 'user-state',
+        nonce: player.event.data.nonce,
+        paused: true,
+        position: 10,
+        revision: 3,
+      },
+    ]);
+  });
+
+  it('does not mistake a delayed programmatic PLAYING acknowledgement for an official control gesture', async () => {
+    const player = await readyPlayer();
+    player.command({ revision: 7 });
+    expect(player.playVideo).toHaveBeenCalledOnce();
+    player.advance(5000);
+    player.stateChange(1, 5);
+    expect(userStates(player)).toEqual([]);
+    player.stateChange(2, 5.2);
+    expect(userStates(player)).toEqual([
+      {
+        type: 'user-state',
+        nonce: player.event.data.nonce,
+        paused: true,
+        position: 5.2,
+        revision: 7,
+      },
+    ]);
+  });
+
+  it('rejects older and malformed revisions while retaining same-revision local volume and playback consent', async () => {
+    const player = await readyPlayer();
+    player.command({ revision: 8, enabled: false });
+    for (const revision of [
+      7,
+      -1,
+      0.5,
+      NaN,
+      Infinity,
+      Number.MAX_SAFE_INTEGER + 1,
+    ])
+      player.command({ revision, volume: 0.1, position: 40 });
+    expect(player.setVolume).toHaveBeenCalledOnce();
+    expect(player.seekTo).not.toHaveBeenCalled();
+    expect(player.playVideo).not.toHaveBeenCalled();
+    player.command({ revision: 8, volume: 0.4, enabled: true, muted: true });
+    expect(player.setVolume).toHaveBeenLastCalledWith(40);
+    expect(player.mute).toHaveBeenCalledOnce();
+    expect(player.playVideo).toHaveBeenCalledOnce();
+  });
+
+  it('pauses buffering playback and ignores an obsolete PLAYING callback until the pause is acknowledged', async () => {
+    const player = await readyPlayer();
+    player.stateChange(3);
+    player.command({ revision: 9, paused: true });
+    expect(player.pauseVideo).toHaveBeenCalledOnce();
+    player.advance(5000);
+    player.stateChange(1);
+    expect(userStates(player)).toEqual([]);
+    player.stateChange(2);
+    expect(userStates(player)).toEqual([]);
+    player.staleStateChange(1);
+    expect(userStates(player)).toEqual([]);
+    player.stateChange(1);
+    expect(userStates(player)).toEqual([
+      {
+        type: 'user-state',
+        nonce: player.event.data.nonce,
+        paused: false,
+        position: 0,
+        revision: 9,
+      },
+    ]);
+  });
+
+  it('reports an official seek while retaining the shared pause state and applied revision', async () => {
+    const player = await readyPlayer();
+    player.command({ revision: 11, paused: true, position: 10 });
+    player.stateChange(2, 10);
+    player.port.postMessage.mockClear();
+    player.stateChange(3, 30);
+    expect(userStates(player)).toEqual([
+      {
+        type: 'user-state',
+        nonce: player.event.data.nonce,
+        paused: true,
+        position: 30,
+        revision: 11,
+        intent: 'seek',
+      },
+    ]);
+  });
+
+  it('keeps a locally paused viewer paused when seeking an otherwise playing shared video', async () => {
+    const player = await readyPlayer();
+    player.command({ revision: 11, paused: false, enabled: false });
+    player.stateChange(3, 30);
+    const [seek] = userStates(player);
+    expect(validPlayerEvent(seek, player.event.data.nonce)).toBe(true);
+    expect(youtubeLocalPlaybackChange(seek, false)).toBeUndefined();
+    expect(
+      youtubeHostAction(seek, { paused: false, position: 10, revision: 11 }),
+    ).toBe('seek');
+    player.stateChange(2, 30);
+    expect(youtubeLocalPlaybackChange(userStates(player).at(-1), false)).toBe(
+      false,
+    );
+    // A subsequent real Play still enables local playback.
+    player.stateChange(1, 30);
+    expect(youtubeLocalPlaybackChange(userStates(player).at(-1), false)).toBe(
+      true,
+    );
+  });
 });
 
 describe('independent YouTube lifecycle review', () => {
