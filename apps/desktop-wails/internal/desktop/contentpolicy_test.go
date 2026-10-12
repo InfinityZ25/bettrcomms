@@ -9,7 +9,88 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+
+	"golang.org/x/net/html"
 )
+
+func TestPackagedContentPolicySurvivesEmbeddedScriptLineEndings(t *testing.T) {
+	original := nativeRuntimeFetchScript
+	t.Cleanup(func() { nativeRuntimeFetchScript = original })
+	lf := strings.ReplaceAll(strings.ReplaceAll(original, "\r\n", "\n"), "\r", "\n")
+	if !strings.Contains(lf, "\n") {
+		t.Fatal("the real embedded runtime script must contain multiple lines")
+	}
+	report := testBoot()
+	report.PageToken = strings.Repeat("test-only-page-proof", 3)
+	var expectedSource, expectedPolicy string
+	for _, tc := range []struct{ name, script string }{
+		{"LF", lf},
+		{"CRLF", strings.ReplaceAll(lf, "\n", "\r\n")},
+		{"CR", strings.ReplaceAll(lf, "\n", "\r")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			nativeRuntimeFetchScript = tc.script
+			handler, err := NewAssetHandler(AssetOptions{
+				Dist: fstest.MapFS{"index.html": {Data: []byte("<html><head></head><body></body></html>")}},
+				Boot: func() BootReport { return report },
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/", nil))
+			if response.Code != http.StatusOK {
+				t.Fatalf("document status=%d", response.Code)
+			}
+			// Use HTML tokenisation, rather than hashing the raw response:
+			// browsers hash the parser's normalised inline script text.
+			source := inlineBootScriptText(t, response.Body.String())
+			if got := parseInjected(t, source); got.PageToken != report.PageToken {
+				t.Fatal("line-ending conversion changed the page proof")
+			}
+			if !strings.HasSuffix(source, lf) {
+				t.Fatal("the real runtime signer changed after HTML parsing")
+			}
+			digest := sha256.Sum256([]byte(source))
+			policy := response.Header().Get("Content-Security-Policy")
+			if !strings.Contains(policy, "'sha256-"+base64.StdEncoding.EncodeToString(digest[:])+"'") {
+				t.Fatal("CSP does not authorise the HTML parser's script text")
+			}
+			if tc.name == "LF" {
+				expectedSource, expectedPolicy = source, policy
+			} else if source != expectedSource || policy != expectedPolicy {
+				t.Fatal("checkout line endings changed the injected script or its CSP hash")
+			}
+		})
+	}
+}
+
+func inlineBootScriptText(t *testing.T, document string) string {
+	t.Helper()
+	tokenizer := html.NewTokenizer(strings.NewReader(document))
+	inside := false
+	var source strings.Builder
+	for {
+		switch tokenizer.Next() {
+		case html.StartTagToken:
+			name, _ := tokenizer.TagName()
+			if string(name) == "script" {
+				inside = true
+			}
+		case html.TextToken:
+			if inside {
+				source.Write(tokenizer.Text())
+			}
+		case html.EndTagToken:
+			name, _ := tokenizer.TagName()
+			if inside && string(name) == "script" {
+				return source.String()
+			}
+		case html.ErrorToken:
+			t.Fatalf("inline boot script could not be parsed: %v", tokenizer.Err())
+		}
+	}
+}
 
 func TestPackagedContentPolicyHashesTheActualBootScript(t *testing.T) {
 	calls := 0

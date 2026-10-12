@@ -63,7 +63,11 @@ func bootReportScript(report BootReport) ([]byte, error) {
 	// restores the original characters.
 	literal = escapeForScript(literal)
 
-	return []byte("window." + bootGlobal + "=JSON.parse(" + string(literal) + ");\n" + nativeRuntimeFetchScript), nil
+	// HTML normalises CRLF and CR to LF before hashing inline script text.
+	// Keep embedding and CSP hashing independent of the checkout's line endings.
+	runtimeScript := strings.ReplaceAll(nativeRuntimeFetchScript, "\r\n", "\n")
+	runtimeScript = strings.ReplaceAll(runtimeScript, "\r", "\n")
+	return []byte("window." + bootGlobal + "=JSON.parse(" + string(literal) + ");\n" + runtimeScript), nil
 }
 
 // CSP constrains document content, not top-level navigation. Development keeps
