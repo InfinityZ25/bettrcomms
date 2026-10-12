@@ -10,6 +10,20 @@ The initial preview retains the existing WorkOS **Staging** environment and user
 
 `railway.json` is the currently supported configuration used for this deployment. Railway reports its config-as-code format will retire on December 1, 2026; migrate to Railway Infrastructure as Code before then.
 
+## Isolated YouTube player
+
+Use a new `player.bettrcomms.com` custom domain on the same Railway service and
+port 8080. Preserve the existing app and Railway alias. Add Railway's returned
+CNAME and ownership TXT in Cloudflare, verify HTTPS, then set
+`YOUTUBE_PLAYER_ORIGIN=https://player.bettrcomms.com`. An empty value disables
+YouTube. The helper hostname rejects authentication, API, WebSocket and SPA
+routes before ordinary application middleware. See [player isolation and acceptance](YOUTUBE_WATCH_TOGETHER.md).
+
+Due personal reminders do not depend on VAPID configuration. Web Push credentials
+enable background alerts; they are not required for the ten-second reminder
+worker or the live personal inbox. Quiet notification policy and delivery state
+are stored in PostgreSQL and survive a backend restart.
+
 ## Native downloads
 
 The **Wails desktop preview release** GitHub Actions workflow builds a Windows x64 NSIS installer and separate macOS Apple Silicon/Intel DMGs for macOS 15 or later. Run it manually for test artifacts. GitHub Actions downloads each artifact as a ZIP containing only the DMG; tagged prereleases offer the DMGs directly. Pushing a `wails-v<version>` tag matching `apps/desktop-wails/package.json` publishes those artifacts as a GitHub prerelease after all three builds pass. Windows installers are unsigned; macOS apps are ad hoc signed but not Developer ID signed or notarized. Packaged sign-in and native media acceptance remain open in `WAILS_COMPLETION.md`.

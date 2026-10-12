@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Cable, Headphones, LogOut, Mic, MonitorUp, SlidersHorizontal, SunMoon, Shield, Monitor, UserRound } from 'lucide-react';
+import { Bell, Cable, Headphones, LogOut, Mic, MonitorUp, SlidersHorizontal, SunMoon, Shield, Monitor, UserRound } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import {
@@ -19,6 +19,7 @@ const pages = [
   { id: 'stream', label: 'Streaming', note: 'Quality while sharing', icon: SlidersHorizontal },
   { id: 'connection', label: 'Connection', note: 'How calls reach your friends', icon: Cable },
   { id: 'appearance', label: 'Appearance', note: 'Theme and camera layout', icon: SunMoon },
+  { id: 'notifications', label: 'Notifications', note: 'Quiet hours and message alerts', icon: Bell },
   { id: 'account', label: 'Account', note: 'Signed-in devices and account deletion', icon: Shield },
   { id: 'desktop', label: 'Desktop app', note: 'Startup and updates', icon: Monitor },
 ] as const satisfies ReadonlyArray<{ id: SettingsPage; label: string; note: string; icon: typeof Mic }>;

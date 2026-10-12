@@ -404,7 +404,7 @@ func (s *PostgresStore) SendStickerMessage(room, user, id, nonce string) (Messag
 	if _, err = tx.Exec(ctx, `INSERT INTO message_asset_links(message_id,asset_id) VALUES($1,$2)`, message, id); err != nil {
 		return Message{}, false, err
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO push_deliveries(message_id,subscription_id) SELECT $1,ps.id FROM room_members rm JOIN push_subscriptions ps ON ps.user_id=rm.user_id WHERE rm.room_id=$2 AND rm.user_id<>$3 AND NOT ps.dnd AND EXISTS(SELECT 1 FROM users recipient WHERE recipient.id=rm.user_id AND recipient.presence_status<>'dnd') ON CONFLICT DO NOTHING`, message, room, user)
+	_, err = tx.Exec(ctx, `INSERT INTO push_deliveries(message_id,subscription_id) SELECT $1,ps.id FROM room_members rm JOIN push_subscriptions ps ON ps.user_id=rm.user_id WHERE rm.room_id=$2 AND rm.user_id<>$3 AND NOT ps.dnd AND daily_message_push_allowed($2,rm.user_id,$1,clock_timestamp()) ON CONFLICT DO NOTHING`, message, room, user)
 	if err != nil {
 		return Message{}, false, err
 	}
@@ -440,22 +440,36 @@ func (s *PostgresStore) MessageEditHistory(room, user, id string) ([]MessageEdit
 	return out, rows.Err()
 }
 
-const watchSelect = `SELECT w.room_id::text,a.id::text,a.filename,a.content_type,a.size_bytes,w.host_id::text,w.paused,w.position_seconds,w.revision,w.updated_at,clock_timestamp(),(w.host_id IS NULL OR NOT room_has_permission(w.room_id,w.host_id,'join_voice') OR NOT room_has_permission(w.room_id,w.host_id,'post') OR w.host_seen_at<clock_timestamp()-interval '60 seconds') FROM channel_watch_sessions w JOIN message_attachments a ON a.id=w.attachment_id JOIN messages m ON m.id=a.message_id`
+const watchSelect = `SELECT w.room_id::text,a.id::text,a.filename,a.content_type,a.size_bytes,w.host_id::text,w.paused,w.position_seconds,w.revision,w.updated_at,clock_timestamp(),(w.host_id IS NULL OR NOT room_has_permission(w.room_id,w.host_id,'join_voice') OR NOT room_has_permission(w.room_id,w.host_id,'post') OR w.host_seen_at<clock_timestamp()-interval '60 seconds'),w.source_kind,w.playback_id::text FROM channel_watch_sessions w JOIN message_attachments a ON a.id=w.attachment_id JOIN messages m ON m.id=a.message_id`
 
 const watchSourceAvailable = `a.room_id=w.room_id AND m.room_id=w.room_id AND a.upload_state='ready' AND a.scan_state IN('not_required','clean') AND a.deleted_at IS NULL AND m.deleted_at IS NULL AND a.content_type LIKE 'video/%' AND EXISTS(SELECT 1 FROM users uploader WHERE uploader.id=a.uploader_id AND uploader.deleted_at IS NULL)`
 
 func scanWatch(row pgx.Row) (*WatchTogetherState, error) {
 	v := &WatchTogetherState{}
-	err := row.Scan(&v.RoomID, &v.Attachment.ID, &v.Attachment.Filename, &v.Attachment.ContentType, &v.Attachment.SizeBytes, &v.HostID, &v.Paused, &v.PositionSeconds, &v.Revision, &v.UpdatedAt, &v.ServerTime, &v.CanClaim)
+	err := row.Scan(&v.RoomID, &v.Attachment.ID, &v.Attachment.Filename, &v.Attachment.ContentType, &v.Attachment.SizeBytes, &v.HostID, &v.Paused, &v.PositionSeconds, &v.Revision, &v.UpdatedAt, &v.ServerTime, &v.CanClaim, &v.SourceKind, &v.PlaybackID)
 	if err != nil {
 		return nil, norm(err)
 	}
 	return v, nil
 }
 func (s *PostgresStore) watchTogether(room, user string) (*WatchTogetherState, error) {
+	if value, err := s.youtubeWatch(room, user); !errors.Is(err, ErrNotFound) {
+		return value, err
+	}
 	return scanWatch(s.DB.QueryRow(context.Background(), watchSelect+` WHERE w.room_id=$1 AND room_has_permission(w.room_id,$2,'join_voice') AND `+watchSourceAvailable, room, user))
 }
 func (s *PostgresStore) ChangeWatchTogether(room, user string, in WatchTogetherCommand) (*WatchTogetherState, error) {
+	var source string
+	errSource := s.DB.QueryRow(context.Background(), `SELECT source_kind FROM channel_watch_sessions WHERE room_id=$1`, room).Scan(&source)
+	if errSource != nil && !errors.Is(errSource, pgx.ErrNoRows) {
+		return nil, errSource
+	}
+	if in.SourceKind == "youtube" || source == "youtube" {
+		if !in.WatchSources {
+			return nil, ErrConflict
+		}
+		return s.changeYouTubeWatch(room, user, in)
+	}
 	if !validWatchCommand(in) {
 		return nil, ErrForbidden
 	}
@@ -488,8 +502,9 @@ func (s *PostgresStore) ChangeWatchTogether(room, user string, in WatchTogetherC
 	}
 	var host *string
 	var revision int64
+	var currentPlayback string
 	var claim, available bool
-	err = tx.QueryRow(ctx, `SELECT w.host_id::text,w.revision,(w.host_id IS NULL OR NOT room_has_permission(w.room_id,w.host_id,'join_voice') OR NOT room_has_permission(w.room_id,w.host_id,'post') OR w.host_seen_at<clock_timestamp()-interval '60 seconds'),EXISTS(SELECT 1 FROM message_attachments a JOIN messages m ON m.id=a.message_id WHERE a.id=w.attachment_id AND `+watchSourceAvailable+`) FROM channel_watch_sessions w WHERE w.room_id=$1 FOR UPDATE`, room).Scan(&host, &revision, &claim, &available)
+	err = tx.QueryRow(ctx, `SELECT w.host_id::text,w.revision,(w.host_id IS NULL OR NOT room_has_permission(w.room_id,w.host_id,'join_voice') OR NOT room_has_permission(w.room_id,w.host_id,'post') OR w.host_seen_at<clock_timestamp()-interval '60 seconds'),EXISTS(SELECT 1 FROM message_attachments a JOIN messages m ON m.id=a.message_id WHERE a.id=w.attachment_id AND `+watchSourceAvailable+`),w.playback_id::text FROM channel_watch_sessions w WHERE w.room_id=$1 FOR UPDATE`, room).Scan(&host, &revision, &claim, &available, &currentPlayback)
 	removed := err == nil && !available
 	if removed {
 		// Readers expose an unavailable source as watch:null. Clear its hidden
@@ -514,7 +529,7 @@ func (s *PostgresStore) ChangeWatchTogether(room, user string, in WatchTogetherC
 	} else if err != nil {
 		return nil, err
 	} else {
-		if in.Revision != revision {
+		if in.Revision != revision || in.WatchSources && in.PlaybackID != currentPlayback {
 			return nil, ErrConflict
 		}
 		owns := host != nil && *host == user
@@ -528,7 +543,7 @@ func (s *PostgresStore) ChangeWatchTogether(room, user string, in WatchTogetherC
 	}
 	switch in.Action {
 	case "start":
-		_, err = tx.Exec(ctx, `INSERT INTO channel_watch_sessions(room_id,attachment_id,host_id) VALUES($1,$2,$3) ON CONFLICT(room_id) DO UPDATE SET attachment_id=EXCLUDED.attachment_id,host_id=EXCLUDED.host_id,paused=true,position_seconds=0,revision=channel_watch_sessions.revision+1,updated_at=clock_timestamp(),host_seen_at=clock_timestamp()`, room, in.AttachmentID, user)
+		_, err = tx.Exec(ctx, `INSERT INTO channel_watch_sessions(room_id,attachment_id,host_id) VALUES($1,$2,$3) ON CONFLICT(room_id) DO UPDATE SET attachment_id=EXCLUDED.attachment_id,source_kind='attachment',youtube_id=NULL,youtube_title=NULL,playback_id=gen_random_uuid(),host_id=EXCLUDED.host_id,paused=true,position_seconds=0,revision=channel_watch_sessions.revision+1,updated_at=clock_timestamp(),host_seen_at=clock_timestamp()`, room, in.AttachmentID, user)
 	case "stop":
 		_, err = tx.Exec(ctx, `DELETE FROM channel_watch_sessions WHERE room_id=$1`, room)
 	case "heartbeat":

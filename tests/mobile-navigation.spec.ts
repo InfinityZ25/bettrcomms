@@ -36,7 +36,7 @@ async function login(
   }
 }
 
-test('mobile sections open full-screen lists without interrupting an active call', async ({ browser }) => {
+test('mobile sections open full-screen lists without interrupting an active call', async ({ browser }, testInfo) => {
   const context = await browser.newContext({ baseURL, viewport: { width: 390, height: 650 }, hasTouch: true, isMobile: true });
   try {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -53,7 +53,7 @@ test('mobile sections open full-screen lists without interrupting an active call
       await page.setViewportSize(size);
       await expect(tabs.getByRole('button', { name: 'Friends', exact: true })).toBeHidden();
       if (size.width <= 820) {
-        await expect(tabs.getByRole('button', { name: /^Event reminders/ })).toBeVisible();
+        await expect(tabs.getByRole('button', { name: /^Personal inbox/ })).toBeVisible();
         await expect(tabs.getByRole('button')).toHaveCount(5);
       }
       await tabs.getByRole('button', { name: 'Rooms', exact: true }).click();
@@ -67,7 +67,7 @@ test('mobile sections open full-screen lists without interrupting an active call
       await expect(list).toBeHidden();
       await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
     }
-    await page.screenshot({ path: '.local/mobile-ui-review/mobile-call.png' });
+    await page.screenshot({ path: testInfo.outputPath('mobile-call.png') });
     await page.setViewportSize({ width: 1280, height: 800 });
     await expect(tabs.getByRole('button', { name: 'Friends', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();

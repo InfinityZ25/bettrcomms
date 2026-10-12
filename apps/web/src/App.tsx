@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useEffectEvent,
   useRef,
   useState,
   lazy,
@@ -30,6 +31,7 @@ import { onDesktopNotificationClick } from '@/desktop/notifications';
 import MessageSearch from '@/features/chat/MessageSearch';
 import MessagingSession from '@/features/chat/MessagingSession';
 import { stopPushForThisBrowser } from '@/features/chat/notificationSettings';
+import { openPersonalInbox } from '@/features/personal/inboxEvents';
 import DirectConversation from '@/features/chat/DirectConversation';
 import FriendsDialog from '@/features/friends/FriendsDialog';
 import RecordingsLibrary from '@/features/recordings/RecordingsLibrary';
@@ -204,6 +206,16 @@ export default function App() {
     const found = rooms.find((candidate) => candidate.id === roomId);
     if (found) selectRoom(found);
   };
+  const notificationNavigation = useEffectEvent((data: { roomId?: unknown; personalInbox?: unknown }) => {
+    if (data.personalInbox === 'reminders') openPersonalInbox('reminders');
+    else if (typeof data.roomId === 'string') openRoomById(data.roomId);
+  });
+  useMountEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+    const clicked = (event: MessageEvent) => { if (event.data?.type === 'bc-notification-click') notificationNavigation(event.data); };
+    navigator.serviceWorker.addEventListener('message', clicked);
+    return () => navigator.serviceWorker.removeEventListener('message', clicked);
+  });
   /*
     Clicking a desktop notification. The host brings the window back, which is
     the half the page cannot do; this is the half it cannot: opening what the
@@ -218,7 +230,7 @@ export default function App() {
       window.history.replaceState(null, '', url);
     }
     return onDesktopNotificationClick(({ data }) => {
-      if (typeof data.roomId === 'string') openRoomById(data.roomId);
+      notificationNavigation(data);
     });
   }, [rooms]);
   const selectRoom = (next: Room) => {
@@ -478,6 +490,7 @@ export default function App() {
       )}
       {user && (
         <MessageSearch
+          key={user.id}
           user={user}
           rooms={rooms}
           onOpen={(next, id) => {
@@ -802,6 +815,10 @@ export default function App() {
               <ActivityReminderInbox
                 key={user.id}
                 user={user}
+                onOpenMessage={(roomId, messageId) => {
+                  const next = rooms.find((candidate) => candidate.id === roomId);
+                  if (next) { selectRoom(next); setMessageTarget({ room: roomId, id: messageId }); setChatColumn(true); setChannelChat(true); }
+                }}
                 onOpenRoom={(id) => {
                   const next = rooms.find((candidate) => candidate.id === id);
                   if (next) {

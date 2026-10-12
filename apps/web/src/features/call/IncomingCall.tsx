@@ -4,7 +4,7 @@ import type { CallParticipant, Room, User } from '@/api';
 import { Avatar } from '@/components/avatar';
 import { Button } from '@/components/ui/button';
 import { clearDesktopNotification, notifyDesktop } from '@/desktop/notifications';
-import { notificationSnapshot, subscribeNotifications } from '@/features/chat/notificationSettings';
+import { notificationSnapshot, roomIsMuted, subscribeNotifications } from '@/features/chat/notificationSettings';
 import { isConversationRoom } from '@/features/shell/sections';
 import { loopSound, stopSound } from '@/media/sounds';
 import { roomLabel } from '@/features/rooms/RoomNavigation';
@@ -68,22 +68,22 @@ export default function IncomingCall({
       const wasBusy = busy.current.has(room.id);
       busy.current.add(room.id);
       if (!wasBusy && !settled.current.has(room.id)) {
-        if (notifications.dnd || notifications.rooms[room.id] === 'mute') settled.current.add(room.id);
+        if (!notifications.ready || notifications.dnd || roomIsMuted(room.id, notifications)) settled.current.add(room.id);
         else started = room;
       }
     }
 
     // Your own call is never an incoming one, and neither is a room you left.
-    if (joined || !user || notifications.dnd) {
+    if (joined || !user || !notifications.ready || notifications.dnd) {
       setRinging(null);
       return;
     }
     if (started) setRinging(started);
     else
       setRinging((current) =>
-        current && busy.current.has(current.id) && notifications.rooms[current.id] !== 'mute' ? current : null,
+        current && busy.current.has(current.id) && !roomIsMuted(current.id, notifications) ? current : null,
       );
-  }, [rooms, presence, joined, user?.id, notifications.dnd, notifications.rooms]);
+  }, [rooms, presence, joined, user?.id, notifications]);
 
   // The sound and the toast belong to the ring, so they start and stop with it.
   useEffect(() => {

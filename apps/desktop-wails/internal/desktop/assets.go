@@ -12,6 +12,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"path"
+	"runtime"
 	"strings"
 )
 
@@ -62,14 +63,29 @@ func bootReportScript(report BootReport) ([]byte, error) {
 	// restores the original characters.
 	literal = escapeForScript(literal)
 
-	return []byte("window." + bootGlobal + "=JSON.parse(" + string(literal) + ");"), nil
+	// HTML normalises CRLF and CR to LF before hashing inline script text.
+	// Keep embedding and CSP hashing independent of the checkout's line endings.
+	runtimeScript := strings.ReplaceAll(nativeRuntimeFetchScript, "\r\n", "\n")
+	runtimeScript = strings.ReplaceAll(runtimeScript, "\r", "\n")
+	return []byte("window." + bootGlobal + "=JSON.parse(" + string(literal) + ");\n" + runtimeScript), nil
 }
 
 // CSP constrains document content, not top-level navigation. Development keeps
 // Vite's inline refresh preamble; packaged scripts are local modules plus the
 // exact boot script hash, never unrestricted inline JavaScript or eval.
 func documentContentPolicy(report BootReport, development bool) (string, error) {
-	base := "base-uri 'none'; object-src 'none'; frame-src 'none'; frame-ancestors 'none'; form-action 'none'"
+	return documentContentPolicyForPlatform(report, development, runtime.GOOS)
+}
+
+func documentContentPolicyForPlatform(report BootReport, development bool, platform string) (string, error) {
+	frames := "https://player.bettrcomms.com"
+	if platform != "windows" {
+		// WKWebView and WebKitGTK expose Wails' raw native message handler to
+		// child frames. Only Windows has the required frame message boundary;
+		// other native targets stay disabled until their isolation is accepted.
+		frames = "'none'"
+	}
+	base := "base-uri 'none'; object-src 'none'; frame-src " + frames + "; frame-ancestors 'none'; form-action 'none'"
 	if development {
 		return base, nil
 	}

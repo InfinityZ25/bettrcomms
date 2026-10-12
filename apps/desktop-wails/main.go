@@ -180,7 +180,8 @@ func run() error {
 			DisableBounce:             true,
 		},
 		Assets: application.AssetOptions{
-			Handler: handler,
+			Handler:    handler,
+			Middleware: desktop.NativeRuntimeMiddleware(gate, debug),
 		},
 		Services: append(services(&AuthService{signIn: signIn, gate: gate}, media, toasts, tray), application.NewService(preferences), application.NewService(updateService)),
 		Windows: application.WindowsOptions{

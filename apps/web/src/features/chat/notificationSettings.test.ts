@@ -10,7 +10,8 @@ import {
   startNotificationSession,
 } from './notificationSettings';
 
-vi.mock('@/api', () => ({ api: vi.fn() }));
+vi.mock('@/api', async (original) => ({ ...(await original<typeof import('@/api')>()), api: vi.fn() }));
+const quiet = () => ({ version: 0, enabled: false, timezone: 'UTC', weekdays: [], start_time: '23:00', end_time: '08:00', active: false, server_time: new Date().toISOString(), account_dnd: false });
 const desktop = vi.hoisted(() => ({ available: false, authorise: vi.fn() }));
 vi.mock('@/desktop/notifications', () => ({
   desktopNotificationsAvailable: () => desktop.available,
@@ -49,11 +50,14 @@ describe('notification preferences', () => {
   });
   it('keeps a saved mode when an older preference request finishes later', async () => {
     let finishLoad!: (value: { rooms: Record<string, 'all' | 'mentions' | 'mute'> }) => void;
-    vi.mocked(api).mockImplementation((_path, _body, method) =>
-      method === 'PUT'
-        ? Promise.resolve({})
-        : new Promise((resolve) => { finishLoad = resolve; }),
-    );
+    let loaded = false;
+    let mode: 'all' | 'mute' = 'all';
+    vi.mocked(api).mockImplementation((path, _body, method) => {
+      if (path === '/me/quiet-hours') return Promise.resolve(quiet());
+      if (method === 'PUT') { mode = 'mute'; return Promise.resolve({}); }
+      if (!loaded) { loaded = true; return new Promise((resolve) => { finishLoad = resolve; }); }
+      return Promise.resolve({ rooms: { room: mode }, versions: { room: 1 } });
+    });
     stop = startNotificationSession('user');
     await setRoomNotificationMode('room', 'mute');
     finishLoad({ rooms: { room: 'all' } });
@@ -63,9 +67,8 @@ describe('notification preferences', () => {
 
   it('retries a temporary load failure and becomes ready', async () => {
     vi.useFakeTimers();
-    vi.mocked(api)
-      .mockRejectedValueOnce(new Error('temporarily offline'))
-      .mockResolvedValueOnce({ rooms: { room: 'mentions' } });
+    let attempts = 0;
+    vi.mocked(api).mockImplementation((path) => path === '/me/quiet-hours' ? Promise.resolve(quiet()) : ++attempts === 1 ? Promise.reject(new Error('temporarily offline')) : Promise.resolve({ rooms: { room: 'mentions' } }));
     stop = startNotificationSession('user');
     await vi.advanceTimersByTimeAsync(2000);
     expect(notificationSnapshot()).toMatchObject({ ready: true, rooms: { room: 'mentions' } });
@@ -114,7 +117,7 @@ describe('notification preferences', () => {
     stop = startNotificationSession('user');
     expect(await setSystemNotifications(true)).toBe(true);
     expect(notificationSnapshot().background).toBe(true);
-    expect(vi.mocked(api)).toHaveBeenCalledWith('/push/subscription', { endpoint: subscription.endpoint, keys: { p256dh: 'key', auth: 'auth' }, dnd: false }, 'POST');
+    expect(vi.mocked(api)).toHaveBeenCalledWith('/push/subscription', { endpoint: subscription.endpoint, keys: { p256dh: 'key', auth: 'auth' }, dnd: false, device_id: expect.any(String) }, 'POST');
     setDoNotDisturb(true);
     await vi.waitFor(() => expect(vi.mocked(api)).toHaveBeenCalledWith('/push/subscription', expect.objectContaining({ dnd: true }), 'POST'));
     await setSystemNotifications(false);
@@ -179,7 +182,7 @@ describe('notification preferences', () => {
     stop = startNotificationSession('user');
     expect(await setSystemNotifications(true)).toBe(true);
     await notifyBrowser('Alice', 'Hello', () => {}, 'room-1');
-    expect(notification).toHaveBeenCalledWith('Alice', { body: 'Hello', tag: 'message:room-1' });
+    expect(notification).toHaveBeenCalledWith('Alice', { body: 'Hello', tag: 'message:room-1', data: { roomId: 'room-1' } });
   });
 
   it('uses a persistent notification when Web Push is registered', async () => {

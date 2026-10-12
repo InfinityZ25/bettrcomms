@@ -3,7 +3,7 @@ import type { Message, Room, User } from '@/api';
 import { notifyDesktop } from '@/desktop/notifications';
 import { playSound } from '@/media/sounds';
 import { useActiveCall } from './CallSessionContext';
-import { notificationSnapshot, notifyBrowser, subscribeNotifications } from '@/features/chat/notificationSettings';
+import { notificationSnapshot, notifyBrowser, roomIsMuted, subscribeNotifications } from '@/features/chat/notificationSettings';
 
 /** True when this window is not the one being looked at. */
 const away = () => document.hidden || !document.hasFocus();
@@ -97,14 +97,19 @@ export default function CallAlerts({
   useEffect(() => {
     if (lastSeen.current.userId !== user?.id)
       lastSeen.current = { userId: user?.id, sequence: 0 };
-    if (!user || !notifications.ready) return;
+    if (!user) return;
+    if (!notifications.ready) {
+      const latest = messages.at(-1);
+      if (latest) lastSeen.current.sequence = Math.max(lastSeen.current.sequence, latest.sequence);
+      return;
+    }
     const fresh = messages.filter(
       (entry) =>
         entry.sequence > lastSeen.current.sequence &&
         entry.value.author.id !== user?.id &&
         Date.now() - Date.parse(entry.value.created_at) < STALE_AFTER &&
         !notifications.dnd &&
-        notifications.rooms[entry.value.room_id] !== 'mute' &&
+        !roomIsMuted(entry.value.room_id, notifications) &&
         (notifications.rooms[entry.value.room_id] !== 'mentions' ||
           entry.value.mentions?.some((mention) => mention.id === user?.id)),
     );

@@ -129,7 +129,7 @@ func (s *PostgresStore) DismissMessageReport(room, actor, reportID string) error
 }
 
 func (s *PostgresStore) NotificationPreferences(user string) (map[string]string, error) {
-	rows, err := s.DB.Query(context.Background(), `SELECT p.room_id::text,p.mode FROM room_notification_preferences p JOIN room_members rm ON rm.room_id=p.room_id AND rm.user_id=p.user_id WHERE p.user_id=$1`, user)
+	rows, err := s.DB.Query(context.Background(), `SELECT p.room_id::text,p.mode FROM room_notification_preferences p JOIN room_members rm ON rm.room_id=p.room_id AND rm.user_id=p.user_id WHERE p.user_id=$1 AND can_access_room(p.room_id,$1)`, user)
 	if err != nil {
 		return nil, err
 	}
@@ -146,11 +146,5 @@ func (s *PostgresStore) NotificationPreferences(user string) (map[string]string,
 }
 
 func (s *PostgresStore) SetNotificationPreference(room, user, mode string) error {
-	tag, err := s.DB.Exec(context.Background(), `INSERT INTO room_notification_preferences(room_id,user_id,mode)
-		SELECT $1,$2,$3 WHERE EXISTS(SELECT 1 FROM room_members WHERE room_id=$1 AND user_id=$2)
-		ON CONFLICT(room_id,user_id) DO UPDATE SET mode=EXCLUDED.mode`, room, user, mode)
-	if err == nil && tag.RowsAffected() == 0 {
-		return ErrForbidden
-	}
-	return err
+	return s.SetTimedNotificationPreference(context.Background(), room, user, &mode, nil, false)
 }

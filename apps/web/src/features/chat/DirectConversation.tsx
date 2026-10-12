@@ -31,6 +31,7 @@ import { conversationSnapshot, markRead } from './messageStore';
 import { openConversationPanel } from './conversationPanels';
 import { ChannelActivities } from '@/features/activities/ChannelActivities';
 import ChannelFileLibrary from './ChannelFileLibrary';
+import { TimedMuteDialog, TimedMuteIndicator, TimedMuteMenuItems } from '@/features/personal/TimedMute';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -77,6 +78,7 @@ export default function DirectConversation({
 }) {
   const call = useActiveCall();
   const [filesOpen, setFilesOpen] = useState(false);
+  const [muteOpen, setMuteOpen] = useState(false);
   const name = roomLabel(room);
   const inThisCall = call.joined && call.callRoom?.id === room.id;
   const channel = (room.kind ?? 'channel') === 'channel';
@@ -161,6 +163,9 @@ export default function DirectConversation({
           </span>
         </div>
         {/* The one place the conversation reaches for the call: pressing this
+        */}
+        <TimedMuteIndicator roomId={room.id} />
+        {/*
             starts it, rather than opening a lobby to press again. */}
         {canJoinVoice && !alreadyIn && (!inThisCall || channel) && (
           <Button
@@ -230,7 +235,7 @@ export default function DirectConversation({
               <Button
                 variant="ghost"
                 size="icon"
-                className="hidden shrink-0 phone:inline-flex phone:size-11 @max-[480px]/conversation:inline-flex @max-[480px]/conversation:size-11"
+                className="shrink-0 phone:size-11 @max-[480px]/conversation:size-11"
                 aria-label="Conversation options"
               />
             }
@@ -238,6 +243,7 @@ export default function DirectConversation({
             <MoreHorizontal size={21} />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="min-w-52">
+            {user && <TimedMuteMenuItems roomId={room.id} onCustom={() => setMuteOpen(true)} onError={onError} />}
             {user && (
               <DropdownMenuItem
                 className="min-h-11"
@@ -338,6 +344,7 @@ export default function DirectConversation({
           onClose={() => setFilesOpen(false)}
         />
       )}
+      {muteOpen && <TimedMuteDialog roomId={room.id} onClose={() => setMuteOpen(false)} />}
     </section>
   );
 }

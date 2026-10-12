@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -442,23 +443,19 @@ func TestMessagingMigrationWithExistingHistory(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	apply("003_messaging.sql")
-	apply("004_messaging_complete.sql")
-	apply("005_attachment_cleanup_attempts.sql")
-	apply("006_attachment_lifecycle.sql")
-	apply("007_dm_privacy.sql")
-	apply("008_web_push.sql")
-	apply("009_social_basics.sql")
-	apply("010_conversation_threads_pins.sql")
-	apply("011_moderation.sql")
-	apply("012_account_sessions.sql")
-	apply("013_daily_communication.sql")
-	apply("014_activity_thread_replies.sql")
-	apply("015_attachment_limits.sql")
-	apply("016_communities_channels_roles.sql")
-	apply("017_storage_features.sql")
-	apply("018_custom_permissions.sql")
-	apply("019_channel_activities.sql")
+	// Seed genuine pre-messaging history above, then upgrade through every
+	// current migration. Production methods require the complete schema.
+	files, err := filepath.Glob("../../migrations/*.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	slices.Sort(files)
+	for _, file := range files {
+		base := filepath.Base(file)
+		if base != "001_init.sql" && base != "002_direct_rooms.sql" {
+			apply(base)
+		}
+	}
 	store := &PostgresStore{DB: db}
 	seen := []string{}
 	cursor := ""
@@ -509,7 +506,13 @@ func TestMessagingMigrationWithExistingHistory(t *testing.T) {
 	if _, err = db.Exec(ctx, `INSERT INTO messages(room_id,author_id,body) VALUES($1,$2,'')`, room, alice); err != nil {
 		t.Fatal(err)
 	}
-	for _, file := range []string{"003_messaging.sql", "004_messaging_complete.sql", "005_attachment_cleanup_attempts.sql", "006_attachment_lifecycle.sql", "007_dm_privacy.sql", "008_web_push.sql", "009_social_basics.sql", "010_conversation_threads_pins.sql", "011_moderation.sql", "012_account_sessions.sql", "013_daily_communication.sql", "014_activity_thread_replies.sql", "015_attachment_limits.sql", "016_communities_channels_roles.sql"} {
-		apply(file)
+	for _, file := range files {
+		apply(filepath.Base(file))
+	}
+	checkUnread(bob, 2, baseline)
+	checkUnread(carol, 2, baseline)
+	var preserved int
+	if err = db.QueryRow(ctx, `SELECT count(*) FROM messages WHERE id=ANY($1::uuid[]) AND body LIKE 'old %'`, oldIDs).Scan(&preserved); err != nil || preserved != len(oldIDs) {
+		t.Fatalf("replayed migrations lost original history: %d %v", preserved, err)
 	}
 }

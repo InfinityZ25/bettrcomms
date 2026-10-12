@@ -27,22 +27,48 @@ func (a *API) messagingGlobal(w http.ResponseWriter, r *http.Request, u User, pa
 		}
 		if r.Method == "GET" {
 			preferences, err := store.NotificationPreferences(u.ID)
-			a.result(w, map[string]any{"rooms": preferences}, err)
+			mutes, muteErr := store.TimedNotificationMutes(r.Context(), u.ID)
+			versions, versionErr := store.NotificationPreferenceVersions(r.Context(), u.ID)
+			if err == nil {
+				err = muteErr
+			}
+			if err == nil {
+				err = versionErr
+			}
+			a.result(w, map[string]any{"rooms": preferences, "muted_until": mutes, "versions": versions}, err)
 			return
 		}
 		if r.Method == "PUT" {
 			var in struct {
-				RoomID string `json:"room_id"`
-				Mode   string `json:"mode"`
+				RoomID          string          `json:"room_id"`
+				Mode            *string         `json:"mode"`
+				MutedUntil      json.RawMessage `json:"muted_until"`
+				ExpectedVersion *int64          `json:"expected_version"`
 			}
 			if !a.decode(w, r, &in) {
 				return
 			}
-			if !uuidPattern.MatchString(in.RoomID) || (in.Mode != "all" && in.Mode != "mentions" && in.Mode != "mute") {
+			if !uuidPattern.MatchString(in.RoomID) || (in.Mode != nil && *in.Mode != "all" && *in.Mode != "mentions" && *in.Mode != "mute") || in.Mode == nil && len(in.MutedUntil) == 0 {
 				a.fail(w, 400, "invalid_preference", "choose a conversation and notification mode")
 				return
 			}
-			err := store.SetNotificationPreference(in.RoomID, u.ID, in.Mode)
+			var until *time.Time
+			if len(in.MutedUntil) > 0 && string(in.MutedUntil) != "null" {
+				var parsed time.Time
+				if json.Unmarshal(in.MutedUntil, &parsed) != nil || !parsed.After(time.Now()) || parsed.After(time.Now().Add(366*24*time.Hour)) {
+					a.fail(w, 400, "invalid_mute", "choose a future mute deadline within one year")
+					return
+				}
+				until = &parsed
+			}
+			if in.ExpectedVersion != nil && *in.ExpectedVersion < 0 {
+				a.fail(w, 400, "invalid_preference", "choose a valid preference version")
+				return
+			}
+			err := store.SetTimedNotificationPreference(r.Context(), in.RoomID, u.ID, in.Mode, until, len(in.MutedUntil) > 0, in.ExpectedVersion)
+			if err == nil {
+				a.publishPersonalInvalidation(u.ID, "notification.policy.changed")
+			}
 			a.result(w, map[string]bool{"ok": true}, err)
 			return
 		}
@@ -219,11 +245,13 @@ func (a *API) messagingRoom(w http.ResponseWriter, r *http.Request, u User, p []
 		message, err = postgres.ModerateMessage(room, u.ID, p[3], in.Reason)
 	case len(p) == 3 && r.Method == "POST", len(p) == 4 && r.Method == "PATCH":
 		var in struct {
-			Body          string   `json:"body"`
-			ReplyID       string   `json:"reply_to_id"`
-			ThreadRootID  string   `json:"thread_root_id"`
-			ClientNonce   string   `json:"client_nonce"`
-			AttachmentIDs []string `json:"attachment_ids"`
+			Body            string   `json:"body"`
+			ReplyID         string   `json:"reply_to_id"`
+			ThreadRootID    string   `json:"thread_root_id"`
+			ClientNonce     string   `json:"client_nonce"`
+			AttachmentIDs   []string `json:"attachment_ids"`
+			DraftVersion    *int64   `json:"draft_version"`
+			DraftMutationID string   `json:"draft_mutation_id"`
 		}
 		if !a.decode(w, r, &in) {
 			return
@@ -233,12 +261,16 @@ func (a *API) messagingRoom(w http.ResponseWriter, r *http.Request, u User, p []
 			a.fail(w, 400, "invalid_body", "body must be 1–4000 characters, or include an attachment")
 			return
 		}
-		if len(p) == 4 && (in.ClientNonce != "" || len(in.AttachmentIDs) != 0 || in.ThreadRootID != "") {
+		if len(p) == 4 && (in.ClientNonce != "" || len(in.AttachmentIDs) != 0 || in.ThreadRootID != "" || in.DraftVersion != nil || in.DraftMutationID != "") {
 			a.fail(w, 400, "invalid_edit", "attachments cannot be changed while editing")
 			return
 		}
 		if in.ClientNonce != "" && !uuidPattern.MatchString(in.ClientNonce) {
 			a.fail(w, 400, "invalid_nonce", "invalid send key")
+			return
+		}
+		if in.DraftVersion != nil && *in.DraftVersion < 0 || in.DraftMutationID != "" && (in.DraftVersion == nil || !uuidPattern.MatchString(in.DraftMutationID)) {
+			a.fail(w, 400, "invalid_draft", "choose a valid submitted draft revision")
 			return
 		}
 		if len(in.AttachmentIDs) > 4 {
@@ -250,6 +282,30 @@ func (a *API) messagingRoom(w http.ResponseWriter, r *http.Request, u User, p []
 			id = p[3]
 		} else {
 			event = "chat.message"
+			if in.DraftVersion != nil {
+				postgres, ok := a.Store.(*PostgresStore)
+				if !ok {
+					a.fail(w, 503, "unavailable", "draft synchronization unavailable")
+					return
+				}
+				if in.DraftMutationID == "" {
+					in.DraftMutationID, err = randomAttachmentID()
+					if err != nil {
+						a.result(w, nil, err)
+						return
+					}
+				}
+				if in.ThreadRootID != "" && !uuidPattern.MatchString(in.ThreadRootID) {
+					a.fail(w, 400, "invalid_thread", "choose a thread in this conversation")
+					return
+				}
+				message, publish, err = postgres.SendMessageWithDraft(room, u.ID, in.Body, in.ReplyID, in.ClientNonce, in.AttachmentIDs, in.ThreadRootID, DraftSendClear{Version: *in.DraftVersion, MutationID: in.DraftMutationID})
+				if err == nil && publish {
+					status = http.StatusCreated
+					a.publishPersonalInvalidation(u.ID, "personal.drafts.changed")
+				}
+				break
+			}
 			if in.ThreadRootID != "" {
 				if !uuidPattern.MatchString(in.ThreadRootID) {
 					a.fail(w, 400, "invalid_thread", "choose a thread in this conversation")

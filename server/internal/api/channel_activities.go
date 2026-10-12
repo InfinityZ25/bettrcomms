@@ -44,6 +44,9 @@ type ChannelEventReminder struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 type WatchTogetherState struct {
+	SourceKind      string            `json:"source_kind"`
+	PlaybackID      string            `json:"playback_id"`
+	YouTube         *YouTubeVideo     `json:"youtube,omitempty"`
 	RoomID          string            `json:"room_id"`
 	Attachment      MessageAttachment `json:"attachment"`
 	HostID          *string           `json:"host_id"`
@@ -55,6 +58,12 @@ type WatchTogetherState struct {
 	CanClaim        bool              `json:"can_claim"`
 }
 type WatchTogetherCommand struct {
+	SourceKind      string  `json:"source_kind"`
+	VideoURL        string  `json:"video_url"`
+	Title           string  `json:"title"`
+	PlaybackID      string  `json:"playback_id"`
+	YouTubeID       string  `json:"-"`
+	WatchSources    bool    `json:"-"`
 	Action          string  `json:"action"`
 	AttachmentID    string  `json:"attachment_id"`
 	HostID          string  `json:"host_id"`
@@ -175,6 +184,9 @@ func (a *API) routeActivityFeatures(w http.ResponseWriter, r *http.Request, p []
 	}
 	if r.Method == http.MethodGet && p[2] == "activities" && len(p) == 3 {
 		v, e := s.ChannelActivities(room, u.ID)
+		if v.Watch != nil && v.Watch.SourceKind == "youtube" && !strings.Contains(","+r.URL.Query().Get("watch_sources")+",", ",youtube,") {
+			v.Watch = nil
+		}
 		a.result(w, v, e)
 		return true
 	}
@@ -278,6 +290,19 @@ func (a *API) routeActivityFeatures(w http.ResponseWriter, r *http.Request, p []
 			return true
 		}
 		var v *WatchTogetherState
+		in.WatchSources = strings.Contains(","+r.URL.Query().Get("watch_sources")+",", ",youtube,")
+		if in.SourceKind == "youtube" {
+			if !in.WatchSources || a.Config.YouTubePlayerOrigin == "" {
+				a.fail(w, 503, "youtube_unavailable", "YouTube playback is not configured")
+				return true
+			}
+			video, err := a.youtubeVideo(r.Context(), in.VideoURL, in.Title)
+			if err != nil {
+				a.fail(w, 400, "invalid_youtube", "Use a YouTube video or Shorts HTTPS link")
+				return true
+			}
+			in.YouTubeID, in.Title = video.ID, video.Title
+		}
 		v, e = s.ChangeWatchTogether(room, u.ID, in)
 		if e == nil && in.Action != "heartbeat" {
 			a.publishChannelActivity(room, "watch-together")
@@ -397,6 +422,10 @@ func validWatchCommand(in WatchTogetherCommand) bool {
 	}
 	switch in.Action {
 	case "start":
+		if in.SourceKind == "youtube" {
+			_, err := canonicalYouTubeID(in.VideoURL)
+			return err == nil
+		}
 		return uuidPattern.MatchString(in.AttachmentID)
 	case "play", "pause", "seek", "stop", "claim", "heartbeat":
 		return true

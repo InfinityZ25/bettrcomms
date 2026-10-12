@@ -31,6 +31,7 @@ type Config struct {
 	TURNURLs                                                []string
 	TURNSecret                                              string
 	WebDist                                                 string
+	YouTubePlayerOrigin                                     string
 	VAPIDPublicKey, VAPIDPrivateKey, VAPIDSubject           string
 	// SFUURL is the public wss:// endpoint clients open once they hold a
 	// join token (see sfuJoin). Empty means no SFU is configured yet and
@@ -85,7 +86,7 @@ func (a *API) Handler() http.Handler {
 	m := http.NewServeMux()
 	m.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { a.json(w, 200, map[string]any{"status": "ok"}) })
 	m.HandleFunc("GET /api/v1/config", func(w http.ResponseWriter, r *http.Request) {
-		a.json(w, 200, map[string]any{"dev_auth": a.Config.DevAuth, "attachments": a.attachmentConfig(), "ice_servers": []map[string]any{{"urls": a.Config.ICEURLs}}})
+		a.json(w, 200, map[string]any{"dev_auth": a.Config.DevAuth, "attachments": a.attachmentConfig(), "watch_together": a.YouTubeConfig(), "ice_servers": []map[string]any{{"urls": a.Config.ICEURLs}}})
 	})
 	m.Handle("GET /api/v1/auth/login", a.rate("auth", 10, time.Minute, http.HandlerFunc(a.login)))
 	m.HandleFunc("GET /api/v1/auth/callback", a.callback)
@@ -129,7 +130,7 @@ func (a *API) Handler() http.Handler {
 	if a.Config.WebDist != "" {
 		m.Handle("/", spaHandler(a.Config.WebDist))
 	}
-	return a.security(m)
+	return a.WithYouTubePlayerHandler(a.security(m))
 }
 func spaHandler(root string) http.Handler {
 	files := http.FileServer(http.Dir(root))
@@ -163,7 +164,11 @@ func (a *API) security(next http.Handler) http.Handler {
 		w.Header().Set("Permissions-Policy", "camera=(self), microphone=(self), display-capture=(self)")
 		w.Header().Set("Cache-Control", "no-store")
 		if a.Config.WebDist != "" {
-			w.Header().Set("Content-Security-Policy", "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self' blob: 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost ws://127.0.0.1:*; worker-src 'self' blob:; img-src 'self' data: blob: https:; media-src 'self' blob: mediastream: https:")
+			frames := "'none'"
+			if a.Config.YouTubePlayerOrigin != "" && ValidateYouTubePlayerOrigin(a.Config.YouTubePlayerOrigin, a.Config.AppURL) == nil {
+				frames = a.Config.YouTubePlayerOrigin
+			}
+			w.Header().Set("Content-Security-Policy", "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; frame-src "+frames+"; script-src 'self' blob: 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost ws://127.0.0.1:*; worker-src 'self' blob:; img-src 'self' data: blob: https:; media-src 'self' blob: mediastream: https:")
 		}
 		if r.Method != "GET" && r.Method != "HEAD" && r.Method != "OPTIONS" && !a.sameOrigin(r) {
 			a.fail(w, 403, "cross_site_request", "request origin is not allowed")
@@ -267,7 +272,7 @@ func (a *API) authed(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if a.routeAttachmentFeatures(w, r, p, u) || a.routeActivityFeatures(w, r, strings.Split(p, "/"), u) {
+	if a.HandleDailyComfort(w, r, p, u) || a.routeYouTubeFeatures(w, r, strings.Split(p, "/"), u) || a.routeAttachmentFeatures(w, r, p, u) || a.routeActivityFeatures(w, r, strings.Split(p, "/"), u) {
 		return
 	}
 	switch {
@@ -303,7 +308,9 @@ func (a *API) authed(w http.ResponseWriter, r *http.Request) {
 		a.callPresence(w, u)
 	case r.Method == "GET" && p == "events":
 		a.realtimeWebsocket(w, r, u)
-	case p == "messages/search" || p == "messages/unread" || p == "messages/notification-preferences":
+	case p == "messages/search":
+		a.messageSearchFilters(w, r, u)
+	case p == "messages/unread" || p == "messages/notification-preferences":
 		a.messagingGlobal(w, r, u, p)
 	case p == "privacy" || strings.HasPrefix(p, "privacy/blocks/"):
 		a.privacy(w, r, u, p)

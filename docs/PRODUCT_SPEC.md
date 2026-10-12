@@ -72,10 +72,26 @@ Scheduled events include Going/Maybe/Declined responses and deduplicated in-app
 reminders ten minutes before an event, surviving reconnects and reloads.
 Watch Together synchronizes a private video attachment through authoritative
 play/pause/seek state, revision checks and host transfer/lease recovery. Each
-viewer explicitly starts local playback. Stickers reuse private assets in chat;
+viewer explicitly starts local playback. YouTube extends that model with a
+discriminated source, collaborative queue, private lists, distinct viewer leases
+and strict-majority skip votes. The official player runs after consent on a
+separate credential-free hostname; source replacement rejects stale callbacks
+and controls. Real HTTPS and packaged Wails acceptance gate provider readiness.
+macOS/Linux currently require the browser for YouTube: native child frames remain
+disabled until Wails' raw message transport isolates them from host functions.
+See `YOUTUBE_WATCH_TOGETHER.md`. Stickers reuse private assets in chat;
 soundboard triggers require a live voice participant and have independently
 controlled local volume/mute. Message edit versions remain accessible only to
 authorized readers and disappear when the message is deleted or moderated.
+
+The personal inbox keeps private saved references and explicit message/event
+reminders. Timed conversation mutes preserve base notification preferences;
+account quiet hours silence messages and calls with a fixed IANA time zone.
+Due reminders remain visible while external attention waits for a per-device
+summary. Search supports local dates and content filters without requiring text.
+Account drafts synchronize text and reply/mention context automatically, preserve
+both texts on conflicts and clear only the revision submitted with a message.
+See `DAILY_COMFORT.md` for recovery, privacy and notification behavior.
 
 ## Capture implementation boundaries
 

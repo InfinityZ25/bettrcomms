@@ -104,6 +104,70 @@ Run a role/resource matrix at HTTP and WebSocket layers; mutate community/channe
 
 ## Release evidence
 
+Daily comfort adds PostgreSQL checks for saved ownership, live edits, revoked
+access, deleted sources and paging cursors; reminder retries, concurrent workers,
+reschedules/completion, device leases and quiet summaries; overnight/DST account
+schedules and timed-mute restoration; draft first import, CAS/idempotency,
+offline conflicts, quote/thread scope and send-versus-typing; and UTC exclusive
+search ranges with available attachments and no duplicate results.
+
+Run `tests/daily-comfort.spec.ts` sequentially against the real local API/database
+for two-account saved/reminder behavior, two-device offline drafts, filter-only
+thread navigation, 375px controls and call continuity. Keep existing messaging,
+activity, permission, notification and media-lifecycle regressions in the final
+pass. Native media and real YouTube acceptance are additional gates.
+
+For YouTube, exercise allowlisted URLs/Shorts and bounded oEmbed, legacy file
+clients, queue/list capacity and privacy, duplicate-tab viewer counts, strict
+majority and concurrent next/vote/ended, host lease/handoff, stale playback IDs,
+one-use opaque-parent tickets, helper credential-route denial, player cleanup
+and a 200×200 minimum. Cover reconnect after a fresh retry ticket, host revision
+races without withdrawing the viewing lease, old responses after newer queue
+reads, cleanup during pending claim/SDK callbacks, failed ended advancement and
+immediate permission teardown without losing private account lists. Then use
+the real official player over HTTPS with two viewers. Inspect identification,
+provider/ad/autoplay failures, local volume and helper credential-route denial.
+Mocks do not prove real-provider playback.
+
+The macOS source audit found Wails beta.18 and beta.28 dispatching raw
+`webkit.messageHandlers.external` messages from child frames without a
+pre-dispatch main-frame check. This was source inspection, not a passing
+packaged isolation or exploit test. The pinned GTK3/GTK4 Linux handlers also
+forward messages without sender-frame admission. Keep non-Windows native
+YouTube unavailable and use the browser.
+`TestYouTubeNativeFrameGateByPlatform` checks `frame-src 'none'` outside Windows in
+development and packaged modes, independent of a misleading boot-report
+platform; Windows retains only the fixed helper origin.
+`youtubeNativeGate.test.tsx` checks that non-Windows Wails creates no player lifecycle
+scope, iframe or consent UI, disables YouTube participation, and retains file
+playback/private lists. Ordinary macOS browsers retain the consent flow.
+
+Run the real macOS/Linux packages without Vite and verify that the gate is visible,
+there are no helper/YouTube requests or child frames, and shared file videos and
+private-list management remain usable. Re-enabling macOS YouTube requires a
+native frame-isolation fix before testing packaged playback and raw runtime
+rejection. An HTTP proof gate or application PageToken alone cannot satisfy
+the raw WebKit handler boundary.
+
+The native HTTP proof tests in `runtimegate_test.go` and
+`runtime_fetch_test.mjs` must cover the exact `/wails/runtime` path and
+`X-BetterComms-Page-Proof`, valid launch proof with absent/null Origin, wrong or
+duplicate proof, external origins, cross-site fetch metadata, document/image
+destinations, encoded aliases and trailing paths. Confirm rejection before
+dispatch and removal of the proof header before forwarding. The boot fetch
+wrapper must sign only the main document's own protocol/host/origin and exact
+runtime endpoint, reject redirects, and leave other URLs/transports untouched.
+Focused tests exercise the actual installed SDK's window call, named binding,
+chunked calls and legacy GET; Node execution is not physical WebView evidence.
+
+Windows packaged YouTube acceptance is pending. Launch the actual package
+without Vite and verify playback, shared controls, transfer, CSP, provider
+identification and rejection of session/API/native capability access from the
+helper and nested provider frames. Exercise both native HTTP and raw WebView
+transports, not only the MessageChannel allowlist. Successful compilation,
+packaging, browser mocks and the macOS gate tests do not establish the requested
+Windows/macOS native playback acceptance.
+
 Store a signed test record with commit/build ID, environment matrix, automated results, physical runs, known failures, and status for every capability. Any skipped required row keeps the feature experimental or unavailable. Native media may be described as implemented only when the tested shipping build produces real media on the declared support matrix.
 
 ## Local recordings library and mixer

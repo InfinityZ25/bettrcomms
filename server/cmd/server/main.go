@@ -38,6 +38,10 @@ func main() {
 	}
 	cfg := api.Config{AppURL: get("APP_URL", "http://localhost:5173"), WorkOSClientID: os.Getenv("WORKOS_CLIENT_ID"), WorkOSAPIKey: os.Getenv("WORKOS_API_KEY"), WorkOSRedirectURI: get("WORKOS_REDIRECT_URI", "http://localhost:5173/api/v1/auth/callback"), DevAuth: get("DEV_AUTH", "false") == "true", ICEURLs: split(get("ICE_URLS", "stun:stun.l.google.com:19302")), TURNURLs: split(os.Getenv("TURN_URLS")), TURNSecret: os.Getenv("TURN_SECRET"), WebDist: os.Getenv("WEB_DIST"), SFUURL: os.Getenv("SFU_URL"), SFUJoinSecret: os.Getenv("SFU_JOIN_SECRET"), VAPIDPublicKey: os.Getenv("VAPID_PUBLIC_KEY"), VAPIDPrivateKey: os.Getenv("VAPID_PRIVATE_KEY"), VAPIDSubject: os.Getenv("VAPID_SUBJECT")}
 	cfg.AttachmentMaxBytes = api.DefaultAttachmentMaxBytes
+	cfg.YouTubePlayerOrigin = strings.TrimSpace(os.Getenv("YOUTUBE_PLAYER_ORIGIN"))
+	if err := api.ValidateYouTubePlayerOrigin(cfg.YouTubePlayerOrigin, cfg.AppURL); err != nil {
+		log.Fatal(err)
+	}
 	if value := os.Getenv("ATTACHMENT_MAX_BYTES"); value != "" {
 		limit, parseErr := strconv.ParseInt(value, 10, 64)
 		if parseErr != nil || limit < 1<<20 || limit > api.MaximumAttachmentMaxBytes {
@@ -57,6 +61,22 @@ func main() {
 	a.StorageFeatures = storageFeatures
 	statusContext, stopStatus := context.WithCancel(context.Background())
 	defer stopStatus()
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for {
+			reminderCtx, cancel := context.WithTimeout(statusContext, 30*time.Second)
+			if _, err := a.DispatchDailyComfort(reminderCtx); err != nil && statusContext.Err() == nil {
+				log.Printf("personal reminder dispatch failed: %v", err)
+			}
+			cancel()
+			select {
+			case <-statusContext.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
 	go func() {
 		ticker := time.NewTicker(15 * time.Second)
 		defer ticker.Stop()
@@ -78,12 +98,32 @@ func main() {
 			ticker := time.NewTicker(10 * time.Second)
 			defer ticker.Stop()
 			for {
-				pushCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-				if _, pushErr := store.DispatchPush(pushCtx, cfg); pushErr != nil {
+				pushCtx, cancel := context.WithTimeout(statusContext, 2*time.Minute)
+				if _, err := a.DispatchReminderPush(pushCtx); err != nil && statusContext.Err() == nil {
+					log.Printf("personal reminder push failed: %v", err)
+				}
+				cancel()
+				select {
+				case <-statusContext.Done():
+					return
+				case <-ticker.C:
+				}
+			}
+		}()
+		go func() {
+			ticker := time.NewTicker(10 * time.Second)
+			defer ticker.Stop()
+			for {
+				pushCtx, cancel := context.WithTimeout(statusContext, 2*time.Minute)
+				if _, pushErr := store.DispatchPush(pushCtx, cfg); pushErr != nil && statusContext.Err() == nil {
 					log.Printf("push delivery failed: %v", pushErr)
 				}
 				cancel()
-				<-ticker.C
+				select {
+				case <-statusContext.Done():
+					return
+				case <-ticker.C:
+				}
 			}
 		}()
 	}
@@ -100,7 +140,7 @@ func main() {
 			ticker := time.NewTicker(time.Hour)
 			defer ticker.Stop()
 			for {
-				cleanupCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
+				cleanupCtx, cancel := context.WithTimeout(statusContext, time.Minute)
 				if cleanErr := store.CleanPendingAttachments(cleanupCtx, a.Attachments); cleanErr != nil {
 					log.Printf("attachment cleanup failed: %v", cleanErr)
 				}
@@ -108,7 +148,11 @@ func main() {
 					log.Printf("storage policy cleanup failed: %v", cleanErr)
 				}
 				cancel()
-				<-ticker.C
+				select {
+				case <-statusContext.Done():
+					return
+				case <-ticker.C:
+				}
 			}
 		}()
 	}

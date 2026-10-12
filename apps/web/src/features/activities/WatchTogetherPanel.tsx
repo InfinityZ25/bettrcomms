@@ -18,6 +18,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { useMountEffect } from '@/hooks/useMountEffect';
 import { useLifetimeSignal } from '@/hooks/useLifetimeSignal';
+import { YouTubeWatchTogether } from './YouTubeWatchTogether';
 import { signedAttachmentURL } from '@/features/chat/attachmentFiles';
 import { watchPosition, type WatchTogetherState } from './activityApi';
 import type { ActivityAction } from './PollsPanel';
@@ -127,10 +128,11 @@ function SynchronizedVideo({
         return;
       heartbeatPending = true;
       void api(
-        `/rooms/${room.id}/watch-together`,
+        `/rooms/${room.id}/watch-together?watch_sources=file,youtube`,
         {
           action: 'heartbeat',
           revision: current.revision,
+          playback_id: current.playback_id,
           position_seconds: 0,
         },
         'PUT',
@@ -162,10 +164,11 @@ function SynchronizedVideo({
     hostId?: string,
   ) {
     return act(
-      '/watch-together',
+      '/watch-together?watch_sources=file,youtube',
       {
         action,
         revision: state.revision,
+        playback_id: state.playback_id,
         position_seconds: Math.min(604800, Math.max(0, seconds)),
         ...(hostId ? { host_id: hostId } : {}),
       },
@@ -477,9 +480,9 @@ export function WatchTogetherPanel({
     (room.permissions?.join_voice ?? room.can_join_voice ?? true);
   return (
     <div className="space-y-4">
-      {state && (
+      {state && state.source_kind !== 'youtube' && (
         <SynchronizedVideo
-          key={state.attachment.id}
+          key={`${user.id}:${state.playback_id ?? state.attachment.id}`}
           room={room}
           user={user}
           state={state}
@@ -488,6 +491,15 @@ export function WatchTogetherPanel({
           busy={busy}
         />
       )}
+      <YouTubeWatchTogether
+        key={`${user.id}:${room.id}`}
+        room={room}
+        user={user}
+        state={state}
+        receivedAt={receivedAt}
+        busy={busy}
+        act={act}
+      />
       {(!state || state.host_id === user.id) && canHost && (
         <div className="space-y-3 rounded-xl border bg-muted/20 p-4">
           <label className="block text-sm font-medium">
@@ -514,11 +526,12 @@ export function WatchTogetherPanel({
               disabled={!selected || busy || loading}
               onClick={() =>
                 void act(
-                  '/watch-together',
+                  '/watch-together?watch_sources=file,youtube',
                   {
                     action: 'start',
                     attachment_id: selected,
                     revision: state?.revision ?? 0,
+                    playback_id: state?.playback_id,
                     position_seconds: 0,
                   },
                   'PUT',

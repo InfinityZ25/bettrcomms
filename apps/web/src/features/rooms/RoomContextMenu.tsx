@@ -24,6 +24,7 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { roomLabel } from './RoomNavigation';
+import { TimedMuteDialog, TimedMuteMenuItems } from '@/features/personal/TimedMute';
 import {
   notificationSnapshot,
   setRoomNotificationMode,
@@ -68,6 +69,7 @@ export default function RoomContextMenu({
 }) {
   const [pending, setPending] = useState<'delete' | 'leave' | null>(null);
   const [busy, setBusy] = useState(false);
+  const [muteOpen, setMuteOpen] = useState(false);
   const notifications = useSyncExternalStore(
     subscribeNotifications,
     notificationSnapshot,
@@ -128,6 +130,8 @@ export default function RoomContextMenu({
               {label}
             </ContextMenuLabel>
           </ContextMenuGroup>
+          <ContextMenuSeparator />
+          <ContextMenuGroup><ContextMenuLabel>Pause notifications</ContextMenuLabel><TimedMuteMenuItems roomId={room.id} context onCustom={() => setMuteOpen(true)} onError={onError} /></ContextMenuGroup>
           <ContextMenuSeparator />
           <ContextMenuGroup>
             <ContextMenuItem
@@ -266,6 +270,7 @@ export default function RoomContextMenu({
           </Button>
         </div>
       </AppDialog>
+      {muteOpen && <TimedMuteDialog roomId={room.id} onClose={() => setMuteOpen(false)} />}
     </>
   );
 }
