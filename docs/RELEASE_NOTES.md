@@ -1,3 +1,47 @@
+## Unreleased — daily comfort and shared YouTube
+
+The personal inbox combines private saved messages/files with message and event
+reminders. Saved sources reflect edits and current access. Reminder deadlines
+are materialized by a durable ten-second worker independently of Web Push;
+quiet periods defer external attention into a per-device summary. Conversation
+mutes preserve the base mode. Account quiet hours have starting weekdays,
+overnight periods and a fixed IANA zone and silence messages and incoming calls
+without changing public presence.
+
+Search gains local date ranges, content types, filter-only queries, published
+file checks and deletion-safe pagination. Text drafts synchronize automatically
+across signed-in devices with local recovery, versioned conflict choices and
+transactional clearing of only the submitted revision. Files and recording
+state remain local; draft sync has its own account setting.
+
+Watch Together adds YouTube videos/Shorts, a collaborative 100-video queue,
+private lists, explicit viewer leases and strict-majority skip votes. The host
+controls playback and transfers only to present eligible participants. Each
+playback has an ID to reject stale requests. The official player loads after
+consent in a separate credential-free helper; the app never loads its external
+SDK. Existing private-video sessions and older clients remain compatible.
+
+Migrations 020–021 add private references, reminder attention, notification
+policies, versioned text drafts and Watch Together state. See [daily comfort](DAILY_COMFORT.md)
+and [YouTube deployment and acceptance](YOUTUBE_WATCH_TOGETHER.md). YouTube remains
+disabled without a configured helper origin. Real HTTPS provider playback and
+Windows packaged acceptance remain separate requirements; automated mocks and
+compile checks do not establish native readiness.
+
+YouTube playback is intentionally browser-only on macOS/Linux. Source auditing of
+Wails beta.18 and beta.28 found the raw WebKit native message handler accessible
+to child frames without a pre-dispatch main-frame check. The Darwin host now
+uses `frame-src 'none'`; Linux's GTK handlers have the same admission limitation
+and also block frames. The frontend shows a browser requirement and creates no
+YouTube player or consent flow. Shared file playback and private lists remain
+available. No Wails upgrade or fork is included. macOS native YouTube remains
+blocked until frame isolation and real packaged acceptance pass; Windows native
+YouTube acceptance is also pending.
+
+Native HTTP runtime calls now require a per-launch proof on the exact
+`/wails/runtime` endpoint, added only by the main page's fetch wrapper. This
+HTTP gate does not cover raw WebKit messages or satisfy packaged acceptance.
+
 ## Unreleased — community tools and clips
 
 Uploads now transfer in checked 8 MiB S3 multipart parts and resume from the

@@ -8,6 +8,8 @@ import {
   Users,
   Inbox,
   UserRound,
+  Bookmark,
+  Bell,
 } from 'lucide-react';
 import { Avatar } from '@/components/avatar';
 import { useOwnFace } from '@/features/settings/blobatarIdentity';
@@ -41,6 +43,7 @@ import type { Screen } from './useScreenRoute';
 import type { Section } from './sections';
 import { openUserProfile } from '@/features/settings/ProfileDialog';
 import { CustomStatusText } from '@/features/settings/CustomStatus';
+import { openPersonalInbox } from '@/features/personal/inboxEvents';
 
 const railButton = 'size-10 rounded-2xl min-[481px]:size-11';
 // Portrait phones: a labelled tab, sized for a thumb rather than a pointer.
@@ -256,6 +259,8 @@ export default function SpacesRail({
                 <Inbox /> Activity
               </DropdownMenuItem>
             )}
+            {user && <DropdownMenuItem className="min-h-11" onClick={() => openPersonalInbox('saved')}><Bookmark />Saved items</DropdownMenuItem>}
+            {user && <DropdownMenuItem className="min-h-11" onClick={() => openPersonalInbox('reminders')}><Bell />Reminders</DropdownMenuItem>}
             <DropdownMenuItem
               onClick={onRecordings}
               className="hidden min-h-11 phone:flex"

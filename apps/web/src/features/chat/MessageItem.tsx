@@ -32,6 +32,7 @@ import { openUserProfile } from '@/features/settings/ProfileDialog';
 import { useLifetimeSignal } from '@/hooks/useLifetimeSignal';
 import { downloadMessageAttachment } from './attachmentFiles';
 import { MessageHistory } from '@/features/activities/MessageHistory';
+import { MessageReminderDialog, PersonalMessageActions, SaveFileButton } from '@/features/personal/MessageActions';
 
 const FormattedMessage = lazy(() => import('./FormattedMessage'));
 export function MessageBody({ message }: { message: Message }) {
@@ -96,6 +97,7 @@ export default function MessageItem({
   const [reason, setReason] = useState('');
   const [reported, setReported] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [reminderOpen, setReminderOpen] = useState(false);
   const lifetime = useLifetimeSignal();
   const openAttachment = (id: string) =>
     downloadMessageAttachment(
@@ -186,13 +188,10 @@ export default function MessageItem({
           {!message.deleted_at && !!message.attachments?.length && (
             <div className="mt-2 grid max-w-lg gap-2" aria-label="Attachments">
               {message.attachments.map((attachment) => (
-                <MessageAttachmentPreview
-                  key={attachment.id}
-                  attachment={attachment}
-                  roomId={message.room_id}
-                  onError={onError}
-                  onDownload={() => void openAttachment(attachment.id)}
-                />
+                <div key={attachment.id} className="grid gap-1">
+                  <MessageAttachmentPreview attachment={attachment} roomId={message.room_id} onError={onError} onDownload={() => void openAttachment(attachment.id)} />
+                  <SaveFileButton attachmentId={attachment.id} filename={attachment.filename} onError={onError} />
+                </div>
               ))}
             </div>
           )}
@@ -225,6 +224,7 @@ export default function MessageItem({
               </div>
               <div className="phone:hidden">
                 <div className="mt-1 flex flex-wrap gap-0.5 opacity-70 group-hover:opacity-100 focus-within:opacity-100 [@media(hover:none)]:hidden [@media(hover:none)]:group-focus-within:flex [@media(hover:none)]:opacity-100">
+                  <PersonalMessageActions message={message} userId={userId} onError={onError} />
                   <Button
                     variant="ghost"
                     size="icon-sm"
@@ -335,6 +335,7 @@ export default function MessageItem({
                     align="end"
                     className="min-w-52 [&_[data-slot=dropdown-menu-item]]:min-h-11"
                   >
+                    <PersonalMessageActions message={message} userId={userId} menu onError={onError} onRemind={() => setReminderOpen(true)} />
                     <DropdownMenuItem onClick={() => onReply(message)}>
                       <Reply /> Reply
                     </DropdownMenuItem>
@@ -513,6 +514,7 @@ export default function MessageItem({
         </div>
       </div>
       {historyOpen && !message.deleted_at && <MessageHistory roomId={message.room_id} messageId={message.id} onClose={() => setHistoryOpen(false)} />}
+      {reminderOpen && !message.deleted_at && <MessageReminderDialog message={message} onClose={() => setReminderOpen(false)} />}
     </article>
   );
 }

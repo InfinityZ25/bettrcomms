@@ -7,3 +7,11 @@ Automated checks cover frontend builds and unit tests, Wails Go tests and vet, A
 The Wails macOS package script creates an ad hoc signed `.app` and DMG and verifies the app bundle. It is not Developer ID signed or notarized, so Gatekeeper may require an explicit per-app Open Anyway action. Windows installers are unsigned. Production release remains gated on signed/notarized packages, packaged WorkOS sign-in, real API/WebSocket session checks, native media lifecycle tests, and cross-device acceptance.
 
 The native service should continue to reject unauthorised page tokens and unexpected origins. Every stop, error, and disconnect path must release capture tracks, audio contexts, worklets, recorders, socket writers, and listeners. See `TEST_PLAN.md` for release evidence.
+
+YouTube adds a separate external-frame boundary. macOS/Linux hosts block child
+frames and directs YouTube viewing to the browser because the pinned Wails
+WebKit raw message handlers do not validate the sending frame before
+dispatching host messages. File Watch Together and private YouTube lists remain
+available. Windows YouTube playback and frame isolation still require real
+packaged acceptance; HTTP proof checks and CSP unit tests do not establish that
+acceptance. See `YOUTUBE_WATCH_TOGETHER.md` for the exact delivery limits.

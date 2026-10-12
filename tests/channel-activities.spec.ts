@@ -256,11 +256,14 @@ test('friends vote, schedule and dismiss durable reminders, and inspect edited m
     await expect(maybe).toHaveAttribute('aria-pressed', 'true');
     await memberPage.keyboard.press('Escape');
     await expect(memberDialog).toBeHidden();
-    await memberPage.getByRole('button', { name: /^Event reminders/ }).click();
+    await memberPage.getByRole('button', { name: /^Personal inbox/ }).click();
     const reminders = memberPage.getByRole('dialog', {
-      name: 'Event reminders',
+      name: 'Personal inbox',
       exact: true,
     });
+    await reminders
+      .getByRole('button', { name: 'Reminders', exact: true })
+      .click();
     await expect(reminders).toContainText('Friends arrive soon');
     const first = await value<{ reminders: { id: string }[] }>(
       await member.request.get('/api/v1/me/event-reminders'),
@@ -272,17 +275,26 @@ test('friends vote, schedule and dismiss durable reminders, and inspect edited m
     await reminders
       .getByRole('button', { name: 'Dismiss', exact: true })
       .click();
-    await expect(reminders).toContainText('No events due yet.');
+    await expect(reminders).not.toContainText('Friends arrive soon');
+    await expect(
+      reminders.getByLabel('Event reminders', { exact: true }),
+    ).toHaveCount(0);
     await memberPage.keyboard.press('Escape');
     await memberPage.reload();
-    await memberPage.getByRole('button', { name: /^Event reminders/ }).click();
+    await memberPage.getByRole('button', { name: /^Personal inbox/ }).click();
+    await reminders
+      .getByRole('button', { name: 'Reminders', exact: true })
+      .click();
     const restoredReminders = await value<{ reminders: unknown[] }>(
       await member.request.get('/api/v1/me/event-reminders'),
     );
     expect(restoredReminders.reminders).toHaveLength(0);
     await expect(
-      memberPage.getByRole('dialog', { name: 'Event reminders', exact: true }),
-    ).toContainText('No events due yet.');
+      memberPage.getByRole('dialog', { name: 'Personal inbox', exact: true }),
+    ).not.toContainText('Friends arrive soon');
+    await expect(
+      reminders.getByLabel('Event reminders', { exact: true }),
+    ).toHaveCount(0);
     await memberPage.keyboard.press('Escape');
 
     const { message } = await value<{ message: { id: string } }>(

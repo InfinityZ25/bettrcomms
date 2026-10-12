@@ -3,11 +3,12 @@ import {
   expect,
   type BrowserContext,
   type APIResponse,
+  type Response,
 } from '@playwright/test';
 
 const baseURL = process.env.E2E_BASE_URL ?? 'http://127.0.0.1:5173';
 const headers = { Origin: new URL(baseURL).origin };
-async function value<T>(response: APIResponse): Promise<T> {
+async function value<T>(response: APIResponse | Response): Promise<T> {
   expect(response.ok(), await response.text()).toBeTruthy();
   return response.json() as Promise<T>;
 }
@@ -88,7 +89,9 @@ test('unread mentions, older history, search and message actions work across two
     await value(
       await guestContext.request.post(`/api/v1/rooms/${guestRoomId}/messages`, {
         headers,
-        data: { body: 'Keep this conversation selected while searching history' },
+        data: {
+          body: 'Keep this conversation selected while searching history',
+        },
       }),
     );
     await value(
@@ -189,13 +192,18 @@ test('unread mentions, older history, search and message actions work across two
     await ownerPage
       .getByRole('option', { name: guest.name, exact: false })
       .click();
+    const sentResponse = ownerPage.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname ===
+          `/api/v1/rooms/${directId}/messages` &&
+        response.request().method() === 'POST',
+    );
     await ownerPage
       .getByRole('button', { name: 'Send message', exact: true })
       .click();
-    const current = await value<{ messages: Message[] }>(
-      await ownerContext.request.get(`/api/v1/rooms/${directId}/messages`),
+    const { message: sent } = await value<{ message: Message }>(
+      await sentResponse,
     );
-    const sent = current.messages.at(-1)!;
     const ownerMessage = ownerPage.locator(`[data-message-id="${sent.id}"]`);
     const guestMessage = guestPage.locator(`[data-message-id="${sent.id}"]`);
     await expect(guestMessage).toContainText(`@${guest.name}`);
@@ -214,7 +222,9 @@ test('unread mentions, older history, search and message actions work across two
     await ownerPage
       .getByRole('button', { name: 'Save message', exact: true })
       .click();
-    await expect(guestMessage.locator('[data-message-body]')).toHaveText('edited message needle');
+    await expect(guestMessage.locator('[data-message-body]')).toHaveText(
+      'edited message needle',
+    );
     await expect(guestMessage).toContainText('edited');
     expect(historyReads).toBe(0);
     await guestMessage
@@ -232,9 +242,16 @@ test('unread mentions, older history, search and message actions work across two
     await ownerMessage
       .getByRole('button', { name: 'Add reaction', exact: true })
       .click();
-    const picker = ownerPage.getByRole('dialog', { name: 'Choose emoji', exact: true });
-    await picker.getByRole('searchbox', { name: 'Search emojis', exact: true }).fill('thumbs up');
-    await picker.getByRole('button', { name: 'Emoji thumbs up', exact: true }).click();
+    const picker = ownerPage.getByRole('dialog', {
+      name: 'Choose emoji',
+      exact: true,
+    });
+    await picker
+      .getByRole('searchbox', { name: 'Search emojis', exact: true })
+      .fill('thumbs up');
+    await picker
+      .getByRole('button', { name: 'Emoji thumbs up', exact: true })
+      .click();
     await expect(picker).toBeHidden();
     await expect(
       guestMessage.getByRole('button', { name: 'React 👍, 1', exact: true }),
@@ -316,8 +333,22 @@ test('unread mentions, older history, search and message actions work across two
     ).toContainText('Message deleted');
   } finally {
     await Promise.allSettled([
-      ...(guestRoomId ? [guestContext.request.delete(`/api/v1/rooms/${guestRoomId}`, { headers, timeout: 5000 })] : []),
-      ...(privateId ? [outsiderContext.request.delete(`/api/v1/rooms/${privateId}`, { headers, timeout: 5000 })] : []),
+      ...(guestRoomId
+        ? [
+            guestContext.request.delete(`/api/v1/rooms/${guestRoomId}`, {
+              headers,
+              timeout: 5000,
+            }),
+          ]
+        : []),
+      ...(privateId
+        ? [
+            outsiderContext.request.delete(`/api/v1/rooms/${privateId}`, {
+              headers,
+              timeout: 5000,
+            }),
+          ]
+        : []),
     ]);
     await Promise.allSettled([
       ownerContext.close(),
@@ -364,8 +395,15 @@ test('room chat works without joining a call and opens distant search hits safel
     await page
       .getByRole('button', { name: 'Messaging channel', exact: true })
       .click();
-    await expect(page.getByRole('textbox', { name: 'Message Messaging channel', exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Join voice', exact: true })).toBeEnabled();
+    await expect(
+      page.getByRole('textbox', {
+        name: 'Message Messaging channel',
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Join voice', exact: true }),
+    ).toBeEnabled();
     await expect(
       page.getByRole('button', { name: 'Leave call', exact: true }),
     ).toHaveCount(0);

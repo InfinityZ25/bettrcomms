@@ -11,7 +11,7 @@ vi.mock('@/features/chat/messageStore', () => ({ receiveMessage: vi.fn(), reconc
 vi.mock('@/features/chat/typingStore', () => ({ receiveTyping: vi.fn(), setTypingSocket: vi.fn() }));
 vi.mock('@/features/chat/usePostingState', () => ({ invalidatePostingState: vi.fn() }));
 vi.mock('@/features/settings/avatarCache', () => ({ clearAvatarCache: vi.fn() }));
-vi.mock('@/features/chat/notificationSettings', () => ({ setAccountDoNotDisturb: vi.fn() }));
+vi.mock('@/features/chat/notificationSettings', () => ({ setAccountDoNotDisturb: vi.fn(), refreshNotificationPolicy: vi.fn() }));
 vi.mock('@/desktop/apiTransport', () => ({ apiSocketUrl: (path: string) => `wss://localhost${path}` }));
 class Socket {
   static OPEN = 1;

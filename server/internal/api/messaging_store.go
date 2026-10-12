@@ -137,6 +137,10 @@ func (s *PostgresStore) SendThreadMessage(room, user, body, replyID, nonce strin
 }
 
 func (s *PostgresStore) writeMessage(room, user, id, body, replyID, nonce string, attachmentIDs []string, root string) (Message, bool, error) {
+	return s.writeMessageWithDraft(room, user, id, body, replyID, nonce, attachmentIDs, root, nil)
+}
+
+func (s *PostgresStore) writeMessageWithDraft(room, user, id, body, replyID, nonce string, attachmentIDs []string, root string, draftClear *DraftSendClear) (Message, bool, error) {
 	root = strings.ToLower(root)
 	isNew := id == ""
 	ctx := context.Background()
@@ -145,6 +149,9 @@ func (s *PostgresStore) writeMessage(room, user, id, body, replyID, nonce string
 		return Message{}, false, err
 	}
 	defer tx.Rollback(ctx)
+	if err = lockPersonalActor(ctx, tx, user); err != nil {
+		return Message{}, false, err
+	}
 	if err = lockRoomCommunity(ctx, tx, room); err != nil {
 		return Message{}, false, err
 	}
@@ -325,9 +332,14 @@ func (s *PostgresStore) writeMessage(room, user, id, body, replyID, nonce string
 			SELECT $1, ps.id FROM room_members rm
 			JOIN push_subscriptions ps ON ps.user_id=rm.user_id
 			WHERE rm.room_id=$2 AND rm.user_id<>$3 AND NOT ps.dnd
-			AND EXISTS(SELECT 1 FROM users recipient WHERE recipient.id=rm.user_id AND recipient.presence_status<>'dnd')
+			AND daily_message_push_allowed($2,rm.user_id,$1,clock_timestamp())
 			ON CONFLICT DO NOTHING`, id, room, user)
 		if err != nil {
+			return Message{}, false, err
+		}
+	}
+	if isNew {
+		if err = clearSubmittedDraft(ctx, tx, user, room, root, draftClear); err != nil {
 			return Message{}, false, err
 		}
 	}

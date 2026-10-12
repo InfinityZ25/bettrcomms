@@ -34,6 +34,9 @@ export interface ChannelEventReminder {
   created_at: string;
 }
 export interface WatchTogetherState {
+  source_kind?: 'attachment' | 'youtube';
+  playback_id?: string;
+  youtube?: YouTubeVideo;
   room_id: string;
   attachment: MessageAttachment;
   host_id: string | null;
@@ -43,6 +46,29 @@ export interface WatchTogetherState {
   updated_at: string;
   server_time: string;
   can_claim: boolean;
+}
+export interface YouTubeVideo {
+  id: string;
+  title: string;
+}
+export interface WatchQueueItem {
+  id: string;
+  author_id: string | null;
+  video: YouTubeVideo;
+}
+export interface WatchQueueSnapshot {
+  host_candidates?: string[];
+  items: WatchQueueItem[];
+  revision: number;
+  viewers: number;
+  votes: number;
+  voted: boolean;
+}
+export interface WatchPlaylist {
+  id: string;
+  name: string;
+  videos: YouTubeVideo[];
+  version: number;
 }
 export interface ChannelMediaAsset {
   id: string;

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useMountEffect } from '@/hooks/useMountEffect';
 import { useLifetimeSignal } from '@/hooks/useLifetimeSignal';
+import { SaveFileButton } from '@/features/personal/MessageActions';
 import MessageAttachmentPreview from './MessageAttachmentPreview';
 import { downloadMessageAttachment } from './attachmentFiles';
 import {
@@ -155,6 +156,7 @@ function LibraryResults({
                 })
               }
             />
+            <SaveFileButton attachmentId={file.id} filename={file.filename} onError={onError} />
           </li>
         ))}
       </ul>

@@ -30,7 +30,7 @@ export function readDraft(
       localStorage.getItem(key(user, room, root)) ?? '{}',
     ) as Partial<SavedDraft> & { savedAt?: number };
     return {
-      body: typeof value.body === 'string' ? value.body.slice(0, 4000) : '',
+      body: typeof value.body === 'string' ? [...value.body].slice(0, 4000).join('') : '',
       attachments:
         typeof value.savedAt === 'number' &&
         Date.now() - value.savedAt < attachmentLifetime &&

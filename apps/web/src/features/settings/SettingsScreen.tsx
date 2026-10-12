@@ -4,7 +4,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { SettingsSlider } from './SettingsControls';
 import MediaSettings from './MediaSettings';
-import TrayPreference from './TrayPreference';
 import { SettingBlock, SettingRow } from './SettingRow';
 import { SettingsSection } from './SettingsSection';
 import { setOwnFace, useOwnFace } from './blobatarIdentity';
@@ -19,15 +18,16 @@ import {
   soundNames,
 } from '@/media/sounds';
 import type { User } from '@/api';
-import { notificationSnapshot, setSystemNotifications, setDoNotDisturb, subscribeNotifications } from '@/features/chat/notificationSettings';
 import './SettingsScreen.css';
 import { getDesktopRuntime } from '@/desktop/runtime';
 import AccountSettings from './AccountSettings';
 import DesktopSettings from './DesktopSettings';
 import ProfileSettings from './ProfileSettings';
 import PreferenceSyncSettings from './PreferenceSyncSettings';
+import NotificationSettings from '@/features/personal/NotificationSettings';
+import { DraftSyncSettings } from '@/features/personal/DraftStatus';
 
-export type SettingsPage = 'profile' | 'audio' | 'voice' | 'recording' | 'stream' | 'connection' | 'appearance' | 'account' | 'desktop';
+export type SettingsPage = 'profile' | 'audio' | 'voice' | 'recording' | 'stream' | 'connection' | 'appearance' | 'notifications' | 'account' | 'desktop';
 
 export default function SettingsScreen({ page, user, noise, onNoiseChange, balanced, onBalancedChange, layout, onLayoutChange }: {
   page: SettingsPage;
@@ -40,12 +40,12 @@ export default function SettingsScreen({ page, user, noise, onNoiseChange, balan
   onLayoutChange: (value: string) => void;
 }) {
   const face = useOwnFace();
-  const messageNotifications = useSyncExternalStore(subscribeNotifications, notificationSnapshot);
   const { enabled: sounds, volume, each } = useSyncExternalStore(subscribeSoundSettings, soundSettingsSnapshot);
   const desktop = getDesktopRuntime() === 'wails';
   if (page === 'account') return user ? <AccountSettings key={user.id} user={user} /> : <p className="text-sm text-muted-foreground">Sign in to manage your account.</p>;
   if (page === 'desktop') return desktop ? <DesktopSettings /> : null;
   if (page === 'profile') return user ? <ProfileSettings key={user.id} user={user} /> : <p className="text-sm text-muted-foreground">Sign in to edit your profile.</p>;
+  if (page === 'notifications') return user ? <NotificationSettings /> : <p className="text-sm text-muted-foreground">Sign in to manage notifications.</p>;
   if (page === 'audio') return (
     <SettingsSection id="settings-audio" title="Call audio">
       <SettingRow as="div" title="Noise suppression" description="Keep background sounds out of the conversation." control={<Switch aria-label="Noise suppression" checked={noise} onCheckedChange={onNoiseChange} />} />
@@ -99,27 +99,7 @@ export default function SettingsScreen({ page, user, noise, onNoiseChange, balan
     <SettingsSection id="settings-appearance" title="Look & feel">
       <SettingRow as="div" title="Theme" description="Light, dark, or match your system." control={<ModeToggle />} />
       {user && <PreferenceSyncSettings userId={user.id} />}
-      {user && (
-        <>
-          <SettingRow as="div" title="Quiet notifications on this device" description={messageNotifications.accountDnd ? 'Your account is also set to Do not disturb. Change your account status in Profile to resume alerts.' : 'Pause message sounds and notifications on this device. Account availability is configured in Profile.'} control={<Switch aria-label="Do not disturb" checked={messageNotifications.localDnd} onCheckedChange={setDoNotDisturb} />} />
-          <SettingRow
-            as="div"
-            title={desktop ? 'Desktop notifications' : 'Browser notifications'}
-            description={messageNotifications.error || (desktop
-              ? 'Show message and call alerts while BetterComms is running. Keep it in the tray to receive alerts after closing the window.'
-              : messageNotifications.background
-                ? 'Alerts also arrive after you close this browser tab.'
-                : 'Show message alerts while away. With Web Push configured, they also arrive after the tab closes.')}
-            control={<Switch
-              aria-label={desktop ? 'Desktop notifications' : 'Browser notifications'}
-              checked={messageNotifications.alerts}
-              disabled={!desktop && (typeof window === 'undefined' || !('Notification' in window))}
-              onCheckedChange={(enabled) => { void setSystemNotifications(enabled); }}
-            />}
-          />
-        </>
-      )}
-      {getDesktopRuntime() === 'wails' && <TrayPreference />}
+      {user && <DraftSyncSettings userId={user.id} />}
       {user && (
         <SettingRow
           as="div"

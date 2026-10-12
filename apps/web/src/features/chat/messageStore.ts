@@ -436,11 +436,12 @@ export async function writeMessage(
   attachmentIDs: string[] = [],
   nonce?: string,
   root?: string,
+  submittedDraft?: { draft_version: number; draft_mutation_id: string },
 ) {
   const currentGeneration = generation;
   const result = await api<{ message: Message }>(
     `/rooms/${room}/messages${id ? `/${id}` : ''}`,
-    { body, reply_to_id: reply, attachment_ids: attachmentIDs, client_nonce: nonce, ...(root && !id ? { thread_root_id: root } : {}) },
+    { body, reply_to_id: reply, attachment_ids: attachmentIDs, client_nonce: nonce, ...(root && !id ? { thread_root_id: root } : {}), ...(!id ? submittedDraft : {}) },
     id ? 'PATCH' : 'POST',
   );
   if (generation === currentGeneration && userId)

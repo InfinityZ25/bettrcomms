@@ -23,7 +23,8 @@ type pushSubscriptionInput struct {
 		P256dh string `json:"p256dh"`
 		Auth   string `json:"auth"`
 	} `json:"keys"`
-	DND bool `json:"dnd"`
+	DND      bool   `json:"dnd"`
+	DeviceID string `json:"device_id"`
 }
 
 func validPushEndpoint(raw string) bool {
@@ -77,7 +78,7 @@ func (a *API) push(w http.ResponseWriter, r *http.Request, user User) {
 		if !a.decode(w, r, &in) {
 			return
 		}
-		if !validPushEndpoint(in.Endpoint) || !validPushKey(in.Keys.P256dh, 65) || !validPushKey(in.Keys.Auth, 16) {
+		if !validPushEndpoint(in.Endpoint) || !validPushKey(in.Keys.P256dh, 65) || !validPushKey(in.Keys.Auth, 16) || in.DeviceID != "" && !uuidPattern.MatchString(in.DeviceID) {
 			a.fail(w, 400, "invalid_subscription", "Invalid browser push subscription")
 			return
 		}
@@ -95,8 +96,8 @@ func (a *API) push(w http.ResponseWriter, r *http.Request, user User) {
 		// Drop its old user's queued deliveries before changing ownership.
 		_, err = tx.Exec(r.Context(), `DELETE FROM push_deliveries WHERE subscription_id IN (SELECT id FROM push_subscriptions WHERE endpoint=$1)`, in.Endpoint)
 		if err == nil {
-			_, err = tx.Exec(r.Context(), `INSERT INTO push_subscriptions(user_id,endpoint,p256dh,auth,dnd) VALUES($1,$2,$3,$4,$5)
-			ON CONFLICT(endpoint) DO UPDATE SET user_id=EXCLUDED.user_id,p256dh=EXCLUDED.p256dh,auth=EXCLUDED.auth,dnd=EXCLUDED.dnd`, user.ID, in.Endpoint, in.Keys.P256dh, in.Keys.Auth, in.DND)
+			_, err = tx.Exec(r.Context(), `INSERT INTO push_subscriptions(user_id,endpoint,p256dh,auth,dnd,device_id) VALUES($1,$2,$3,$4,$5,NULLIF($6,'')::uuid)
+			ON CONFLICT(endpoint) DO UPDATE SET user_id=EXCLUDED.user_id,p256dh=EXCLUDED.p256dh,auth=EXCLUDED.auth,dnd=EXCLUDED.dnd,device_id=EXCLUDED.device_id`, user.ID, in.Endpoint, in.Keys.P256dh, in.Keys.Auth, in.DND, in.DeviceID)
 		}
 		if err == nil {
 			err = tx.Commit(r.Context())
@@ -148,9 +149,7 @@ func (s *PostgresStore) DispatchPush(ctx context.Context, config Config) (int, e
 		}
 		var allowed bool
 		err = s.DB.QueryRow(ctx, `SELECT ps.endpoint,ps.p256dh,ps.auth,m.room_id::text,u.name,
-			can_access_room(m.room_id,ps.user_id) AND NOT ps.dnd AND recipient.presence_status<>'dnd' AND
-			COALESCE(np.mode,'all')<>'mute' AND
-			(COALESCE(np.mode,'all')<>'mentions' OR EXISTS(SELECT 1 FROM message_mentions mm WHERE mm.message_id=m.id AND mm.user_id=ps.user_id))
+			NOT ps.dnd AND daily_message_push_allowed(m.room_id,ps.user_id,m.id,clock_timestamp())
 			FROM push_deliveries d JOIN push_subscriptions ps ON ps.id=d.subscription_id
 			JOIN messages m ON m.id=d.message_id JOIN users u ON u.id=m.author_id
 			JOIN users recipient ON recipient.id=ps.user_id

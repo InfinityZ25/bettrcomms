@@ -40,7 +40,7 @@ export function createChannelActivityStore(roomId: string) {
     const requestGeneration = generation;
     try {
       const data = await api<ChannelActivitySnapshot>(
-        `/rooms/${roomId}/activities`,
+        `/rooms/${roomId}/activities?watch_sources=file,youtube`,
         undefined,
         undefined,
         current.signal,

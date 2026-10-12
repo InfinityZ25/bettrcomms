@@ -12,6 +12,10 @@ import { receiveConversationPreference, reconcileConversationPreferences } from 
 import { receiveCustomStatus, reconcileCustomStatus } from '@/features/settings/customStatusStore';
 import { receiveAccountPreferences, reconcileAccountPreferences } from '@/features/settings/accountPreferences';
 import { receiveActivityEvent } from '@/features/activities/activityEvents';
+import { receivePersonalEvent } from '@/features/personal/api';
+import { refreshPersonal } from '@/features/personal/personalStore';
+import { refreshDrafts } from '@/features/personal/draftStore';
+import { refreshNotificationPolicy } from '@/features/chat/notificationSettings';
 
 type RoomPresence = { room_id: string; participants: CallParticipant[] };
 type RealtimeMessage = { sequence: number; value: Message };
@@ -88,6 +92,9 @@ export function startRealtimeSession(user: User) {
           reconcileConversationPreferences();
           reconcileAccountPreferences();
           reconcileCustomStatus();
+          void refreshPersonal();
+          void refreshDrafts();
+          void refreshNotificationPolicy();
           const payload = message.payload as {
             presence?: RoomPresence[]; online_user_ids?: string[];
             contact_presence?: { user_id: string; online: boolean; status: unknown }[];
@@ -108,6 +115,8 @@ export function startRealtimeSession(user: User) {
           });
         } else if (message.type === 'channel.activity' || message.type === 'soundboard.play') {
           receiveActivityEvent(message.type, message.payload);
+        } else if (message.type === 'personal.saved.changed' || message.type === 'personal.reminders.changed' || message.type === 'personal.drafts.changed' || message.type === 'notification.policy.changed' || message.type === 'draft-sync.changed') {
+          receivePersonalEvent(message.type);
         } else if (message.type === 'call.presence') {
           const room = message.payload as RoomPresence;
           if (!room?.room_id || !Array.isArray(room.participants)) return;
@@ -122,6 +131,8 @@ export function startRealtimeSession(user: User) {
             update({ messages: [...state.messages.slice(-99), { sequence: messageSequence, value }], activityRevision: state.activityRevision + 1 });
           } else {
             update({ activityRevision: state.activityRevision + 1 });
+            receivePersonalEvent('personal.saved.changed');
+            receivePersonalEvent('personal.reminders.changed');
           }
         } else if (message.type === 'chat.read') {
           void refreshUnread();
@@ -143,6 +154,10 @@ export function startRealtimeSession(user: User) {
         } else if (message.type === 'rooms.changed') {
           reconcileMessaging(userId, true);
           reconcileConversationPreferences();
+          receivePersonalEvent('personal.saved.changed');
+          receivePersonalEvent('personal.reminders.changed');
+          void refreshPersonal();
+          void refreshDrafts();
           update({ roomsRevision: state.roomsRevision + 1 });
         } else if (message.type === 'friends.changed' || message.type === 'dm.requests.changed' || message.type === 'privacy.changed') {
           update({ friendsRevision: state.friendsRevision + 1 });

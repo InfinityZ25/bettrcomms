@@ -1,5 +1,6 @@
 import {
   Fragment,
+  useEffectEvent,
   useRef,
   useState,
   useSyncExternalStore,
@@ -60,6 +61,8 @@ import {
 } from './attachmentFiles';
 import { cancelResumableUpload } from './resumableUploads';
 import { persistDraftFiles, restoreDraftFiles } from './attachmentDraftFiles';
+import { draftReplyToId, draftScope, draftsSnapshot, editTextDraft, focusTextDraft, loadTextDraft, sentTextDraft, submittedDraft, subscribeDrafts } from '@/features/personal/draftStore';
+import { DraftStatus } from '@/features/personal/DraftStatus';
 
 function StopRestrictedUploads({ cancel }: { cancel: () => void }) {
   useMountEffect(() => {
@@ -118,7 +121,10 @@ function MessageTimeline({
   const attachmentsRef = useRef(attachments);
   const draftRef = useRef(draft);
   const draftFilesWarning = useRef(false);
-  draftRef.current = draft;
+  const updateComposerDraft = (value: string) => {
+    draftRef.current = value;
+    setDraft(value);
+  };
   const uploadControllers = useRef(new Map<string, AbortController>());
   const [attachmentLimits, setAttachmentLimits] = useState(
     defaultAttachmentLimits,
@@ -171,6 +177,12 @@ function MessageTimeline({
     };
   });
   const [reply, setReply] = useState<Message | null>(null);
+  const replyRef = useRef(reply);
+  const updateComposerReply = (value: Message | null) => {
+    replyRef.current = value;
+    setReply(value);
+  };
+  const quoteLoading = useRef<string | undefined>(undefined);
   const [editing, setEditing] = useState<Message | null>(null);
   const [busy, setBusy] = useState(false);
   const [highlight, setHighlight] = useState<string | undefined>(targetId);
@@ -217,6 +229,39 @@ function MessageTimeline({
     () => typingSnapshot(roomId, threadRootId),
   );
   const input = useRef<HTMLTextAreaElement>(null);
+  const restoreSyncedDraft = () => {
+    if (editing || busyRef.current) return;
+    const state = draftsSnapshot();
+    if (state.userId !== user.id) return;
+    const entry = state.entries[draftScope(roomId, threadRootId)];
+    if (!entry) return;
+    const selected = editableMessage({ body: entry.body, mentions: chat.members.map((person) => ({ id: person.id, name: person.name })) } as Message, chat.members);
+    if (encodeMentions(draftRef.current, mentions.current) !== entry.body || draftRef.current !== selected.body) {
+      mentions.current = selected.mentions;
+      updateComposerDraft(selected.body);
+      nonce.current = null;
+      saveDraft(user.id, roomId, { body: selected.body, attachments: attachmentsRef.current }, threadRootId);
+    }
+    if (!entry.replyToId) {
+      updateComposerReply(null);
+    } else if (entry.replyToId !== replyRef.current?.id && quoteLoading.current !== entry.replyToId) {
+      const id = entry.replyToId;
+      quoteLoading.current = id;
+      const signal = lifetime();
+      void api<{ message: Message }>(`/rooms/${roomId}/messages/${id}`, undefined, undefined, signal).then((result) => {
+        if (!signal.aborted && draftsSnapshot().entries[draftScope(roomId, threadRootId)]?.replyToId === id) {
+          updateComposerReply(result.message);
+        }
+      }, () => {}).finally(() => { if (quoteLoading.current === id) quoteLoading.current = undefined; });
+    }
+  };
+  const applySyncedDraft = useEffectEvent(restoreSyncedDraft);
+  useMountEffect(() => {
+    const offDrafts = subscribeDrafts(() => applySyncedDraft());
+    const offConversation = subscribeConversation(roomId, () => applySyncedDraft(), threadRootId);
+    void loadTextDraft(roomId, threadRootId).then(() => applySyncedDraft());
+    return () => { offDrafts(); offConversation(); focusTextDraft(roomId, false, threadRootId); };
+  });
   const { viewport, end, nearBottom, awayFromBottom, jump, older } =
     useMessageViewport(
       roomId,
@@ -234,11 +279,11 @@ function MessageTimeline({
   };
   useMountEffect(() => () => stopTyping());
   const changeDraft = (value: string) => {
-    draftRef.current = value;
-    setDraft(value);
+    updateComposerDraft(value);
     if (!editing) {
       nonce.current = null;
       saveDraft(user.id, roomId, { body: value, attachments }, threadRootId);
+      editTextDraft(roomId, encodeMentions(value, mentions.current), draftReplyToId(roomId, replyRef.current?.id, threadRootId), threadRootId);
       if (value.trim() && !permission.current.restricted) {
         if (Date.now() - lastTyping.current > 2000) {
           publishTyping(user.id, roomId, true, threadRootId);
@@ -504,7 +549,7 @@ function MessageTimeline({
       return false;
     } finally {
       busyRef.current = false;
-      if (!lifetime().aborted) setBusy(false);
+      if (!lifetime().aborted) { setBusy(false); restoreSyncedDraft(); }
     }
   };
   const retryFile = (index: number) => {
@@ -534,12 +579,13 @@ function MessageTimeline({
     )
       return;
     const body = encodeMentions(draft.trim(), mentions.current);
+    const replyToId = draftReplyToId(roomId, reply?.id, threadRootId);
     const submitMessage = async () => {
       if (editing) {
         await writeMessage(roomId, body, undefined, editing.id);
         if (lifetime().aborted) return;
         const saved = beforeEdit.current;
-        setDraft(saved?.body ?? '');
+        updateComposerDraft(saved?.body ?? '');
         beforeEdit.current = null;
       } else {
         const pendingIds = attachmentsRef.current
@@ -563,7 +609,7 @@ function MessageTimeline({
         const ids = ready.map((item) => item.id);
         const fingerprint = JSON.stringify([
           body,
-          reply?.id ?? '',
+          replyToId ?? '',
           ids,
           threadRootId ?? '',
         ]);
@@ -580,23 +626,26 @@ function MessageTimeline({
           },
           threadRootId,
         );
+        const submitted = await submittedDraft(roomId, threadRootId);
         await writeMessage(
           roomId,
           body,
-          reply?.id,
+          replyToId,
           undefined,
           ids,
           nonce.current.id,
           threadRootId,
+          submitted,
         );
         if (lifetime().aborted) return;
         nonce.current = null;
         attachmentsRef.current = [];
         setAttachments([]);
-        setDraft('');
+        updateComposerDraft('');
         clearDraft(user.id, roomId, threadRootId);
+        sentTextDraft(roomId, encodeMentions(draft, mentions.current), replyToId, submitted?.draft_version, threadRootId);
       }
-      setReply(null);
+      updateComposerReply(null);
       setEditing(null);
       mentions.current.clear();
       stopTyping();
@@ -611,7 +660,7 @@ function MessageTimeline({
     await deleteMessage(roomId, message.id);
     if (editing?.id === message.id) {
       setEditing(null);
-      setDraft(beforeEdit.current?.body ?? '');
+      updateComposerDraft(beforeEdit.current?.body ?? '');
       beforeEdit.current = null;
       mentions.current.clear();
     }
@@ -624,9 +673,9 @@ function MessageTimeline({
     beforeEdit.current = { body: draft, attachments };
     const { body, mentions: selected } = editableMessage(message, chat.members);
     mentions.current = selected;
-    setDraft(body);
+    updateComposerDraft(body);
     setEditing(message);
-    setReply(null);
+    updateComposerReply(null);
     input.current?.focus();
   };
   const query = draft.match(/@([^@\n<>]*)$/)?.[1];
@@ -989,8 +1038,9 @@ function MessageTimeline({
               busy={busy}
               onJump={(id) => void jump(id)}
               onReply={(message) => {
-                setReply(message);
+                updateComposerReply(message);
                 setEditing(null);
+                editTextDraft(roomId, encodeMentions(draftRef.current, mentions.current), message.id, threadRootId);
                 input.current?.focus();
               }}
               onEdit={startEdit}
@@ -1059,12 +1109,14 @@ function MessageTimeline({
           typing…
         </p>
       )}
+      {!editing && <div className="px-4"><DraftStatus roomId={roomId} root={threadRootId} /></div>}
       <MessageComposer
         roomId={roomId}
         userId={user.id}
         recordingKey={`${user.id}:${roomId}:${threadRootId ?? ''}`}
         draft={draft}
         onDraft={changeDraft}
+        onDraftFocus={(focused) => focusTextDraft(roomId, !editing && focused, threadRootId)}
         editing={!!editing}
         reply={reply}
         busy={busy}
@@ -1087,13 +1139,14 @@ function MessageTimeline({
         onMention={mention}
         onSend={send}
         onCancel={() => {
+          if (!editing) editTextDraft(roomId, encodeMentions(draftRef.current, mentions.current), undefined, threadRootId);
           if (editing) {
-            setDraft(beforeEdit.current?.body ?? '');
+            updateComposerDraft(beforeEdit.current?.body ?? '');
             beforeEdit.current = null;
             mentions.current.clear();
           }
           setEditing(null);
-          setReply(null);
+          updateComposerReply(null);
         }}
         inputRef={input}
         label={label}

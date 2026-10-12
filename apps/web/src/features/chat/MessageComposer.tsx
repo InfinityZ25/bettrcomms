@@ -40,6 +40,7 @@ import { attachmentSize } from './attachmentFiles';
 type MessageComposerProps = {
   draft: string;
   onDraft: (value: string) => void;
+  onDraftFocus?: (focused: boolean) => void;
   editing: boolean;
   reply: Message | null;
   busy: boolean;
@@ -83,6 +84,7 @@ export default function MessageComposer(props: MessageComposerProps) {
 function ScopedMessageComposer({
   draft,
   onDraft,
+  onDraftFocus,
   editing,
   reply,
   busy,
@@ -430,7 +432,7 @@ function ScopedMessageComposer({
           }}
           rows={1}
           enterKeyHint={phone ? 'send' : undefined}
-          maxLength={4000}
+          maxLength={8000}
           className="min-w-0 flex-1 resize-none border-0! bg-transparent! px-2! py-2! text-sm shadow-none! outline-none phone:text-base"
           aria-label={`Message ${label}`}
           placeholder={
@@ -438,7 +440,8 @@ function ScopedMessageComposer({
           }
           value={draft}
           disabled={busy}
-          onBlur={onTypingStop}
+          onFocus={() => onDraftFocus?.(true)}
+          onBlur={() => { onTypingStop(); onDraftFocus?.(false); }}
           onPaste={(event) => {
             if (!editing && event.clipboardData.files.length) {
               event.preventDefault();
@@ -446,6 +449,7 @@ function ScopedMessageComposer({
             }
           }}
           onChange={(event) => {
+            if ([...event.target.value].length > 4000) { setFormatError('Messages can contain up to 4,000 characters.'); return; }
             setFormatError('');
             onDraft(event.target.value);
             onSuggestion(0);
