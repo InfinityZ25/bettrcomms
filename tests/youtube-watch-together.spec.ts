@@ -322,6 +322,28 @@ test('real HTTPS YouTube player synchronizes two viewers, transfers host and iso
     await expect
       .poll(() => viewerHelper.evaluate('player?.getPlayerState()'))
       .toBe(2);
+    await host.locator('iframe').scrollIntoViewIfNeeded();
+    await officialFrame.locator('#player-controls').hover();
+    await officialFrame
+      .getByRole('button', { name: 'Play video', exact: true })
+      .click();
+    await expect
+      .poll(async () => (await state(owner, room))?.paused)
+      .toBe(false);
+    await expect
+      .poll(() => viewerHelper.evaluate('player?.getPlayerState()'))
+      .toBe(1);
+    await host.locator('iframe').scrollIntoViewIfNeeded();
+    await officialFrame.locator('#player-controls').hover();
+    await officialFrame
+      .getByRole('button', { name: 'Pause video', exact: true })
+      .click();
+    await expect
+      .poll(async () => (await state(owner, room))?.paused)
+      .toBe(true);
+    await expect
+      .poll(() => viewerHelper.evaluate('player?.getPlayerState()'))
+      .toBe(2);
     expect(watchWrites.filter((write) => write.action !== 'heartbeat')).toEqual(
       [
         ...Array.from({ length: 3 }).flatMap(() => [
@@ -329,6 +351,8 @@ test('real HTTPS YouTube player synchronizes two viewers, transfers host and iso
           { action: 'pause', status: 200 },
         ]),
         { action: 'seek', status: 200 },
+        { action: 'play', status: 200 },
+        { action: 'pause', status: 200 },
         { action: 'play', status: 200 },
         { action: 'pause', status: 200 },
       ],

@@ -1,5 +1,5 @@
 import { Children, isValidElement, useState, type ReactNode } from 'react';
-import Markdown from 'react-markdown';
+import Markdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Message } from '@/api';
 import { safeMessageURL } from './messageFormatting';
@@ -50,7 +50,7 @@ function Spoiler({ children }: { children: ReactNode }) {
   const [revealed, setRevealed] = useState(false);
   return <span><button type="button" aria-label={revealed ? 'Hide spoiler' : 'Reveal spoiler'} aria-expanded={revealed}
     className="rounded bg-muted px-1 text-left align-baseline focus-visible:ring-2 focus-visible:ring-ring"
-    onClick={() => setRevealed(!revealed)}><span aria-hidden="true">{revealed ? 'Hide' : '[spoiler]'}</span></button>{revealed && <span className="ml-1">{children}</span>}</span>;
+    onClick={() => setRevealed((current) => !current)}><span aria-hidden="true">{revealed ? 'Hide' : '[spoiler]'}</span></button>{revealed && <span className="ml-1">{children}</span>}</span>;
 }
 
 function textContent(node: ReactNode): string {
@@ -73,18 +73,22 @@ function CodeBlock({ children }: { children: ReactNode }) {
   </div>;
 }
 
+// Stable renderer types preserve a viewer's spoiler/copy state when reactions,
+// typing or other conversation updates rerender an unchanged message.
+const messageComponents: Components = {
+  a: ({ href, children }) => href ? <a href={href} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" className="text-primary underline underline-offset-2 hover:no-underline">{children}</a> : <>{children}</>,
+  img: ({ alt }) => <span>{alt ? `[image: ${alt}]` : '[image]'}</span>,
+  p: ({ children }) => <p className="whitespace-pre-wrap">{children}</p>,
+  blockquote: ({ children }) => <blockquote className="my-2 border-l-2 border-primary/50 pl-3 text-muted-foreground">{children}</blockquote>,
+  code: ({ children }) => <code className="rounded bg-muted px-1 font-mono text-[0.9em]">{children}</code>,
+  pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
+  ul: ({ children }) => <ul className="my-1 list-disc pl-5">{children}</ul>,
+  ol: ({ children }) => <ol className="my-1 list-decimal pl-5">{children}</ol>,
+  span: ({ node, children }) => node?.properties['data-spoiler'] || node?.properties['dataSpoiler'] ? <Spoiler>{children}</Spoiler> : <span className="rounded bg-primary/15 px-0.5 font-medium text-primary">{children}</span>,
+};
+
 export default function FormattedMessage({ message }: { message: Message }) {
   const people = new Map(message.mentions?.map((person) => [person.id.toLowerCase(), person.name]));
-  return <Markdown key={message.body} remarkPlugins={[remarkGfm, messageNodes(people)]} urlTransform={safeMessageURL}
-    components={{
-      a: ({ href, children }) => href ? <a href={href} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" className="text-primary underline underline-offset-2 hover:no-underline">{children}</a> : <>{children}</>,
-      img: ({ alt }) => <span>{alt ? `[image: ${alt}]` : '[image]'}</span>,
-      p: ({ children }) => <p className="whitespace-pre-wrap">{children}</p>,
-      blockquote: ({ children }) => <blockquote className="my-2 border-l-2 border-primary/50 pl-3 text-muted-foreground">{children}</blockquote>,
-      code: ({ children }) => <code className="rounded bg-muted px-1 font-mono text-[0.9em]">{children}</code>,
-      pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
-      ul: ({ children }) => <ul className="my-1 list-disc pl-5">{children}</ul>,
-      ol: ({ children }) => <ol className="my-1 list-decimal pl-5">{children}</ol>,
-      span: ({ node, children }) => node?.properties['data-spoiler'] || node?.properties['dataSpoiler'] ? <Spoiler>{children}</Spoiler> : <span className="rounded bg-primary/15 px-0.5 font-medium text-primary">{children}</span>,
-    }}>{message.body}</Markdown>;
+  return <Markdown key={`${message.id}:${message.body}`} remarkPlugins={[remarkGfm, messageNodes(people)]} urlTransform={safeMessageURL}
+    components={messageComponents}>{message.body}</Markdown>;
 }

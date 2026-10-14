@@ -1,6 +1,24 @@
 # YouTube Watch Together
 
 Watch Together supports private channel video files and YouTube videos/Shorts.
+Open channel Activities → Watch together, paste a supported YouTube link and
+choose Watch together. That explicit action joins viewing without microphone
+capture, queues the video and starts an idle session; each viewer separately
+allows YouTube before its player loads. If a session is already running, Add to
+queue preserves the current video and host. Sending a link in chat alone does
+not join or start playback. A message consisting of a single supported YouTube URL offers
+Watch together to open this form with the link already filled in.
+
+The YouTube section explains when the service is disabled or its availability
+cannot be checked, with a retry. Shared video files remain available. Failed
+queue/start actions reconcile current state and retain the input and enqueue
+nonce, so retrying a partial start does not insert the same video twice.
+`tests/watch-link-flow.spec.ts` exercises this API/queue flow against local
+PostgreSQL with a configured, distinct loopback player origin; it never loads
+the provider. `tests/spoiler-regression.spec.ts` covers spoiler state under real
+conversation updates. The separate opt-in HTTPS provider test checks official
+keyboard and pointer controls, synchronization and isolation.
+
 YouTube sessions are hidden from clients that do not advertise the
 `watch_sources=file,youtube` capability. Existing file playback remains available.
 

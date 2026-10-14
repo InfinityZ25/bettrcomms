@@ -79,6 +79,7 @@ export default function DirectConversation({
   const call = useActiveCall();
   const [filesOpen, setFilesOpen] = useState(false);
   const [muteOpen, setMuteOpen] = useState(false);
+  const [watchLink, setWatchLink] = useState<{ roomId: string; url: string }>();
   const name = roomLabel(room);
   const inThisCall = call.joined && call.callRoom?.id === room.id;
   const channel = (room.kind ?? 'channel') === 'channel';
@@ -216,6 +217,8 @@ export default function DirectConversation({
             key={`${user.id}:${room.id}`}
             room={room}
             user={user}
+            watchURL={canJoinVoice && watchLink?.roomId === room.id ? watchLink.url : undefined}
+            onWatchClose={() => setWatchLink(undefined)}
           />
         )}
         {user && (
@@ -332,6 +335,7 @@ export default function DirectConversation({
           }
           targetId={targetId}
           onError={onError}
+          onWatchLink={channel && canJoinVoice ? (url) => setWatchLink({ roomId: room.id, url }) : undefined}
         />
       )}
       {filesOpen && user && (

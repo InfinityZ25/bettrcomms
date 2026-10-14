@@ -1,3 +1,19 @@
+## Unreleased — Watch Together link entry and persistent spoilers
+
+Watch Together accepts pasted YouTube links before joining. The explicit Watch
+together action joins without microphone capture and starts an idle session;
+adding to an active session keeps its video and host. Supported standalone
+YouTube chat links offer a button to open the Watch view with the URL filled in.
+Opening this form does not add a video, register viewing or load the provider.
+Disabled or unreachable YouTube configuration now has a visible explanation and
+retry. Account/conversation changes discard the pending link handoff. Provider
+consent, channel permissions and native platform restrictions are unchanged.
+
+Revealed spoilers keep their state through reactions, typing and incoming
+messages. Stable Markdown renderers prevent the text from being immediately
+hidden again; Hide and keyboard toggling still work. Editing the source message
+starts with the new spoiler hidden.
+
 ## Unreleased — daily comfort and shared YouTube
 
 The personal inbox combines private saved messages/files with message and event

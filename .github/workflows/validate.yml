@@ -192,6 +192,9 @@ jobs:
             --user "$AWS_ACCESS_KEY_ID:$AWS_SECRET_ACCESS_KEY" \
             --request PUT "$AWS_ENDPOINT_URL_S3/$AWS_S3_BUCKET"
       - name: Start local services
+        env:
+          # Queue/link UI acceptance never loads the external player before consent.
+          YOUTUBE_PLAYER_ORIGIN: http://127.0.0.1:5176
         run: |
           (cd server && go run ./cmd/server > /tmp/bettercomms-api.log 2>&1) &
           npm run dev > /tmp/bettercomms-web.log 2>&1 &
