@@ -368,6 +368,16 @@ test('a chat YouTube link opens a prefilled watch form and explicit watching pre
       ),
     ).toBe(false);
     await expectNoVoice(member, room.id);
+    await second.keyboard.press('Escape');
+    await expect(viewer).toBeHidden();
+    await expect
+      .poll(async () => (await queue(owner, room.id)).viewers)
+      .toBe(1);
+    await first.keyboard.press('Escape');
+    await expect(host).toBeHidden();
+    await expect
+      .poll(async () => (await queue(owner, room.id)).viewers)
+      .toBe(0);
   } finally {
     if (communityId)
       await owner.request.delete(`/api/v1/communities/${communityId}`, {
@@ -432,7 +442,10 @@ test('disabled YouTube explains the missing configuration and leaves shared vide
     await expect(input).toHaveValue(canonicalURL);
     await expect(input).toHaveAttribute('readonly', '');
     await expect(
-      dialog.getByRole('combobox', { name: 'Choose a video from this channel', exact: true }),
+      dialog.getByRole('combobox', {
+        name: 'Choose a video from this channel',
+        exact: true,
+      }),
     ).toBeVisible();
     await expect(
       youtube.getByRole('button', { name: 'Join Watch', exact: true }),

@@ -36,6 +36,7 @@ import { keepWatchPresence } from './watchHeartbeat';
 import { youtubeRequiresBrowser } from './youtubePlatform';
 import { YouTubeBrowserRequired } from './YouTubeBrowserRequired';
 import { youtubeWatchURL } from './youtubeURL';
+import { createWatchViewing } from './watchViewing';
 
 const emptyQueue: WatchQueueSnapshot = {
   items: [],
@@ -96,7 +97,9 @@ function YouTubeWatchRoom({
   const [error, setError] = useState('');
   const [working, setWorking] = useState(false);
   const workingNow = useRef(false);
-  const [device] = useState(() => crypto.randomUUID());
+  const viewing = useRef<ReturnType<typeof createWatchViewing> | undefined>(
+    undefined,
+  );
   const mutation = useRef<{ input: string; nonce: string } | undefined>(
     undefined,
   );
@@ -170,16 +173,11 @@ function YouTubeWatchRoom({
   }
   const reconcile = useEffectEvent(() => void load());
   const heartbeat = useEffectEvent(async () => {
-    if (!joined) return;
-    const signal = lifetime();
+    const current = viewing.current;
+    if (!joined || !current) return;
+    const signal = current.signal;
     const result = await keepWatchPresence(
-      () =>
-        api(
-          `/rooms/${room.id}/watch-together/viewing`,
-          { device_id: device, present: true },
-          'PUT',
-          signal,
-        ),
+      () => current.renew(),
       state?.source_kind === 'youtube' && host && canPost
         ? () =>
             api(
@@ -195,7 +193,7 @@ function YouTubeWatchRoom({
             )
         : undefined,
     );
-    if (signal.aborted) return;
+    if (signal.aborted || !current.wantsPresence()) return;
     if (result === 'revoked') {
       setJoined(false);
       setQueue(emptyQueue);
@@ -225,6 +223,18 @@ function YouTubeWatchRoom({
   }
   useMountEffect(() => {
     const signal = lifetime();
+    const device = crypto.randomUUID();
+    const currentViewing = createWatchViewing(
+      signal,
+      (present, requestSignal) =>
+        api(
+          `/rooms/${room.id}/watch-together/viewing`,
+          { device_id: device, present },
+          'PUT',
+          requestSignal,
+        ),
+    );
+    viewing.current = currentViewing;
     void loadConfiguration();
     if (canView)
       void api<{ members: RoomMember[] }>(
@@ -253,11 +263,8 @@ function YouTubeWatchRoom({
       clearInterval(timer);
       clearInterval(presence);
       off();
-      void api(
-        `/rooms/${room.id}/watch-together/viewing`,
-        { device_id: device, present: false },
-        'PUT',
-      ).catch(() => {});
+      currentViewing.close();
+      if (viewing.current === currentViewing) viewing.current = undefined;
     };
   });
   async function run(operation: () => Promise<unknown>) {
@@ -285,13 +292,7 @@ function YouTubeWatchRoom({
     if (browserRequired) return;
     const present = !joined;
     await run(async () => {
-      await api(
-        `/rooms/${room.id}/watch-together/viewing`,
-        { device_id: device, present },
-        'PUT',
-        lifetime(),
-      );
-      if (!lifetime().aborted) setJoined(present);
+      if (await viewing.current?.set(present)) setJoined(present);
     });
   }
   async function enqueue(start = false) {
@@ -314,13 +315,7 @@ function YouTubeWatchRoom({
       mutation.current = { input, nonce: crypto.randomUUID() };
     await run(async () => {
       if (!joined) {
-        await api(
-          `/rooms/${room.id}/watch-together/viewing`,
-          { device_id: device, present: true },
-          'PUT',
-          lifetime(),
-        );
-        if (lifetime().aborted) return;
+        if (!(await viewing.current?.set(true))) return;
         setJoined(true);
       }
       await api(

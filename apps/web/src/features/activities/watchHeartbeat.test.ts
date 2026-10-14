@@ -3,6 +3,11 @@ import { ApiRequestError } from '@/api';
 import { keepWatchPresence } from './watchHeartbeat';
 
 describe('independent Watch viewing and hosting leases', () => {
+  it('skips hosting when a renewal was canceled by Leave or is already pending', async () => {
+    const hosting = vi.fn();
+    expect(await keepWatchPresence(async () => false, hosting)).toBe('skipped');
+    expect(hosting).not.toHaveBeenCalled();
+  });
   it('retains viewing when a playback revision races or hosting permission changes', async () => {
     for (const status of [409, 403, 404]) {
       expect(

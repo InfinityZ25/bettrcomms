@@ -1,7 +1,7 @@
 import { ApiRequestError } from '@/api';
 
 export type WatchHeartbeatResult =
-  'present' | 'changed' | 'interrupted' | 'revoked';
+  'present' | 'changed' | 'interrupted' | 'revoked' | 'skipped';
 
 /** Viewing and hosting have different permissions and independent lifetimes. */
 export async function keepWatchPresence(
@@ -9,7 +9,7 @@ export async function keepWatchPresence(
   hosting?: () => Promise<unknown>,
 ): Promise<WatchHeartbeatResult> {
   try {
-    await viewing();
+    if ((await viewing()) === false) return 'skipped';
   } catch (error) {
     return error instanceof ApiRequestError &&
       [401, 403, 404].includes(error.status)

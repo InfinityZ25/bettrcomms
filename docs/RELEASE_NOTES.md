@@ -9,6 +9,11 @@ Disabled or unreachable YouTube configuration now has a visible explanation and
 retry. Account/conversation changes discard the pending link handoff. Provider
 consent, channel permissions and native platform restrictions are unchanged.
 
+Each Watch panel lifecycle owns a separate viewing device. Closing an untouched
+panel sends no presence mutation, including React Strict Mode's development
+remount. Viewing writes are ordered so an in-flight heartbeat cannot rejoin after
+Leave; closing a joined panel releases only its own device.
+
 Revealed spoilers keep their state through reactions, typing and incoming
 messages. Stable Markdown renderers prevent the text from being immediately
 hidden again; Hide and keyboard toggling still work. Editing the source message
