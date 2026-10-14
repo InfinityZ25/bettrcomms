@@ -623,6 +623,7 @@ export default function App() {
                 {chatBeside && room && (
                   <div className="absolute inset-y-0 right-0 z-20 flex w-[min(21rem,calc(100%-2.5rem))] py-1 pr-1 min-[1100px]:static min-[1100px]:w-80 min-[1100px]:shrink-0 min-[1100px]:p-0 phone:z-40 phone:w-full phone:bg-background phone:p-0">
                     <DirectConversation
+                      key={`${user?.id}:${room.id}`}
                       room={room}
                       user={user}
                       live={presence.messages}
@@ -680,6 +681,7 @@ export default function App() {
                   transition={softSpring}
                 >
                   <DirectConversation
+                    key={`${user?.id}:${room.id}`}
                     room={room}
                     user={user}
                     live={presence.messages}

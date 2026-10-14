@@ -10,6 +10,7 @@ import {
   Pin,
   PinOff,
   MessagesSquare,
+  Film,
 } from 'lucide-react';
 import type { Message } from '@/api';
 import { Avatar } from '@/components/avatar';
@@ -33,6 +34,7 @@ import { useLifetimeSignal } from '@/hooks/useLifetimeSignal';
 import { downloadMessageAttachment } from './attachmentFiles';
 import { MessageHistory } from '@/features/activities/MessageHistory';
 import { MessageReminderDialog, PersonalMessageActions, SaveFileButton } from '@/features/personal/MessageActions';
+import { youtubeWatchURL } from '@/features/activities/youtubeURL';
 
 const FormattedMessage = lazy(() => import('./FormattedMessage'));
 export function MessageBody({ message }: { message: Message }) {
@@ -68,6 +70,7 @@ export default function MessageItem({
   onThread,
   onPin,
   canPin = false,
+  onWatchLink,
 }: {
   message: Message;
   userId: string;
@@ -89,6 +92,7 @@ export default function MessageItem({
   onThread?: (message: Message) => void;
   onPin?: (message: Message, remove: boolean) => Promise<boolean>;
   canPin?: boolean;
+  onWatchLink?: (url: string) => void;
 }) {
   const [reacting, setReacting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -99,6 +103,7 @@ export default function MessageItem({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [reminderOpen, setReminderOpen] = useState(false);
   const lifetime = useLifetimeSignal();
+  const watchURL = onWatchLink && !message.deleted_at ? youtubeWatchURL(message.body) : undefined;
   const openAttachment = (id: string) =>
     downloadMessageAttachment(
       message.room_id,
@@ -194,6 +199,11 @@ export default function MessageItem({
                 </div>
               ))}
             </div>
+          )}
+          {watchURL && (
+            <Button size="sm" variant="outline" className="mt-2 min-h-11" onClick={() => onWatchLink?.(watchURL)}>
+              <Film size={15} /> Watch together
+            </Button>
           )}
           {!message.deleted_at && (
             <>

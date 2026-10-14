@@ -420,6 +420,7 @@ export function WatchTogetherPanel({
   receivedAt,
   busy,
   act,
+  initialURL,
 }: {
   room: Room;
   user: User;
@@ -427,6 +428,7 @@ export function WatchTogetherPanel({
   receivedAt: number;
   busy: boolean;
   act: ActivityAction;
+  initialURL?: string;
 }) {
   const [videos, setVideos] = useState<MessageAttachment[]>([]);
   const [selected, setSelected] = useState('');
@@ -499,6 +501,7 @@ export function WatchTogetherPanel({
         receivedAt={receivedAt}
         busy={busy}
         act={act}
+        initialURL={initialURL}
       />
       {(!state || state.host_id === user.id) && canHost && (
         <div className="space-y-3 rounded-xl border bg-muted/20 p-4">
@@ -566,14 +569,14 @@ export function WatchTogetherPanel({
         <div className="flex min-h-32 flex-col items-center justify-center gap-3 text-center text-muted-foreground">
           <Film size={26} />
           <p className="max-w-sm text-sm">
-            Watch a video already shared in this channel. Play, pause and seek
+            Choose an uploaded video file from this channel. Play, pause and seek
             together, with one host keeping everyone in sync.
           </p>
         </div>
       )}
       {!loading && !videos.length && canHost && (
         <p className="text-sm text-muted-foreground">
-          Send a video in chat first, then refresh this list.
+          Upload a video file to this channel, then refresh this list.
         </p>
       )}
       {error && (

@@ -31,10 +31,14 @@ function ActivitiesDialog({
   room,
   user,
   onClose,
+  initialView = 'polls',
+  initialURL,
 }: {
   room: Room;
   user: User;
   onClose: () => void;
+  initialView?: View;
+  initialURL?: string;
 }) {
   const [store] = useState(() => createChannelActivityStore(room.id));
   const state = useSyncExternalStore(
@@ -42,7 +46,7 @@ function ActivitiesDialog({
     store.snapshot,
     store.snapshot,
   );
-  const [view, setView] = useState<View>('polls');
+  const [view, setView] = useState<View>(initialView);
   const [busy, setBusy] = useState(false);
   const actionInFlight = useRef(false);
   const [error, setError] = useState('');
@@ -161,6 +165,7 @@ function ActivitiesDialog({
                 receivedAt={state.receivedAt}
                 busy={busy}
                 act={act}
+                initialURL={initialURL}
               />
             )}
             {(view === 'sticker' || view === 'sound') && (
@@ -182,7 +187,17 @@ function ActivitiesDialog({
   );
 }
 
-export function ChannelActivities({ room, user }: { room: Room; user: User }) {
+export function ChannelActivities({
+  room,
+  user,
+  watchURL,
+  onWatchClose,
+}: {
+  room: Room;
+  user: User;
+  watchURL?: string;
+  onWatchClose?: () => void;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -198,12 +213,17 @@ export function ChannelActivities({ room, user }: { room: Room; user: User }) {
           Activities
         </span>
       </Button>
-      {open && (
+      {(open || watchURL !== undefined) && (
         <ActivitiesDialog
-          key={`${user.id}:${room.id}`}
+          key={`${user.id}:${room.id}:${watchURL ?? ''}`}
           room={room}
           user={user}
-          onClose={() => setOpen(false)}
+          initialView={watchURL !== undefined ? 'watch' : 'polls'}
+          initialURL={watchURL}
+          onClose={() => {
+            setOpen(false);
+            onWatchClose?.();
+          }}
         />
       )}
     </>

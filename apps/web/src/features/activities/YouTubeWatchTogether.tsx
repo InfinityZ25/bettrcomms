@@ -35,6 +35,8 @@ import { YouTubeWatchPlayer } from './YouTubeWatchPlayer';
 import { keepWatchPresence } from './watchHeartbeat';
 import { youtubeRequiresBrowser } from './youtubePlatform';
 import { YouTubeBrowserRequired } from './YouTubeBrowserRequired';
+import { youtubeWatchURL } from './youtubeURL';
+import { createWatchViewing } from './watchViewing';
 
 const emptyQueue: WatchQueueSnapshot = {
   items: [],
@@ -50,6 +52,7 @@ type WatchProps = {
   receivedAt: number;
   act: ActivityAction;
   busy: boolean;
+  initialURL?: string;
 };
 
 export function YouTubeWatchTogether(props: WatchProps) {
@@ -77,21 +80,26 @@ function YouTubeWatchRoom({
   busy,
   playlists,
   setPlaylists,
+  initialURL,
 }: WatchProps & {
   playlists: WatchPlaylist[];
   setPlaylists: Dispatch<SetStateAction<WatchPlaylist[]>>;
 }) {
-  const [configured, setConfigured] = useState(false);
+  const [configured, setConfigured] = useState<boolean | null>(null);
+  const [configurationFailed, setConfigurationFailed] = useState(false);
   const [joined, setJoined] = useState(false);
   const [queue, setQueue] = useState(emptyQueue);
   const [members, setMembers] = useState<RoomMember[]>([]);
-  const [url, setURL] = useState('');
+  const [url, setURL] = useState(initialURL ?? '');
   const [title, setTitle] = useState('');
   const [listName, setListName] = useState('');
   const [nextHost, setNextHost] = useState('');
   const [error, setError] = useState('');
   const [working, setWorking] = useState(false);
-  const [device] = useState(() => crypto.randomUUID());
+  const workingNow = useRef(false);
+  const viewing = useRef<ReturnType<typeof createWatchViewing> | undefined>(
+    undefined,
+  );
   const mutation = useRef<{ input: string; nonce: string } | undefined>(
     undefined,
   );
@@ -165,16 +173,11 @@ function YouTubeWatchRoom({
   }
   const reconcile = useEffectEvent(() => void load());
   const heartbeat = useEffectEvent(async () => {
-    if (!joined) return;
-    const signal = lifetime();
+    const current = viewing.current;
+    if (!joined || !current) return;
+    const signal = current.signal;
     const result = await keepWatchPresence(
-      () =>
-        api(
-          `/rooms/${room.id}/watch-together/viewing`,
-          { device_id: device, present: true },
-          'PUT',
-          signal,
-        ),
+      () => current.renew(),
       state?.source_kind === 'youtube' && host && canPost
         ? () =>
             api(
@@ -190,7 +193,7 @@ function YouTubeWatchRoom({
             )
         : undefined,
     );
-    if (signal.aborted) return;
+    if (signal.aborted || !current.wantsPresence()) return;
     if (result === 'revoked') {
       setJoined(false);
       setQueue(emptyQueue);
@@ -201,20 +204,38 @@ function YouTubeWatchRoom({
         'Connection interrupted. Watch membership will reconnect automatically.',
       );
   });
+  async function loadConfiguration() {
+    const signal = lifetime();
+    setConfigured(null);
+    setConfigurationFailed(false);
+    try {
+      const result = await api<{
+        watch_together?: { youtube_enabled: boolean };
+      }>('/config', undefined, undefined, signal);
+      if (!signal.aborted)
+        setConfigured(result.watch_together?.youtube_enabled === true);
+    } catch {
+      if (!signal.aborted) {
+        setConfigured(false);
+        setConfigurationFailed(true);
+      }
+    }
+  }
   useMountEffect(() => {
     const signal = lifetime();
-    void api<{ watch_together?: { youtube_enabled: boolean } }>(
-      '/config',
-      undefined,
-      undefined,
+    const device = crypto.randomUUID();
+    const currentViewing = createWatchViewing(
       signal,
-    ).then(
-      (result) => {
-        if (!signal.aborted)
-          setConfigured(result.watch_together?.youtube_enabled === true);
-      },
-      () => {},
+      (present, requestSignal) =>
+        api(
+          `/rooms/${room.id}/watch-together/viewing`,
+          { device_id: device, present },
+          'PUT',
+          requestSignal,
+        ),
     );
+    viewing.current = currentViewing;
+    void loadConfiguration();
     if (canView)
       void api<{ members: RoomMember[] }>(
         `/rooms/${room.id}/members`,
@@ -242,21 +263,20 @@ function YouTubeWatchRoom({
       clearInterval(timer);
       clearInterval(presence);
       off();
-      void api(
-        `/rooms/${room.id}/watch-together/viewing`,
-        { device_id: device, present: false },
-        'PUT',
-      ).catch(() => {});
+      currentViewing.close();
+      if (viewing.current === currentViewing) viewing.current = undefined;
     };
   });
   async function run(operation: () => Promise<unknown>) {
-    if (blocked) return;
+    if (busy || workingNow.current || lifetime().aborted) return;
+    workingNow.current = true;
     setWorking(true);
     setError('');
     try {
       await operation();
       if (!lifetime().aborted) await load();
     } catch (failure) {
+      if (!lifetime().aborted) await load();
       if (!lifetime().aborted)
         setError(
           failure instanceof Error
@@ -264,6 +284,7 @@ function YouTubeWatchRoom({
             : 'This watch action did not finish.',
         );
     } finally {
+      workingNow.current = false;
       if (!lifetime().aborted) setWorking(false);
     }
   }
@@ -271,24 +292,36 @@ function YouTubeWatchRoom({
     if (browserRequired) return;
     const present = !joined;
     await run(async () => {
-      await api(
-        `/rooms/${room.id}/watch-together/viewing`,
-        { device_id: device, present },
-        'PUT',
-        lifetime(),
-      );
-      if (!lifetime().aborted) setJoined(present);
+      if (await viewing.current?.set(present)) setJoined(present);
     });
   }
-  async function enqueue() {
+  async function enqueue(start = false) {
+    if (
+      blocked ||
+      workingNow.current ||
+      !configured ||
+      !canView ||
+      !canPost ||
+      browserRequired
+    )
+      return;
+    const videoURL = youtubeWatchURL(url);
+    if (!videoURL) {
+      setError('Paste a YouTube video or Shorts HTTPS link.');
+      return;
+    }
     const input = JSON.stringify([url.trim(), title.trim()]);
     if (mutation.current?.input !== input)
       mutation.current = { input, nonce: crypto.randomUUID() };
     await run(async () => {
+      if (!joined) {
+        if (!(await viewing.current?.set(true))) return;
+        setJoined(true);
+      }
       await api(
         `/rooms/${room.id}/watch-together/queue`,
         {
-          video_url: url.trim(),
+          video_url: videoURL,
           title: title.trim(),
           client_nonce: mutation.current!.nonce,
           revision: queue.revision,
@@ -296,6 +329,29 @@ function YouTubeWatchRoom({
         'POST',
         lifetime(),
       );
+      if (start && !state && !lifetime().aborted) {
+        const currentQueue = await api<WatchQueueSnapshot>(
+          `/rooms/${room.id}/watch-together/queue`,
+          undefined,
+          undefined,
+          lifetime(),
+        );
+        if (!lifetime().aborted) {
+          const started = await act(
+            '/watch-together/next',
+            {
+              playback_id: '',
+              revision: 0,
+              queue_revision: currentQueue.revision,
+            },
+            'POST',
+          );
+          if (!started)
+            throw new Error(
+              'Your video is already in the queue, but playback could not start. Refresh the session and use Start queue when available.',
+            );
+        }
+      }
       if (!lifetime().aborted) {
         setURL('');
         setTitle('');
@@ -400,12 +456,45 @@ function YouTubeWatchRoom({
     );
   }
   if (!configured && !browserRequired)
-    return state?.source_kind === 'youtube' ? (
-      <p role="alert" className="text-sm text-destructive">
-        YouTube playback is temporarily unavailable. Reopen activities after the
-        player service recovers.
-      </p>
-    ) : null;
+    return (
+      <section
+        aria-label="YouTube watch queue"
+        className="space-y-3 rounded-xl border bg-muted/20 p-4"
+      >
+        <h3 className="text-sm font-medium">Watch YouTube together</h3>
+        <p role="status" className="text-sm text-muted-foreground">
+          {configured === null
+            ? 'Checking YouTube availability…'
+            : configurationFailed
+              ? 'Could not check YouTube availability. Try again.'
+              : 'YouTube watching is not enabled here yet. Shared video files are still available below.'}
+        </p>
+        <label className="block text-sm font-medium">
+          Add a YouTube video or Short
+          <input
+            type="url"
+            value={url}
+            readOnly
+            className="mt-2 min-h-11 w-full rounded-md border bg-background px-3"
+            placeholder="Paste a YouTube link"
+          />
+        </label>
+        <p className="text-xs text-muted-foreground">
+          Sending a link in chat does not start playback. Use Watch together
+          once YouTube is available.
+        </p>
+        {configured !== null && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="min-h-11"
+            onClick={() => void loadConfiguration()}
+          >
+            Check again
+          </Button>
+        )}
+      </section>
+    );
   return (
     <section
       aria-label="YouTube watch queue"
@@ -446,17 +535,24 @@ function YouTubeWatchRoom({
                 busy={blocked}
               />
             )}
-          {joined && canPost && (
-            <div className="space-y-2 rounded-xl border bg-muted/20 p-3">
+          {canPost && !browserRequired && (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void enqueue(!state);
+              }}
+              className="space-y-2 rounded-xl border bg-muted/20 p-3"
+            >
               <label className="block text-sm font-medium">
                 Add a YouTube video or Short
                 <input
                   type="url"
                   className="mt-2 min-h-11 w-full rounded-md border bg-background px-3"
-                  placeholder="https://www.youtube.com/watch?v=…"
+                  placeholder="Paste a YouTube link"
                   value={url}
                   onChange={(event) => setURL(event.target.value)}
                   maxLength={2048}
+                  disabled={blocked}
                 />
               </label>
               <label className="block text-xs text-muted-foreground">
@@ -466,17 +562,37 @@ function YouTubeWatchRoom({
                   value={title}
                   onChange={(event) => setTitle(event.target.value)}
                   maxLength={200}
+                  disabled={blocked}
                 />
               </label>
-              <Button
-                size="sm"
-                disabled={blocked || !url.trim() || queue.items.length >= 100}
-                onClick={() => void enqueue()}
-              >
-                <Plus size={14} />
-                Add to queue
-              </Button>
-            </div>
+              <div className="flex flex-wrap gap-2">
+                {!state && (
+                  <Button
+                    type="submit"
+                    size="sm"
+                    disabled={
+                      blocked || !url.trim() || queue.items.length >= 100
+                    }
+                  >
+                    <ListVideo size={14} /> Watch together
+                  </Button>
+                )}
+                <Button
+                  type={state ? 'submit' : 'button'}
+                  variant={state ? 'default' : 'outline'}
+                  size="sm"
+                  disabled={blocked || !url.trim() || queue.items.length >= 100}
+                  onClick={state ? undefined : () => void enqueue()}
+                >
+                  <Plus size={14} /> Add to queue
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {joined
+                  ? 'The host controls playback. Each viewer allows YouTube before the player loads.'
+                  : 'You will join Watch without turning on your microphone. Each viewer allows YouTube before the player loads.'}
+              </p>
+            </form>
           )}
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="inline-flex items-center gap-2 text-sm font-medium">

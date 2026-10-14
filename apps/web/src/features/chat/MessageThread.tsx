@@ -85,6 +85,7 @@ function MessageTimeline({
   onClose,
   threadRootId,
   onOpenThread,
+  onWatchLink,
 }: {
   roomId: string;
   user: User;
@@ -97,6 +98,7 @@ function MessageTimeline({
   postingReason?: string;
   threadRootId?: string;
   onOpenThread: (message: Message) => void;
+  onWatchLink?: (url: string) => void;
   compactHeader?: boolean;
   /** Offered on phones, where the thread covers the button that opened it. */
   onClose?: () => void;
@@ -1044,6 +1046,7 @@ function MessageTimeline({
                 input.current?.focus();
               }}
               onEdit={startEdit}
+              onWatchLink={onWatchLink}
               onThread={!threadRootId ? onOpenThread : undefined}
               canPin={canPin}
               onPin={(message, remove) =>
@@ -1177,6 +1180,7 @@ export default function MessageThread(props: {
   postingReason?: string;
   compactHeader?: boolean;
   onClose?: () => void;
+  onWatchLink?: (url: string) => void;
 }) {
   const [thread, setThread] = useState<{
     root: string;
