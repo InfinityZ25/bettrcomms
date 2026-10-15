@@ -119,7 +119,7 @@ export default function SpacesRail({
   return (
     <nav
       className={cn(
-        'space-rail flex w-[54px] shrink-0 flex-col items-center gap-2 bg-sidebar px-1 py-3 min-[481px]:w-[62px] min-[481px]:px-2 min-[1001px]:w-[68px] min-[1001px]:py-4',
+        'space-rail flex w-[54px] shrink-0 flex-col items-center gap-2 bg-sidebar px-1 py-3 min-[821px]:w-[62px] min-[481px]:px-2 min-[1001px]:w-[68px] min-[1001px]:py-4',
         'max-[820px]:w-full max-[820px]:flex-row max-[820px]:gap-1 max-[820px]:border-t max-[820px]:border-border/60 max-[820px]:px-2 max-[820px]:pt-1 max-[820px]:pb-[max(0.25rem,env(safe-area-inset-bottom))]',
         collapsed && 'min-[821px]:w-[52px] min-[821px]:px-1',
         hidden && 'hidden',
@@ -185,7 +185,7 @@ export default function SpacesRail({
         </RailButton>
       </div>
 
-      <div className="mt-auto flex flex-col items-center max-[820px]:mt-0 max-[820px]:flex-1">
+      <div className="mt-auto flex flex-col items-center max-[820px]:mt-0 max-[820px]:min-w-11 max-[820px]:flex-1">
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
@@ -308,8 +308,9 @@ function RailButton({
   onClick: () => void;
   children: React.ReactNode;
 }) {
+  const { isMobile } = useSidebar();
   return (
-    <Tooltip>
+    <Tooltip disabled={isMobile}>
       <TooltipTrigger
         render={
           <Button

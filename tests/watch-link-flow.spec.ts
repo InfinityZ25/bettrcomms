@@ -5,6 +5,8 @@ import {
   type BrowserContext,
   type Locator,
   type Page,
+  type Response,
+  type Route,
 } from '@playwright/test';
 
 const baseURL = process.env.E2E_BASE_URL ?? 'http://127.0.0.1:5173';
@@ -171,6 +173,7 @@ test('a chat YouTube link opens a prefilled watch form and explicit watching pre
   const owner = await browser.newContext({ baseURL });
   const member = await browser.newContext({ baseURL });
   let communityId = '';
+  let disposeInitialQueueGate: (() => Promise<void>) | undefined;
   try {
     const { community, ownerUser, memberUser, room } = await setup(
       owner,
@@ -324,6 +327,53 @@ test('a chat YouTube link opens a prefilled watch form and explicit watching pre
     expect(hostRequests.providerRequests).toEqual([]);
     await expectNoVoice(owner, room.id);
 
+    const queuePath = `/api/v1/rooms/${room.id}/watch-together/queue`;
+    const queuePattern = `**${queuePath}`;
+    let heldInitialQueueReads = 0;
+    let queueGateReleased = false;
+    let releaseInitialQueue!: () => void;
+    const initialQueueGate = new Promise<void>((resolve) => {
+      releaseInitialQueue = () => {
+        queueGateReleased = true;
+        resolve();
+      };
+    });
+    const releaseAfterJoining = (response: Response) => {
+      const request = response.request();
+      if (
+        response.ok() &&
+        request.method() === 'PUT' &&
+        new URL(response.url()).pathname ===
+          `/api/v1/rooms/${room.id}/watch-together/viewing` &&
+        request.postDataJSON()?.present === true
+      )
+        releaseInitialQueue();
+    };
+    const holdInitialQueue = async (route: Route) => {
+      if (route.request().method() !== 'GET') return route.continue();
+      let response: APIResponse | undefined;
+      try {
+        response = await route.fetch();
+        if (!queueGateReleased) {
+          heldInitialQueueReads++;
+          await initialQueueGate;
+        }
+        await route.fulfill({ response });
+      } catch (failure) {
+        // StrictMode can cancel its first read while the real response is held.
+        if (second.isClosed() || route.request().failure()) return;
+        throw failure;
+      } finally {
+        await response?.dispose().catch(() => {});
+      }
+    };
+    disposeInitialQueueGate = async () => {
+      releaseInitialQueue();
+      second.off('response', releaseAfterJoining);
+      await second.unroute(queuePattern, holdInitialQueue).catch(() => {});
+    };
+    second.on('response', releaseAfterJoining);
+    await second.route(queuePattern, holdInitialQueue);
     const viewer = await openWatch(second);
     const viewerQueue = viewer.getByRole('region', {
       name: 'YouTube watch queue',
@@ -333,6 +383,7 @@ test('a chat YouTube link opens a prefilled watch form and explicit watching pre
       exact: true,
     });
     await expect(viewerInput).toBeEnabled();
+    await expect.poll(() => heldInitialQueueReads).toBeGreaterThan(0);
     expect(memberRequests.mutations).toEqual([]);
     await viewerInput.fill('https://www.youtube.com/shorts/dQw4w9WgXcQ');
     await viewerQueue
@@ -348,6 +399,11 @@ test('a chat YouTube link opens a prefilled watch form and explicit watching pre
       author_id: memberUser.id,
       video: { id: 'dQw4w9WgXcQ', title: 'Friend queued Short' },
     });
+    expect(
+      memberRequests.mutations.filter(
+        (request) => request.method === 'POST' && request.path === queuePath,
+      ),
+    ).toHaveLength(1);
     expect(await watch(member, room.id)).toMatchObject({
       playback_id: playback.playback_id,
       host_id: ownerUser.id,
@@ -379,6 +435,7 @@ test('a chat YouTube link opens a prefilled watch form and explicit watching pre
       .poll(async () => (await queue(owner, room.id)).viewers)
       .toBe(0);
   } finally {
+    await disposeInitialQueueGate?.();
     if (communityId)
       await owner.request.delete(`/api/v1/communities/${communityId}`, {
         headers,

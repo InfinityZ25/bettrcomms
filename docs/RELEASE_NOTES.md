@@ -13,6 +13,16 @@ settings, with keyboard navigation and a visible control for touch users.
 Navigation preserves drafts and ongoing calls. Message search keeps its visible
 controls and moves to Ctrl/Command+Shift+F. Account changes clear the active
 palette; authorized conversation data determines which channels can appear.
+The six mobile navigation buttons retain at least 44-pixel touch targets through
+820 pixels. Mobile rail tooltips no longer cover adjacent buttons after focus
+returns from Quick access.
+
+Static JavaScript module workers use an explicit JavaScript MIME type, avoiding
+PDF preview failures when Windows registers `.mjs` files as plain text.
+
+Adding a YouTube video now reads the queue revision after joining, so submitting
+while the initial queue is still loading does not send a stale revision. Real
+concurrent changes still produce a recoverable conflict.
 
 See [image editing and quick access](IMAGE_EDITING_QUICK_ACCESS.md) for format,
 resource, privacy and validation boundaries.

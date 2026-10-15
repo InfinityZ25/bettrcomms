@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -231,6 +232,75 @@ func TestProductionStaticAssetsUseCSPAndContentAwareCaching(t *testing.T) {
 		if w.Header().Get("X-Frame-Options") != "DENY" {
 			t.Fatalf("path=%s missing frame denial", tc.path)
 		}
+	}
+}
+
+func TestProductionModuleAssetsUseJavaScriptMIME(t *testing.T) {
+	dist := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dist, "assets"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const index = "<!doctype html><div id=app></div>"
+	const module = "export const workerReady = true;"
+	for path, content := range map[string]string{
+		"index.html":            index,
+		"assets/pdf.worker.mjs": module,
+		"assets/app.css":        "body { color: black; }",
+		"assets/worker.mjs.map": `{"version":3}`,
+	} {
+		if err := os.WriteFile(filepath.Join(dist, filepath.FromSlash(path)), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a := New(testStore{}, newTestSessions(true), Config{AppURL: "https://chat.example", WebDist: dist})
+	server := httptest.NewServer(a.Handler())
+	defer server.Close()
+	// Compare unrelated types against FileServer without changing global MIME state.
+	reference := httptest.NewServer(http.FileServer(http.Dir(dist)))
+	defer reference.Close()
+	for _, tc := range []struct {
+		method, path, body, referencePath string
+	}{
+		{method: http.MethodGet, path: "/assets/pdf.worker.mjs", body: module},
+		{method: http.MethodHead, path: "/assets/pdf.worker.mjs"},
+		{method: http.MethodGet, path: "/assets/app.css", body: "body { color: black; }", referencePath: "/assets/app.css"},
+		{method: http.MethodGet, path: "/assets/worker.mjs.map", body: `{"version":3}`, referencePath: "/assets/worker.mjs.map"},
+		{method: http.MethodGet, path: "/rooms/example", body: index, referencePath: "/"},
+		{method: http.MethodGet, path: "/assets/missing.mjs", body: index, referencePath: "/"},
+	} {
+		t.Run(tc.method+tc.path, func(t *testing.T) {
+			request, err := http.NewRequest(tc.method, server.URL+tc.path, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			response, err := server.Client().Do(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer response.Body.Close()
+			body, err := io.ReadAll(response.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if response.StatusCode != http.StatusOK || string(body) != tc.body {
+				t.Fatalf("status=%d body=%q", response.StatusCode, body)
+			}
+			if response.Header.Get("X-Content-Type-Options") != "nosniff" {
+				t.Fatal("missing MIME sniffing protection")
+			}
+			wantType := "text/javascript; charset=utf-8"
+			if tc.referencePath != "" {
+				original, err := reference.Client().Get(reference.URL + tc.referencePath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer original.Body.Close()
+				wantType = original.Header.Get("Content-Type")
+			}
+			if got := response.Header.Get("Content-Type"); got != wantType {
+				t.Fatalf("Content-Type=%q, want %q", got, wantType)
+			}
+		})
 	}
 }
 

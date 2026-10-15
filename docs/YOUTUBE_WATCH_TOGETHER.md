@@ -13,6 +13,10 @@ The YouTube section explains when the service is disabled or its availability
 cannot be checked, with a retry. Shared video files remain available. Failed
 queue/start actions reconcile current state and retain the input and enqueue
 nonce, so retrying a partial start does not insert the same video twice.
+Enqueue reads the current queue revision after any viewing registration rather
+than capturing the initial rendered revision. A concurrent queue change after
+that read still returns a conflict for reconciliation; mutations are not retried
+automatically.
 `tests/watch-link-flow.spec.ts` exercises this API/queue flow against local
 PostgreSQL with a configured, distinct loopback player origin; it never loads
 the provider. `tests/spoiler-regression.spec.ts` covers spoiler state under real
