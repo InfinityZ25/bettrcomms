@@ -58,6 +58,11 @@ import {
   type Section,
 } from '@/features/shell/sections';
 import SpacesRail from '@/features/shell/SpacesRail';
+import QuickAccess from '@/features/shell/QuickAccess';
+import { openQuickAccess } from '@/features/shell/quickAccessEvents';
+import type { QuickDestination } from '@/features/shell/quickAccessModel';
+import type { SettingsPage } from '@/features/settings/SettingsScreen';
+import { openMessageSearch } from '@/features/chat/searchEvents';
 import HomeScreen from '@/features/shell/HomeScreen';
 import WorkspaceScreen from '@/features/shell/WorkspaceScreen';
 import { readScreen, useScreenRoute } from '@/features/shell/useScreenRoute';
@@ -151,7 +156,7 @@ export default function App() {
       (!room && !callJoined && !mobileList));
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsEntry, setSettingsEntry] = useState({
-    page: 'audio' as 'audio' | 'profile',
+    page: 'audio' as SettingsPage,
     revision: 0,
   });
   const openSettings = () => setSettingsOpen(true);
@@ -240,6 +245,30 @@ export default function App() {
     setSection(sectionForRoom(next.kind));
     setCallOpen(false);
     navigate('call');
+  };
+  const quickNavigate = (destination: QuickDestination) => {
+    switch (destination.kind) {
+      case 'room':
+        openRoom(destination.room);
+        selectRoom(destination.room);
+        return;
+      case 'setting':
+        setSettingsEntry((entry) => ({ page: destination.page, revision: entry.revision + 1 }));
+        openSettings();
+        return;
+      case 'navigation':
+        switch (destination.page) {
+          case 'home': setRoom(null); openHome(); return;
+          case 'friends': setFriendsOpen(true); return;
+          case 'recordings': openRecordings(); return;
+          case 'search': openMessageSearch(); return;
+          default: { const unreachable: never = destination; return unreachable; }
+        }
+      case 'friend':
+        // The palette resolves the existing authorized direct-conversation route first.
+        return;
+      default: { const unreachable: never = destination; return unreachable; }
+    }
   };
   /*
     The end of a call in a conversation hands the screen back to the
@@ -499,6 +528,15 @@ export default function App() {
             setChatColumn(true);
             setChannelChat(true);
           }}
+        />
+      )}
+      {user && (
+        <QuickAccess
+          key={`quick-access:${user.id}`}
+          userId={user.id}
+          revision={`${presence.roomsRevision}:${presence.friendsRevision}:${presence.syncRevision}`}
+          enabled={screen !== 'share'}
+          onNavigate={quickNavigate}
         />
       )}
       <div
@@ -846,6 +884,7 @@ export default function App() {
           onSignOut={signOut}
           onHome={openHome}
           onActivity={() => setActivityOpen(true)}
+          onQuickAccess={openQuickAccess}
         />
         <AnimatePresence>
           {error && (

@@ -1,6 +1,8 @@
 import {
   useRef,
   useState,
+  lazy,
+  Suspense,
   type FormEvent,
   type RefObject,
   type Dispatch,
@@ -37,6 +39,8 @@ import VoiceNoteComposer from './VoiceNoteComposer';
 import PendingAttachmentCard from './PendingAttachmentCard';
 import { attachmentSize } from './attachmentFiles';
 
+const ImageEditor = lazy(() => import('./ImageEditor'));
+
 type MessageComposerProps = {
   draft: string;
   onDraft: (value: string) => void;
@@ -57,6 +61,7 @@ type MessageComposerProps = {
   onRemoveFile: (index: number) => void;
   onCancelUpload?: (index: number) => void;
   onRetryFile?: (index: number) => void;
+  onReplaceFile?: (original: PendingAttachment, edited: File) => boolean;
   attachmentsMutable?: boolean;
   maxAttachments?: number;
   maxFileBytes?: number;
@@ -101,6 +106,7 @@ function ScopedMessageComposer({
   onRemoveFile,
   onCancelUpload,
   onRetryFile,
+  onReplaceFile,
   attachmentsMutable = !busy,
   maxAttachments = 4,
   maxFileBytes = 500 * 1024 * 1024,
@@ -120,6 +126,22 @@ function ScopedMessageComposer({
   const [recording, setRecording] = useState(false);
   const [formatError, setFormatError] = useState('');
   const [dragging, setDragging] = useState(false);
+  const [editingImage, setEditingImage] = useState<PendingAttachment | null>(null);
+  const imageEditorOpen = Boolean(
+    editingImage?.file &&
+      !editing &&
+      !busy &&
+      !attachmentsBlocked &&
+      attachmentsMutable &&
+      attachments.some(
+        (item) =>
+          item.localId === editingImage.localId &&
+          item.file === editingImage.file,
+      ),
+  );
+  // Invalidate the click intent when its source or permissions disappear. A
+  // later permission grant must not reopen a new editor for the old selection.
+  if (editingImage && !imageEditorOpen) setEditingImage(null);
   const dragDepth = useRef(0);
   const emojiSelection = useRef({ start: 0, end: 0 });
   const uploading = attachments.some(
@@ -177,7 +199,7 @@ function ScopedMessageComposer({
     <form
       className="message-composer relative m-3 shrink-0 rounded-2xl border bg-muted/60 p-2 phone:m-2 phone:p-1 focus-within:ring-2 focus-within:ring-ring/40"
       onSubmit={(event) => {
-        if (busy || blocked || voiceOpen) event.preventDefault();
+        if (busy || blocked || voiceOpen || imageEditorOpen) event.preventDefault();
         else onSend(event);
       }}
       onDragEnter={(event) => {
@@ -274,9 +296,21 @@ function ScopedMessageComposer({
               onRemove={() => onRemoveFile(index)}
               onCancel={() => onCancelUpload?.(index)}
               onRetry={() => onRetryFile?.(index)}
+              onEdit={onReplaceFile ? () => setEditingImage(attachment) : undefined}
             />
           ))}
         </div>
+      )}
+      {imageEditorOpen && editingImage?.file && onReplaceFile && (
+        <Suspense fallback={<div className="flex items-center gap-2 p-2"><p role="status" className="text-xs">Opening image editor…</p><Button type="button" variant="ghost" className="min-h-11" onClick={() => setEditingImage(null)}>Cancel image editing</Button></div>}>
+          <ImageEditor
+            key={editingImage.localId || editingImage.id}
+            file={editingImage.file}
+            maxBytes={maxFileBytes}
+            onClose={() => { setEditingImage(null); inputRef.current?.focus(); }}
+            onApply={(file) => onReplaceFile(editingImage, file)}
+          />
+        </Suspense>
       )}
       {choosingEmoji && (
         <EmojiDialog
@@ -478,7 +512,7 @@ function ScopedMessageComposer({
                 );
             } else if (event.key === 'Enter' && !event.shiftKey) {
               event.preventDefault();
-              if (!busy && !blocked && !voiceOpen) onSend();
+              if (!busy && !blocked && !voiceOpen && !imageEditorOpen) onSend();
             }
           }}
         />
@@ -491,7 +525,8 @@ function ScopedMessageComposer({
             (!draft.trim() && (editing || attachments.length === 0)) ||
             busy ||
             blocked ||
-            voiceOpen
+            voiceOpen ||
+            imageEditorOpen
           }
           aria-label={
             uploading

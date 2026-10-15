@@ -1,4 +1,4 @@
-import { openMessageSearch } from '@/features/chat/searchEvents';
+import { openQuickAccess } from './quickAccessEvents';
 import {
   useEffect,
   useMemo,
@@ -221,11 +221,11 @@ function TitlebarSearch() {
         />
         <button
           type="button"
-          aria-label="Search all messages"
-          onClick={() => openMessageSearch()}
+          aria-label="Quick access (Ctrl+K)"
+          onClick={openQuickAccess}
           className="h-7 w-full rounded-lg border border-border/70 bg-background/50 ps-8 pe-2.5 text-left text-xs text-muted-foreground hover:bg-background focus-visible:ring-2 focus-visible:ring-ring/40"
         >
-          Search messages <span className="float-right">Ctrl K</span>
+          Go to a friend, channel or setting <span className="float-right">Ctrl K</span>
         </button>
       </div>
     </div>

@@ -49,21 +49,76 @@ test('mobile sections open full-screen lists without interrupting an active call
     await page.getByRole('button', { name: 'Join voice' }).click();
     await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
     const tabs = page.getByRole('navigation', { name: 'Sections' });
-    for (const size of [{width:390,height:650}, {width:800,height:650}, {width:852,height:393}]) {
+    for (const size of [{width:320,height:650}, {width:375,height:650}, {width:390,height:650}, {width:800,height:650}, {width:852,height:393}]) {
       await page.setViewportSize(size);
       await expect(tabs.getByRole('button', { name: 'Friends', exact: true })).toBeHidden();
       if (size.width <= 820) {
-        await expect(tabs.getByRole('button', { name: /^Personal inbox/ })).toBeVisible();
-        await expect(tabs.getByRole('button')).toHaveCount(5);
+        const expectedTabs = [
+          'Bettercomms home',
+          'Quick access',
+          'Messages',
+          'Rooms',
+          /^Personal inbox(?:, \d+ reminders due)?$/,
+          'Mobile Nav and account options',
+        ];
+        await expect(tabs.getByRole('button')).toHaveCount(expectedTabs.length);
+        for (const name of expectedTabs) {
+          const button = tabs.getByRole('button', { name, exact: true });
+          await expect(button).toBeVisible();
+          await expect(button).toBeEnabled();
+          // Probe touch targets without mouse hover. A mouse trial-click can
+          // leave the prior tab's tooltip over its neighbor on a touch device.
+          expect(await button.evaluate((element) => {
+            const box = element.getBoundingClientRect();
+            const target = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+            return target !== null && element.contains(target);
+          })).toBe(true);
+        }
+        // Read a single layout snapshot: resize transitions must not compare
+        // one tab's earlier position with another tab's later position.
+        const boxes = await tabs.getByRole('button').evaluateAll((buttons) =>
+          buttons.map((button) => {
+            const box = button.getBoundingClientRect();
+            return {
+              name: button.getAttribute('aria-label'),
+              x: box.x, y: box.y, width: box.width, height: box.height,
+            };
+          }),
+        );
+        for (const box of boxes) {
+          expect(box.width, `${box.name} width at ${size.width}px`).toBeGreaterThanOrEqual(44);
+          expect(box.height, `${box.name} height at ${size.width}px`).toBeGreaterThanOrEqual(44);
+          expect(box.x).toBeGreaterThanOrEqual(0);
+          expect(box.y).toBeGreaterThanOrEqual(0);
+          expect(box.x + box.width).toBeLessThanOrEqual(size.width + 0.5);
+          expect(box.y + box.height).toBeLessThanOrEqual(size.height + 0.5);
+        }
+        for (let index = 1; index < boxes.length; index++) {
+          expect(Math.abs(boxes[index].y + boxes[index].height / 2
+            - (boxes[0].y + boxes[0].height / 2))).toBeLessThanOrEqual(1);
+          expect(boxes[index - 1].x + boxes[index - 1].width)
+            .toBeLessThanOrEqual(boxes[index].x + 0.5);
+        }
+        expect(await tabs.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(size.width);
+
+        await tabs.getByRole('button', { name: 'Quick access', exact: true }).tap();
+        const quickAccess = page.getByRole('dialog', { name: 'Quick access', exact: true });
+        await expect(quickAccess.getByRole('combobox', { name: 'Find a friend, channel or setting', exact: true })).toBeVisible();
+        await page.keyboard.press('Escape');
+        await expect(quickAccess).toBeHidden();
+        await expect(tabs.getByRole('button', { name: 'Quick access', exact: true })).toBeFocused();
+        await expect(page.locator('[data-slot="tooltip-content"]').filter({ hasText: /^Quick access$/ })).toBeHidden();
+        await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
       }
-      await tabs.getByRole('button', { name: 'Rooms', exact: true }).click();
+      await tabs.getByRole('button', { name: 'Rooms', exact: true }).tap();
       const list = page.getByRole('main', { name: 'Rooms', exact: true });
       await expect(list).toBeVisible();
       await expect(page.getByRole('dialog', { name: 'Conversations' })).toBeHidden();
       await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
       const box = (await list.boundingBox())!;
       expect(box.width).toBeGreaterThan(size.width - 80);
-      await list.getByRole('button', { name: room.name, exact: true }).click();
+      await list.getByRole('button', { name: room.name, exact: true }).tap();
       await expect(list).toBeHidden();
       await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
     }
@@ -71,6 +126,8 @@ test('mobile sections open full-screen lists without interrupting an active call
     await page.setViewportSize({ width: 1280, height: 800 });
     await expect(tabs.getByRole('button', { name: 'Friends', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Leave call' })).toBeVisible();
+    await page.getByRole('button', { name: 'Leave call' }).click();
+    await expect(page.getByRole('button', { name: 'Leave call' })).toBeHidden();
   } finally { await context.close(); }
 });
 

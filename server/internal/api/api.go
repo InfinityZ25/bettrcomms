@@ -144,6 +144,9 @@ func spaHandler(root string) http.Handler {
 		if info, e := os.Stat(candidate); e == nil && !info.IsDir() {
 			assetPath := strings.TrimLeft(filepath.ToSlash(rel), "/")
 			if strings.HasPrefix(assetPath, "assets/") {
+				if strings.EqualFold(filepath.Ext(assetPath), ".mjs") {
+					w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+				}
 				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 			} else {
 				w.Header().Set("Cache-Control", "no-cache")

@@ -19,6 +19,7 @@ import { useMountEffect } from '@/hooks/useMountEffect';
 import { roomLabel } from '@/features/rooms/RoomNavigation';
 import { formatMessagePreview } from './messageFormatting';
 import { dateRange, quickDateRange } from '@/features/personal/time';
+import { hasBlockingOverlay } from '@/features/shell/shortcutGuards';
 
 export default function MessageSearch({
   rooms,
@@ -105,7 +106,9 @@ export default function MessageSearch({
     const show = (event: Event) =>
       openSearch((event as CustomEvent<string | undefined>).detail);
     const shortcut = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+      if (!event.defaultPrevented && !event.repeat && !event.isComposing && !event.altKey
+        && (event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'f'
+        && !hasBlockingOverlay()) {
         event.preventDefault();
         openSearch();
       }

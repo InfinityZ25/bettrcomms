@@ -313,30 +313,38 @@ function YouTubeWatchRoom({
     const input = JSON.stringify([url.trim(), title.trim()]);
     if (mutation.current?.input !== input)
       mutation.current = { input, nonce: crypto.randomUUID() };
+    const signal = lifetime();
     await run(async () => {
       if (!joined) {
         if (!(await viewing.current?.set(true))) return;
         setJoined(true);
       }
+      const queueBeforeEnqueue = await api<WatchQueueSnapshot>(
+        `/rooms/${room.id}/watch-together/queue`,
+        undefined,
+        undefined,
+        signal,
+      );
+      if (signal.aborted) return;
       await api(
         `/rooms/${room.id}/watch-together/queue`,
         {
           video_url: videoURL,
           title: title.trim(),
           client_nonce: mutation.current!.nonce,
-          revision: queue.revision,
+          revision: queueBeforeEnqueue.revision,
         },
         'POST',
-        lifetime(),
+        signal,
       );
-      if (start && !state && !lifetime().aborted) {
+      if (start && !state && !signal.aborted) {
         const currentQueue = await api<WatchQueueSnapshot>(
           `/rooms/${room.id}/watch-together/queue`,
           undefined,
           undefined,
-          lifetime(),
+          signal,
         );
-        if (!lifetime().aborted) {
+        if (!signal.aborted) {
           const started = await act(
             '/watch-together/next',
             {
@@ -352,7 +360,7 @@ function YouTubeWatchRoom({
             );
         }
       }
-      if (!lifetime().aborted) {
+      if (!signal.aborted) {
         setURL('');
         setTitle('');
         mutation.current = undefined;

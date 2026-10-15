@@ -1,3 +1,32 @@
+## Unreleased — local image editing and quick access
+
+Pending local images can be cropped, rotated, drawn on, marked with arrows or
+covered with opaque redactions before sending. The editor supports undo/redo,
+reset and numeric rectangle controls alongside pointer/touch input. Applying
+creates a flattened PNG and replaces the local pending file; Cancel keeps the
+original. The same flow works in threads. Unsupported or oversized images keep
+their original attachment and show an explanation. No edit uploads an image or
+sends a message by itself.
+
+Ctrl+K or Command+K opens Quick access for friends, conversations, channels and
+settings, with keyboard navigation and a visible control for touch users.
+Navigation preserves drafts and ongoing calls. Message search keeps its visible
+controls and moves to Ctrl/Command+Shift+F. Account changes clear the active
+palette; authorized conversation data determines which channels can appear.
+The six mobile navigation buttons retain at least 44-pixel touch targets through
+820 pixels. Mobile rail tooltips no longer cover adjacent buttons after focus
+returns from Quick access.
+
+Static JavaScript module workers use an explicit JavaScript MIME type, avoiding
+PDF preview failures when Windows registers `.mjs` files as plain text.
+
+Adding a YouTube video now reads the queue revision after joining, so submitting
+while the initial queue is still loading does not send a stale revision. Real
+concurrent changes still produce a recoverable conflict.
+
+See [image editing and quick access](IMAGE_EDITING_QUICK_ACCESS.md) for format,
+resource, privacy and validation boundaries.
+
 ## Unreleased — Watch Together link entry and persistent spoilers
 
 Watch Together accepts pasted YouTube links before joining. The explicit Watch
