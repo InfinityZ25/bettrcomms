@@ -6,6 +6,7 @@ import {
   Image,
   Mic,
   Music2,
+  Pencil,
   RotateCw,
   X,
 } from 'lucide-react';
@@ -29,6 +30,7 @@ export default function PendingAttachmentCard({
   onRemove,
   onCancel,
   onRetry,
+  onEdit,
 }: {
   attachment: PendingAttachment;
   roomId?: string;
@@ -37,6 +39,7 @@ export default function PendingAttachmentCard({
   onRemove: () => void;
   onCancel: () => void;
   onRetry: () => void;
+  onEdit?: () => void;
 }) {
   const kind = attachmentKind(attachment.content_type, attachment.filename);
   const [url, setUrl] = useState('');
@@ -193,6 +196,11 @@ export default function PendingAttachmentCard({
           {attachmentSize(attachment.size_bytes)}
           {previewError && ' · Preview unavailable; file can still be sent'}
         </div>
+        {attachment.file && onEdit && (kind === 'image' || attachment.file.type.startsWith('image/')) && (
+          <Button type="button" variant="outline" className="min-h-11" disabled={!removable || !retryable || uploading} aria-label={`Edit image ${attachment.filename}`} onClick={onEdit}>
+            <Pencil data-icon="inline-start" />Edit image
+          </Button>
+        )}
         {previewLoading && (
           <p role="status" className="text-[0.65rem] text-muted-foreground">
             Loading preview…

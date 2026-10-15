@@ -416,6 +416,23 @@ function MessageTimeline({
         () => {},
       );
   };
+  const replaceFile = (original: PendingAttachment, file: File) => {
+    if (busyRef.current || editing || permission.current.restricted || lifetime().aborted) return false;
+    const index = attachmentsRef.current.findIndex((item) => item.localId === original.localId && item.file === original.file && item.id === original.id);
+    if (index < 0 || !original.file || file.size < 1 || file.size > attachmentLimits.max_file_bytes) return false;
+    // A new identity makes every old upload callback and saved blob reference obsolete.
+    const next = attachmentsRef.current.map((item, position) => position === index ? {
+      id: '', localId: crypto.randomUUID(), filename: file.name, content_type: file.type,
+      size_bytes: file.size, file, uploadState: 'queued' as const,
+    } : item);
+    nonce.current = null;
+    updateAttachments(next);
+    if (original.id) void discardPendingAttachment(roomId, original.id, lifetime()).catch(() => {
+      if (!lifetime().aborted) onError('The edited image is in your draft. Old upload cleanup will retry automatically.');
+    });
+    else if (original.uploadId) void cancelResumableUpload(roomId, original.uploadId, lifetime()).catch(() => {});
+    return true;
+  };
   const addVoiceFile = (file: File, durationMs: number) => {
     if (
       busyRef.current ||
@@ -1159,6 +1176,7 @@ function MessageTimeline({
         onRemoveFile={removeFile}
         onCancelUpload={cancelUpload}
         onRetryFile={retryFile}
+        onReplaceFile={replaceFile}
         attachmentsMutable={!busy || uploadPhase}
         maxAttachments={attachmentLimits.max_per_message}
         maxFileBytes={attachmentLimits.max_file_bytes}

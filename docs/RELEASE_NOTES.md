@@ -1,3 +1,22 @@
+## Unreleased — local image editing and quick access
+
+Pending local images can be cropped, rotated, drawn on, marked with arrows or
+covered with opaque redactions before sending. The editor supports undo/redo,
+reset and numeric rectangle controls alongside pointer/touch input. Applying
+creates a flattened PNG and replaces the local pending file; Cancel keeps the
+original. The same flow works in threads. Unsupported or oversized images keep
+their original attachment and show an explanation. No edit uploads an image or
+sends a message by itself.
+
+Ctrl+K or Command+K opens Quick access for friends, conversations, channels and
+settings, with keyboard navigation and a visible control for touch users.
+Navigation preserves drafts and ongoing calls. Message search keeps its visible
+controls and moves to Ctrl/Command+Shift+F. Account changes clear the active
+palette; authorized conversation data determines which channels can appear.
+
+See [image editing and quick access](IMAGE_EDITING_QUICK_ACCESS.md) for format,
+resource, privacy and validation boundaries.
+
 ## Unreleased — Watch Together link entry and persistent spoilers
 
 Watch Together accepts pasted YouTube links before joining. The explicit Watch

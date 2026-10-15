@@ -10,6 +10,7 @@ import {
   UserRound,
   Bookmark,
   Bell,
+  Search,
 } from 'lucide-react';
 import { Avatar } from '@/components/avatar';
 import { useOwnFace } from '@/features/settings/blobatarIdentity';
@@ -75,6 +76,7 @@ export default function SpacesRail({
   onHome,
   onActivity,
   reminders,
+  onQuickAccess,
 }: {
   user: User | null;
   screen: Screen;
@@ -92,6 +94,7 @@ export default function SpacesRail({
   onHome: () => void;
   onActivity: () => void;
   reminders?: ReactNode;
+  onQuickAccess: () => void;
 }) {
   // A section button is current when the sidebar is showing it and no other
   // screen has taken over.
@@ -145,6 +148,7 @@ export default function SpacesRail({
         title="Toggle sidebar"
       />
       <Separator className="my-1 w-6 max-[820px]:hidden" />
+      {user && <RailButton label="Quick access" tab="Find" onClick={onQuickAccess}><Search /></RailButton>}
 
       <RailButton
         label="Messages"

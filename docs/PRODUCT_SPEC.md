@@ -67,6 +67,14 @@ retention removes expired attachments while preserving registered media assets.
 Optional ClamAV scanning keeps new uploads unavailable until clean and fails
 closed when its configured daemon cannot scan them.
 
+Before sending a local static image, the composer offers cropping, quarter-turn
+rotation, drawing, arrows and opaque redaction. Edits stay on the device until
+the ordinary explicit message send. Applying edits replaces that pending file
+with a flattened PNG; canceling preserves the original. The editor bounds input
+bytes, dimensions and pixel allocation, rejects animated/vector images rather
+than silently flattening them, and releases temporary image resources on close.
+Main conversations and threads use the same editing flow.
+
 Polls allow one current vote per member and a closing time or manual closure.
 Scheduled events include Going/Maybe/Declined responses and deduplicated in-app
 reminders ten minutes before an event, surviving reconnects and reloads.
@@ -92,6 +100,12 @@ summary. Search supports local dates and content filters without requiring text.
 Account drafts synchronize text and reply/mention context automatically, preserve
 both texts on conflicts and clear only the revision submitted with a message.
 See `DAILY_COMFORT.md` for recovery, privacy and notification behavior.
+
+Quick access opens with Ctrl+K, Command+K or a visible navigation control. It
+finds authorized conversations, channels, friends and account settings with
+keyboard navigation, favorites and recent conversation activity. Selecting a destination
+preserves unsent drafts and ongoing calls; it does not send a message or join
+voice. Message content search remains separate under Ctrl/Command+Shift+F.
 
 ## Capture implementation boundaries
 
