@@ -197,7 +197,7 @@ function SynchronizedVideo({
   }
   return (
     <div className="space-y-3">
-      <div className="overflow-hidden rounded-xl border bg-black">
+      <div className="overflow-hidden rounded-2xl border bg-black bc-elevated">
         <video
           ref={video}
           src={url || undefined}
@@ -251,6 +251,7 @@ function SynchronizedVideo({
         <label className="flex items-center gap-2">
           <input
             type="checkbox"
+            className="accent-primary"
             checked={muted}
             onChange={(event) => {
               setMuted(event.target.checked);
@@ -363,7 +364,7 @@ function SynchronizedVideo({
             id="watch-host"
             value={nextHost}
             onChange={(event) => setNextHost(event.target.value)}
-            className="min-h-9 min-w-0 rounded-md border bg-background px-2 text-sm"
+            className="min-h-9 min-w-0 rounded-xl border bg-background px-2 text-sm"
             disabled={busy}
           >
             <option value="">Choose a member</option>
@@ -504,11 +505,11 @@ export function WatchTogetherPanel({
         initialURL={initialURL}
       />
       {(!state || state.host_id === user.id) && canHost && (
-        <div className="space-y-3 rounded-xl border bg-muted/20 p-4">
+        <div className="space-y-3 rounded-2xl bc-card p-4">
           <label className="block text-sm font-medium">
             Choose a video from this channel
             <select
-              className="mt-2 min-h-10 w-full rounded-md border bg-background px-3 text-sm"
+              className="mt-2 min-h-10 w-full rounded-xl border bg-background px-3 text-sm"
               value={selected}
               onChange={(event) => setSelected(event.target.value)}
               disabled={busy || loading}
@@ -566,8 +567,8 @@ export function WatchTogetherPanel({
         </div>
       )}
       {!state && (
-        <div className="flex min-h-32 flex-col items-center justify-center gap-3 text-center text-muted-foreground">
-          <Film size={26} />
+        <div className="animate-bc-rise flex min-h-32 flex-col items-center justify-center gap-3 text-center text-muted-foreground">
+          <Film size={26} className="size-11 rounded-2xl bg-pink/15 p-2.5 text-pink" />
           <p className="max-w-sm text-sm">
             Choose an uploaded video file from this channel. Play, pause and seek
             together, with one host keeping everyone in sync.

@@ -61,7 +61,7 @@ export function EventsPanel({
       </div>
       {creating && (
         <form
-          className="space-y-3 rounded-xl border bg-muted/20 p-4"
+          className="space-y-3 rounded-2xl bc-card p-4"
           onSubmit={(event) => {
             event.preventDefault();
             void create();
@@ -83,7 +83,7 @@ export function EventsPanel({
           <label className="block text-sm">
             Description
             <textarea
-              className="mt-2 min-h-20 w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="mt-2 min-h-20 w-full rounded-xl border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/40"
               maxLength={1000}
               value={description}
               onChange={(event) => setDescription(event.target.value)}
@@ -118,24 +118,24 @@ export function EventsPanel({
         </form>
       )}
       {!events.length && (
-        <div className="flex min-h-40 flex-col items-center justify-center gap-3 text-muted-foreground">
-          <CalendarDays size={26} />
+        <div className="animate-bc-rise flex min-h-40 flex-col items-center justify-center gap-3 text-muted-foreground">
+          <CalendarDays size={26} className="size-11 rounded-2xl bg-amber/15 p-2.5 text-amber" />
           <p className="text-sm">Give the next hangout a date.</p>
         </div>
       )}
       {events.map((event) => (
         <article
           key={event.id}
-          className={`rounded-xl border p-4 ${event.cancelled_at ? 'opacity-60' : ''}`}
+          className={`rounded-2xl bc-card p-4 ${event.cancelled_at ? 'opacity-60' : ''}`}
         >
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h3 className="font-medium [overflow-wrap:anywhere]">
+              <h3 className="font-heading text-base font-semibold [overflow-wrap:anywhere]">
                 {event.title}
               </h3>
               <time
                 dateTime={event.starts_at}
-                className="mt-1 block text-sm text-primary"
+                className="mt-1 block text-sm font-medium tabular-nums text-primary"
               >
                 {new Date(event.starts_at).toLocaleString(undefined, {
                   dateStyle: 'medium',
@@ -144,7 +144,7 @@ export function EventsPanel({
               </time>
             </div>
             {event.cancelled_at && (
-              <span className="rounded bg-muted px-2 py-1 text-xs">
+              <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium">
                 Cancelled
               </span>
             )}

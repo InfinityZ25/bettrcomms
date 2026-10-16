@@ -76,17 +76,17 @@ export function DraftStatus({
   if (conflict)
     return (
       <section
-        className="mb-2 rounded-xl border border-primary/30 bg-primary/5 p-3"
+        className="mb-2 animate-bc-rise rounded-2xl border border-primary/30 bg-primary/5 p-3.5 shadow-[var(--highlight)]"
         aria-label="Draft conflict"
       >
-        <h3 className="text-sm font-medium">
+        <h3 className="font-heading text-sm font-semibold">
           Another device has a different draft
         </h3>
         <p className="mt-1 text-xs text-muted-foreground">
           Your text stays in the composer. Choose which draft to continue;
           neither was silently overwritten.
         </p>
-        <p className="my-2 max-h-28 overflow-auto whitespace-pre-wrap rounded-lg bg-background/70 p-2 text-sm [overflow-wrap:anywhere]">
+        <p className="my-2.5 max-h-28 overflow-auto whitespace-pre-wrap rounded-xl border border-border bg-background/70 px-3 py-2 text-sm [overflow-wrap:anywhere]">
           {formatMessagePreview(conflict.body) ||
             'The other device cleared this draft.'}
         </p>
@@ -143,7 +143,7 @@ export function DraftStatus({
   return (
     <p
       role="status"
-      className="mb-1 inline-flex items-center gap-1.5 text-[0.6875rem] text-muted-foreground"
+      className="mb-1 ml-1 inline-flex items-center gap-1.5 text-[0.6875rem] text-muted-foreground [&>svg]:text-primary"
     >
       <Cloud size={12} />
       {entry.writing

@@ -751,9 +751,11 @@ function MessageTimeline({
       )}
       <div
         className={
+          // A slim second tier of the conversation header: quiet icons, one
+          // hairline under both tiers (the header itself draws none above).
           compactHeader
-            ? 'thread-tools flex shrink-0 items-center justify-end gap-1 border-b px-3 py-1 text-xs phone:hidden'
-            : 'thread-tools flex shrink-0 items-center justify-between gap-2 border-b px-3 py-2 text-xs'
+            ? 'thread-tools flex shrink-0 items-center justify-end gap-0.5 border-b border-border/70 px-3 pt-0.5 pb-1 text-xs phone:hidden'
+            : 'thread-tools flex shrink-0 items-center justify-between gap-2 border-b border-border/70 px-3 py-2 text-xs'
         }
       >
         {onClose && (
@@ -762,8 +764,8 @@ function MessageTimeline({
             size="icon"
             className={
               threadRootId
-                ? 'shrink-0'
-                : '-ml-1 hidden shrink-0 phone:inline-flex phone:size-11'
+                ? 'shrink-0 rounded-xl text-muted-foreground hover:text-foreground'
+                : '-ml-1 hidden shrink-0 rounded-xl phone:inline-flex phone:size-11'
             }
             aria-label={threadRootId ? 'Close thread' : 'Close room messages'}
             onClick={onClose}
@@ -772,7 +774,7 @@ function MessageTimeline({
           </Button>
         )}
         {!compactHeader && (
-          <span className="min-w-0 flex-1 truncate phone:text-sm phone:font-semibold">
+          <span className="min-w-0 flex-1 truncate font-heading text-[0.9375rem] font-semibold phone:text-sm phone:font-semibold">
             {label}
           </span>
         )}
@@ -780,7 +782,7 @@ function MessageTimeline({
           <Button
             variant="ghost"
             size="icon-sm"
-            className="phone:size-11"
+            className="size-7 rounded-lg text-muted-foreground hover:text-foreground phone:size-11"
             aria-label="Conversation threads"
             disabled={threadsLoading}
             onClick={() => {
@@ -788,14 +790,14 @@ function MessageTimeline({
               else showPanel('threads');
             }}
           >
-            <MessagesSquare size={14} />
+            <MessagesSquare size={14} className="size-3.5 phone:size-[18px]" />
           </Button>
         )}
         {!threadRootId && (
           <Button
             variant="ghost"
             size="icon-sm"
-            className="phone:size-11"
+            className="size-7 rounded-lg text-muted-foreground hover:text-foreground phone:size-11"
             aria-label="Pinned messages"
             disabled={pinsLoading}
             onClick={() => {
@@ -803,24 +805,24 @@ function MessageTimeline({
               else showPanel('pins');
             }}
           >
-            <Pin size={14} />
+            <Pin size={14} className="size-3.5 phone:size-[18px]" />
           </Button>
         )}
         <Button
           variant="ghost"
           size="icon-sm"
-          className="phone:size-11"
+          className="size-7 rounded-lg text-muted-foreground hover:text-foreground phone:size-11"
           aria-label="Search this conversation"
           onClick={() => openMessageSearch(roomId)}
         >
-          <Search size={14} />
+          <Search size={14} className="size-3.5 phone:size-[18px]" />
         </Button>
         <Button
           variant="ghost"
           size="sm"
           // A phone header has room for the conversation's name or this label,
           // not both; the icon keeps the same accessible name.
-          className="phone:size-11 phone:px-0"
+          className="h-7 rounded-lg px-2.5 text-xs text-muted-foreground hover:text-foreground phone:size-11 phone:px-0"
           aria-label="Mark as read"
           onClick={() => {
             const last = chat.messages.at(-1);
@@ -840,15 +842,15 @@ function MessageTimeline({
       </div>
       {threadsOpen && !threadRootId && (
         <section
-          className="max-h-56 shrink-0 overflow-auto border-b p-3"
+          className="max-h-56 shrink-0 animate-bc-rise overflow-auto border-b border-border/70 bg-muted/25 px-3 pt-2.5 pb-1.5"
           aria-label="Conversation threads"
         >
           <div className="mb-2 flex items-center justify-between gap-2">
-            <strong className="text-xs">Conversation threads</strong>
+            <strong className="bc-kicker">Conversation threads</strong>
             <Button
               variant="ghost"
               size="icon-sm"
-              className="phone:size-11"
+              className="rounded-lg text-muted-foreground hover:text-foreground phone:size-11"
               aria-label="Close conversation threads"
               onClick={() => setThreadsOpen(false)}
             >
@@ -856,7 +858,7 @@ function MessageTimeline({
             </Button>
           </div>
           {!chat.threads?.length && (
-            <p className="text-xs text-muted-foreground">
+            <p className="pb-1.5 text-xs text-muted-foreground">
               {threadsLoading
                 ? 'Loading threads…'
                 : 'No threads yet. Open a thread from a message.'}
@@ -866,7 +868,7 @@ function MessageTimeline({
             <button
               key={message.id}
               type="button"
-              className="mb-2 block w-full rounded-lg border p-2 text-left text-xs hover:bg-accent"
+              className="mb-1.5 block w-full rounded-xl border border-border bg-card/80 px-3 py-2 text-left text-xs transition-colors hover:border-foreground/15 hover:bg-accent/60"
               onClick={() => {
                 setThreadsOpen(false);
                 onOpenThread(message);
@@ -878,7 +880,7 @@ function MessageTimeline({
                   ? 'Message deleted'
                   : formatMessagePreview(message.body) || '[attachment]'}
               </span>
-              <span className="mt-1 block text-muted-foreground">
+              <span className="mt-1 block font-medium text-muted-foreground tabular-nums">
                 {message.thread_reply_count ?? 0} replies
                 {message.thread_unread_count
                   ? ` · ${message.thread_unread_count} unread`
@@ -890,6 +892,7 @@ function MessageTimeline({
             <Button
               variant="outline"
               size="sm"
+              className="mb-1.5"
               disabled={threadsLoading}
               onClick={() => {
                 setThreadsLoading(true);
@@ -914,15 +917,15 @@ function MessageTimeline({
       )}
       {pinsOpen && !threadRootId && (
         <section
-          className="max-h-48 shrink-0 overflow-auto border-b p-3"
+          className="max-h-48 shrink-0 animate-bc-rise overflow-auto border-b border-border/70 bg-muted/25 px-3 pt-2.5 pb-1.5"
           aria-label="Pinned messages"
         >
           <div className="mb-2 flex items-center justify-between gap-2">
-            <strong className="text-xs">Pinned messages</strong>
+            <strong className="bc-kicker">Pinned messages</strong>
             <Button
               variant="ghost"
               size="icon-sm"
-              className="phone:size-11"
+              className="rounded-lg text-muted-foreground hover:text-foreground phone:size-11"
               aria-label="Close pinned messages"
               onClick={() => setPinsOpen(false)}
             >
@@ -930,7 +933,7 @@ function MessageTimeline({
             </Button>
           </div>
           {!chat.pins?.length && (
-            <p className="text-xs text-muted-foreground">
+            <p className="pb-1.5 text-xs text-muted-foreground">
               {pinsLoading ? 'Loading pins…' : 'No pinned messages.'}
             </p>
           )}
@@ -938,7 +941,7 @@ function MessageTimeline({
             <button
               key={message.id}
               type="button"
-              className="mb-2 block w-full rounded-lg border p-2 text-left text-xs hover:bg-accent"
+              className="mb-1.5 block w-full rounded-xl border border-border bg-card/80 px-3 py-2 text-left text-xs transition-colors hover:border-foreground/15 hover:bg-accent/60"
               onClick={() => {
                 setPinsOpen(false);
                 if (message.thread_root_id) onOpenThread(message);
@@ -955,10 +958,10 @@ function MessageTimeline({
       )}
       {threadRootId && chat.root && (
         <div
-          className="max-h-40 shrink-0 overflow-auto border-b bg-muted/30 p-3 text-sm"
+          className="max-h-40 shrink-0 overflow-auto border-b border-border/70 bg-muted/25 px-4 py-3 text-[0.9375rem] leading-relaxed"
           aria-label="Thread original message"
         >
-          <strong className="block text-xs">{chat.root.author.name}</strong>
+          <strong className="mb-0.5 block text-xs font-semibold text-muted-foreground">{chat.root.author.name}</strong>
           {chat.root.deleted_at ? (
             <span className="italic text-muted-foreground">
               Message deleted
@@ -970,7 +973,8 @@ function MessageTimeline({
       )}
       <div
         ref={viewport}
-        className="message-log min-h-0 flex-1 overflow-auto overscroll-contain p-3 phone:px-2 phone:py-3"
+        // A size container, so each row can tell a wide log from a narrow one.
+        className="message-log @container/message-log min-h-0 flex-1 overflow-auto overscroll-contain px-3 pt-3 pb-2 phone:px-2 phone:py-3"
         role="log"
         aria-label={threadRootId ? 'Thread replies' : 'Messages'}
         aria-live="polite"
@@ -986,7 +990,7 @@ function MessageTimeline({
           <Button
             variant="outline"
             size="sm"
-            className="mb-4 w-full"
+            className="mx-auto mb-4 flex w-fit rounded-full px-4 text-muted-foreground hover:text-foreground"
             disabled={chat.loadingOlder}
             onClick={() => void older()}
           >
@@ -996,15 +1000,16 @@ function MessageTimeline({
           </Button>
         )}
         {chat.loading && !chat.messages.length && (
-          <p role="status" className="p-3 text-xs text-muted-foreground">
+          <p role="status" className="px-3 py-8 text-center text-xs text-muted-foreground">
             Opening the conversation…
           </p>
         )}
         {chat.error && (
-          <div role="alert" className="p-3 text-xs text-destructive">
+          <div role="alert" className="flex flex-wrap items-center gap-2 p-3 text-xs text-destructive">
             {chat.error}
             <Button
               variant="ghost"
+              className="rounded-xl"
               onClick={() => void loadConversation(roomId, false, threadRootId)}
             >
               Retry
@@ -1012,7 +1017,14 @@ function MessageTimeline({
           </div>
         )}
         {!chat.loading && !chat.messages.length && !chat.error && (
-          <p className="p-6 text-sm text-muted-foreground">
+          // The welcome: one line in the display face over a brand tile.
+          <p className="mx-auto flex max-w-md animate-bc-rise flex-col items-center gap-4 px-6 pt-16 pb-10 text-center font-heading text-xl font-bold text-foreground">
+            <span
+              aria-hidden="true"
+              className="grid size-14 place-items-center rounded-2xl bg-primary/12 text-primary shadow-[var(--glow-brand)] ring-1 ring-primary/20 ring-inset"
+            >
+              <MessagesSquare className="size-7" />
+            </span>
             The conversation starts here. Say hello.
           </p>
         )}
@@ -1022,31 +1034,31 @@ function MessageTimeline({
               new Date(messages[index - 1].created_at).toDateString() !==
                 new Date(message.created_at).toDateString()) && (
               <div
-                className="my-4 flex items-center gap-3 text-xs text-muted-foreground"
+                className="my-5 flex items-center gap-3 px-1 text-xs text-muted-foreground"
                 role="separator"
                 aria-label={new Date(message.created_at).toLocaleDateString(
                   undefined,
                   { dateStyle: 'long' },
                 )}
               >
-                <span className="h-px flex-1 bg-border" />
-                <span>
+                <span className="h-px flex-1 bg-linear-to-r from-transparent to-border" />
+                <span className="rounded-full border border-border bg-background px-3 py-0.5 text-[0.6875rem] font-semibold tracking-wide tabular-nums">
                   {new Date(message.created_at).toLocaleDateString(undefined, {
                     month: 'short',
                     day: 'numeric',
                     year: 'numeric',
                   })}
                 </span>
-                <span className="h-px flex-1 bg-border" />
+                <span className="h-px flex-1 bg-linear-to-l from-transparent to-border" />
               </div>
             )}
             {index === firstUnread && (
-              <p className="my-3 border-t border-primary pt-1 text-center text-xs font-medium text-primary">
+              <p className="my-3 flex items-center gap-2 px-1 text-[0.6875rem] font-bold tracking-wider text-primary uppercase before:h-px before:flex-1 before:bg-primary/60 after:h-px after:w-4 after:bg-primary/60">
                 New messages
               </p>
             )}
             {anchor?.id === message.id && (
-              <p className="mb-2 text-xs text-muted-foreground">
+              <p className="mb-2 px-3 text-xs text-muted-foreground italic">
                 Earlier message — load older messages for surrounding history.
               </p>
             )}
@@ -1099,7 +1111,7 @@ function MessageTimeline({
               onError={onError}
             />
             {anchor?.id === message.id && (
-              <p className="my-3 border-t pt-2 text-xs text-muted-foreground">
+              <p className="my-4 flex items-center gap-3 px-1 text-[0.6875rem] font-semibold tracking-wide text-muted-foreground uppercase after:h-px after:flex-1 after:bg-border">
                 Recent messages
               </p>
             )}
@@ -1111,7 +1123,7 @@ function MessageTimeline({
         <Button
           size="sm"
           variant="secondary"
-          className="absolute bottom-28 left-1/2 -translate-x-1/2 shadow-lg"
+          className="absolute bottom-36 left-1/2 z-20 -translate-x-1/2 animate-bc-pop rounded-full border-border bg-popover/90 px-3.5 text-foreground shadow-[var(--shadow-elevated)] backdrop-blur-xl hover:bg-accent phone:bottom-32"
           onClick={() => {
             setHighlight(undefined);
             nearBottom.current = true;
@@ -1124,7 +1136,16 @@ function MessageTimeline({
         </Button>
       )}
       {typingNames.length > 0 && (
-        <p className="px-4 py-1 text-xs text-muted-foreground" role="status">
+        <p className="flex items-center gap-2 px-5 py-1 text-xs text-muted-foreground" role="status">
+          <span
+            aria-hidden="true"
+            // Decorative: three lime dots taking turns.
+            className="inline-flex items-center gap-[3px]"
+          >
+            <span className="size-1.5 animate-bc-breathe rounded-full bg-primary [animation-duration:1.2s]" />
+            <span className="size-1.5 animate-bc-breathe rounded-full bg-primary [animation-delay:200ms] [animation-duration:1.2s]" />
+            <span className="size-1.5 animate-bc-breathe rounded-full bg-primary [animation-delay:400ms] [animation-duration:1.2s]" />
+          </span>
           {typingNames.join(', ')} {typingNames.length === 1 ? 'is' : 'are'}{' '}
           typing…
         </p>
@@ -1226,7 +1247,7 @@ export default function MessageThread(props: {
       </div>
       {thread && (
         <aside
-          className="flex min-h-0 min-w-0 flex-1 flex-col border-l bg-background @min-[650px]/message-conversation:max-w-lg"
+          className="flex min-h-0 min-w-0 flex-1 flex-col border-l border-border/70 bg-background @min-[650px]/message-conversation:max-w-lg"
           aria-label="Message thread"
         >
           <MessageTimeline

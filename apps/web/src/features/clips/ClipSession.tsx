@@ -228,12 +228,13 @@ export function ClipControls() {
   if (typeof MediaRecorder === 'undefined') return null;
   return (
     <div
-      className="flex shrink-0 items-center gap-1"
+      className="flex shrink-0 items-center gap-1.5"
       aria-label="Clip controls"
     >
       <Button
         variant={clips.enabled ? 'default' : 'secondary'}
         size="icon"
+        className={clips.enabled ? 'call-control is-active' : 'call-control'}
         aria-label={clips.enabled ? 'Create clip' : 'Enable clip buffer'}
         title={
           clips.enabled
@@ -251,6 +252,7 @@ export function ClipControls() {
         <Button
           variant="ghost"
           size="icon"
+          className="call-control"
           aria-label="Stop clip buffer"
           onClick={clips.stop}
         >

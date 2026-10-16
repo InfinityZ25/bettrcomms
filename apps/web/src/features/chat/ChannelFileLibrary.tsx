@@ -98,7 +98,7 @@ function LibraryResults({
   return (
     <div className="min-h-0 flex-1 overflow-auto pr-1">
       <div className="mb-3 flex items-center justify-between gap-3">
-        <span className="text-xs text-muted-foreground">
+        <span className="bc-kicker">
           Files shared in this channel
         </span>
         <Button
@@ -112,19 +112,19 @@ function LibraryResults({
         </Button>
       </div>
       {error && (
-        <p role="alert" className="mb-3 rounded-lg border p-3 text-sm">
+        <p role="alert" className="mb-3 rounded-2xl border border-destructive/40 p-3 text-sm text-destructive">
           {error}
         </p>
       )}
       {!loading && !error && files.length === 0 && (
-        <div className="flex flex-col items-center gap-3 p-10 text-center text-sm text-muted-foreground">
-          <FolderOpen className="size-8" />
+        <div className="animate-bc-rise flex flex-col items-center gap-3 p-10 text-center text-sm text-muted-foreground">
+          <FolderOpen className="size-12 rounded-2xl bg-muted p-3" />
           <p>No files match these filters.</p>
         </div>
       )}
       <ul className="grid gap-3 sm:grid-cols-2" aria-label="Channel files">
         {files.map((file) => (
-          <li key={file.id} className="min-w-0 rounded-xl border bg-card p-3">
+          <li key={file.id} className="min-w-0 overflow-hidden rounded-2xl bc-card p-3 transition hover:-translate-y-0.5 hover:border-foreground/15">
             <div className="mb-2 flex items-start justify-between gap-2">
               <div className="min-w-0 text-xs text-muted-foreground">
                 <p className="truncate">{file.author_name}</p>
@@ -215,7 +215,7 @@ function Library({ roomId, ...props }: Props) {
     >
       <form
         onSubmit={apply}
-        className="grid grid-cols-2 items-end gap-2 sm:grid-cols-5"
+        className="grid grid-cols-2 items-end gap-2 rounded-2xl bc-card p-3 sm:grid-cols-5"
       >
         <label className="space-y-1 text-xs">
           Type
@@ -225,7 +225,7 @@ function Library({ roomId, ...props }: Props) {
             onChange={(event) =>
               setFilters({ ...filters, type: event.target.value })
             }
-            className="h-9 w-full rounded-lg border bg-background px-2 text-sm"
+            className="h-9 w-full rounded-xl border bg-background px-2 text-sm"
           >
             <option value="">All files</option>
             <option value="image">Images</option>
@@ -243,7 +243,7 @@ function Library({ roomId, ...props }: Props) {
             onChange={(event) =>
               setFilters({ ...filters, author: event.target.value })
             }
-            className="h-9 w-full rounded-lg border bg-background px-2 text-sm"
+            className="h-9 w-full rounded-xl border bg-background px-2 text-sm"
           >
             <option value="">Everyone</option>
             {members.map((member) => (

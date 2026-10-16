@@ -1,6 +1,6 @@
 h1 {
   font:
-    650 clamp(24px, 2.1vw, 34px)/1.2 'Manrope Variable',
+    650 clamp(24px, 2.1vw, 34px)/1.2 'Bricolage Grotesque Variable',
     sans-serif;
   letter-spacing: -1.2px;
   margin-top: 11px;
@@ -18,39 +18,83 @@ h1 {
   height: 134px;
   flex-shrink: 0;
 }
+/*
+  A person on the stage: a raised card with a hairline edge and a lit top, so a
+  tile without a camera still reads as somebody's seat rather than a hole.
+*/
 .camera-tile {
   width: 206px;
   height: 100%;
-  border-radius: 12px;
-  border: 1px solid var(--muted);
-  background: var(--card);
+  border-radius: var(--radius-2xl);
+  border: 1px solid color-mix(in oklch, var(--foreground) 9%, transparent);
+  background:
+    radial-gradient(120% 90% at 50% 0%, color-mix(in oklch, var(--foreground) 4%, transparent), transparent 62%),
+    var(--card);
+  box-shadow: var(--shadow-soft), var(--highlight);
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
   overflow: hidden;
 }
+/* Your own seat carries a faint lime dawn in its corner: findable at a
+   glance, quiet enough not to compete with whoever is talking. */
 .camera-tile.self {
-  background: radial-gradient(ellipse at 35% 10%, var(--accent), var(--card) 70%);
+  border-color: color-mix(in oklch, var(--brand) 20%, color-mix(in oklch, var(--foreground) 9%, transparent));
+  background:
+    radial-gradient(90% 75% at 0% 0%, color-mix(in oklch, var(--brand) 9%, transparent), transparent 62%),
+    radial-gradient(120% 90% at 50% 0%, color-mix(in oklch, var(--foreground) 4%, transparent), transparent 62%),
+    var(--card);
 }
 /* Pinned to the tile's own corners rather than floated above its floor: the
    name sits in one and the microphone in the other, which is where the eye
-   looks for them. */
+   looks for them. Each is a small glass chip, legible over any picture. */
 .tile-caption {
   position: absolute;
-  inset: auto 10px 8px;
+  inset: auto 10px 10px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 11px;
-  color: var(--muted-foreground);
+  justify-content: flex-start;
+  gap: 5px;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  color: var(--foreground);
 }
 .tile-caption > span:first-child {
   min-width: 0;
+  margin-right: auto;
+  padding: 3px 9px;
+  border-radius: 999px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* Dense enough to read over any picture on its own. The blur is kept small
+     and to this one chip per tile: a gallery of moving video re-blurs every
+     blurred chip on every frame. */
+  background: color-mix(in oklch, var(--popover) 78%, transparent);
+  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+  backdrop-filter: blur(10px) saturate(1.4);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--foreground) 10%, transparent);
+}
+/* The microphone, deafen and share marks: one round chip each. */
+.tile-caption > svg {
+  flex: none;
+  box-sizing: content-box;
+  width: 13px;
+  height: 13px;
+  padding: 5px;
+  border-radius: 999px;
+  color: var(--foreground);
+  background: color-mix(in oklch, var(--popover) 80%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--foreground) 10%, transparent);
+}
+/* Muted and deafened are the two marks worth noticing from across the room. */
+.tile-caption > .lucide-mic-off,
+.tile-caption > .lucide-headphones {
+  color: var(--dnd);
+  background: color-mix(in oklch, var(--dnd) 22%, color-mix(in oklch, var(--popover) 80%, transparent));
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--dnd) 34%, transparent);
 }
 .camera-tile.invite {
   background: var(--card);
@@ -123,7 +167,7 @@ h1 {
   pointer-events: auto;
 }
 
-/* Each group is its own pill, legible over whatever is underneath it. */
+/* Each group is its own glass pill, legible over whatever is underneath it. */
 .stage-topline > span:first-child,
 .stage-pane-actions,
 .stage-bottomline > div {
@@ -131,11 +175,23 @@ h1 {
   align-items: center;
   gap: 6px;
   padding: 4px 8px;
-  border-radius: var(--radius-lg);
-  background: color-mix(in oklch, var(--background) 78%, transparent);
-  backdrop-filter: blur(10px);
-  font-size: 11px;
+  border-radius: var(--radius-xl);
+  background: color-mix(in oklch, var(--popover) 74%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(1.5);
+  backdrop-filter: blur(18px) saturate(1.5);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--foreground) 10%, transparent),
+    var(--shadow-soft);
+  font-size: 12px;
+  font-weight: 500;
   color: var(--foreground);
+}
+/* Whose screen it is: the one label on the pane that never fades. */
+.stage-topline > span:first-child {
+  padding-inline: 8px 11px;
+}
+.stage-topline > span:first-child > svg {
+  color: var(--primary);
 }
 
 /* The hint about the scroll wheel. It is on the zoom control's tooltip now,
@@ -146,34 +202,40 @@ h1 {
 }
 
 .stage-badge {
-  font-size: 10px;
+  font-size: 11px;
+  font-weight: 600;
   color: var(--muted-foreground);
-  border-radius: var(--radius-sm);
-  padding: 2px 6px;
-  background: color-mix(in oklch, var(--muted) 70%, transparent);
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: color-mix(in oklch, var(--foreground) 8%, transparent);
 }
 
-/* Established peer media can continue while signaling reconnects. */
+/* Established peer media can continue while signaling reconnects. Amber, the
+   theme's own warning, mixed toward the text colour so it stays readable. */
 .signaling-reconnecting,
 .stage-badge-degraded,
 .screen-share-degraded {
   white-space: nowrap;
-  border: 1px solid #6b5426;
-  background: #34291399;
-  color: #e6c07a;
+  border: 1px solid color-mix(in oklch, var(--amber) 42%, transparent);
+  background: color-mix(in oklch, var(--amber) 16%, color-mix(in oklch, var(--popover) 82%, transparent));
+  color: color-mix(in oklch, var(--amber) 70%, var(--foreground));
 }
 
 .signaling-reconnecting {
-  border-radius: 6px;
-  padding: 4px 8px;
+  border-radius: 999px;
+  padding: 4px 10px;
   font-size: 11px;
+  font-weight: 500;
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
 }
 
 .stage-badge-degraded,
 .screen-share-degraded {
-  border-radius: 5px;
-  padding: 3px 6px;
-  font-size: 10px;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .screen-share-degraded {
@@ -193,7 +255,7 @@ h1 {
 }
 .stage-empty h2 {
   font:
-    600 23px 'Manrope Variable',
+    600 23px 'Bricolage Grotesque Variable',
     sans-serif;
   letter-spacing: -0.6px;
   color: var(--primary);
@@ -229,7 +291,7 @@ h1 {
   transform: rotate(-7deg);
   text-align: left;
   padding: 7px;
-  box-shadow: 0 10px 40px #0003;
+  box-shadow: var(--shadow-elevated);
 }
 .illustration-window > span {
   height: 3px;
@@ -267,14 +329,14 @@ h1 {
   display: grid;
   place-items: center;
   border-radius: 12px;
-  background: var(--primary);
-  color: var(--accent);
+  background: var(--brand);
+  color: var(--brand-foreground);
   transform: rotate(8deg);
-  box-shadow: 0 3px 15px #0003;
+  box-shadow: var(--glow-brand);
 }
 .stage-bottomline {
   padding: 11px 16px;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted-foreground);
 }
 .stage-bottomline > span {
@@ -285,19 +347,36 @@ h1 {
 .stage-bottomline > div {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 2px;
+  padding: 3px;
 }
+/* Zoom, fit and fullscreen: icon-sized targets inside the pill, lit on hover. */
 .stage-bottomline button {
-  padding: 0;
+  padding: 4px 6px;
+  min-width: 26px;
+  min-height: 26px;
   display: flex;
   align-items: center;
-  font-size: 10px;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--foreground);
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.stage-bottomline button:hover {
   color: var(--primary);
+  background: color-mix(in oklch, var(--foreground) 10%, transparent);
+}
+.stage-bottomline button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
 }
 .stage-bottomline > div > span {
-  height: 14px;
+  height: 16px;
   width: 1px;
-  background: var(--accent);
+  margin-inline: 3px;
+  background: color-mix(in oklch, var(--foreground) 16%, transparent);
 }
 .focus-layout .camera-strip {
   display: none;
@@ -439,16 +518,16 @@ h1 {
     font-size: 19px;
   }
   .stage-topline > span:first-child {
-    font-size: 8px;
+    font-size: 11px;
   }
   .stage-bottomline {
     padding: 11px;
   }
   .stage-bottomline > span {
-    font-size: 8px;
+    font-size: 11px;
   }
   .stage-bottomline > div {
-    gap: 8px;
+    gap: 2px;
   }
   .call-controls .button {
     font-size: 11px;
@@ -473,8 +552,9 @@ h1 {
 .camera-tile .self-video.unmirrored {
   transform: none;
 }
+/* The chips carry their own contrast; a shadow under the text is not needed. */
 .tile-caption {
-  text-shadow: 0 1px 3px #000;
+  text-shadow: none;
 }
 .video-viewport {
   flex: 1;
@@ -529,46 +609,84 @@ h1 {
   position: absolute;
   right: 8px;
   top: 8px;
-  color: var(--primary);
-  background: color-mix(in oklch, var(--card) 69%, transparent);
-  border-radius: 6px;
-  padding: 4px;
+  color: var(--foreground);
+  background: color-mix(in oklch, var(--popover) 80%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--foreground) 10%, transparent);
+  border-radius: var(--radius-lg);
+  padding: 6px;
 }
 .peer-volume summary {
   list-style: none;
   cursor: pointer;
   display: flex;
 }
+.peer-volume summary:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 4px;
+  border-radius: 6px;
+}
 .peer-volume[open] {
-  width: 135px;
+  width: 150px;
   padding: 10px;
   z-index: 3;
+  background: color-mix(in oklch, var(--popover) 92%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--foreground) 10%, transparent),
+    var(--shadow-elevated);
+}
+.peer-volume[open] summary {
+  color: var(--primary);
+  margin-bottom: 6px;
 }
 .peer-volume label {
-  font-size: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 .peer-volume input {
   padding: 0;
   width: 100%;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
   accent-color: var(--brand-accent);
 }
 .peer-volume small {
-  font-size: 9px;
-  color: var(--primary);
+  display: block;
+  font-size: 11px;
+  color: var(--muted-foreground);
 }
-.connecting-dot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #e4c581;
-}
+/* Whether media is flowing yet: amber while it is on its way, the live green
+   once it arrives. */
+.connecting-dot,
 .online-dot {
   display: inline-block;
-  width: 6px;
-  height: 6px;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-inline: 4px 3px;
   border-radius: 50%;
-  background: #abd98c;
+}
+.connecting-dot {
+  background: var(--idle);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--idle) 24%, transparent);
+  animation: call-dot-breathe 1.4s ease-in-out infinite;
+}
+.online-dot {
+  background: var(--online);
+  box-shadow:
+    0 0 0 3px color-mix(in oklch, var(--online) 22%, transparent),
+    0 0 10px color-mix(in oklch, var(--online) 60%, transparent);
+}
+@keyframes call-dot-breathe {
+  50% {
+    opacity: 0.4;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .connecting-dot {
+    animation: none;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -639,10 +757,14 @@ h1 {
     min-height: 68px;
   }
 }
+/* Connection details: a glass sheet over the bottom of the call. */
 .stats-panel {
-  background: var(--card);
-  border: 1px solid var(--accent);
-  border-radius: 9px;
+  background: color-mix(in oklch, var(--popover) 88%, transparent);
+  -webkit-backdrop-filter: blur(22px) saturate(1.5);
+  backdrop-filter: blur(22px) saturate(1.5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--shadow-elevated), var(--highlight);
   padding: 16px;
   font-size: 12px;
   display: flex;
@@ -650,13 +772,30 @@ h1 {
   flex-direction: column;
   margin-bottom: 18px;
 }
+.stats-panel > strong {
+  font-family: var(--font-heading);
+  font-size: 15px;
+  font-weight: 700;
+}
 .stats-panel div {
   display: flex;
   flex-direction: column;
   gap: 7px;
 }
+/* One quiet well per participant, with the numbers in fixed-width digits. */
+.stats-panel > div {
+  padding: 10px 12px;
+  border-radius: var(--radius-xl);
+  background: color-mix(in oklch, var(--foreground) 5%, transparent);
+  font-variant-numeric: tabular-nums;
+}
 .stats-panel small {
-  color: var(--ring);
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.stats-panel p {
+  color: var(--muted-foreground);
 }
 .side-layout .camera-strip {
   flex-direction: column;
@@ -767,6 +906,12 @@ h1 {
   width: auto;
   height: min(42%, 40cqw, 200px);
   aspect-ratio: 1;
+  /* The face casts a soft shadow on its seat; a speaking one glows instead. */
+  filter: drop-shadow(0 14px 22px color-mix(in oklch, black 32%, transparent));
+  transition: filter 200ms ease-out;
+}
+.camera-tile.is-speaking .tile-face {
+  filter: drop-shadow(0 0 22px color-mix(in oklch, var(--online) 42%, transparent));
 }
 .camera-tile {
   container-type: size;

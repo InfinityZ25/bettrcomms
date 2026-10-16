@@ -76,6 +76,7 @@ export function PersonalMessageActions({
           <Button
             variant="ghost"
             size="icon-sm"
+            className="rounded-lg text-muted-foreground hover:text-foreground aria-pressed:text-primary"
             disabled={!current || busy}
             aria-label={saved ? 'Remove saved message' : 'Save to personal inbox'}
             aria-pressed={saved}
@@ -86,6 +87,7 @@ export function PersonalMessageActions({
           <Button
             variant="ghost"
             size="icon-sm"
+            className="rounded-lg text-muted-foreground hover:text-foreground"
             disabled={!current}
             aria-label={reminder ? 'Reschedule reminder' : 'Remind me to reply'}
             onClick={() => setReminding(true)}
@@ -158,7 +160,7 @@ export function SaveFileButton({
       type="button"
       variant="ghost"
       size="sm"
-      className="min-h-11 self-start"
+      className="min-h-11 self-start rounded-xl px-2.5 text-xs text-muted-foreground hover:text-foreground aria-pressed:text-primary"
       disabled={!state.userId || busy}
       aria-label={`${saved ? 'Remove saved file' : 'Save file'} ${filename}`}
       aria-pressed={saved}

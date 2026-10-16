@@ -234,10 +234,10 @@ function ClipEditor({
       <div className="space-y-4">
         <canvas
           ref={canvas}
-          className="aspect-video w-full rounded-xl bg-[#101419]"
+          className="aspect-video w-full rounded-2xl bg-[oklch(0.13_0.012_274)] shadow-[var(--shadow-soft)] ring-1 ring-border"
           aria-label="Clip preview"
         />
-        <label className="block space-y-1 text-sm">
+        <label className="block space-y-1.5 text-sm font-medium">
           Title
           <Input
             aria-label="Clip title"
@@ -270,8 +270,8 @@ function ClipEditor({
           </p>
         )}
         {busy && (
-          <div role="status" className="space-y-1 text-sm">
-            <p>
+          <div role="status" className="space-y-1.5 rounded-2xl bc-card p-3 text-sm">
+            <p className="font-medium tabular-nums">
               {busy === 'preview'
                 ? 'Previewing'
                 : busy === 'publish'
@@ -283,7 +283,7 @@ function ClipEditor({
               aria-label="Clip progress"
               value={progress}
               max={1}
-              className="h-1 w-full"
+              className="h-1.5 w-full accent-[var(--primary)]"
             />
             <p className="text-xs text-muted-foreground">
               Video export takes about the length of your clip.

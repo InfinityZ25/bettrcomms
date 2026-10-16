@@ -74,10 +74,18 @@
     overflow-wrap: anywhere;
   }
 
+  /* The same buttons as the desktop dock, without the pill around them: a
+     phone's row has no width to spare for its padding. */
   .call-workspace .call-controls {
     flex-wrap: nowrap;
     gap: 6px;
     padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: none;
   }
 
   /* Thumb-sized: Apple's minimum is 44 points. */

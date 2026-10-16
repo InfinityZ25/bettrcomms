@@ -94,9 +94,12 @@ export default function TrackVideo({
             placeContent: 'center',
             gap: 12,
             padding: 16,
-            borderRadius: 12,
+            borderRadius: 16,
             textAlign: 'center',
-            background: '#101414e6',
+            color: 'var(--popover-foreground)',
+            background: 'color-mix(in oklch, var(--popover) 90%, transparent)',
+            backdropFilter: 'blur(16px)',
+            boxShadow: 'var(--shadow-elevated), var(--highlight)',
           }}
         >
           <span>{videoStatus}</span>

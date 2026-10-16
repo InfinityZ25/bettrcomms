@@ -131,7 +131,7 @@ export default function ModerationSettings({
       className="space-y-4 border-t border-border pt-4"
       aria-label="Channel moderation"
     >
-      <h3 className="text-sm font-semibold">Moderation</h3>
+      <h3 className="font-heading text-base font-semibold">Moderation</h3>
       {room.community_id && (
         <p className="text-xs leading-5 text-muted-foreground">
           Bans and posting restrictions apply to every channel in this room.
@@ -199,7 +199,7 @@ export default function ModerationSettings({
           <span>Member to moderate</span>
           <select
             aria-label="Member to moderate"
-            className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+            className="h-9 w-full rounded-xl border border-input bg-background px-2.5 text-sm shadow-xs"
             value={target}
             onChange={(event) => {
               setTarget(event.target.value);
@@ -220,7 +220,7 @@ export default function ModerationSettings({
             <span>Action</span>
             <select
               aria-label="Moderation action"
-              className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+              className="h-9 w-full rounded-xl border border-input bg-background px-2.5 text-sm shadow-xs"
               value={action}
               onChange={(event) => {
                 setAction(event.target.value as typeof action);
@@ -236,7 +236,7 @@ export default function ModerationSettings({
               <span>Duration</span>
               <select
                 aria-label="Posting restriction duration"
-                className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+                className="h-9 w-full rounded-xl border border-input bg-background px-2.5 text-sm shadow-xs"
                 value={duration}
                 onChange={(event) => setDuration(event.target.value)}
               >
@@ -252,7 +252,7 @@ export default function ModerationSettings({
         <label className="block space-y-1 text-xs">
           <span>Reason (3–500 characters)</span>
           <textarea
-            className="min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            className="min-h-20 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm shadow-xs"
             value={reason}
             onChange={(event) => setReason(event.target.value)}
             minLength={3}
@@ -287,7 +287,7 @@ export default function ModerationSettings({
         .map((member) => (
           <div
             key={member.user.id}
-            className="flex flex-wrap items-center justify-between gap-2 text-xs"
+            className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-border bg-background/60 p-3 text-xs"
           >
             <span>
               {member.user.name} · restricted until{' '}
@@ -313,17 +313,17 @@ export default function ModerationSettings({
           </div>
         ))}
       <div className="space-y-2">
-        <h4 className="text-xs font-semibold">Banned members</h4>
+        <h4 className="bc-kicker">Banned members</h4>
         {!bans.length && (
           <p className="text-xs text-muted-foreground">No active bans.</p>
         )}
         {bans.map((ban) => (
           <div
             key={ban.user.id}
-            className="flex flex-wrap items-center justify-between gap-2 border-b border-border/50 py-2 text-xs"
+            className="flex flex-wrap items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-xs hover:bg-accent/50"
           >
             <div>
-              <strong>{ban.user.name}</strong>
+              <strong className="text-sm font-semibold">{ban.user.name}</strong>
               <p className="break-words text-muted-foreground">{ban.reason}</p>
             </div>
             <Button

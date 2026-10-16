@@ -86,7 +86,7 @@ export function TimedMuteIndicator({ roomId }: { roomId: string }) {
     return null;
   return (
     <span
-      className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground"
+      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
       title={`Muted until ${new Date(until).toLocaleString()}`}
       aria-label={`Muted until ${new Date(until).toLocaleString()}`}
     >
@@ -168,7 +168,7 @@ export function TimedMuteDialog({
           Cancel
         </Button>
         <Button
-          className="min-h-11"
+          className="min-h-11 bc-glow"
           disabled={!date || busy}
           onClick={() => void save()}
         >

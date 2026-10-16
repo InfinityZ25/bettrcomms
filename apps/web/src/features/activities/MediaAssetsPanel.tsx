@@ -54,7 +54,7 @@ function AssetImage({
     <img
       src={url || undefined}
       alt={asset.name}
-      className="h-24 w-full object-contain"
+      className="h-24 w-full rounded-xl bg-muted/40 object-contain"
       loading="lazy"
       onError={() => setError(true)}
     />
@@ -229,12 +229,12 @@ export function MediaAssetsPanel({
         </p>
       )}
       {kind === 'sound' && !inVoice && (
-        <p className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
+        <p className="rounded-xl border border-border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
           Join this channel’s voice call to use its soundboard.
         </p>
       )}
       {!items.length && (
-        <p className="py-12 text-center text-sm text-muted-foreground">
+        <p className="animate-bc-rise py-12 text-center text-sm text-muted-foreground">
           No {kind === 'sticker' ? 'stickers' : 'sounds'} yet. Add something
           your friends will recognize.
         </p>
@@ -245,7 +245,7 @@ export function MediaAssetsPanel({
         {items.map((asset) => (
           <li
             key={asset.id}
-            className="flex flex-col gap-2 rounded-xl border p-3"
+            className="flex flex-col gap-2 rounded-2xl bc-card p-3"
           >
             {kind === 'sticker' && (
               <AssetImage
@@ -254,11 +254,11 @@ export function MediaAssetsPanel({
                 asset={asset}
               />
             )}
-            <strong className="truncate text-sm" title={asset.name}>
+            <strong className="font-heading truncate text-sm font-semibold" title={asset.name}>
               {asset.name}
             </strong>
             {kind === 'sound' && (
-              <span className="text-xs text-muted-foreground">
+              <span className="text-xs tabular-nums text-muted-foreground">
                 {((asset.duration_ms ?? 0) / 1000).toFixed(1)} seconds
               </span>
             )}

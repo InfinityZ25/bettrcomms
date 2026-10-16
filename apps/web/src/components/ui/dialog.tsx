@@ -31,7 +31,7 @@ function DialogOverlay({
     <DialogPrimitive.Backdrop
       data-slot="dialog-overlay"
       className={cn(
-        "fixed inset-0 isolate z-50 bg-black/80 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+        "fixed inset-0 isolate z-50 bg-foreground/30 duration-100 supports-backdrop-filter:backdrop-blur-sm data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 dark:bg-black/60",
         className
       )}
       {...props}
@@ -55,8 +55,11 @@ function DialogContent({
         // Use one transform property for centering and full-screen resets.
         // Production CSS optimization can merge a translate reset into
         // transform, leaving individual translate utilities active underneath.
+        // The glass draws its hairline as a shadow ring, not a border: a
+        // full-screen sheet on a phone must keep every pixel of its box for
+        // its content, and `ring-0` (not `border-0`) is what callers reset.
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] transform-[translate(-50%,-50%)] gap-6 rounded-4xl bg-popover p-6 text-sm text-popover-foreground ring-1 ring-foreground/5 transition-opacity duration-100 outline-none sm:max-w-md data-starting-style:opacity-0 data-ending-style:opacity-0",
+          "bc-glass fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] transform-[translate(-50%,-50%)] gap-5 rounded-3xl p-6 text-sm text-popover-foreground transition-opacity duration-100 outline-none sm:max-w-md data-starting-style:opacity-0 data-ending-style:opacity-0",
           className
         )}
         {...props}
@@ -68,7 +71,7 @@ function DialogContent({
             render={
               <Button
                 variant="ghost"
-                className="absolute top-4 right-4"
+                className="absolute top-4 right-4 rounded-full text-muted-foreground hover:text-foreground"
                 size="icon-sm"
               />
             }
@@ -87,7 +90,7 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="dialog-header"
-      className={cn("flex flex-col gap-2", className)}
+      className={cn("flex flex-col gap-1.5", className)}
       {...props}
     />
   )
@@ -125,7 +128,7 @@ function DialogTitle({ className, ...props }: DialogPrimitive.Title.Props) {
     <DialogPrimitive.Title
       data-slot="dialog-title"
       className={cn(
-        "font-heading text-base leading-none font-medium",
+        "font-heading text-xl leading-tight font-bold text-foreground",
         className
       )}
       {...props}

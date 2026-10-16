@@ -209,7 +209,7 @@ export function RecordingDownload({
       : `${Math.max(1, Math.ceil(file.blob.size / 1024))} KB`;
   const contents = (
     <>
-      <FileDown size={19} aria-hidden="true" />
+      <FileDown size={19} aria-hidden="true" className="size-9 rounded-xl bg-primary/12 p-2" />
       <span className="recording-asset__name">
         <strong>{label ?? file.name}</strong>
         {label && <small>{file.name}</small>}
@@ -301,7 +301,7 @@ export function RecordingDownload({
           </Button>
           {converted && (
             <a
-              className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-xs transition-colors hover:bg-primary/90"
+              className="inline-flex h-10 items-center justify-center rounded-4xl bg-primary px-4 text-sm font-medium text-primary-foreground shadow-xs transition-colors hover:bg-primary/90"
               href={converted.url}
               download={converted.name}
             >

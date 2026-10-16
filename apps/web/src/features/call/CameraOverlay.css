@@ -1,11 +1,19 @@
 .camera-overlay-controls { position: relative; }
-.camera-overlay-controls > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 6px; padding: 7px 10px; border: 1px solid var(--line, var(--muted)); border-radius: 8px; }
-.camera-overlay-controls[open] > summary { color: var(--accent); }
-.camera-overlay-panel { position: absolute; top: calc(100% + 8px); right: 0; z-index: 30; width: min(310px, 82vw); padding: 16px; border: 1px solid var(--muted); border-radius: 12px; background: var(--card); box-shadow: 0 12px 40px #0008; display: grid; gap: 12px; }
-.camera-overlay-panel label { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+/* The same ghost pill as the other actions beside the controls. */
+.camera-overlay-controls > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 5px; height: 32px; padding: 0 10px; border: 0; border-radius: 999px; color: var(--muted-foreground); font-size: 12.5px; font-weight: 500; white-space: nowrap; transition: background-color 150ms ease-out, color 150ms ease-out; }
+.camera-overlay-controls > summary:hover,
+.camera-overlay-controls[open] > summary { color: var(--foreground); background: color-mix(in oklch, var(--foreground) 9%, transparent); }
+.camera-overlay-controls > summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+/* Opens upward: the summary sits on the bottom edge of the call. */
+.camera-overlay-panel { position: absolute; bottom: calc(100% + 10px); right: 0; z-index: 30; width: min(310px, 82vw); padding: 16px; border: 1px solid var(--border); border-radius: var(--radius-2xl); background: color-mix(in oklch, var(--popover) 92%, transparent); -webkit-backdrop-filter: blur(24px) saturate(1.5); backdrop-filter: blur(24px) saturate(1.5); box-shadow: var(--shadow-elevated), var(--highlight); display: grid; gap: 12px; }
+.camera-overlay-panel > strong { font-family: var(--font-heading); font-size: 15px; font-weight: 700; }
+.camera-overlay-panel label { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; }
 .camera-overlay-panel select { max-width: 175px; }
 .camera-overlay-panel input[type='checkbox'] { flex: 0 0 16px; width: 16px; height: 16px; margin: 0; accent-color: var(--primary); }
 .camera-overlay-panel p { margin: 0; color: var(--muted-foreground); font-size: 12px; line-height: 1.5; }
-.camera-overlay-panel button { padding: 9px 12px; border-radius: 8px; border: 1px solid var(--ring); }
-.camera-overlay-panel .overlay-primary { background: var(--primary); color: var(--card); }
-.camera-overlay-panel [role='status'] { color: #e1dab0; }
+.camera-overlay-panel button { padding: 9px 12px; border-radius: 999px; border: 1px solid var(--border); background: color-mix(in oklch, var(--foreground) 6%, transparent); font-weight: 600; transition: background-color 120ms ease; }
+.camera-overlay-panel button:hover { background: color-mix(in oklch, var(--foreground) 11%, transparent); }
+.camera-overlay-panel button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.camera-overlay-panel .overlay-primary { background: var(--primary); color: var(--primary-foreground); border-color: transparent; box-shadow: var(--glow-brand); }
+.camera-overlay-panel .overlay-primary:hover { background: color-mix(in oklch, var(--primary) 88%, var(--foreground)); }
+.camera-overlay-panel [role='status'] { color: color-mix(in oklch, var(--amber) 70%, var(--foreground)); }

@@ -17,7 +17,8 @@ const tools = [
   ['arrow', 'Arrow', ArrowUpRight],
   ['redact', 'Redact', Square],
 ] as const;
-const buttonClass = 'min-h-11 min-w-11';
+const buttonClass =
+  'min-h-11 min-w-11 rounded-xl aria-pressed:bg-primary/15 aria-pressed:text-primary aria-pressed:hover:bg-primary/20';
 
 export function ImageEditorToolbar({
   editor,
@@ -121,7 +122,7 @@ export function ImageEditorSelection({
                   step={1}
                   value={selection[key]}
                   disabled={exporting}
-                  className="min-h-11 rounded-lg tabular-nums"
+                  className="min-h-11 rounded-xl tabular-nums"
                   onChange={(event) =>
                     editor.setSelection({
                       ...selection,
@@ -156,7 +157,7 @@ export function ImageEditorSelection({
               aria-label="Drawing color"
               value={color}
               disabled={exporting}
-              className="h-11 w-12 cursor-pointer rounded-lg border bg-background p-1"
+              className="h-11 w-12 cursor-pointer rounded-xl border bg-background p-1"
               onChange={(event) => editor.setColor(event.target.value)}
             />
           </label>
@@ -168,7 +169,7 @@ export function ImageEditorSelection({
               max={100}
               value={lineWidth}
               disabled={exporting}
-              className="min-h-11 w-20 rounded-lg"
+              className="min-h-11 w-20 rounded-xl"
               onChange={(event) =>
                 editor.setLineWidth(
                   Math.max(1, Math.min(100, Number(event.target.value) || 1)),

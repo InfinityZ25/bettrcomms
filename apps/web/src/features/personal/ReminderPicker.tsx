@@ -143,7 +143,7 @@ export default function ReminderPicker({
           Back
         </Button>
         <Button
-          className="min-h-11"
+          className="min-h-11 bc-glow"
           disabled={busy || !date}
           onClick={() => void save()}
         >

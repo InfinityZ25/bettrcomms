@@ -1,3 +1,13 @@
+/* Voice & devices is a stack of device cards and a microphone panel rather than a
+   list of rows, so its section is not framed as a card of its own. */
+#settings-voice {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
 .settings-layout {
   margin-top: 1.5rem;
 }

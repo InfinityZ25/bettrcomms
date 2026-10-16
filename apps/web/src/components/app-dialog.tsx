@@ -26,7 +26,7 @@ export function AppDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className={className}>
         <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
+          <DialogTitle className="pr-8">{title}</DialogTitle>
           <DialogDescription>
             {description ?? 'Customize your Bettercomms experience.'}
           </DialogDescription>

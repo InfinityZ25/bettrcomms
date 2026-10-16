@@ -10,7 +10,7 @@ import {
 } from 'react';
 import { api, type Room, type User } from './api';
 import { Button } from '@/components/ui/button';
-import { Mascot } from '@/components/mascot';
+import { BrandTile, Wordmark } from '@/components/brand-mark';
 import { useSession } from '@/features/auth/useSession';
 import SignInPanel from '@/features/auth/SignInPanel';
 import CallStage, { type NativeShareActions } from '@/features/call/CallStage';
@@ -414,9 +414,10 @@ export default function App() {
 
   if (loading)
     return (
-      <div className="flex h-dvh flex-col items-center justify-center gap-3">
-        <Mascot className="w-24" />
-        <span className="text-sm text-muted-foreground">
+      <div className="flex h-dvh flex-col items-center justify-center gap-5 bg-sidebar bc-aurora">
+        <BrandTile live className="size-14 animate-bc-rise" />
+        <Wordmark className="text-2xl animate-bc-rise" />
+        <span className="-mt-2 text-sm text-muted-foreground">
           Opening your space…
         </span>
       </div>

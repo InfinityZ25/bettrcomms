@@ -18,7 +18,7 @@ function linkedText(text: string, offset: number) {
     try {
       const parsed = new URL(url);
       if ((parsed.protocol !== 'http:' && parsed.protocol !== 'https:') || parsed.username || parsed.password) throw new Error('Invalid URL');
-      result.push(<a key={offset + start} href={parsed.href} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" className="text-primary underline underline-offset-2 hover:no-underline">{url}</a>);
+      result.push(<a key={offset + start} href={parsed.href} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" className="font-medium text-primary underline decoration-primary/40 underline-offset-2 transition-colors hover:decoration-primary">{url}</a>);
     } catch {
       result.push(url);
     }
@@ -42,7 +42,9 @@ export default function PlainMessage({ message }: { message: Message }) {
         return name ? (
           <span
             key={key}
-            className="rounded bg-primary/15 px-0.5 font-medium text-primary"
+            // Lime text on its own tint is under 4.5:1 in light, so the light
+            // theme uses a deeper ink of the same green.
+            className="rounded-md bg-primary/15 px-1 font-medium text-[color-mix(in_oklab,var(--primary)_75%,var(--foreground))] dark:text-primary"
           >
             @{name}
           </span>

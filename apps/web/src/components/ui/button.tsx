@@ -7,15 +7,21 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/80",
+        // Lime, lit from above; on hover it brightens and casts its own glow.
+        default:
+          "bg-primary font-semibold text-primary-foreground shadow-[inset_0_1px_0_0_color-mix(in_oklch,white_24%,transparent)] hover:bg-[color-mix(in_oklch,var(--primary)_92%,white)] hover:shadow-[inset_0_1px_0_0_color-mix(in_oklch,white_24%,transparent),0_8px_24px_-10px_color-mix(in_oklch,var(--primary)_70%,transparent)]",
         outline:
-          "border-border bg-input/30 hover:bg-input/50 hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground",
+          "border-border hover:border-foreground/20 hover:bg-foreground/5 hover:text-foreground aria-expanded:border-foreground/20 aria-expanded:bg-foreground/5 aria-expanded:text-foreground",
         secondary:
-          "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
+          "border-border bg-secondary text-secondary-foreground shadow-[var(--highlight)] hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_7%)] aria-expanded:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_7%)] aria-expanded:text-secondary-foreground",
+        // An ink wash rather than a surface token: it reads the same on the
+        // canvas, the sidebar, the rail and a dialog, in either theme, and a
+        // call site's own hover colour still wins in both themes.
         ghost:
-          "hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50",
+          "hover:bg-foreground/7 hover:text-foreground aria-expanded:bg-foreground/7 aria-expanded:text-foreground",
+        // Light mode deepens the red so it keeps 4.5:1 on its own tint.
         destructive:
-          "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
+          "bg-destructive/10 text-[color-mix(in_oklch,var(--destructive)_85%,black)] hover:bg-destructive/16 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/15 dark:text-destructive dark:hover:bg-destructive/25 dark:focus-visible:ring-destructive/40",
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {

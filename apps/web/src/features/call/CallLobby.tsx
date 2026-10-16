@@ -44,7 +44,7 @@ export default function CallLobby({
 
   return (
     <section
-      className="mx-auto flex w-full max-w-xl flex-1 flex-col items-center justify-center gap-5 py-4 text-center"
+      className="relative isolate mx-auto flex w-full max-w-xl flex-1 flex-col items-center justify-center gap-6 py-6 text-center before:pointer-events-none before:absolute before:inset-x-0 before:top-[6%] before:bottom-[24%] before:-z-10 before:rounded-full before:bg-[radial-gradient(closest-side,color-mix(in_oklch,var(--violet)_15%,transparent),transparent)] before:content-[''] after:pointer-events-none after:absolute after:inset-x-[18%] after:bottom-[10%] after:-z-10 after:h-1/3 after:rounded-full after:bg-[radial-gradient(closest-side,color-mix(in_oklch,var(--brand)_10%,transparent),transparent)] after:content-['']"
       aria-label="Call lobby"
     >
       {/* Who is in there is the answer to the only question worth asking here,
@@ -52,22 +52,22 @@ export default function CallLobby({
           is friendlier than an empty box. */}
       {others.length > 0 ? (
         <ul
-          className="flex flex-wrap justify-center gap-4"
+          className="flex flex-wrap justify-center gap-5"
           aria-label="In this call"
         >
           {others.map((presence) => (
             <li
               key={presence.user_id}
-              className="flex w-20 flex-col items-center gap-1.5"
+              className="flex w-24 animate-bc-pop flex-col items-center gap-2"
             >
               {/* They are in the call, so their presence is not a guess. */}
               <Avatar
                 name={label(presence)}
                 id={presence.user_id}
                 presence="online"
-                className="size-12"
+                className="size-16 drop-shadow-[0_0_18px_color-mix(in_oklch,var(--online)_38%,transparent)]"
               />
-              <span className="w-full truncate text-xs font-medium">
+              <span className="w-full truncate text-sm font-medium">
                 {label(presence)}
               </span>
               <Signals presence={presence} />
@@ -75,18 +75,18 @@ export default function CallLobby({
           ))}
         </ul>
       ) : (
-        <Mascot className="w-20" />
+        <Mascot className="w-32 animate-bc-float drop-shadow-[0_24px_34px_color-mix(in_oklch,var(--violet)_34%,transparent)]" />
       )}
 
-      <div>
+      <div className="max-w-full">
         <h2
-          className="font-heading text-2xl font-semibold tracking-tight break-words"
+          className="font-heading text-3xl font-extrabold tracking-tight break-words bc-gradient-text sm:text-4xl"
           data-testid="room-heading"
         >
           {room ? room.display_name || room.name : 'Your call'}
         </h2>
         <p
-          className="mt-2 text-sm leading-6 text-muted-foreground"
+          className="mt-3 text-[0.9375rem] leading-relaxed text-muted-foreground"
           role={ready && !presenceKnown ? 'status' : undefined}
         >
           {describe(others.map(label), ready, presenceKnown)}
@@ -102,6 +102,7 @@ export default function CallLobby({
       ) : (
         <Button
           size="lg"
+          className="h-12 gap-2 px-7 text-base font-semibold bc-glow hover:-translate-y-0.5 [&_svg:not([class*='size-'])]:size-5"
           disabled={busy || !ready}
           onClick={() => onJoin('replace')}
         >
@@ -116,9 +117,9 @@ export default function CallLobby({
 /** Muted or deafened, and only when there is something to say. */
 function Signals({ presence }: { presence: CallPresence }) {
   const notes = [
-    presence.deafened && { icon: <HeadphoneOff size={11} />, text: 'Deafened' },
+    presence.deafened && { icon: <HeadphoneOff size={11} className="size-3 text-dnd" />, text: 'Deafened' },
     !presence.deafened &&
-      presence.muted && { icon: <MicOff size={11} />, text: 'Muted' },
+      presence.muted && { icon: <MicOff size={11} className="size-3 text-dnd" />, text: 'Muted' },
     presence.device_count > 1 && {
       icon: null,
       text: `${presence.device_count} devices`,
@@ -127,7 +128,7 @@ function Signals({ presence }: { presence: CallPresence }) {
 
   if (!notes.length) return null;
   return (
-    <span className="flex flex-col items-center gap-0.5 text-[0.65rem] text-muted-foreground">
+    <span className="flex flex-col items-center gap-0.5 text-[0.6875rem] text-muted-foreground">
       {notes.map((note) => (
         <span className="flex items-center gap-1" key={note.text}>
           {note.icon}
@@ -155,13 +156,13 @@ export function SecondDevice({
   onJoin: (mode: JoinMode) => void;
 }) {
   return (
-    <div className="w-full rounded-2xl border border-border bg-muted/50 p-4 text-left">
-      <strong className="text-sm" aria-live="polite">
+    <div className="w-full rounded-2xl bc-card p-4 text-left">
+      <strong className="text-sm font-semibold" aria-live="polite">
         You are already in this call
         {devices > 1 ? ` on ${devices} devices` : ' on another device'}.
       </strong>
       <div className="mt-3 flex flex-wrap gap-2">
-        <Button disabled={busy} onClick={() => onJoin('replace')}>
+        <Button className="bc-glow" disabled={busy} onClick={() => onJoin('replace')}>
           <Headphones size={18} /> {busy ? 'Connecting…' : 'Move it here'}
         </Button>
         <Button

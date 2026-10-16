@@ -50,7 +50,7 @@ export default function CreateRoomDialog({
           });
         }}
       >
-        <label className="block text-xs font-medium text-foreground/80">
+        <label className="block text-xs font-medium text-foreground">
           Room name
           <Input
             className="mt-2"
@@ -62,7 +62,7 @@ export default function CreateRoomDialog({
             required
           />
         </label>
-        <label className="block text-xs font-medium text-foreground/80">
+        <label className="block text-xs font-medium text-foreground">
           Description <span className="text-muted-foreground">(optional)</span>
           <Input
             className="mt-2"
@@ -72,7 +72,7 @@ export default function CreateRoomDialog({
             placeholder="Your place to hang out"
           />
         </label>
-        {!signedIn && <p>Sign in before creating your first room.</p>}
+        {!signedIn && <p className="text-sm text-muted-foreground">Sign in before creating your first room.</p>}
         {/*
           The submit type below is not optional. The shared Button renders the
           Base UI button primitive, which defaults every button it draws to

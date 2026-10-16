@@ -71,7 +71,7 @@ export default function QuickAccess({
     <Dialog open={open && enabled} onOpenChange={setOpen}>
       <DialogContent
         data-quick-access
-        className="flex max-h-[min(42rem,calc(100dvh-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-xl [&>[data-slot=dialog-close]]:top-3 [&>[data-slot=dialog-close]]:right-3 [&>[data-slot=dialog-close]]:size-11"
+        className="flex max-h-[min(42rem,calc(100dvh-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-[38rem] [&>[data-slot=dialog-close]]:top-3.5 [&>[data-slot=dialog-close]]:right-3.5 [&>[data-slot=dialog-close]]:size-11"
         initialFocus={input}
         finalFocus={() =>
           restoreFocus.current && opener.current?.isConnected
@@ -79,7 +79,7 @@ export default function QuickAccess({
             : false
         }
       >
-        <div className="flex shrink-0 flex-col gap-1 px-5 pt-5 pr-16 pb-3">
+        <div className="flex shrink-0 flex-col gap-1 px-5 pt-5 pr-16 pb-4">
           <DialogTitle>Quick access</DialogTitle>
           <DialogDescription>
             Jump to your people, conversations and settings.

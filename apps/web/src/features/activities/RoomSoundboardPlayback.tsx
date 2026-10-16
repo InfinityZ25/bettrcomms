@@ -55,10 +55,10 @@ function enable() {
 export function SoundboardPlaybackSettings() {
   const current = useSyncExternalStore(subscribe, snapshot, snapshot);
   return (
-    <div className="space-y-3 rounded-xl border bg-muted/20 p-4">
+    <div className="space-y-3 rounded-2xl bc-card p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <p className="text-sm font-medium">Room sounds</p>
+          <p className="font-heading text-base font-semibold">Room sounds</p>
           <p className="mt-1 text-xs text-muted-foreground">
             Local playback only. This volume does not change microphones or
             recordings. Deafen silences room sounds.
@@ -78,6 +78,7 @@ export function SoundboardPlaybackSettings() {
       <label className="flex items-center gap-3 text-sm">
         <input
           type="checkbox"
+          className="accent-primary"
           checked={current.muted}
           onChange={(event) => {
             const muted = event.target.checked;
@@ -88,7 +89,7 @@ export function SoundboardPlaybackSettings() {
         Mute soundboard
       </label>
       <label className="flex items-center gap-3 text-sm">
-        <Volume2 size={16} />
+        <Volume2 size={16} className="size-8 shrink-0 rounded-xl bg-cyan/15 p-2 text-cyan" />
         <span className="shrink-0">
           Volume {Math.round(current.volume * 100)}%
         </span>

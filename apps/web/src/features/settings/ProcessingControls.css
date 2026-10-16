@@ -3,8 +3,9 @@
   margin: 18px 0;
   padding: 16px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
-  background: color-mix(in oklch, var(--muted) 40%, transparent);
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow: var(--shadow-soft), var(--highlight);
 }
 .processing-controls > h3 {
   display: flex;
@@ -13,7 +14,7 @@
   margin: 0 0 16px !important;
 }
 .processing-controls > p {
-  font-size: 12px;
+  font-size: 0.8125rem;
   color: var(--muted-foreground);
   line-height: 1.7;
   margin: 10px 0;
@@ -92,12 +93,14 @@
 
 .switch-row strong {
   font-size: 0.875rem;
+  font-weight: 600;
 }
 
 .switch-row p {
   margin-top: 0.25rem;
   color: var(--muted-foreground);
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
 }
 
 .switch-row input {

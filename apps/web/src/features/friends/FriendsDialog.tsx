@@ -43,14 +43,14 @@ export default function FriendsDialog({
       <div className="flex min-h-0 flex-col gap-5 overflow-y-auto overscroll-contain pr-1">
         {user ? (
           <>
-            <label className="block min-w-0 text-xs font-medium text-foreground/80">
+            <label className="block min-w-0 text-xs font-medium text-foreground">
               Your user ID
               <div className="mt-2 flex items-center gap-2">
-                <input className="min-w-0 flex-1 text-xs" readOnly value={user.id} />
+                <input className="min-w-0 flex-1 px-2 font-mono text-sm tracking-tighter" readOnly value={user.id} />
                 <Button
                   variant="secondary"
                   size="icon"
-                  className="shrink-0"
+                  className="shrink-0 rounded-full bg-transparent hover:bg-accent/60"
                   aria-label="Copy user ID"
                   onClick={() => {
                     void navigator.clipboard.writeText(user.id);

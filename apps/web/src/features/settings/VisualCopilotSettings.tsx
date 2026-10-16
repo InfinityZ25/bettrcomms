@@ -42,7 +42,7 @@ export default function VisualCopilotSettings() {
 
   return (
     <section className="copilot-settings device-settings__card" aria-label="Visual copilot settings">
-      <h3>Shared-screen reactions</h3>
+      <h3 className="font-heading text-base font-semibold">Shared-screen reactions</h3>
       <SettingRow as="div" title="Allow reactions" description="Enable on both devices, then allow participants each time you share. Captures stay in the call and are not saved." control={<Switch aria-label="Enable visual copilot on this device" checked={settings.enabled} onCheckedChange={(enabled) => save({ enabled })} />} />
       <div className="copilot-settings-toggles">
         <SettingRow as="div" title="Pointers" description="Show quick signals." control={<Switch aria-label="Receive quick signals" checked={settings.showPings} onCheckedChange={(showPings) => save({ showPings })} />} />

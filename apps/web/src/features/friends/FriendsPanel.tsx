@@ -61,7 +61,7 @@ function PersonIdentity({
     <div className="flex min-w-0 flex-1 items-start gap-2.5">
       <button
         type="button"
-        className="shrink-0 rounded-lg focus-visible:ring-2 focus-visible:ring-ring"
+        className="shrink-0 rounded-full focus-visible:ring-2 focus-visible:ring-ring"
         aria-label={`View profile of ${user.name}`}
         onClick={() => openUserProfile(user.id)}
       >
@@ -75,12 +75,12 @@ function PersonIdentity({
       <div className="min-w-0 flex-1">
         <button
           type="button"
-          className="block max-w-full text-left font-semibold [overflow-wrap:anywhere] hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+          className="block max-w-full text-left text-sm font-semibold [overflow-wrap:anywhere] hover:underline focus-visible:ring-2 focus-visible:ring-ring"
           onClick={() => openUserProfile(user.id)}
         >
           {user.name}
         </button>
-        <small className="mt-1 block [overflow-wrap:anywhere] text-[0.7rem] text-muted-foreground">
+        <small className="mt-0.5 block [overflow-wrap:anywhere] text-xs text-muted-foreground">
           {user.username ? `@${user.username}` : user.email}
         </small>
         <CustomStatusText
@@ -89,7 +89,7 @@ function PersonIdentity({
           version={user.status_version}
         />
         {user.bio && (
-          <details className="mt-1 text-[0.7rem] text-muted-foreground">
+          <details className="mt-1 text-xs text-muted-foreground">
             <summary className="cursor-pointer">About</summary>
             <p className="mt-1 whitespace-pre-wrap [overflow-wrap:anywhere]">
               {user.bio}
@@ -186,7 +186,7 @@ export default function FriendsPanel({
         onError={onError}
       />
       <form onSubmit={search}>
-        <label className="block text-xs font-medium text-foreground/80">
+        <label className="block text-xs font-medium text-foreground">
           Find your people
           <div className="mt-2 flex items-center gap-2">
             <Input
@@ -216,7 +216,7 @@ export default function FriendsPanel({
       )}
       {results.map(latest).map((u) => (
         <div
-          className="flex flex-wrap items-center justify-between gap-2.5 border-b py-2 text-xs"
+          className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl px-3 py-2.5 text-xs hover:bg-accent/50"
           key={u.id}
         >
           <PersonIdentity user={u} />
@@ -273,7 +273,7 @@ export default function FriendsPanel({
       ))}
       {requestTarget && (
         <form
-          className="space-y-2 rounded-xl border p-3 text-xs"
+          className="space-y-2 rounded-2xl bc-card p-4 text-xs"
           onSubmit={(event) => {
             event.preventDefault();
             void action(async () => {
@@ -293,7 +293,7 @@ export default function FriendsPanel({
           </label>
           <textarea
             id="dm-request-body"
-            className="min-h-20 w-full rounded-lg border bg-background p-2"
+            className="min-h-20 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm shadow-xs"
             value={requestBody}
             maxLength={500}
             required
@@ -344,7 +344,7 @@ export default function FriendsPanel({
         </form>
       </details>
       {requests.length > 0 && (
-        <h3 className="mt-2.5 flex items-center gap-2 text-sm font-semibold">
+        <h3 className="mt-2.5 flex items-center gap-2 font-heading text-base font-semibold">
           Friend requests
         </h3>
       )}
@@ -352,12 +352,12 @@ export default function FriendsPanel({
         const incoming = r.receiver.id === user.id;
         return (
           <div
-            className="flex items-center justify-between gap-2.5 border-b py-2 text-xs"
+            className="flex items-center justify-between gap-2.5 rounded-xl px-3 py-2.5 text-xs hover:bg-accent/50"
             key={r.id}
           >
             <div className="min-w-0 flex-1">
               <PersonIdentity user={latest(incoming ? r.sender : r.receiver)} />
-              <small className="mt-1 block text-[0.7rem] text-muted-foreground">
+              <small className="mt-0.5 block text-xs text-muted-foreground">
                 {incoming ? 'Wants to be your friend' : 'Request sent'}
               </small>
             </div>
@@ -394,14 +394,14 @@ export default function FriendsPanel({
           </div>
         );
       })}
-      <h3 className="mt-2.5 flex items-center gap-2 text-sm font-semibold">
+      <h3 className="mt-2.5 flex items-center gap-2 font-heading text-base font-semibold">
         <Users size={16} /> Your friends{' '}
-        <span className="ml-auto text-muted-foreground">{friends.length}</span>
+        <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-xs font-semibold tabular-nums text-muted-foreground">{friends.length}</span>
       </h3>
       {!friends.length && (
-        <div className="flex items-center gap-3">
-          <Mascot className="w-10 shrink-0" />
-          <p className="text-xs leading-6 text-muted-foreground">
+        <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border px-4 py-7 text-center animate-bc-rise">
+          <Mascot className="w-16 shrink-0" />
+          <p className="text-sm leading-6 text-muted-foreground">
             Every good room starts with a friend.
           </p>
         </div>
@@ -412,10 +412,10 @@ export default function FriendsPanel({
           aria-label={`Friend ${f.name}`}
           // On a phone the name takes the full width and its actions wrap
           // below it, instead of squeezing the name into a column.
-          className="flex items-center justify-between gap-2.5 border-b py-2 text-xs phone:flex-wrap phone:justify-start phone:gap-y-1.5"
+          className="flex flex-wrap items-center justify-start gap-2.5 rounded-xl px-3 py-2.5 text-xs hover:bg-accent/50 phone:flex-wrap phone:justify-start phone:gap-y-1.5"
           key={f.id}
         >
-          <div className="min-w-0 flex-1 phone:basis-full">
+          <div className="min-w-44 flex-1 phone:min-w-0 phone:basis-full">
             <PersonIdentity
               user={f}
               status={
@@ -423,7 +423,7 @@ export default function FriendsPanel({
                 contactStatus(undefined, Boolean(onlineUsers[f.id]))
               }
             />
-            <small className="mt-1 block [overflow-wrap:anywhere] text-[0.7rem] text-muted-foreground">
+            <small className="mt-0.5 block ps-[2.625rem] [overflow-wrap:anywhere] text-xs text-muted-foreground">
               {(() => {
                 const state = Object.values(callPresence)
                   .flat()

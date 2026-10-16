@@ -213,13 +213,13 @@ function AttachmentPreview({
   return (
     <div
       ref={container}
-      className="min-w-0 max-w-full overflow-hidden rounded-xl border bg-muted/25"
+      className="min-w-0 max-w-full overflow-hidden rounded-2xl border border-border bg-muted/30 shadow-[var(--highlight)]"
       aria-label={`Attachment ${attachment.filename}`}
     >
       {kind === 'image' && url && (
         <button
           type="button"
-          className="group/image relative block w-full bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring"
+          className="group/image relative block w-full bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
           aria-label={`Open image ${attachment.filename}`}
           onClick={openViewer}
         >
@@ -227,10 +227,10 @@ function AttachmentPreview({
             src={url}
             alt={attachment.filename}
             loading="lazy"
-            className="max-h-80 w-full object-contain"
+            className="max-h-80 w-full object-contain transition-transform duration-300 group-hover/image:scale-[1.01] motion-reduce:transition-none"
             onError={failPreview}
           />
-          <span className="pointer-events-none absolute right-2 bottom-2 flex items-center gap-1 rounded-full border bg-background/90 px-2 py-1 text-xs opacity-0 transition-opacity group-hover/image:opacity-100 group-focus-visible/image:opacity-100 [@media(hover:none)]:opacity-100 motion-reduce:transition-none">
+          <span className="pointer-events-none absolute right-2 bottom-2 flex items-center gap-1 rounded-full border border-border bg-background/90 px-2.5 py-1 text-xs font-medium shadow-[var(--shadow-soft)] backdrop-blur-sm opacity-0 transition-opacity group-hover/image:opacity-100 group-focus-visible/image:opacity-100 [@media(hover:none)]:opacity-100 motion-reduce:transition-none">
             <Maximize2 size={12} />
             Open image
           </span>
@@ -277,20 +277,20 @@ function AttachmentPreview({
           }}
         />
       )}
-      <div className="flex items-center gap-2 p-2.5">
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
-          <Icon size={17} className="text-muted-foreground" />
+      <div className="flex items-center gap-2.5 p-2.5">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary">
+          <Icon size={17} />
         </span>
         <div className="min-w-0 flex-1">
           <p
-            className="truncate text-xs font-medium"
+            className="truncate text-sm font-medium"
             title={attachment.filename}
           >
             {attachment.voice_note
               ? `Voice note · ${voiceNoteTime(attachment.duration_ms ?? 0)}`
               : attachment.filename}
           </p>
-          <p className="mt-0.5 text-[0.65rem] text-muted-foreground">
+          <p className="mt-0.5 text-[0.6875rem] text-muted-foreground tabular-nums">
             {attachmentSize(attachment.size_bytes)}
             {kind === 'video' && ' · Video'}
             {kind === 'audio' && !attachment.voice_note && ' · Audio'}
@@ -303,7 +303,7 @@ function AttachmentPreview({
             type="button"
             size="icon-sm"
             variant="ghost"
-            className="phone:size-11"
+            className="rounded-lg text-muted-foreground hover:text-foreground phone:size-11"
             aria-label={`Open ${attachment.filename}`}
             onClick={openViewer}
           >
@@ -314,7 +314,7 @@ function AttachmentPreview({
           type="button"
           size="icon-sm"
           variant="ghost"
-          className="phone:size-11"
+          className="rounded-lg text-muted-foreground hover:text-foreground phone:size-11"
           aria-label={`Download ${attachment.filename}`}
           onClick={onDownload}
         >
@@ -333,6 +333,7 @@ function AttachmentPreview({
             type="button"
             size="sm"
             variant="outline"
+            className="rounded-full [&_svg]:text-primary"
             disabled={loading}
             onClick={() => void load()}
           >

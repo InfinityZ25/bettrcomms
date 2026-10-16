@@ -2,6 +2,7 @@ import type { FormEvent } from 'react';
 import { ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { BrandTile, Wordmark } from '@/components/brand-mark';
 import type { DesktopSignInStatus } from '@/desktop';
 
 /** Shown below the call stage until someone signs in. */
@@ -33,11 +34,15 @@ export default function SignInPanel({
   return (
     <div
       id="signin"
-      className="flex shrink-0 flex-col items-stretch justify-between gap-4 border-t py-5 min-[821px]:flex-row min-[821px]:flex-wrap min-[821px]:items-center min-[821px]:pb-6"
+      className="flex shrink-0 flex-col items-stretch justify-between gap-4 rounded-3xl bc-card bc-aurora px-5 py-5 min-[821px]:flex-row min-[821px]:flex-wrap min-[821px]:items-center min-[821px]:pb-6"
     >
       <div>
-        <strong className="text-sm">Your people are one sign-in away.</strong>
-        <p className="mt-1.5 text-xs text-muted-foreground">
+        <span aria-hidden="true" className="mb-3 flex items-center gap-2.5">
+          <BrandTile className="size-12" />
+          <Wordmark />
+        </span>
+        <strong className="block font-heading text-xl font-extrabold tracking-tight bc-gradient-text">Your people are one sign-in away.</strong>
+        <p className="mt-1.5 text-sm text-muted-foreground">
           Sign in securely to create rooms and invite your friends.
         </p>
       </div>
@@ -71,7 +76,7 @@ export default function SignInPanel({
         </div>
       ) : (
         <div className="flex flex-col gap-1.5 min-[821px]:items-end">
-          <Button onClick={onSignIn}>
+          <Button className="bc-glow" onClick={onSignIn}>
             Continue with WorkOS <ArrowRight size={17} />
           </Button>
           {signInStatus?.state === 'failed' && (
@@ -86,7 +91,7 @@ export default function SignInPanel({
           className="grid w-full grid-cols-1 items-center gap-2.5 pb-2.5 min-[821px]:flex min-[821px]:flex-wrap"
           onSubmit={onDevSignIn}
         >
-          <span className="my-1 text-[0.65rem] text-muted-foreground min-[821px]:my-0 min-[821px]:shrink-0">
+          <span className="my-1 text-[0.6875rem] text-muted-foreground min-[821px]:my-0 min-[821px]:shrink-0">
             Local development
           </span>
           <Input

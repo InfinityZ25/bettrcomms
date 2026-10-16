@@ -78,7 +78,7 @@ export default function CommunityReports({
   }
   return (
     <section className="space-y-3 border-t pt-4" aria-label="Message reports">
-      <h3 className="text-sm font-semibold">Message reports</h3>
+      <h3 className="font-heading text-base font-semibold">Message reports</h3>
       {loading ? (
         <p className="text-sm text-muted-foreground">Loading reports…</p>
       ) : (
@@ -91,7 +91,7 @@ export default function CommunityReports({
       {reports.map((report) => (
         <article
           key={report.id}
-          className="space-y-2 rounded-lg border p-3 text-xs"
+          className="space-y-2 rounded-2xl bc-card p-4 text-xs"
         >
           <p>
             <strong>{report.reporter_name}</strong> reported{' '}

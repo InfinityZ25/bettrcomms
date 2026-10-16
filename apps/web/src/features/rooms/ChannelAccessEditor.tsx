@@ -115,10 +115,10 @@ export default function ChannelAccessEditor({
               void save();
             }}
           >
-            <label className="flex items-start gap-3 rounded-lg border p-3">
+            <label className="flex items-start gap-3 rounded-2xl border border-border bg-card/60 p-4 transition hover:border-foreground/20 has-[:checked]:border-primary/50 has-[:checked]:bg-primary/8 has-[:checked]:shadow-[var(--glow-brand)]">
               <input
                 type="checkbox"
-                className="mt-1"
+                className="mt-1 accent-primary"
                 checked={access.is_private}
                 disabled={busy}
                 onChange={(event) =>
@@ -126,7 +126,7 @@ export default function ChannelAccessEditor({
                 }
               />
               <span>
-                <strong className="block text-sm">Private channel</strong>
+                <strong className="block text-sm font-semibold">Private channel</strong>
                 <small className="block text-xs leading-5 text-muted-foreground">
                   Only roles with an explicit View channel allowance, plus the
                   owner and admins, can find this channel.
@@ -136,7 +136,7 @@ export default function ChannelAccessEditor({
             <label className="block space-y-2 text-sm">
               Permissions for
               <select
-                className="h-10 w-full rounded-md border bg-background px-3"
+                className="h-10 w-full rounded-xl border border-input bg-background px-3 shadow-xs"
                 aria-label="Permissions for role"
                 value={subject}
                 disabled={busy}
@@ -154,7 +154,7 @@ export default function ChannelAccessEditor({
               {channelPermissions.map((permission) => (
                 <label
                   key={permission.key}
-                  className="flex items-center justify-between gap-4 text-sm"
+                  className="flex items-center justify-between gap-4 rounded-xl px-3 py-2 text-sm hover:bg-accent/50"
                 >
                   <span>
                     {permission.label}
@@ -163,7 +163,7 @@ export default function ChannelAccessEditor({
                     </small>
                   </span>
                   <select
-                    className="h-9 rounded-md border bg-background px-2"
+                    className="h-9 w-auto rounded-xl border border-input bg-background px-2.5 shadow-xs"
                     aria-label={`${permission.label} override`}
                     value={override?.permissions[permission.key] ?? 'inherit'}
                     onChange={(event) =>
@@ -185,7 +185,7 @@ export default function ChannelAccessEditor({
                 </label>
               ))}
             </fieldset>
-            <div className="rounded-lg bg-muted/50 p-3 text-xs leading-5 text-muted-foreground">
+            <div className="rounded-2xl border border-border bg-background/60 p-4 text-xs leading-5 text-muted-foreground">
               Denies win across all matching channel overrides, then explicit
               allowances, then role defaults. The owner and admins retain
               access.{' '}
@@ -195,14 +195,14 @@ export default function ChannelAccessEditor({
             </div>
             {access.overrides.length > 0 && (
               <section className="space-y-2">
-                <h4 className="text-xs font-semibold">Configured overrides</h4>
+                <h4 className="bc-kicker">Configured overrides</h4>
                 <ul className="space-y-2 text-xs">
                   {access.overrides.map((item) => (
                     <li
                       key={item.subject_key}
-                      className="rounded-lg border p-3"
+                      className="rounded-2xl bc-card p-3"
                     >
-                      <strong className="block">
+                      <strong className="block text-sm font-semibold">
                         {subjects.find((entry) => entry.id === item.subject_key)
                           ?.name ?? 'Removed role'}
                       </strong>
@@ -224,14 +224,14 @@ export default function ChannelAccessEditor({
             )}
             {!!access.effective_members?.length && (
               <section className="space-y-2">
-                <h4 className="text-xs font-semibold">
+                <h4 className="bc-kicker">
                   Current effective access
                 </h4>
                 <p className="text-xs leading-5 text-muted-foreground">
                   Saved role and channel permissions. Save changes to
                   recalculate them; timeouts and slow mode also apply.
                 </p>
-                <div className="max-h-48 overflow-auto rounded-lg border">
+                <div className="max-h-48 overflow-auto rounded-2xl border border-border bg-background/60">
                   <table className="w-full text-left text-xs">
                     <caption className="sr-only">
                       Current saved channel permissions for each member

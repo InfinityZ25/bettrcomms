@@ -6,8 +6,6 @@ import { ThemeProvider } from './components/theme-provider';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { MotionConfig } from 'motion/react';
-import '@fontsource-variable/dm-sans';
-import '@fontsource-variable/manrope';
 import './styles.css';
 import { startWailsFrontendRuntime } from '@/desktop/wailsFrontendRuntime';
 import { releaseOrphanedIOSBroadcast } from '@/media/iosBroadcast';

@@ -8,12 +8,12 @@ import {
 import {
   Headphones,
   HeadphoneOff,
-  MessageSquare,
   MicOff,
   Users,
   Star,
 } from 'lucide-react';
 import type { CallParticipant, Room, User } from '@/api';
+import { Avatar } from '@/components/avatar';
 import RoomContextMenu from './RoomContextMenu';
 import CommunityNavigation from './CommunityNavigation';
 import { cn } from '@/lib/utils';
@@ -106,7 +106,7 @@ export default function RoomNavigation({
         role="region"
         aria-label={kind === 'direct' ? 'Direct messages' : 'Rooms'}
       >
-        <SidebarGroupLabel className="justify-between">
+        <SidebarGroupLabel className="justify-between px-2 text-[0.6875rem] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
           {kind === 'direct' ? 'Conversations' : 'Rooms'}
         </SidebarGroupLabel>
         <SidebarMenu>
@@ -125,8 +125,13 @@ export default function RoomNavigation({
                   >
                     <SidebarMenuButton
                       className={cn(
-                        'h-10 pr-9',
-                        selected === room.id && 'font-semibold',
+                        'h-11 gap-2.5 rounded-xl px-2 pr-9 text-muted-foreground hover:text-foreground',
+                        selected === room.id && 'font-semibold text-foreground',
+                        (unread[room.id]?.unread ?? 0) > 0 &&
+                          'font-semibold text-foreground',
+                        preferences[room.id]?.archived &&
+                          selected !== room.id &&
+                          '[&>span:first-child]:grayscale',
                       )}
                       isActive={selected === room.id}
                       aria-current={selected === room.id ? 'page' : undefined}
@@ -134,10 +139,25 @@ export default function RoomNavigation({
                       title={roomLabel(room)}
                       aria-label={`${roomLabel(room)}${known && callers.length ? ` ${callers.length} in call` : ''}`}
                     >
+                      {/* Who it is with, by face; a group gets a group tile. */}
                       {room.kind === 'group' ? (
-                        <Users size={18} />
+                        <span
+                          aria-hidden="true"
+                          className="grid size-8 shrink-0 place-items-center rounded-xl bg-violet/15 text-violet"
+                        >
+                          <Users size={18} />
+                        </span>
                       ) : (
-                        <MessageSquare size={18} />
+                        <span
+                          aria-hidden="true"
+                          className="grid size-8 shrink-0 place-items-center [&_svg]:size-full!"
+                        >
+                          <Avatar
+                            name={roomLabel(room)}
+                            id={room.id}
+                            className="size-8"
+                          />
+                        </span>
                       )}
                       <span className="min-w-0 flex-1 truncate">
                         {roomLabel(room)}
@@ -152,7 +172,10 @@ export default function RoomNavigation({
                       {(unread[room.id]?.unread ?? 0) > 0 && (
                         <Badge
                           aria-label={`${unread[room.id].unread} unread messages${unread[room.id].mentions ? `, ${unread[room.id].mentions} mentions` : ''}`}
-                          className="h-5 px-1.5"
+                          className={cn(
+                            'h-[18px] min-w-[18px] px-1.5 text-[0.6875rem] font-bold tabular-nums animate-bc-pop',
+                            unread[room.id].mentions > 0 && 'bg-dnd text-white',
+                          )}
                         >
                           {unread[room.id].mentions ? '@ ' : ''}
                           {unread[room.id].unread}
@@ -160,9 +183,13 @@ export default function RoomNavigation({
                       )}
                       {known && callers.length > 0 && (
                         <Badge
-                          className="h-5 gap-1 px-1.5"
+                          className="h-[18px] gap-1 bg-online/12 px-1.5 text-[0.6875rem] font-semibold text-foreground tabular-nums dark:text-online"
                           aria-label={`${callers.length} in call`}
                         >
+                          <span
+                            aria-hidden="true"
+                            className="size-1.5 rounded-full bg-online animate-bc-pulse"
+                          />
                           <Headphones size={12} />
                           {callers.length}
                         </Badge>
@@ -170,7 +197,7 @@ export default function RoomNavigation({
                     </SidebarMenuButton>
                   </RoomContextMenu>
                   {user && (
-                    <div className="absolute top-1 right-1">
+                    <div className="absolute top-1.5 right-1">
                       <ConversationPreferenceActions
                         room={room}
                         userId={user.id}
@@ -181,23 +208,28 @@ export default function RoomNavigation({
                 </div>
                 {known && callers.length > 0 && (
                   <ul
-                    className="mt-1 mb-3 ml-5 list-none border-l pl-3"
+                    className="mt-1 mb-2 ml-[1.375rem] list-none space-y-px border-l-2 border-online/25 pl-2.5"
                     aria-label={`${roomLabel(room)} call participants`}
                   >
                     {callers.map((person) => (
                       <li
-                        className="flex min-w-0 items-center gap-2 py-1 pr-1 text-xs text-foreground/75 [&>svg]:shrink-0"
+                        className="flex min-w-0 items-center gap-2 py-1 pr-1 text-xs text-muted-foreground [&>svg]:shrink-0"
                         key={person.user_id}
                       >
                         <span
-                          className="grid size-6 shrink-0 place-items-center rounded-full bg-muted text-[0.65rem] text-muted-foreground"
+                          className={cn(
+                            'grid size-5 shrink-0 place-items-center rounded-full bg-sidebar-accent text-[0.6875rem] leading-none font-bold text-foreground',
+                            !person.muted &&
+                              !person.deafened &&
+                              'ring-2 ring-online/70',
+                          )}
                           aria-hidden="true"
                         >
                           {(person.name || '?').slice(0, 1).toUpperCase()}
                         </span>
                         <button
                           type="button"
-                          className="min-w-0 flex-1 truncate text-left hover:underline"
+                          className="min-w-0 flex-1 truncate text-left text-foreground hover:underline"
                           aria-label={`View ${person.name || 'participant'}'s profile`}
                           onClick={() => openUserProfile(person.user_id)}
                         >
@@ -212,7 +244,7 @@ export default function RoomNavigation({
                           <MicOff size={14} aria-label="Muted" />
                         ) : (
                           <span
-                            className="mr-1 size-1.5 rounded-full bg-primary"
+                            className="mr-1 size-1.5 rounded-full bg-online animate-bc-pulse"
                             aria-label="In call"
                           />
                         )}
@@ -226,7 +258,7 @@ export default function RoomNavigation({
         </SidebarMenu>
       </SidebarGroup>
       {!known && rooms.length > 0 && (
-        <p className="mx-2 my-3 text-xs text-muted-foreground">
+        <p className="mx-4 my-3 text-xs text-muted-foreground">
           Call activity unavailable
         </p>
       )}

@@ -162,7 +162,7 @@ function LegacyRoomSettings({
               });
             }}
           >
-            <label className="block text-xs font-medium text-foreground/80">
+            <label className="block text-xs font-medium text-foreground">
               Room name
               <Input
                 className="mt-2"
@@ -188,15 +188,15 @@ function LegacyRoomSettings({
             />
           )}
           <div className="flex flex-col gap-4">
-            <h3 className="text-sm font-semibold">People in this room</h3>
+            <h3 className="font-heading text-base font-semibold">People in this room</h3>
             {members.map((m) => (
               <div
-                className="flex items-center justify-between gap-2.5 border-b py-2 text-xs"
+                className="flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-xs hover:bg-accent/50"
                 key={m.user.id}
               >
                 <span className="min-w-0 flex-1">
-                  <strong className="block">{m.user.name}</strong>
-                  <small className="mt-1 block text-[0.7rem] text-muted-foreground">
+                  <strong className="block text-sm font-semibold">{m.user.name}</strong>
+                  <small className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[0.6875rem] font-semibold text-foreground ${m.role === 'owner' ? 'bg-amber/15' : 'bg-violet/15'}`}>
                     {m.role === 'owner' ? 'Room owner' : 'Member'}
                   </small>
                 </span>
@@ -229,9 +229,9 @@ function LegacyRoomSettings({
           )}
           {owner && reports.length > 0 && (
             <div className="flex flex-col gap-2 border-t pt-4">
-              <h3 className="text-sm font-semibold">Message reports</h3>
+              <h3 className="font-heading text-base font-semibold">Message reports</h3>
               {reports.map((report) => (
-                <div key={report.id} className="rounded-lg border p-3 text-xs">
+                <div key={report.id} className="rounded-2xl bc-card p-4 text-xs">
                   <p>
                     <strong>{report.reporter_name}</strong> reported a message
                     from {report.author_name}
@@ -263,7 +263,7 @@ function LegacyRoomSettings({
             </div>
           )}
           {confirm ? (
-            <div className="rounded-xl border border-destructive/40 p-4">
+            <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4">
               <p className="mb-3.5 text-xs leading-6 text-destructive">
                 {owner
                   ? 'Delete this room and its chat history? This cannot be undone.'
@@ -292,7 +292,7 @@ function LegacyRoomSettings({
               </Button>
             </div>
           ) : (
-            <Button variant="ghost" onClick={() => setConfirm(true)}>
+            <Button variant="ghost" className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => setConfirm(true)}>
               {owner ? <Trash2 size={16} /> : <DoorOpen size={16} />}{' '}
               {owner ? 'Delete room' : 'Leave room'}
             </Button>

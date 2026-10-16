@@ -46,37 +46,38 @@ export default function ChatPanel({
         hidden && 'hidden',
       )}
     >
-      <div className="flex items-center justify-between px-5 pt-6 pb-5">
-        <strong className="text-sm font-semibold">Room chat</strong>
+      <div className="flex items-center justify-between px-5 pt-5 pb-4">
+        <strong className="font-heading text-base font-semibold">Room chat</strong>
         <Button
           variant="ghost"
           size="icon"
-          className="size-8"
+          className="size-8 rounded-xl text-muted-foreground hover:text-foreground"
           onClick={onClose}
           aria-label="Close chat"
         >
           <X size={17} />
         </Button>
       </div>
-      <div className="min-h-0 flex-1 overflow-auto p-5">
+      <div className="min-h-0 flex-1 overflow-auto px-4 pb-4">
         {!messages.length ? (
           <EmptyConversation />
         ) : (
           messages.map((message) => (
-            <div className="mb-5 flex gap-2.5" key={message.id}>
+            <div className="mb-4 flex gap-2.5" key={message.id}>
               <Avatar
                 name={message.author.name}
                 id={message.author.id}
                 src={message.author.avatar_url}
+                className="size-9"
               />
               <div className="min-w-0">
                 <div className="flex items-baseline gap-2">
-                  <strong className="text-xs">{message.author.name}</strong>
-                  <time className="text-[0.6rem] text-muted-foreground">
+                  <strong className="text-sm font-semibold">{message.author.name}</strong>
+                  <time className="text-[0.6875rem] text-muted-foreground tabular-nums">
                     {time(message.created_at)}
                   </time>
                 </div>
-                <div className="mt-1 [overflow-wrap:anywhere] text-sm leading-6 text-foreground/80"><MessageBody message={message} /></div>
+                <div className="mt-0.5 [overflow-wrap:anywhere] text-sm leading-relaxed text-foreground"><MessageBody message={message} /></div>
               </div>
             </div>
           ))
@@ -84,11 +85,11 @@ export default function ChatPanel({
         <div ref={endRef} />
       </div>
       <form
-        className="mx-4 mt-2.5 flex items-center rounded-xl border bg-muted pr-3 focus-within:ring-2 focus-within:ring-ring/40"
+        className="mx-3 mt-2 flex items-center rounded-2xl border border-border bg-background/70 pr-1.5 shadow-[var(--shadow-soft)] transition-[border-color,box-shadow] duration-150 focus-within:border-primary/40 focus-within:shadow-[var(--glow-brand)]"
         onSubmit={onSubmit}
       >
         <Input
-          className="min-w-0 border-0 bg-transparent px-3 py-3.5 text-xs shadow-none focus-visible:ring-0"
+          className="min-w-0 border-0 bg-transparent px-3 py-3.5 text-sm shadow-none focus-visible:ring-0"
           placeholder={canSend ? 'Message your room…' : 'Sign in to say hello'}
           aria-label="Message your room"
           value={draft}
@@ -99,14 +100,14 @@ export default function ChatPanel({
           type="submit"
           variant="ghost"
           size="icon"
-          className="size-8 text-primary"
+          className="size-8 rounded-full text-muted-foreground hover:bg-primary/85 hover:text-primary-foreground dark:hover:bg-primary/85 enabled:bg-primary enabled:text-primary-foreground enabled:hover:bg-primary/85"
           aria-label="Send message"
           disabled={!draft.trim() || busy}
         >
           <Send size={17} />
         </Button>
       </form>
-      <span className="px-2 py-3 text-center text-[0.6rem] text-muted-foreground">
+      <span className="px-2 py-3 text-center text-[0.6875rem] text-muted-foreground">
         A little less distance. A little more us.
       </span>
     </motion.aside>
@@ -115,9 +116,9 @@ export default function ChatPanel({
 
 function EmptyConversation() {
   return (
-    <div className="mt-4">
+    <div className="mt-2 animate-bc-rise">
       <Mascot className="w-14" />
-      <h3 className="mt-5 max-w-44 font-heading text-base leading-6 font-semibold">
+      <h3 className="mt-5 max-w-44 font-heading text-lg leading-6 font-bold">
         The conversation starts here.
       </h3>
       <p className="mt-2.5 text-xs leading-6 text-muted-foreground">
@@ -125,7 +126,7 @@ function EmptyConversation() {
         <br />
         Drop it in.
       </p>
-      <span className="my-8 flex items-center gap-2 text-[0.6rem] tracking-widest text-muted-foreground before:h-px before:flex-1 before:bg-border after:h-px after:flex-1 after:bg-border">
+      <span className="my-8 flex items-center gap-2 text-[0.6875rem] font-semibold tracking-widest text-muted-foreground before:h-px before:flex-1 before:bg-border after:h-px after:flex-1 after:bg-border">
         TODAY
       </span>
     </div>

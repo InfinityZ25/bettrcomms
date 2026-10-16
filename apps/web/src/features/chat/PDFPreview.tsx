@@ -90,7 +90,7 @@ function PDFPage({
         ref={canvas}
         role="img"
         aria-label={`PDF page ${page} of ${document.numPages}`}
-        className="max-w-full bg-white shadow-sm"
+        className="max-w-full rounded-sm bg-white shadow-[var(--shadow-soft)]"
         hidden={loading || !!error}
       />
     </div>
@@ -204,7 +204,7 @@ function PDFDocument({
             >
               <ChevronLeft />
             </Button>
-            <span className="text-sm">
+            <span className="text-sm font-medium tabular-nums">
               Page {page} of {document.numPages}
             </span>
             <Button
@@ -260,7 +260,7 @@ export default function PDFPreview({
           Download
         </Button>
       </div>
-      <div className="min-h-0 overflow-auto rounded-xl bg-muted/30 p-3">
+      <div className="min-h-0 overflow-auto rounded-2xl border border-border bg-background/70 p-3">
         <PDFDocument
           key={`${roomId}:${attachment.id}:${attempt}`}
           roomId={roomId}

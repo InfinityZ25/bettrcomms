@@ -17,8 +17,9 @@
   min-width: 0;
   padding: 14px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
-  background: color-mix(in oklch, var(--muted) 45%, transparent);
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow: var(--shadow-soft), var(--highlight);
 }
 .device-settings__card label {
   display: grid;
