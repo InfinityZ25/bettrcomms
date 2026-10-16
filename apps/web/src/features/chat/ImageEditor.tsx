@@ -34,7 +34,7 @@ export default function ImageEditor(props: ImageEditorProps) {
     >
       <DialogContent
         showCloseButton={false}
-        className="max-h-[calc(100dvh-1rem)] max-w-[calc(100%-1rem)] gap-3 overflow-y-auto rounded-2xl p-3 sm:max-w-4xl sm:p-5"
+        className="max-h-[calc(100dvh-1rem)] max-w-[calc(100%-1rem)] gap-3 overflow-y-auto rounded-3xl p-3 sm:max-w-4xl sm:p-5"
         onKeyDown={(event) => {
           event.stopPropagation();
           if (event.key === 'Enter' && event.target instanceof HTMLInputElement)
@@ -65,13 +65,13 @@ export default function ImageEditor(props: ImageEditorProps) {
         {image && edit && (
           <>
             <ImageEditorToolbar editor={editor} />
-            <div className="flex min-h-32 items-center justify-center overflow-hidden rounded-xl bg-muted/70 p-2 shadow-inner">
+            <div className="flex min-h-32 items-center justify-center overflow-hidden rounded-2xl border border-border bg-background/70 p-2 shadow-inner">
               <canvas
                 ref={editor.setCanvas}
                 role="img"
                 aria-label="Image editing canvas"
                 className={cn(
-                  'block max-h-[38dvh] max-w-full touch-none outline outline-1 outline-foreground/10',
+                  'block max-h-[38dvh] max-w-full touch-none rounded-md shadow-[var(--shadow-soft)] outline outline-1 outline-foreground/10',
                   exporting ? 'cursor-wait' : 'cursor-crosshair',
                 )}
                 style={{ width: 'auto', height: 'auto' }}

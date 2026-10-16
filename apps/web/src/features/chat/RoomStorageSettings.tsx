@@ -97,10 +97,10 @@ function PolicyForm({
   const total = policy.used_bytes + policy.reserved_bytes;
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border bg-muted/25 p-4">
+      <div className="rounded-2xl bc-card p-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-2xl font-semibold tabular-nums">
+            <p className="font-heading text-2xl font-bold tabular-nums">
               {attachmentSize(policy.used_bytes)}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
@@ -124,7 +124,7 @@ function PolicyForm({
               aria-label="Room storage usage"
               value={Math.min(total, policy.quota_bytes)}
               max={policy.quota_bytes}
-              className="mt-3 h-2 w-full"
+              className="mt-3 h-2 w-full appearance-none rounded-full bg-muted [&::-webkit-progress-bar]:rounded-full [&::-webkit-progress-bar]:bg-muted [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-primary [&::-moz-progress-bar]:rounded-full [&::-moz-progress-bar]:bg-primary"
             />
             <p className="mt-1 text-xs text-muted-foreground">
               {attachmentSize(total)} of {attachmentSize(policy.quota_bytes)}
@@ -186,7 +186,7 @@ function PolicyForm({
           {busy ? 'Saving…' : 'Save storage settings'}
         </Button>
         {saved && (
-          <p role="status" className="text-xs text-muted-foreground">
+          <p role="status" className="text-xs text-primary">
             Storage settings saved.
           </p>
         )}
@@ -222,12 +222,12 @@ function Settings(props: Props) {
   return (
     <section className="space-y-4" aria-label="Room storage">
       <div className="flex items-center gap-2">
-        <HardDrive className="size-4" />
-        <h3 className="text-sm font-semibold">Storage & files</h3>
+        <HardDrive className="size-9 rounded-xl bg-primary/12 p-2 text-primary" />
+        <h3 className="font-heading text-base font-bold">Storage & files</h3>
       </div>
       {error && (
         <div className="space-y-2">
-          <p role="alert" className="text-sm">
+          <p role="alert" className="text-sm text-destructive">
             {error}
           </p>
           <Button variant="outline" size="sm" onClick={load}>
@@ -241,7 +241,7 @@ function Settings(props: Props) {
         </p>
       )}
       {scanner && (
-        <p className="rounded-lg border p-3 text-xs text-muted-foreground">
+        <p className="rounded-2xl border border-border bg-background/60 p-3 text-xs text-muted-foreground">
           {!scanner.enabled
             ? 'Malware scanning is disabled on this server.'
             : scanner.status === 'ready'

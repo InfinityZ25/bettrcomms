@@ -65,6 +65,7 @@ export default function CallControls({
       <Button
         variant={muted ? 'destructive' : 'secondary'}
         size="icon"
+        className={muted ? 'call-control is-alert' : 'call-control'}
         aria-label={
           deafened
             ? 'Microphone muted while deafened'
@@ -80,6 +81,7 @@ export default function CallControls({
       <Button
         variant={deafened ? 'destructive' : 'secondary'}
         size="icon"
+        className={deafened ? 'call-control is-alert' : 'call-control'}
         aria-label={deafened ? 'Undeafen call' : 'Deafen call'}
         onClick={onToggleDeafen}
       >
@@ -88,6 +90,7 @@ export default function CallControls({
       <Button
         variant={cameraOn ? 'default' : 'secondary'}
         size="icon"
+        className={cameraOn ? 'call-control is-on' : 'call-control'}
         aria-label={cameraOn ? 'Turn off camera' : 'Turn on camera'}
         onClick={onToggleCamera}
         disabled={busy}
@@ -102,6 +105,7 @@ export default function CallControls({
           <Button
             variant={sharing ? 'default' : 'secondary'}
             size="icon"
+            className={sharing ? 'call-control is-on' : 'call-control'}
             aria-label={sharing ? 'Stop sharing' : hasIOSBroadcast() ? 'Share iPhone screen' : 'Share screen'}
             title={!sharing && hasIOSBroadcast() ? 'Share your whole iPhone screen, including other apps and notifications' : undefined}
             onClick={onToggleShare}
@@ -113,6 +117,7 @@ export default function CallControls({
             <Button
               variant={recording ? 'destructive' : 'secondary'}
               size="icon"
+              className={recording ? 'call-control is-danger' : 'call-control'}
               aria-label={recording ? 'Stop recording' : 'Record separate tracks'}
               onClick={onToggleRecord}
               disabled={busy}
@@ -122,17 +127,17 @@ export default function CallControls({
           )}
           {!more && <><ClipControls /><SoundboardSettingsButton /></>}
           {more ? (
-            <Button variant="destructive" size="icon" aria-label="Leave call" onClick={onLeave}>
+            <Button variant="destructive" size="icon" className="call-control is-danger" aria-label="Leave call" onClick={onLeave}>
               <PhoneOff size={18} />
             </Button>
           ) : (
-            <Button variant="destructive" onClick={onLeave}>
+            <Button variant="destructive" className="call-leave" onClick={onLeave}>
               <PhoneOff size={18} /> Leave call
             </Button>
           )}
         </>
       ) : (
-        <Button onClick={onJoin} disabled={busy}>
+        <Button className="call-join" onClick={onJoin} disabled={busy}>
           <Headphones size={18} />
           {busy ? 'Connecting…' : signedIn ? 'Join call' : 'Sign in to join'}
         </Button>

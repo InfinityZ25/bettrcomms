@@ -292,7 +292,7 @@ function AvailableYouTubeWatchPlayer({
   }
   return (
     <div ref={playerContainer} className="space-y-3 [&_button]:min-h-11">
-      <div className="overflow-hidden rounded-xl border bg-black">
+      <div className="overflow-hidden rounded-2xl border bg-black bc-elevated">
         {bootstrap ? (
           <iframe
             key={bootstrap.nonce}
@@ -354,6 +354,7 @@ function AvailableYouTubeWatchPlayer({
         <label className="flex min-h-11 items-center gap-2">
           <input
             type="checkbox"
+            className="accent-primary"
             checked={muted}
             onChange={(event) => setMuted(event.target.checked)}
           />
@@ -369,7 +370,7 @@ function AvailableYouTubeWatchPlayer({
             max="1"
             step="0.05"
             value={volume}
-            className="min-h-11 min-w-0 flex-1"
+            className="min-h-11 min-w-0 flex-1 accent-primary"
             aria-label="YouTube local volume"
             onChange={(event) => setVolume(Number(event.target.value))}
           />
@@ -395,7 +396,7 @@ function AvailableYouTubeWatchPlayer({
               step="1"
               value={Math.min(position, duration || 1)}
               disabled={!ready || busy || !duration}
-              className="min-h-11 min-w-0 flex-1"
+              className="min-h-11 min-w-0 flex-1 accent-primary"
               aria-label="YouTube shared position"
               onPointerDown={() => {
                 dragging.current = true;

@@ -60,7 +60,7 @@ export default function NativeFfmpegSetup({
 
   return (
     <div
-      className="my-4 rounded-lg border bg-muted/40 p-3 text-xs leading-6 text-muted-foreground"
+      className="my-4 rounded-2xl bc-card p-3.5 text-xs leading-6 text-muted-foreground"
       role="status"
     >
       <p>{info?.detail ?? 'Checking the native sharing runtime…'}</p>

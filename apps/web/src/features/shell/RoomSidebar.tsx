@@ -106,11 +106,12 @@ export default function RoomSidebar({
 
   const sidebarContent = (
     <>
-      <SidebarHeader className="px-3 pt-3 pb-1 max-[820px]:pr-10">
+      <SidebarHeader className="gap-2.5 px-3 pt-3 pb-2 phone:pr-10">
         {user && (
           <Button
             variant="ghost"
             size="sm"
+            className="h-9 w-full justify-start gap-2 rounded-xl border-border bg-background/45 px-3 text-[0.8125rem] font-normal text-muted-foreground shadow-[var(--highlight)] hover:border-foreground/15 hover:bg-background/80 hover:text-foreground dark:hover:bg-background/80 phone:h-11"
             onClick={() => {
               setOpenMobile(false);
               openMessageSearch();
@@ -119,17 +120,23 @@ export default function RoomSidebar({
           >
             <Search size={14} />
             Search messages
+            <kbd
+              aria-hidden="true"
+              className="ml-auto hidden h-5 items-center rounded-md border border-border bg-sidebar-accent px-1.5 font-sans text-[0.6875rem] font-medium text-muted-foreground min-[1400px]:inline-flex"
+            >
+              Ctrl ⇧ F
+            </kbd>
           </Button>
         )}
-        <div className="flex items-center justify-between">
-          <h2 className="font-heading text-sm font-semibold tracking-tight">
+        <div className="flex items-center justify-between pt-1">
+          <h2 className="font-heading text-lg leading-tight font-bold tracking-tight">
             {messages ? 'Messages' : 'Rooms'}
           </h2>
           {!messages && user && (
             <Button
               size="icon"
               variant="ghost"
-              className="size-7 phone:size-11"
+              className="size-7 rounded-lg text-muted-foreground hover:bg-sidebar-accent hover:text-foreground dark:hover:bg-sidebar-accent phone:size-11"
               aria-label="Create room"
               onClick={() => {
                 setOpenMobile(false);
@@ -140,7 +147,7 @@ export default function RoomSidebar({
             </Button>
           )}
         </div>
-        <p className="text-[0.65rem] leading-4 text-muted-foreground">
+        <p className="-mt-2 text-[0.6875rem] leading-4 text-muted-foreground">
           {messages
             ? 'Your private conversations.'
             : 'Channels for text, voice and your friends.'}
@@ -149,6 +156,7 @@ export default function RoomSidebar({
           <Button
             variant="ghost"
             size="sm"
+            className="h-9 w-full justify-start gap-2 rounded-xl bg-sidebar-accent/70 px-3 text-[0.8125rem] text-foreground hover:bg-sidebar-accent dark:hover:bg-sidebar-accent [&_svg]:text-primary phone:h-11"
             aria-label={messages ? 'New group message' : 'Join with invitation'}
             onClick={() => {
               setOpenMobile(false);
@@ -223,7 +231,7 @@ export default function RoomSidebar({
             onError={onError}
           />
         ) : archived && messages ? (
-          <p className="p-4 text-xs text-muted-foreground">
+          <p className="mx-2 mt-2 rounded-xl border border-dashed border-border p-4 text-xs leading-5 text-muted-foreground animate-bc-rise">
             No archived conversations. Archiving keeps your membership and
             messages; it does not mute alerts.
           </p>
@@ -257,7 +265,7 @@ export default function RoomSidebar({
           <Sidebar
             aria-label="Conversations"
             collapsible="none"
-            className="sidebar h-full w-(--room-sidebar-width) shrink-0 rounded-2xl bg-sidebar"
+            className="sidebar h-full w-(--room-sidebar-width) shrink-0 rounded-2xl bg-transparent [--avatar-ring:var(--sidebar)]"
             inert={screen === 'share' || !visible}
           >
             {sidebarContent}
@@ -281,7 +289,7 @@ export default function RoomSidebar({
           <Button
             variant="ghost"
             size="icon-sm"
-            className="absolute top-[calc(env(safe-area-inset-top)+0.5rem)] right-2 z-10"
+            className="absolute top-[calc(env(safe-area-inset-top)+0.5rem)] right-2 z-10 rounded-xl text-muted-foreground hover:text-foreground"
             aria-label="Close sidebar"
             onClick={() => setOpenMobile(false)}
           >
@@ -290,7 +298,7 @@ export default function RoomSidebar({
           <Sidebar
             aria-label="Conversations"
             collapsible="none"
-            className="sidebar h-full w-full min-w-0 rounded-l-2xl bg-sidebar"
+            className="sidebar h-full w-full min-w-0 rounded-l-2xl bg-sidebar [--avatar-ring:var(--sidebar)]"
             inert={screen === 'share'}
           >
             {sidebarContent}
@@ -321,22 +329,35 @@ function ConversationProfile({
   const name = roomLabel(room);
   return (
     <section
-      className="mx-1 mt-2 mb-1 rounded-2xl bg-sidebar-accent/50 px-3 py-4 text-center"
+      className="relative mx-2 mt-1 mb-2 overflow-hidden rounded-2xl border border-border bg-sidebar-accent/45 px-3 pt-5 pb-4 text-center shadow-[var(--highlight)] animate-bc-rise"
       aria-label={`About ${name}`}
     >
-      <div className="flex justify-center">
-        <Avatar name={name} />
+      {/* A banner of the brand's colours behind the face, as on a profile. */}
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 top-0 h-16 bc-brand-gradient opacity-30 [mask-image:linear-gradient(to_bottom,black,transparent)]"
+      />
+      <div className="relative flex justify-center">
+        <Avatar
+          name={name}
+          id={room.id}
+          className="size-16 drop-shadow-[0_8px_18px_oklch(0_0_0/0.35)]"
+        />
       </div>
-      <strong className="mt-2 block truncate text-sm font-semibold">
+      <strong className="relative mt-2.5 block truncate font-heading text-base leading-tight font-bold">
         {name}
       </strong>
       {known && callers.length > 0 ? (
-        <Badge className="mt-2 h-5 gap-1 px-1.5">
+        <Badge className="relative mt-2 h-5 gap-1.5 bg-online/15 px-2 text-foreground ring-1 ring-online/35 dark:text-online">
+          <span
+            aria-hidden="true"
+            className="size-1.5 rounded-full bg-online animate-bc-pulse"
+          />
           <Headphones size={12} />
           In a call
         </Badge>
       ) : (
-        <span className="mt-1 block text-[0.65rem] text-muted-foreground">
+        <span className="relative mt-1 block text-[0.6875rem] text-muted-foreground">
           {room.kind === 'group' ? 'Group message' : 'Direct message'}
         </span>
       )}
@@ -352,8 +373,8 @@ function Empty({
   onCreateRoom: () => void;
 }) {
   return (
-    <div className="px-3 py-4">
-      <Mascot className="mb-2 w-12" />
+    <div className="mx-2 mt-2 flex flex-col items-start rounded-2xl border border-dashed border-border px-3 py-4 animate-bc-rise">
+      <Mascot className="mb-3 w-14 animate-bc-float" />
       <p className="text-xs leading-5 text-muted-foreground">
         {messages
           ? 'No conversations yet. Add a friend to start one.'
@@ -363,7 +384,7 @@ function Empty({
         <Button
           variant="secondary"
           size="sm"
-          className="mt-3 w-full"
+          className="mt-3 w-full rounded-xl"
           onClick={onCreateRoom}
         >
           <Plus size={15} /> New room

@@ -49,7 +49,7 @@ export default function ProcessingControls({ engine }: { engine: string }) {
       className="processing-controls"
       aria-label="Microphone processing settings"
     >
-      <h3>
+      <h3 className="font-heading text-base font-semibold">
         <SlidersHorizontal size={17} /> Fine-tune your microphone
       </h3>
       {engine === 'rnnoise' && (

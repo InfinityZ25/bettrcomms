@@ -57,7 +57,7 @@ export function GroupChat({
   return (
     <div
       className={cn(
-        "bg-card text-card-foreground border-border flex w-full flex-col rounded-xl border",
+        "bg-card text-card-foreground border-border flex w-full flex-col rounded-2xl border shadow-(--shadow-soft)",
         className,
       )}
     >
@@ -92,7 +92,7 @@ export function GroupChat({
                 />
               ))}
               {extra ? (
-                <span className="bg-accent text-muted-foreground ring-card -ml-2 grid size-7 place-items-center rounded-full font-mono text-[0.6rem] ring-2">
+                <span className="bg-accent text-muted-foreground ring-card -ml-2 grid size-7 place-items-center rounded-full text-[0.6875rem] font-semibold tabular-nums ring-2">
                   +{extra}
                 </span>
               ) : null}
@@ -128,11 +128,11 @@ export function GroupChat({
 
             <div className="min-w-0">
               <div className="flex items-baseline gap-2">
-                <span className="text-sm font-medium">
+                <span className="text-[0.9375rem] font-semibold">
                   {run[0]!.title ?? run[0]!.name}
                 </span>
                 {run[0]!.time ? (
-                  <span className="text-muted-foreground font-mono text-[0.7rem]">
+                  <span className="text-muted-foreground text-xs tabular-nums">
                     {run[0]!.time}
                   </span>
                 ) : null}
@@ -145,7 +145,7 @@ export function GroupChat({
                 {run.map(message => (
                   <p
                     key={message.text}
-                    className="text-muted-foreground text-sm leading-relaxed"
+                    className="text-foreground text-[0.9375rem] leading-relaxed"
                   >
                     {message.text}
                   </p>

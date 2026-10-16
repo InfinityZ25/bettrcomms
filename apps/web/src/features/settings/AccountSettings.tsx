@@ -36,7 +36,7 @@ function TransferOwnership({ room, user, onTransferred }: { room: Room; user: Us
   return <div className="space-y-2 border-b border-border/50 py-3">
     <strong className="text-sm">{room.name}</strong>
     <div className="flex flex-wrap items-center gap-2">
-      <select className="h-9 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm" aria-label={`New owner of ${room.name}`} value={target} onChange={(event) => setTarget(event.target.value)} disabled={busy}>
+      <select className="h-9 min-w-0 flex-1 rounded-xl border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50" aria-label={`New owner of ${room.name}`} value={target} onChange={(event) => setTarget(event.target.value)} disabled={busy}>
         <option value="">Choose a new owner</option>
         {members.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
       </select>

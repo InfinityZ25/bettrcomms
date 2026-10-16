@@ -205,7 +205,7 @@ export function ChannelActivities({
         size="sm"
         variant="ghost"
         aria-label="Channel activities"
-        className="@max-[480px]/conversation:size-11 @max-[480px]/conversation:px-0"
+        className="@max-[480px]/conversation:size-11 @max-[480px]/conversation:px-0 [&_svg]:text-primary"
         onClick={() => setOpen(true)}
       >
         <Sparkles size={15} />

@@ -46,7 +46,7 @@ export function SettingsDialog({ open, onOpenChange, user, noise, onNoiseChange,
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className={cn(
-          'settings-dialog h-[min(760px,calc(100dvh-2rem))] overflow-hidden p-0 sm:max-w-[min(1040px,calc(100vw-2rem))]',
+          'settings-dialog h-[min(760px,calc(100dvh-2rem))] overflow-hidden bg-background p-0 sm:max-w-[min(1040px,calc(100vw-2rem))]',
           // A phone gets a full-screen sheet, like iOS Settings, not a card
           // floating with a margin on a screen that has none to spare.
           // All four safe areas: held sideways, the notch sits at a side edge.
@@ -57,15 +57,15 @@ export function SettingsDialog({ open, onOpenChange, user, noise, onNoiseChange,
         <DialogTitle className="sr-only">Settings</DialogTitle>
         <DialogDescription className="sr-only">Adjust BetterComms preferences.</DialogDescription>
         <SidebarProvider className="min-h-0 items-stretch [--sidebar-width:15rem]">
-          <Sidebar collapsible="none" className="hidden border-r border-sidebar-border md:flex phone:hidden">
+          <Sidebar collapsible="none" className="hidden border-r border-sidebar-border bg-sidebar/60 md:flex phone:hidden">
             <SidebarContent className="pt-3">
               <SidebarGroup>
-                <SidebarGroupLabel>Settings</SidebarGroupLabel>
+                <SidebarGroupLabel className="text-[0.6875rem] font-semibold tracking-[0.08em] text-muted-foreground uppercase">Settings</SidebarGroupLabel>
                 <SidebarGroupContent>
                   <SidebarMenu>
                     {visiblePages.map(({ id, label, icon: Icon }) => (
                       <SidebarMenuItem key={id}>
-                        <SidebarMenuButton isActive={page === id} onClick={() => setPage(id)}>
+                        <SidebarMenuButton className="rounded-xl font-medium text-muted-foreground hover:bg-accent/60 hover:text-foreground data-active:bg-primary/12 data-active:hover:bg-primary/16 data-active:text-foreground data-active:[&_svg]:text-primary" isActive={page === id} onClick={() => setPage(id)}>
                           <Icon />
                           <span>{label}</span>
                         </SidebarMenuButton>
@@ -78,14 +78,14 @@ export function SettingsDialog({ open, onOpenChange, user, noise, onNoiseChange,
             {signedIn && (
               <SidebarFooter>
                 <SidebarMenu><SidebarMenuItem>
-                  <SidebarMenuButton onClick={onSignOut}><LogOut /><span>Sign out</span></SidebarMenuButton>
+                  <SidebarMenuButton className="rounded-xl font-medium text-muted-foreground hover:bg-accent/60 hover:text-foreground data-active:bg-primary/12 data-active:hover:bg-primary/16 data-active:text-foreground data-active:[&_svg]:text-primary" onClick={onSignOut}><LogOut /><span>Sign out</span></SidebarMenuButton>
                 </SidebarMenuItem></SidebarMenu>
               </SidebarFooter>
             )}
           </Sidebar>
 
           <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
-            <header className="settings-header shrink-0 border-b border-border/60 px-5 py-4 pr-16 sm:px-7 sm:pr-16">
+            <header className="settings-header shrink-0 border-b border-border/60 px-5 py-4 pr-16 sm:px-8 sm:py-5 sm:pr-16">
               <div className="mb-3 md:hidden phone:mb-2 phone:block">
                 <Select value={page} onValueChange={(value) => { if (value) setPage(value as SettingsPage); }}>
                   <SelectTrigger className="w-full" aria-label="Settings category"><SelectValue>{current.label}</SelectValue></SelectTrigger>
@@ -96,8 +96,8 @@ export function SettingsDialog({ open, onOpenChange, user, noise, onNoiseChange,
               </div>
               {/* The note was behind an info button here and printed again
                   inside the page's card. One copy, in plain sight. */}
-              <h2 className="font-heading text-lg font-semibold tracking-tight phone:hidden">{current.label}</h2>
-              <p className="mt-0.5 text-xs text-muted-foreground">{current.note}</p>
+              <h2 className="font-heading text-2xl font-bold tracking-tight phone:hidden">{current.label}</h2>
+              <p className="mt-1 text-sm text-muted-foreground">{current.note}</p>
             </header>
             {/*
               Settings does not animate. The dialog already has an entrance, and
@@ -105,7 +105,7 @@ export function SettingsDialog({ open, onOpenChange, user, noise, onNoiseChange,
               twice; switching pages in a settings list is navigation between
               forms, where a transition costs time and returns nothing.
             */}
-            <div className="settings-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-3 sm:px-7 sm:py-4">
+            <div className="settings-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-3 sm:px-8 sm:py-6">
               <SettingsScreen page={page} user={user} noise={noise} onNoiseChange={onNoiseChange} balanced={balanced} onBalancedChange={onBalancedChange} layout={layout} onLayoutChange={onLayoutChange} />
             </div>
           </main>

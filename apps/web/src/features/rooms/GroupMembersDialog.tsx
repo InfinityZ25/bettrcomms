@@ -78,22 +78,22 @@ export default function GroupMembersDialog({ room, user, onClose, onChanged }: {
           <label className="min-w-0 flex-1 text-sm">Group name<Input className="mt-2" value={name} maxLength={80} required disabled={!owner || busy} onChange={(event) => setName(event.target.value)} /></label>
           {owner && <Button type="submit" disabled={busy || !name.trim() || name.trim() === room.name}>Save</Button>}
         </form>
-        {name !== room.name && <p className="text-xs text-muted-foreground">Your draft is unsaved. <button className="underline" disabled={busy} onClick={() => setName(room.name)}>Use the current group name</button></p>}
-        <section className="space-y-2"><h3 className="text-sm font-medium">Members · {members.length}/10</h3>
+        {name !== room.name && <p className="text-xs text-muted-foreground">Your draft is unsaved. <button className="font-medium text-primary underline underline-offset-4" disabled={busy} onClick={() => setName(room.name)}>Use the current group name</button></p>}
+        <section className="space-y-2"><h3 className="font-heading text-base font-semibold">Members · {members.length}/10</h3>
           {loading && <p className="text-sm text-muted-foreground">Loading members…</p>}
           <div className="max-h-52 overflow-y-auto">{members.map((member) => (
-            <div key={member.user.id} className="flex items-center gap-3 border-b py-2">
+            <div key={member.user.id} className="flex items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-accent/50">
               <Avatar name={member.user.name} id={member.user.id} src={member.user.avatar_url} />
-              <span className="min-w-0 flex-1 text-sm"><strong className="block truncate">{member.user.name}</strong><small className="text-muted-foreground">{member.role === 'owner' ? 'Group owner' : 'Member'}</small></span>
-              {owner && member.user.id !== user.id && <Button size="sm" variant="ghost" disabled={busy} onClick={() => setRemoving(member.user)}>Remove</Button>}
+              <span className="min-w-0 flex-1 text-sm"><strong className="block truncate font-semibold">{member.user.name}</strong><small className={`inline-flex rounded-full px-2 py-0.5 text-[0.6875rem] font-semibold text-foreground ${member.role === 'owner' ? 'bg-amber/15' : 'bg-violet/15'}`}>{member.role === 'owner' ? 'Group owner' : 'Member'}</small></span>
+              {owner && member.user.id !== user.id && <Button size="sm" variant="ghost" disabled={busy} className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => setRemoving(member.user)}>Remove</Button>}
             </div>
           ))}</div>
         </section>
-        {owner && !loading && members.length < 10 && <section className="space-y-2"><h3 className="text-sm font-medium">Add a friend</h3>
-          <div className="max-h-36 overflow-y-auto">{candidates.length ? candidates.map((friend) => <div key={friend.id} className="flex items-center justify-between gap-2 py-1.5"><span className="truncate text-sm">{friend.name}</span><Button size="sm" variant="secondary" disabled={busy} aria-label={`Add ${friend.name} to group`} onClick={() => void addFriend(friend)}>Add</Button></div>) : <p className="text-sm text-muted-foreground">All your accepted friends are already here.</p>}</div>
+        {owner && !loading && members.length < 10 && <section className="space-y-2"><h3 className="font-heading text-base font-semibold">Add a friend</h3>
+          <div className="max-h-36 overflow-y-auto">{candidates.length ? candidates.map((friend) => <div key={friend.id} className="flex items-center justify-between gap-2 rounded-xl px-3 py-2 hover:bg-accent/50"><span className="truncate text-sm font-medium">{friend.name}</span><Button size="sm" variant="secondary" disabled={busy} aria-label={`Add ${friend.name} to group`} onClick={() => void addFriend(friend)}>Add</Button></div>) : <p className="text-sm text-muted-foreground">All your accepted friends are already here.</p>}</div>
         </section>}
-        {removing && <div className="rounded-lg border p-3 text-sm"><p>Remove {removing.name}? They will lose access to the conversation and call.</p><div className="mt-3 flex gap-2"><Button variant="destructive" disabled={busy} onClick={() => void removeMember(removing)}>Confirm removal</Button><Button variant="ghost" disabled={busy} onClick={() => setRemoving(null)}>Cancel</Button></div></div>}
-        {leaving ? <div className="rounded-lg border p-3 text-sm"><p>Leave this group? {owner ? 'Ownership passes to the next member. ' : ''}A friend will need to add you again.</p><div className="mt-3 flex gap-2"><Button variant="destructive" disabled={busy} onClick={() => void leave()}>Confirm leave</Button><Button variant="ghost" disabled={busy} onClick={() => setLeaving(false)}>Cancel</Button></div></div> : <Button variant="ghost" disabled={busy} onClick={() => setLeaving(true)}>Leave group</Button>}
+        {removing && <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-sm"><p>Remove {removing.name}? They will lose access to the conversation and call.</p><div className="mt-3 flex gap-2"><Button variant="destructive" disabled={busy} onClick={() => void removeMember(removing)}>Confirm removal</Button><Button variant="ghost" disabled={busy} onClick={() => setRemoving(null)}>Cancel</Button></div></div>}
+        {leaving ? <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-sm"><p>Leave this group? {owner ? 'Ownership passes to the next member. ' : ''}A friend will need to add you again.</p><div className="mt-3 flex gap-2"><Button variant="destructive" disabled={busy} onClick={() => void leave()}>Confirm leave</Button><Button variant="ghost" disabled={busy} onClick={() => setLeaving(false)}>Cancel</Button></div></div> : <Button variant="ghost" disabled={busy} className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => setLeaving(true)}>Leave group</Button>}
         {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       </div>
     </AppDialog>

@@ -150,7 +150,7 @@ export default function CallMoreMenu({
         )}
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
-          <DropdownMenuLabel className="py-1.5 text-[0.65rem] tracking-wide uppercase">
+          <DropdownMenuLabel className="py-1.5 text-[0.6875rem] font-semibold tracking-[0.08em] uppercase">
             Arrangement
           </DropdownMenuLabel>
         </DropdownMenuGroup>

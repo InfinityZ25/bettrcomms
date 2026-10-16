@@ -84,9 +84,9 @@ export default function ChannelEditor({
     type !== room.channel_type;
   const disabled = busy || locked;
   return (
-    <article className="space-y-3 rounded-xl border p-4">
+    <article className="space-y-3 rounded-2xl bc-card p-4">
       <div className="flex items-center gap-2">
-        <span className="text-muted-foreground">
+        <span className={`grid size-8 shrink-0 place-items-center rounded-xl ${room.channel_type === 'announcement' ? 'bg-violet/15 text-violet' : 'bg-primary/12 text-primary'}`}>
           {room.channel_type === 'announcement' ? (
             <Megaphone size={17} />
           ) : (
@@ -186,7 +186,7 @@ export default function ChannelEditor({
             <label className="space-y-1 text-xs">
               Type
               <select
-                className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+                className="h-9 w-full rounded-xl border border-input bg-background px-2.5 text-sm shadow-xs"
                 value={type}
                 onChange={(event) => {
                   setType(event.target.value as ChannelType);
@@ -236,7 +236,7 @@ export default function ChannelEditor({
         </p>
       )}
       {removing && (
-        <div className="rounded-lg border border-destructive/30 p-3 text-sm">
+        <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-sm">
           <p>
             Delete #{room.name} and its messages for everyone? This cannot be
             undone.

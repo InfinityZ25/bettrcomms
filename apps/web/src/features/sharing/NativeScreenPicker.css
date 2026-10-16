@@ -4,13 +4,16 @@
   z-index: 35;
   display: grid;
   grid-template-rows: 64px auto minmax(0, 1fr) 82px;
-  background: #101416;
-  color: #e7e9e8;
+  background-color: var(--background);
+  background-image:
+    radial-gradient(60rem 30rem at -10% -20%, color-mix(in oklch, var(--violet) 10%, transparent), transparent 70%),
+    radial-gradient(50rem 26rem at 110% 115%, color-mix(in oklch, var(--brand) 7%, transparent), transparent 70%);
+  color: var(--foreground);
   overflow: hidden;
   isolation: isolate;
 }
 .share-source-advice {
-  color: #aab8aa;
+  color: var(--muted-foreground);
   font-size: 12px;
   line-height: 1.6;
   margin: 0;
@@ -48,18 +51,34 @@
   padding: 0 32px;
   border-bottom: 1px solid var(--line);
 }
+/* The call is still live behind this screen; the dot says so. */
 .share-call-status {
   display: flex;
   align-items: center;
   gap: 9px;
-  color: #9aa79f;
+  padding: 5px 12px 5px 10px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--online) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--online) 24%, transparent);
+  color: var(--foreground);
   font-size: 12px;
+  font-weight: 500;
 }
 .share-call-status i {
-  width: 6px;
-  height: 6px;
-  background: var(--brand-accent);
+  width: 7px;
+  height: 7px;
+  background: var(--online);
   border-radius: 50%;
+  animation: share-live-pulse 2.2s cubic-bezier(0.2, 0.7, 0.3, 1) infinite;
+}
+@keyframes share-live-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--online) 55%, transparent);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 7px transparent;
+  }
 }
 .share-screen-intro {
   width: 100%;
@@ -71,25 +90,34 @@
   justify-content: space-between;
   gap: 20px;
 }
+/* The intro's monitor, set in a lime tile like the rest of the product's
+   category icons. */
 .share-screen-intro > svg {
-  color: #72866a;
+  box-sizing: content-box;
+  padding: 14px;
+  border-radius: var(--radius-2xl);
+  color: var(--primary);
+  background: color-mix(in oklch, var(--primary) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--primary) 20%, transparent);
 }
 .share-eyebrow {
-  color: #a1b58d;
-  font-size: 10px;
-  letter-spacing: 1.8px;
-  font-weight: 600;
+  color: var(--primary);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  font-weight: 650;
 }
 .share-screen h1 {
   margin: 8px 0;
-  font-size: clamp(24px, 2.6vw, 32px);
-  letter-spacing: -1px;
+  font-family: var(--font-heading);
+  font-size: clamp(26px, 2.8vw, 36px);
+  font-weight: 800;
+  letter-spacing: -0.02em;
   outline: none;
 }
 .share-screen-intro p {
   margin: 0;
-  color: #94a19c;
-  font-size: 13px;
+  color: var(--muted-foreground);
+  font-size: 14px;
 }
 .share-screen-body {
   width: 100%;
@@ -113,12 +141,14 @@
   gap: 12px;
   align-items: center;
 }
+/* Applications / Entire screen: a segmented control, the current half raised. */
 .share-source-tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;
   padding: 4px;
-  background: #1c2223;
-  border-radius: 10px;
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+  box-shadow: inset 0 0 0 1px var(--border);
+  border-radius: 14px;
   flex: 1;
 }
 .share-source-tabs button {
@@ -128,15 +158,23 @@
   gap: 9px;
   padding: 10px 12px;
   border: 0;
-  border-radius: 7px;
-  color: #aab4b0;
+  border-radius: 10px;
+  color: var(--muted-foreground);
   background: transparent;
   font-size: 13px;
+  font-weight: 500;
+  transition: color 0.15s, background-color 0.15s, box-shadow 0.15s;
+}
+.share-source-tabs button:hover {
+  color: var(--foreground);
 }
 .share-source-tabs button[aria-pressed='true'] {
-  color: #d8f4bd;
-  background: #344331;
-  box-shadow: 0 1px 4px #0003;
+  color: var(--foreground);
+  background: var(--card);
+  box-shadow: var(--shadow-soft), inset 0 0 0 1px var(--border);
+}
+.share-source-tabs button[aria-pressed='true'] svg {
+  color: var(--primary);
 }
 .share-refresh {
   flex-shrink: 0;
@@ -145,9 +183,14 @@
   display: grid;
   place-items: center;
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: 12px;
   background: transparent;
-  color: #aab4b0;
+  color: var(--muted-foreground);
+  transition: color 0.15s, background-color 0.15s;
+}
+.share-refresh:hover:not(:disabled) {
+  color: var(--foreground);
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
 }
 .share-search {
   display: flex;
@@ -156,18 +199,28 @@
   height: 40px;
   margin: 16px 0;
   padding: 0 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  color: #83918a;
+  border: 1px solid var(--input);
+  border-radius: 12px;
+  background: color-mix(in oklch, var(--background) 70%, transparent);
+  color: var(--muted-foreground);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.share-search:focus-within {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 20%, transparent);
 }
 .share-search input {
   width: 100%;
   border: 0;
   outline: none;
   background: transparent;
-  color: inherit;
-  font-size: 12px;
+  box-shadow: none;
+  color: var(--foreground);
+  font-size: 13px;
   padding: 0;
+}
+.share-search input::placeholder {
+  color: var(--muted-foreground);
 }
 .share-search span {
   white-space: nowrap;
@@ -186,34 +239,47 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px 16px;
 }
+/*
+  A source is a card. Hovering lifts it; choosing it rings it in lime. The
+  ring is a shadow rather than the border: the shell pins this card's border
+  colour and background (styles.css), so state lives in what is left.
+*/
 .share-source-card {
   position: relative;
   overflow: hidden;
   padding: 0;
-  border: 1px solid #303937;
-  border-radius: 12px;
-  background: #191f1f;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2xl);
+  background: var(--card);
   color: inherit;
   text-align: left;
+  box-shadow: var(--shadow-soft), var(--highlight);
   transition:
     border-color 0.15s,
-    background 0.15s;
+    background 0.15s,
+    box-shadow 0.15s,
+    transform 0.15s;
 }
-.share-source-card:hover {
-  border-color: #6e865f;
-  background: #202920;
+.share-source-card:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--foreground) 16%, transparent),
+    var(--shadow-elevated);
 }
-.share-source-card.is-selected {
-  border-color: var(--brand-accent);
-  box-shadow: 0 0 0 1px var(--brand-accent);
-  background: #273326;
+.share-source-card.is-selected,
+.share-source-card.is-selected:hover:not(:disabled) {
+  box-shadow:
+    0 0 0 2px var(--brand),
+    var(--glow-brand);
 }
 .share-source-preview {
   display: grid;
   place-items: center;
-  width: 100%;
+  width: auto;
+  margin: 6px 6px 0;
   aspect-ratio: 16/9;
-  background: #0b1012;
+  border-radius: calc(var(--radius-2xl) - 6px);
+  background: color-mix(in oklch, var(--foreground) 5%, var(--background));
   overflow: hidden;
 }
 .share-source-preview img {
@@ -226,33 +292,36 @@
   display: grid;
   justify-items: center;
   gap: 12px;
-  color: #63736c;
+  color: var(--muted-foreground);
 }
 .share-preview-placeholder small {
   font-size: 11px;
 }
 .share-selected-check {
   position: absolute;
-  right: 10px;
-  top: 10px;
-  width: 25px;
-  height: 25px;
+  right: 14px;
+  top: 14px;
+  width: 26px;
+  height: 26px;
   display: grid;
   place-items: center;
-  background: var(--brand-accent);
-  color: #172014;
+  background: var(--brand);
+  color: var(--brand-foreground);
   border-radius: 50%;
-  box-shadow: 0 2px 8px #0005;
+  box-shadow: var(--glow-brand);
 }
 .share-source-caption {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 13px;
+  padding: 12px 14px 13px;
 }
 .share-source-caption > svg {
   flex-shrink: 0;
-  color: #9ba995;
+  color: var(--muted-foreground);
+}
+.share-source-card.is-selected .share-source-caption > svg {
+  color: var(--primary);
 }
 .share-source-caption > span {
   display: grid;
@@ -263,10 +332,10 @@
   white-space: nowrap;
   text-overflow: ellipsis;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
 }
 .share-source-caption small {
-  color: #8b9991;
+  color: var(--muted-foreground);
   font-size: 11px;
 }
 .share-source-empty {
@@ -276,7 +345,12 @@
   align-items: center;
   justify-content: center;
   gap: 14px;
-  color: #99a99e;
+  color: var(--muted-foreground);
+}
+.share-source-empty strong {
+  font-family: var(--font-heading);
+  font-size: 16px;
+  color: var(--foreground);
 }
 .share-source-empty p {
   font-size: 12px;
@@ -284,7 +358,7 @@
 }
 .share-privacy-note {
   margin: 14px 0 0;
-  color: #7f9184;
+  color: var(--muted-foreground);
   font-size: 11px;
 }
 .share-setup {
@@ -296,23 +370,26 @@
   max-height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
-  border: 1px solid #303b31;
-  border-radius: 14px;
-  background: #171d19;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2xl);
+  background: color-mix(in oklch, var(--card) 92%, transparent);
+  box-shadow: var(--shadow-soft), var(--highlight);
 }
 .share-setup h2 {
   margin: 6px 0 0;
+  font-family: var(--font-heading);
   font-size: 20px;
-  letter-spacing: -0.5px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 .share-selection {
   display: flex;
   align-items: center;
   gap: 11px;
   padding: 13px 0;
-  border-top: 1px solid #303b31;
-  border-bottom: 1px solid #303b31;
-  color: #b9d59c;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  color: var(--primary);
 }
 .share-selection > svg {
   flex-shrink: 0;
@@ -322,8 +399,8 @@
   gap: 5px;
 }
 .share-selection small {
-  color: #899a8b;
-  font-size: 10px;
+  color: var(--muted-foreground);
+  font-size: 11px;
 }
 .share-selection strong {
   overflow: hidden;
@@ -341,22 +418,27 @@
   display: grid;
   gap: 8px;
   font-size: 12px;
-  color: #b6c3b8;
+  font-weight: 500;
+  color: var(--muted-foreground);
 }
 .share-setup select,
 .share-setup input[type='number'] {
   width: 100%;
-  padding: 10px 6px;
-  border: 1px solid #374339;
-  border-radius: 7px;
-  background: #101612;
-  color: #e0e9da;
-  font-size: 12px;
+  padding: 10px 8px;
+  border: 1px solid var(--input);
+  border-radius: 12px;
+  background: color-mix(in oklch, var(--background) 70%, transparent);
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 400;
 }
 .share-setup .share-cursor {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+.share-setup .share-cursor {
+  color: var(--foreground);
 }
 .share-cursor input {
   width: 17px;
@@ -364,8 +446,8 @@
   accent-color: var(--brand-accent);
 }
 .share-advanced {
-  border-top: 1px solid #303b31;
-  border-bottom: 1px solid #303b31;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   padding: 14px 0;
 }
 .share-advanced summary {
@@ -374,8 +456,13 @@
   align-items: center;
   cursor: pointer;
   font-size: 12px;
-  color: #b6c3b8;
+  font-weight: 600;
+  color: var(--foreground);
   list-style: none;
+}
+.share-advanced summary svg {
+  color: var(--muted-foreground);
+  transition: transform 0.15s;
 }
 .share-advanced summary::-webkit-details-marker {
   display: none;
@@ -392,7 +479,7 @@
 .share-audio-note p {
   font-size: 11px;
   line-height: 1.7;
-  color: #8c9d8e;
+  color: var(--muted-foreground);
   margin: 5px 0 0;
 }
 .share-audio-note {
@@ -401,7 +488,7 @@
 }
 .share-audio-note > svg {
   flex-shrink: 0;
-  color: #8c9d8e;
+  color: var(--muted-foreground);
   margin-top: 2px;
 }
 .share-audio-note strong {
@@ -413,38 +500,48 @@
   padding: 0;
   border: 0;
   background: none;
-  color: #bddd9a;
-  font-size: 11px;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 500;
   text-decoration: underline;
   text-underline-offset: 3px;
 }
 .share-error {
-  color: #f8ad9c;
+  color: var(--destructive);
   font-size: 12px;
   line-height: 1.6;
   overflow-wrap: anywhere;
   margin: 0;
 }
+/* The decision bar: a glass shelf with the Share button lit when it can go. */
 .share-screen-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 20px;
   padding: 0 max(40px, calc((100vw - 1400px) / 2));
-  border-top: 1px solid #303832;
-  background: #171d19;
+  border-top: 1px solid var(--border);
+  background: color-mix(in oklch, var(--popover) 86%, transparent);
+  -webkit-backdrop-filter: blur(22px) saturate(1.5);
+  backdrop-filter: blur(22px) saturate(1.5);
+  box-shadow: var(--highlight);
 }
 .share-screen-footer > div:first-child {
   display: grid;
   gap: 6px;
 }
 .share-screen-footer strong {
-  font-size: 13px;
-  font-weight: 500;
+  font-family: var(--font-heading);
+  font-size: 15px;
+  font-weight: 700;
 }
 .share-screen-footer small {
-  color: #91a08f;
-  font-size: 11px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.share-footer-actions [data-slot='button']:last-child:not(:disabled) {
+  box-shadow: var(--glow-brand);
 }
 .share-footer-actions {
   display: flex;
@@ -490,7 +587,7 @@
     padding: 0 12px;
   }
   .share-call-status {
-    font-size: 10px;
+    font-size: 11px;
   }
   .share-screen-intro {
     padding: 18px 18px 20px;
@@ -547,7 +644,7 @@
     font-size: 11px;
   }
   .share-screen-footer small {
-    font-size: 10px;
+    font-size: 11px;
   }
   .share-footer-actions {
     gap: 4px;
@@ -559,7 +656,7 @@
     min-width: 76px;
   }
   .share-preview-placeholder small {
-    font-size: 9px;
+    font-size: 11px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

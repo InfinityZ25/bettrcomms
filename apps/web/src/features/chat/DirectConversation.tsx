@@ -102,7 +102,7 @@ export default function DirectConversation({
         '@container/conversation flex min-w-0 flex-1 flex-col overflow-hidden bg-background',
         docked && 'pb-24 phone:pb-0',
         variant === 'screen'
-          ? 'content-canvas rounded-3xl border border-border/60 shadow-[0_20px_60px_rgb(0_0_0/0.16)]'
+          ? 'content-canvas rounded-3xl border border-border/60'
           : 'rounded-2xl border border-border/60',
       )}
       aria-label={
@@ -111,12 +111,16 @@ export default function DirectConversation({
           : `Conversation with ${name}`
       }
     >
-      <header className="conversation-header flex shrink-0 items-center gap-2.5 border-b px-4 py-2.5 phone:gap-2 phone:px-2 phone:py-2">
+      <header
+        // The hairline under the header is drawn by the thread tools row below
+        // it on wider screens, so the two read as one header in two tiers.
+        className="conversation-header flex shrink-0 items-center gap-3 px-4 pt-3 pb-2 phone:gap-2 phone:border-b phone:border-border/70 phone:px-2 phone:py-2"
+      >
         {(onClose || onBack) && (
           <Button
             variant="ghost"
             size="icon"
-            className="hidden shrink-0 phone:inline-flex phone:size-11 @max-[480px]/conversation:inline-flex @max-[480px]/conversation:size-11"
+            className="hidden shrink-0 rounded-xl phone:inline-flex phone:size-11 @max-[480px]/conversation:inline-flex @max-[480px]/conversation:size-11"
             aria-label={
               onClose
                 ? 'Back to call'
@@ -130,23 +134,23 @@ export default function DirectConversation({
           </Button>
         )}
         {channel ? (
-          <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-muted phone:hidden @max-[480px]/conversation:hidden">
+          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/12 text-primary ring-1 ring-primary/15 ring-inset phone:hidden @max-[480px]/conversation:hidden">
             {announcement ? <Megaphone size={18} /> : <Hash size={20} />}
           </span>
         ) : (
-          <Avatar name={name} id={room.id} />
+          <Avatar name={name} id={room.id} className="size-10 phone:size-9" />
         )}
         <div className="min-w-0 flex-1">
-          <h2 className="block truncate text-sm font-semibold phone:text-base">
+          <h2 className="block truncate font-heading text-lg leading-tight font-bold phone:text-base">
             {channel && (
-              <span className="mr-1 font-normal text-muted-foreground phone:hidden @max-[480px]/conversation:hidden">
+              <span className="mr-1.5 font-sans text-sm font-medium tracking-normal text-muted-foreground phone:hidden @max-[480px]/conversation:hidden">
                 {room.community_name} /
               </span>
             )}
             {name}
           </h2>
           <span
-            className="block truncate text-[0.65rem] text-muted-foreground phone:text-xs"
+            className="mt-0.5 block truncate text-xs text-muted-foreground"
             title={room.topic}
           >
             {channel
@@ -172,7 +176,8 @@ export default function DirectConversation({
           <Button
             variant="secondary"
             size="sm"
-            className="shrink-0 phone:size-11 phone:rounded-full phone:px-0 @max-[480px]/conversation:size-11 @max-[480px]/conversation:px-0"
+            // The conversation's one primary action: a lime pill with a glow.
+            className="h-9 shrink-0 gap-1.5 rounded-full bg-primary px-4 font-semibold text-primary-foreground bc-glow hover:bg-primary/85 phone:size-11 phone:rounded-full phone:px-0 @max-[480px]/conversation:size-11 @max-[480px]/conversation:px-0"
             aria-label={
               channel ? (inThisCall ? 'Open voice' : 'Join voice') : 'Call'
             }
@@ -195,6 +200,7 @@ export default function DirectConversation({
           <Button
             variant="ghost"
             size="icon"
+            className="rounded-xl text-muted-foreground hover:text-foreground"
             aria-label="Group info"
             onClick={onGroupInfo}
           >
@@ -205,7 +211,7 @@ export default function DirectConversation({
           <Button
             variant="ghost"
             size="icon"
-            className="phone:hidden @max-[480px]/conversation:hidden"
+            className="rounded-xl text-muted-foreground hover:text-foreground phone:hidden @max-[480px]/conversation:hidden"
             aria-label="Room settings"
             onClick={onGroupInfo}
           >
@@ -225,7 +231,7 @@ export default function DirectConversation({
           <Button
             variant="ghost"
             size="icon"
-            className="phone:hidden @max-[480px]/conversation:hidden"
+            className="rounded-xl text-muted-foreground hover:text-foreground phone:hidden @max-[480px]/conversation:hidden"
             aria-label="Channel file library"
             onClick={() => setFilesOpen(true)}
           >
@@ -238,7 +244,7 @@ export default function DirectConversation({
               <Button
                 variant="ghost"
                 size="icon"
-                className="shrink-0 phone:size-11 @max-[480px]/conversation:size-11"
+                className="shrink-0 rounded-xl text-muted-foreground hover:text-foreground phone:size-11 @max-[480px]/conversation:size-11"
                 aria-label="Conversation options"
               />
             }

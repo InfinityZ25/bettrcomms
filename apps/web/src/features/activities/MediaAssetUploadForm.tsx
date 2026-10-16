@@ -30,7 +30,7 @@ export function MediaAssetUploadForm({
   const uploading = progress !== null;
   return (
     <form
-      className="space-y-3 rounded-xl border p-4"
+      className="space-y-3 rounded-2xl bc-card p-4"
       onSubmit={(event) => {
         event.preventDefault();
         void onCreate();
@@ -61,7 +61,7 @@ export function MediaAssetUploadForm({
               ? 'image/png,image/jpeg,image/gif,image/webp,image/avif'
               : 'audio/*'
           }
-          className="mt-2 block w-full text-sm file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-2"
+          className="mt-2 block w-full text-sm file:mr-3 file:cursor-pointer file:rounded-full file:border-0 file:bg-primary/12 file:px-3 file:py-2 file:font-medium file:text-primary transition-colors hover:file:bg-primary/20"
           disabled={uploading}
           onChange={(event) => onFile(event.target.files?.[0] ?? null)}
         />
@@ -69,7 +69,7 @@ export function MediaAssetUploadForm({
       {uploading && (
         <div role="status" className="text-xs text-muted-foreground">
           Uploading {Math.round(progress!)}%
-          <progress className="mt-2 block w-full" max={100} value={progress!} />
+          <progress className="mt-2 block h-1.5 w-full appearance-none overflow-hidden rounded-full bg-muted [&::-webkit-progress-bar]:rounded-full [&::-webkit-progress-bar]:bg-muted [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-primary [&::-moz-progress-bar]:rounded-full [&::-moz-progress-bar]:bg-primary" max={100} value={progress!} />
         </div>
       )}
       <div className="flex justify-end gap-2">

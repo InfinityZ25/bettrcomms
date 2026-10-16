@@ -16,7 +16,7 @@ export default function ConversationPreferenceActions({ room, userId, onError }:
     void setConversationPreference(room, patch).catch((error) => onError(error instanceof Error ? error.message : 'Could not update this conversation.'));
   }
   return <DropdownMenu>
-    <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className="phone:size-11" aria-label={`Conversation actions for ${label}`} disabled={state.userId !== userId || !state.ready || state.busy[room.id]} />}><MoreHorizontal size={16} /></DropdownMenuTrigger>
+    <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className="rounded-lg text-muted-foreground hover:text-foreground aria-expanded:text-foreground phone:size-11" aria-label={`Conversation actions for ${label}`} disabled={state.userId !== userId || !state.ready || state.busy[room.id]} />}><MoreHorizontal size={16} /></DropdownMenuTrigger>
     <DropdownMenuContent align="end">
       <DropdownMenuItem className="phone:min-h-11" onClick={() => choose({ favorite: !preference?.favorite })}>{preference?.favorite ? <StarOff /> : <Star />}{preference?.favorite ? 'Remove from favorites' : 'Add to favorites'}</DropdownMenuItem>
       {isConversationRoom(room.kind) && <DropdownMenuItem className="phone:min-h-11" onClick={() => choose({ archived: !preference?.archived })}>{preference?.archived ? <ArchiveRestore /> : <Archive />}{preference?.archived ? 'Restore conversation' : 'Archive conversation'}</DropdownMenuItem>}

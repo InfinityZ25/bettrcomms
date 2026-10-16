@@ -105,7 +105,7 @@ export default function RoomInviteLinks({ roomId }: { roomId: string }) {
   return (
     <section className="space-y-3 border-t pt-4" aria-label="Invitation links">
       <div>
-        <h3 className="text-sm font-semibold">Invitation links</h3>
+        <h3 className="font-heading text-base font-semibold">Invitation links</h3>
         <p className="mt-1 text-xs leading-5 text-muted-foreground">
           Anyone with a valid link can sign in and join this room and all its
           channels, including their history. Copy a new link before closing this
@@ -160,8 +160,9 @@ export default function RoomInviteLinks({ roomId }: { roomId: string }) {
         Create invitation link
       </Button>
       {url && (
-        <div className="space-y-2 rounded-xl border p-3">
+        <div className="space-y-2 rounded-2xl border border-border bg-background/60 p-3">
           <Input
+            className="font-mono text-sm"
             aria-label="New invitation link"
             readOnly
             value={url}
@@ -188,10 +189,10 @@ export default function RoomInviteLinks({ roomId }: { roomId: string }) {
           return (
             <div
               key={invite.id}
-              className="flex items-center justify-between gap-2 rounded-lg border p-2 text-xs"
+              className="flex items-center justify-between gap-2 rounded-2xl border border-border bg-card/60 p-3 text-xs transition hover:border-foreground/20"
             >
               <span className="min-w-0">
-                <strong className="block">
+                <strong className="block text-sm font-semibold">
                   {invite.revoked_at
                     ? 'Revoked'
                     : inactive

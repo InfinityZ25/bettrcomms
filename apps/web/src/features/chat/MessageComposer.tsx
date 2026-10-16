@@ -197,7 +197,8 @@ function ScopedMessageComposer({
   };
   return (
     <form
-      className="message-composer relative m-3 shrink-0 rounded-2xl border bg-muted/60 p-2 phone:m-2 phone:p-1 focus-within:ring-2 focus-within:ring-ring/40"
+      // An elevated well that lights up lime while you write.
+      className="message-composer @container/composer relative mx-3 mt-1 mb-3 shrink-0 rounded-2xl border border-border bg-card p-2 shadow-[var(--shadow-soft)] transition-[border-color,box-shadow] duration-150 focus-within:border-primary/40 focus-within:shadow-[var(--glow-brand)] phone:m-2 phone:p-1"
       onSubmit={(event) => {
         if (busy || blocked || voiceOpen || imageEditorOpen) event.preventDefault();
         else onSend(event);
@@ -228,16 +229,16 @@ function ScopedMessageComposer({
       }}
     >
       {dragging && filesAllowed && (
-        <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-primary bg-background/95 p-3">
-          <Upload className="text-primary" size={24} />
-          <strong className="text-sm">Drop files to attach</strong>
+        <div className="pointer-events-none absolute inset-0 z-10 flex animate-bc-pop flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-primary/70 bg-background/90 p-3 backdrop-blur-sm">
+          <Upload className="animate-bc-float text-primary" size={24} />
+          <strong className="font-heading text-base font-semibold">Drop files to attach</strong>
           <span className="text-xs text-muted-foreground">
             Up to {attachmentSize(maxFileBytes)} each · preview before sending
           </span>
         </div>
       )}
       {(editing || reply) && (
-        <div className="mb-2 flex items-center gap-2 border-b pb-2 text-xs">
+        <div className="mb-2 flex items-center gap-2 rounded-xl border-l-2 border-primary bg-muted/60 py-1 pr-1 pl-3 text-xs text-muted-foreground">
           <span className="min-w-0 flex-1 truncate">
             {editing
               ? 'Editing your message'
@@ -246,6 +247,7 @@ function ScopedMessageComposer({
           <Button
             variant="ghost"
             size="icon-sm"
+            className="size-7 rounded-lg text-muted-foreground hover:text-foreground"
             type="button"
             aria-label="Cancel reply or edit"
             disabled={busy}
@@ -259,7 +261,7 @@ function ScopedMessageComposer({
       )}
       {!!suggested.length && (
         <div
-          className="absolute right-0 bottom-full left-0 mb-1 rounded-xl border bg-popover p-1 shadow-lg"
+          className="absolute right-0 bottom-full left-0 z-20 mb-2 animate-bc-rise rounded-2xl border border-border bc-glass p-1.5"
           role="listbox"
           aria-label="Mention a member"
         >
@@ -270,12 +272,12 @@ function ScopedMessageComposer({
               aria-selected={suggestion % suggested.length === index}
               key={person.id}
               className={cn(
-                'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs',
-                suggestion % suggested.length === index && 'bg-accent',
+                'flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm transition-colors hover:bg-accent/70',
+                suggestion % suggested.length === index && 'bg-primary/12 hover:bg-primary/12',
               )}
               onClick={() => onMention(person)}
             >
-              <AtSign size={14} />
+              <AtSign size={14} className="text-primary" />
               {person.name}
             </button>
           ))}
@@ -372,7 +374,7 @@ function ScopedMessageComposer({
           unavailableReason={voiceUnavailableReason}
         />
       )}
-      <div className="mb-1 flex gap-0.5" aria-label="Message formatting">
+      <div className="mb-0.5 flex items-center gap-0.5 px-0.5" aria-label="Message formatting">
         {(
           [
             ['bold', Bold],
@@ -386,21 +388,25 @@ function ScopedMessageComposer({
             key={kind}
             variant="ghost"
             size="icon-sm"
+            className="size-7 rounded-lg text-muted-foreground hover:text-foreground phone:size-8"
             type="button"
             aria-label={`Format ${kind}`}
             disabled={busy}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => format(kind)}
           >
-            <Icon size={14} />
+            <Icon size={14} className="size-3.5" />
           </Button>
         ))}
       </div>
-      <div className="flex items-end gap-1">
+      {/* A narrow desktop well (the chat beside a call) gives the text the whole
+          first line and moves the actions under it, instead of squeezing the
+          placeholder into a column. Phones keep their single row. */}
+      <div className="flex items-end gap-1 min-[821px]:@max-[22rem]/composer:flex-wrap">
         <Button
           variant="ghost"
           size="icon"
-          className="phone:size-11"
+          className="rounded-xl text-muted-foreground hover:text-foreground phone:size-11"
           type="button"
           aria-label="Insert emoji"
           disabled={busy || draft.length >= 4000}
@@ -432,7 +438,7 @@ function ScopedMessageComposer({
             <Button
               variant="ghost"
               size="icon"
-              className="phone:size-11"
+              className="rounded-xl text-muted-foreground hover:text-foreground phone:size-11"
               type="button"
               disabled={!filesAllowed}
               aria-label="Attach files"
@@ -445,7 +451,7 @@ function ScopedMessageComposer({
               <Button
                 variant="ghost"
                 size="icon"
-                className="phone:size-11"
+                className="rounded-xl text-muted-foreground hover:text-foreground phone:size-11"
                 type="button"
                 disabled={!voiceAllowed || voiceOpen}
                 aria-label="Record voice note"
@@ -467,7 +473,8 @@ function ScopedMessageComposer({
           rows={1}
           enterKeyHint={phone ? 'send' : undefined}
           maxLength={8000}
-          className="min-w-0 flex-1 resize-none border-0! bg-transparent! px-2! py-2! text-sm shadow-none! outline-none phone:text-base"
+          // The well around it shows focus; no second ring inside it.
+          className="min-w-0 flex-1 resize-none border-0! bg-transparent! px-2! py-2! text-[0.9375rem] leading-6 shadow-none! outline-none focus-visible:ring-0 phone:text-base min-[821px]:@max-[22rem]/composer:order-first min-[821px]:@max-[22rem]/composer:basis-full"
           aria-label={`Message ${label}`}
           placeholder={
             phone ? 'Message…' : 'Write a message… Type @ to mention'
@@ -520,7 +527,8 @@ function ScopedMessageComposer({
           variant="ghost"
           size="icon"
           type="submit"
-          className="phone:size-11 phone:rounded-full phone:bg-primary phone:text-primary-foreground"
+          // Quiet while there is nothing to send; a lime disc once there is.
+          className="rounded-full text-muted-foreground hover:bg-primary/85 hover:text-primary-foreground dark:hover:bg-primary/85 enabled:bg-primary enabled:text-primary-foreground enabled:shadow-[var(--glow-brand)] enabled:hover:bg-primary/85 enabled:active:scale-95 phone:size-11 phone:rounded-full phone:bg-primary phone:text-primary-foreground min-[821px]:@max-[22rem]/composer:ml-auto"
           disabled={
             (!draft.trim() && (editing || attachments.length === 0)) ||
             busy ||
@@ -540,7 +548,7 @@ function ScopedMessageComposer({
         </Button>
       </div>
       {!editing && (
-        <p className="px-2 pt-1 text-[0.65rem] text-muted-foreground">
+        <p className="px-2 pt-1 text-[0.6875rem] text-muted-foreground">
           {uploading
             ? 'Uploading files. You can cancel an upload without losing this draft.'
             : attachments.length
@@ -551,7 +559,7 @@ function ScopedMessageComposer({
       {!editing &&
         attachments.some((attachment) => !attachment.id) &&
         !uploading && (
-          <p className="px-2 pt-1 text-[0.65rem] text-muted-foreground">
+          <p className="px-2 pt-1 text-[0.6875rem] text-muted-foreground">
             Keep this conversation open until uploading finishes; file
             selections stay on this device.
           </p>

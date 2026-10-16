@@ -127,12 +127,14 @@ function AvatarContent({
             decoding="async"
             // The provider's CDN gets no page address along with the request.
             referrerPolicy="no-referrer"
-            className="size-full rounded-xl bg-muted object-cover"
+            // An inner hairline drawn over the picture's own edge pixels, so a
+            // photo with a background like the page's still has an outline.
+            className="size-full rounded-xl bg-muted object-cover outline-1 -outline-offset-1 outline-foreground/10"
             onError={() => setBroken(true)}
           />
           {/* The corner a silhouette never reaches into, and a ring of the page
               behind it so the mark separates from whatever the photo is. */}
-          <span className="pointer-events-none absolute -right-[8%] -bottom-[8%] size-[42%] rounded-full bg-background p-[6%] ring-1 ring-border">
+          <span className="pointer-events-none absolute -right-[8%] -bottom-[8%] size-[42%] rounded-full bg-[var(--avatar-ring,var(--background))] p-[6%] ring-1 ring-border">
             {creature}
           </span>
         </>
@@ -147,7 +149,7 @@ function AvatarContent({
               loading="lazy"
               decoding="async"
               referrerPolicy="no-referrer"
-              className="pointer-events-none absolute -right-[8%] -bottom-[8%] size-[42%] rounded-full bg-background object-cover ring-1 ring-border"
+              className="pointer-events-none absolute -right-[8%] -bottom-[8%] size-[42%] rounded-full bg-[var(--avatar-ring,var(--background))] object-cover ring-1 ring-border"
               onError={() => setBroken(true)}
             />
           )}

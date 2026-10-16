@@ -11,6 +11,12 @@
   --camera-size: 148px;
   /* How much room the floating controls need at the bottom of the stage. */
   --chrome-bottom: 66px;
+  /* The call's own surfaces, all mixed from the theme's tokens. */
+  --call-glass: color-mix(in oklch, var(--popover) 76%, transparent);
+  --call-hairline: color-mix(in oklch, var(--foreground) 11%, transparent);
+  --call-danger: oklch(0.56 0.2 25);
+  /* Behind letterboxed video. Deep in both themes, as a screen is. */
+  --call-letterbox: oklch(0.13 0.012 274);
   position: relative;
   display: flex;
   flex: 1;
@@ -18,7 +24,16 @@
   min-height: 0;
   flex-direction: column;
   overflow: hidden;
-  background: var(--background);
+  /*
+    The stage: the canvas colour with a little light in it. A violet bloom
+    behind the middle of the room and the lime of the dock glowing up from the
+    floor. Both fade out well inside the box, so there is no edge to see where
+    the call meets the canvas around it.
+  */
+  background-color: var(--background);
+  background-image:
+    radial-gradient(ellipse 58% 46% at 50% 42%, color-mix(in oklch, var(--violet) 8%, transparent), transparent 72%),
+    radial-gradient(ellipse 44% 30% at 50% 104%, color-mix(in oklch, var(--brand) 9%, transparent), transparent 72%);
 }
 
 /*
@@ -230,15 +245,36 @@
 .call-workspace > .recording-badge {
   position: absolute;
   z-index: 29;
-  top: 8px;
+  top: 5px;
   left: 50%;
   margin: 0;
-  padding: 3px 10px;
+  padding: 3px 11px 3px 9px;
   transform: translateX(-50%);
-  border-radius: var(--radius-lg);
-  background: color-mix(in oklch, var(--background) 82%, transparent);
-  backdrop-filter: blur(10px);
+  border: 1px solid color-mix(in oklch, var(--destructive) 38%, transparent);
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--popover) 82%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  backdrop-filter: blur(16px) saturate(1.4);
+  box-shadow:
+    var(--shadow-soft),
+    0 0 22px -6px color-mix(in oklch, var(--destructive) 55%, transparent);
+  color: color-mix(in oklch, var(--destructive) 82%, var(--foreground));
   font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+/* The dot is the one part that moves: a slow blink, as a camera's tally does. */
+.call-workspace > .recording-badge > svg {
+  color: var(--destructive);
+  animation: call-recording-tally 1.8s ease-in-out infinite;
+}
+
+@keyframes call-recording-tally {
+  50% {
+    opacity: 0.35;
+  }
 }
 
 .call-workspace:has(> .recording-badge) > .stage {
@@ -289,8 +325,10 @@
   z-index: 5;
   border: 0;
   border-radius: 999px;
-  background: var(--muted-foreground);
-  box-shadow: 0 1px 6px #0008;
+  background: color-mix(in oklch, var(--popover) 88%, transparent);
+  box-shadow:
+    inset 0 0 0 1px var(--call-hairline),
+    var(--shadow-soft);
   opacity: 0;
   transition: opacity 120ms ease, background 120ms ease;
 }
@@ -318,13 +356,14 @@
   content: '';
   position: absolute;
   border-radius: 999px;
-  background: var(--muted);
-  transition: background 120ms ease;
+  background: color-mix(in oklch, var(--foreground) 12%, transparent);
+  transition: background 120ms ease, box-shadow 120ms ease;
 }
 
 .call-workspace .camera-divider:hover::after,
 .call-workspace .camera-divider:focus-visible::after {
   background: var(--brand-accent);
+  box-shadow: 0 0 12px color-mix(in oklch, var(--brand) 55%, transparent);
 }
 
 .call-workspace .camera-divider:focus-visible {
@@ -462,9 +501,11 @@
   left: 0;
   min-height: 0;
   padding: 26px 14px 10px;
+  /* A floor of shade for the controls to stand on over a bright picture. */
   background: linear-gradient(
     transparent,
-    color-mix(in oklch, var(--background) 86%, transparent) 55%
+    color-mix(in oklch, var(--background) 62%, transparent) 48%,
+    color-mix(in oklch, var(--background) 88%, transparent)
   );
   /* The floating backdrop must not block the shared pane's zoom controls. */
   pointer-events: none;
@@ -644,15 +685,22 @@
   .recording-frame-meet {
     display: none;
   }
+  .call-workspace > .recording-badge > svg {
+    animation: none;
+  }
 }
 
 /* Keep the entire call together in fullscreen, including cameras and controls. */
-.call-workspace:fullscreen { width: 100vw; height: 100dvh; padding: 12px 16px 0; background: var(--background); box-sizing: border-box; }
+.call-workspace:fullscreen { width: 100vw; height: 100dvh; padding: 12px 16px 0; background-color: var(--background); box-sizing: border-box; }
 .call-workspace .stage { position: relative; }
 .call-chrome-actions { font-size: 12px; }
-.call-chrome-actions button { display: inline-flex; gap: 6px; align-items: center; border-radius: var(--radius-lg); color: var(--muted-foreground); white-space: nowrap; }
-.call-chrome-actions button:hover, .call-chrome-actions button[aria-pressed='true'] { color: var(--foreground); }
-.call-workspace .stage[data-dock] .camera-dock-handle { width: auto; height: 24px; inset: 6px auto auto 50%; transform: translateX(-50%); padding: 3px 12px; font-size: 10px; color: var(--primary); background: color-mix(in oklch, var(--accent) 93%, transparent); white-space: nowrap; cursor: grab; touch-action: none; }
+/* View, Chat, Invite, Focus call and fullscreen: one family of ghost pills. */
+.call-chrome-actions > button { display: inline-flex; gap: 5px; align-items: center; height: 32px; padding-inline: 10px; border-radius: 999px; color: var(--muted-foreground); background: transparent; font-size: 12.5px; font-weight: 500; white-space: nowrap; transition: background-color 150ms ease-out, color 150ms ease-out, box-shadow 150ms ease-out; }
+.call-chrome-actions > button svg { width: 15px; height: 15px; }
+.call-chrome-actions > button:hover, .call-chrome-actions > button[aria-expanded='true'] { color: var(--foreground); background: color-mix(in oklch, var(--foreground) 9%, transparent); }
+.call-chrome-actions > button[aria-pressed='true'] { color: var(--foreground); background: color-mix(in oklch, var(--foreground) 12%, transparent); box-shadow: inset 0 0 0 1px var(--call-hairline, var(--border)); }
+.call-chrome-actions > button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.call-workspace .stage[data-dock] .camera-dock-handle { width: auto; height: 24px; inset: 6px auto auto 50%; transform: translateX(-50%); padding: 3px 12px; font-size: 11px; font-weight: 500; color: var(--foreground); background: color-mix(in oklch, var(--popover) 86%, transparent); -webkit-backdrop-filter: blur(14px) saturate(1.4); backdrop-filter: blur(14px) saturate(1.4); white-space: nowrap; cursor: grab; touch-action: none; }
 .call-workspace .camera-dock-handle:active { cursor: grabbing; }
 .call-workspace .stage[data-dock='top'] .camera-strip { overflow-x: auto; overflow-y: hidden; }
 .call-workspace .stage[data-dock='top'] .camera-tile { width: auto; flex: 0 0 auto; aspect-ratio: 16 / 9; }
@@ -661,15 +709,86 @@
 /* One frame around a shared screen, not two. The pane inside it draws the
    border; an outer box with its own border and padding made every share look
    like a picture of a picture. */
-.call-workspace .content-stage { background: var(--background); }
+/* The stage's own light shows between the panes. */
+.call-workspace .content-stage { background: transparent; }
 .call-workspace .stage-topline, .call-workspace .stage-bottomline { flex-shrink: 0; padding: 4px; }
 .call-workspace .video-viewport { min-height: 0; flex: 1; }
 .call-workspace .call-footer { margin: 0; gap: 12px; }
 .push-to-talk-status { font-size: 12px; color: var(--muted-foreground); }
+.call-workspace > .call-footer > .push-to-talk-status { padding: 3px 10px; border-radius: 999px; background: color-mix(in oklch, var(--popover) 72%, transparent); box-shadow: inset 0 0 0 1px var(--call-hairline); font-weight: 500; font-variant-numeric: tabular-nums; }
 .call-workspace > .stats-panel { flex: 0 0 auto; max-height: 30vh; overflow: auto; }
 .dock-targets { position: absolute; inset: 0; z-index: 20; pointer-events: none; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; padding: 14px; }
-.dock-targets span { display: grid; place-items: center; background: color-mix(in oklch, var(--card) 67%, transparent); border: 2px dashed var(--ring); border-radius: 14px; color: var(--primary); }
-.dock-targets span[data-active='true'] { background: color-mix(in oklch, var(--ring) 67%, transparent); border-color: var(--primary); }
+.dock-targets span { display: grid; place-items: center; background: color-mix(in oklch, var(--popover) 62%, transparent); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); border: 2px dashed color-mix(in oklch, var(--brand) 45%, transparent); border-radius: var(--radius-2xl); color: var(--foreground); font-size: 13px; font-weight: 600; transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease; }
+.dock-targets span[data-active='true'] { background: color-mix(in oklch, var(--brand) 18%, transparent); border-style: solid; border-color: var(--brand); box-shadow: var(--glow-brand); color: var(--primary); }
+
+/*
+  The dock: one floating glass pill holding the whole call, every round
+  control and the way out. A phone has no room for the pill around them and
+  lays the same buttons out on their own (CallPhone.css).
+
+  The states are said by colour, not by shape: lime when you are sending
+  something (camera, screen), white for a mode you switched on, a red tint for
+  a microphone or a headset that is off, and solid red for the two that end or
+  capture something. Hover, focus and disabled each have their own rule here:
+  these declarations sit outside Tailwind's layers, so they outrank the
+  variant classes the buttons are drawn with.
+*/
+.call-workspace .call-controls {
+  gap: 6px;
+  padding: 5px;
+  border: 1px solid var(--call-hairline);
+  border-radius: 28px;
+  background: var(--call-glass);
+  -webkit-backdrop-filter: blur(24px) saturate(1.6);
+  backdrop-filter: blur(24px) saturate(1.6);
+  box-shadow: var(--shadow-elevated), var(--highlight);
+}
+.call-workspace .call-controls button {
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  color: var(--foreground);
+  background: color-mix(in oklch, var(--foreground) 9%, transparent);
+  transition: background-color 150ms ease-out, color 150ms ease-out, box-shadow 150ms ease-out;
+}
+.call-workspace .call-controls button svg { width: 20px; height: 20px; }
+.call-workspace .call-controls button .lucide-square { width: 15px; height: 15px; }
+.call-workspace .call-controls button:hover:not(:disabled) { background: color-mix(in oklch, var(--foreground) 15%, transparent); }
+.call-workspace .call-controls button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.call-workspace .call-controls .is-on { color: var(--brand-foreground); background: var(--brand); box-shadow: var(--glow-brand); }
+.call-workspace .call-controls .is-on:hover:not(:disabled) { background: color-mix(in oklch, var(--brand) 86%, var(--foreground)); }
+.call-workspace .call-controls .is-active { color: var(--background); background: color-mix(in oklch, var(--foreground) 90%, transparent); }
+.call-workspace .call-controls .is-active:hover:not(:disabled) { background: var(--foreground); }
+.call-workspace .call-controls .is-alert { color: var(--dnd); background: color-mix(in oklch, var(--dnd) 18%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--dnd) 34%, transparent); }
+.call-workspace .call-controls .is-alert:hover:not(:disabled) { background: color-mix(in oklch, var(--dnd) 27%, transparent); }
+.call-workspace .call-controls .is-danger,
+.call-workspace .call-controls .call-leave { color: oklch(0.99 0.005 25); background: var(--call-danger); box-shadow: 0 10px 26px -12px color-mix(in oklch, var(--call-danger) 90%, transparent); }
+.call-workspace .call-controls .is-danger:hover:not(:disabled),
+.call-workspace .call-controls .call-leave:hover:not(:disabled) { background: color-mix(in oklch, var(--call-danger) 86%, oklch(1 0 0)); }
+/* The two buttons with words in them. */
+.call-workspace .call-controls .call-leave,
+.call-workspace .call-controls .call-join { width: auto; gap: 7px; padding-inline: 14px 17px; font-size: 13.5px; font-weight: 600; }
+.call-workspace .call-controls .call-leave svg,
+.call-workspace .call-controls .call-join svg { width: 18px; height: 18px; }
+.call-workspace .call-controls .call-join { color: var(--primary-foreground); background: var(--primary); box-shadow: var(--glow-brand); }
+.call-workspace .call-controls .call-join:hover:not(:disabled) { background: color-mix(in oklch, var(--primary) 88%, var(--foreground)); }
+/* Where the footer wraps (a narrow window, or the conversation beside the
+   call) the dock tightens to the width the old row of buttons had, so the
+   connection chip keeps its place on the dock's line instead of being pushed
+   onto a line of its own over the picture. */
+@media (max-width: 1100px) {
+  .call-workspace .call-controls { gap: 4px; }
+  .call-workspace .call-controls button { width: 40px; height: 40px; }
+  .call-workspace .call-controls .call-leave,
+  .call-workspace .call-controls .call-join { width: auto; padding-inline: 12px 15px; }
+}
+/* Not on a phone, whose row keeps its 44px targets (CallPhone.css). */
+@media (min-width: 821px) and (min-height: 501px), (min-width: 1001px) {
+  .call-workspace[data-chat='true']:not(:fullscreen) .call-controls { gap: 4px; }
+  .call-workspace[data-chat='true']:not(:fullscreen) .call-controls button { width: 40px; height: 40px; }
+  .call-workspace[data-chat='true']:not(:fullscreen) .call-controls .call-leave,
+  .call-workspace[data-chat='true']:not(:fullscreen) .call-controls .call-join { width: auto; padding-inline: 12px 15px; }
+}
 .app-shell.is-call-focused .main { flex: 1; }
 @media (max-width: 700px) {
  .call-chrome-actions button { padding: 5px 7px; }
@@ -686,6 +805,19 @@
 /* The diagnostics panel opens from the controls, so it keeps clear of them. */
 .call-workspace > .stats-panel {
   margin-bottom: var(--chrome-bottom);
+  anchor-name: --call-stats;
+}
+
+/*
+  The sharer's copilot stack and the diagnostics panel both live in the
+  bottom-left corner, and the stack used to land on top of the panel's
+  buttons. While the panel is open the stack rides on its top edge instead.
+  Anchoring is a progressive enhancement: without it they overlap as before.
+*/
+@supports (anchor-name: --call-stats) {
+  .call-workspace:not(:fullscreen):has(> .stats-panel) > .copilot-sharer {
+    bottom: calc(anchor(--call-stats top, var(--chrome-bottom)) + 10px);
+  }
 }
 
 /* A call without shared content is a gallery, not a shallow camera dock. */
@@ -695,8 +827,8 @@
   gap: 6px;
   margin-right: auto;
   padding: 3px;
-  border: 1px solid var(--muted);
-  border-radius: 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
   background: var(--card);
 }
 
@@ -727,16 +859,16 @@
   overflow: auto;
 }
 
+/* The gallery's tiles keep the card, the self tile's tint and the hairline
+   from CallBase.css. */
 .call-workspace .stage[data-has-share='false'] .camera-tile {
   width: 100%;
   height: 100%;
   min-width: 0;
   min-height: 0;
   max-height: none;
-  border-radius: 14px;
-  border-color: var(--muted);
-  background: var(--card);
-  box-shadow: 0 12px 34px #0003;
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--shadow-soft), var(--highlight);
 }
 
 .call-workspace .stage[data-has-share='false'][data-camera-count='1'] .camera-strip {
@@ -829,9 +961,10 @@
 
 .call-workspace .stage[data-camera-fit='contain'] .camera-tile video {
   object-fit: contain;
-  background: var(--background);
+  background: var(--call-letterbox);
 }
 
+/* Put on stage / focus: a glass chip in the tile's corner, lime once pinned. */
 .camera-focus-button {
   position: absolute;
   z-index: 4;
@@ -842,10 +975,13 @@
   width: 30px;
   height: 30px;
   padding: 0;
-  border: 1px solid #ffffff1c;
+  border: 1px solid color-mix(in oklch, var(--foreground) 12%, transparent);
   border-radius: 8px;
-  color: var(--primary);
-  background: color-mix(in oklch, var(--background) 79%, transparent);
+  color: var(--foreground);
+  background: color-mix(in oklch, var(--popover) 76%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(1.5);
+  backdrop-filter: blur(14px) saturate(1.5);
+  box-shadow: var(--shadow-soft);
   opacity: 0;
   transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
 }
@@ -853,8 +989,9 @@
 .camera-tile:hover .camera-focus-button,
 .camera-focus-button:focus-visible,
 .camera-focus-button[aria-pressed='true'] { opacity: 1; }
-.camera-focus-button:hover,
-.camera-focus-button[aria-pressed='true'] { color: var(--primary); background: color-mix(in oklch, var(--accent) 91%, transparent); }
+.camera-focus-button:hover { color: var(--primary); background: color-mix(in oklch, var(--popover) 92%, transparent); }
+.camera-focus-button[aria-pressed='true'] { color: var(--brand-foreground); background: var(--brand); border-color: transparent; box-shadow: var(--glow-brand); }
+.camera-focus-button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 
 @media (max-width: 900px) {
   .call-workspace .stage[data-has-share='false'][data-camera-count] .camera-strip,
@@ -987,8 +1124,8 @@
 
 /* Screen shares remain visible as selectable participants and can share the stage. */
 .screen-share-tile {
-  border-color: var(--ring);
-  background: var(--background);
+  border-color: color-mix(in oklch, var(--brand) 38%, transparent);
+  background: var(--call-letterbox);
 }
 
 .frozen-track-preview {
@@ -997,8 +1134,8 @@
   display: grid;
   place-items: center;
   overflow: hidden;
-  color: var(--muted-foreground);
-  background: var(--background);
+  color: oklch(0.78 0.02 274);
+  background: var(--call-letterbox);
   font-size: 12px;
 }
 
@@ -1031,7 +1168,7 @@
   display: grid;
   place-items: center;
   pointer-events: none;
-  background: color-mix(in oklch, var(--background) 44%, transparent);
+  background: color-mix(in oklch, var(--call-letterbox) 44%, transparent);
   opacity: 0;
   transition: opacity 120ms ease;
 }
@@ -1042,16 +1179,37 @@
   opacity: 1;
 }
 
+/* Watch: the lime call to action of a screen nobody is looking at yet. */
 .screen-share-actions button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 7px 10px;
-  border: 1px solid color-mix(in oklch, var(--primary) 40%, transparent);
+  padding: 7px 13px;
+  border: 0;
   border-radius: 8px;
-  color: var(--primary);
-  background: color-mix(in oklch, var(--card) 91%, transparent);
+  color: var(--brand-foreground);
+  background: var(--brand);
+  box-shadow: var(--glow-brand);
+  font-size: 13px;
+  font-weight: 600;
   pointer-events: auto;
+  transition: background-color 120ms ease, box-shadow 120ms ease;
+}
+
+.screen-share-actions button:hover {
+  background: color-mix(in oklch, var(--brand) 86%, white);
+}
+
+.screen-share-actions button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* Watching already: the same button asks the quieter question. */
+.screen-share-tile[data-watching='true'] .screen-share-actions button {
+  color: var(--foreground);
+  background: color-mix(in oklch, var(--popover) 86%, transparent);
+  box-shadow: inset 0 0 0 1px var(--call-hairline), var(--shadow-soft);
 }
 
 .content-grid {
@@ -1100,15 +1258,16 @@
   min-height: 0;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid var(--border);
+  border: 1px solid var(--call-hairline);
   border-radius: var(--radius-2xl);
-  background: var(--background);
+  background: var(--call-letterbox);
+  box-shadow: var(--shadow-soft), var(--highlight);
 }
 
 .stage-pane-actions {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 4px;
 }
 
 .stage-pane-actions button {
@@ -1116,7 +1275,18 @@
   align-items: center;
   gap: 5px;
   padding: 4px 6px;
-  color: var(--muted-foreground);
+  color: var(--foreground);
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.stage-pane-actions button:hover {
+  color: var(--primary);
+  background: color-mix(in oklch, var(--foreground) 10%, transparent);
+}
+
+.stage-pane-actions button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
 }
 
 .content-security {
@@ -1127,12 +1297,20 @@
   display: none;
   align-items: center;
   gap: 6px;
-  padding: 4px 7px;
-  border-radius: 7px;
-  color: var(--muted-foreground);
-  background: color-mix(in oklch, var(--background) 72%, transparent);
-  font-size: 9px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  color: var(--foreground);
+  background: color-mix(in oklch, var(--popover) 74%, transparent);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  box-shadow: inset 0 0 0 1px var(--call-hairline);
+  font-size: 11px;
+  font-weight: 500;
   pointer-events: none;
+}
+
+.content-security > svg {
+  color: var(--online);
 }
 
 .call-workspace:fullscreen .content-security {

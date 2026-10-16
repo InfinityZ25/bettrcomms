@@ -235,13 +235,14 @@ export default function CommunitySettings({
           <span className="capitalize">Your role: {role}</span>
         </div>
         <nav
-          className="flex flex-wrap gap-1 border-b pb-3"
+          className="flex flex-wrap gap-1 rounded-2xl border border-border bg-muted/40 p-1"
           aria-label="Room settings sections"
         >
           {options.map((option) => (
             <Button
               key={option.value}
               variant={section === option.value ? 'secondary' : 'ghost'}
+              className="rounded-xl px-3 font-medium text-muted-foreground hover:bg-accent/60 hover:text-foreground aria-pressed:bg-primary/12 aria-pressed:text-foreground"
               size="sm"
               aria-pressed={section === option.value}
               onClick={() => setSection(option.value)}
@@ -299,7 +300,7 @@ export default function CommunitySettings({
               <label className="block space-y-2 text-sm">
                 Description
                 <textarea
-                  className="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                  className="min-h-24 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm shadow-xs"
                   value={description}
                   onChange={(event) => setDescription(event.target.value)}
                   maxLength={500}
@@ -320,7 +321,7 @@ export default function CommunitySettings({
                 </Button>
               )}
             </form>
-            <div className="rounded-xl bg-muted/50 p-4 text-sm leading-6">
+            <div className="rounded-2xl border border-border bg-background/60 p-4 text-sm leading-6">
               <strong>One channel, text and voice.</strong>
               <p className="text-muted-foreground">
                 Messages, files and voice live together in each channel.
@@ -335,11 +336,12 @@ export default function CommunitySettings({
                   roomId={selectedChannel.id}
                 />
               )}
-            <div className="border-t pt-4">
+            <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4">
               {owner ? (
                 <Button
                   variant="ghost"
                   disabled={busy}
+                  className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                   onClick={() => setConfirmation({ kind: 'delete' })}
                 >
                   <Trash2 size={16} />
@@ -349,6 +351,7 @@ export default function CommunitySettings({
                 <Button
                   variant="ghost"
                   disabled={busy}
+                  className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                   onClick={() => setConfirmation({ kind: 'leave' })}
                 >
                   <DoorOpen size={16} />
@@ -405,7 +408,7 @@ export default function CommunitySettings({
         )}
         {!loading && community && section === 'members' && (
           <div className="space-y-5">
-            <div className="rounded-xl bg-muted/50 p-3 text-xs leading-5 text-muted-foreground">
+            <div className="rounded-2xl border border-border bg-background/60 p-3 text-xs leading-5 text-muted-foreground">
               <strong className="text-foreground">Owner</strong> controls
               ownership. <strong className="text-foreground">Admins</strong>{' '}
               manage the room and channels.{' '}
@@ -414,7 +417,7 @@ export default function CommunitySettings({
               <strong className="text-foreground">Members</strong> chat and join
               voice.
             </div>
-            <ul className="divide-y">
+            <ul className="space-y-1">
               {members.map((member) => {
                 const manage =
                   member.user.id !== user.id &&
@@ -428,7 +431,7 @@ export default function CommunitySettings({
                 return (
                   <li
                     key={member.user.id}
-                    className="flex flex-wrap items-center gap-3 py-3"
+                    className="flex flex-wrap items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-accent/50"
                   >
                     <Avatar
                       name={member.user.name}
@@ -436,15 +439,15 @@ export default function CommunitySettings({
                       src={member.user.avatar_url}
                     />
                     <span className="min-w-0 flex-1 text-sm">
-                      <strong className="block truncate">
+                      <strong className="block truncate font-semibold">
                         {member.user.name}
                         {member.user.id === user.id ? ' (you)' : ''}
                       </strong>
-                      <small className="capitalize text-muted-foreground">
+                      <small className={cn('inline-flex rounded-full px-2 py-0.5 text-[0.6875rem] font-semibold capitalize text-foreground', member.role === 'owner' ? 'bg-amber/15' : member.role === 'admin' ? 'bg-primary/15' : member.role === 'moderator' ? 'bg-violet/15' : 'bg-muted')}>
                         {member.role}
                       </small>
                       {!!member.custom_role_ids?.length && (
-                        <span className="mt-1 flex flex-wrap gap-1">
+                        <span className="mt-1.5 flex flex-wrap gap-1.5">
                           {customRoles
                             .filter((customRole) =>
                               member.custom_role_ids?.includes(customRole.id),
@@ -452,7 +455,7 @@ export default function CommunitySettings({
                             .map((customRole) => (
                               <span
                                 key={customRole.id}
-                                className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px]"
+                                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/50 px-2 py-0.5 text-[0.6875rem] font-medium text-foreground"
                               >
                                 <span
                                   className="size-1.5 rounded-full"
@@ -470,7 +473,7 @@ export default function CommunitySettings({
                           Role for {member.user.name}
                         </span>
                         <select
-                          className="h-9 rounded-md border bg-background px-2 text-sm"
+                          className="h-9 rounded-xl border border-input bg-background px-2.5 text-sm shadow-xs"
                           aria-label={`Role for ${member.user.name}`}
                           value={member.role}
                           disabled={busy}
@@ -532,7 +535,7 @@ export default function CommunitySettings({
             </ul>
             {(selectedChannel?.permissions?.manage_members ?? moderator) && (
               <section className="space-y-2 border-t pt-4">
-                <h3 className="text-sm font-semibold">
+                <h3 className="font-heading text-base font-semibold">
                   Add an accepted friend
                 </h3>
                 {candidates.length ? (
@@ -540,7 +543,7 @@ export default function CommunitySettings({
                     {candidates.map((friend) => (
                       <li
                         key={friend.id}
-                        className="flex items-center justify-between gap-2 py-2 text-sm"
+                        className="flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-sm hover:bg-accent/50"
                       >
                         <span className="truncate">{friend.name}</span>
                         <Button
@@ -584,7 +587,7 @@ export default function CommunitySettings({
                 <select
                   value={selectedChannel.id}
                   onChange={(event) => setModerationChannel(event.target.value)}
-                  className="h-10 w-full rounded-md border bg-background px-3"
+                  className="h-10 w-full rounded-xl border border-input bg-background px-3 shadow-xs"
                 >
                   {channels.map((channel) => (
                     <option key={channel.id} value={channel.id}>
@@ -609,8 +612,8 @@ export default function CommunitySettings({
         {confirmation && (
           <div
             className={cn(
-              'rounded-xl border p-4 text-sm',
-              confirmation.kind !== 'transfer' && 'border-destructive/30',
+              'rounded-2xl border p-4 text-sm',
+              confirmation.kind !== 'transfer' && 'border-destructive/30 bg-destructive/5',
             )}
             role="alert"
           >

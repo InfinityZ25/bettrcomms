@@ -43,13 +43,13 @@ export default function GroupConversationDialog({ onClose, onCreated }: {
       <form className="mt-5 space-y-4" onSubmit={(event) => { event.preventDefault(); void create(); }}>
         <label className="block text-sm">Group name<Input autoFocus className="mt-2" value={name} onChange={(event) => setName(event.target.value)} maxLength={80} required disabled={busy} placeholder="Friday night crew" /></label>
         <fieldset disabled={busy}>
-          <legend className="mb-2 text-sm font-medium">Choose friends · {selected.length}/9</legend>
-          <div className="max-h-64 space-y-1 overflow-y-auto rounded-xl border p-2">
+          <legend className="mb-2 bc-kicker">Choose friends · {selected.length}/9</legend>
+          <div className="max-h-64 space-y-1 overflow-y-auto rounded-2xl border border-border bg-background/60 p-2">
             {loading ? <p className="p-2 text-sm text-muted-foreground">Loading friends…</p> : friends.length === 0 ? <p className="p-2 text-sm text-muted-foreground">Add and accept a friend before starting a group.</p> : friends.map((friend) => (
-              <label key={friend.id} className="flex cursor-pointer items-center gap-3 rounded-lg p-2 hover:bg-muted">
-                <input type="checkbox" aria-label={friend.name} checked={selected.includes(friend.id)} disabled={!selected.includes(friend.id) && selected.length >= 9} onChange={(event) => setSelected((ids) => event.target.checked ? [...ids, friend.id] : ids.filter((id) => id !== friend.id))} />
+              <label key={friend.id} className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-accent/50 has-[:checked]:bg-primary/8">
+                <input type="checkbox" className="accent-primary" aria-label={friend.name} checked={selected.includes(friend.id)} disabled={!selected.includes(friend.id) && selected.length >= 9} onChange={(event) => setSelected((ids) => event.target.checked ? [...ids, friend.id] : ids.filter((id) => id !== friend.id))} />
                 <Avatar name={friend.name} id={friend.id} src={friend.avatar_url} />
-                <span className="min-w-0 truncate text-sm">{friend.name}</span>
+                <span className="min-w-0 truncate text-sm font-semibold">{friend.name}</span>
               </label>
             ))}
           </div>

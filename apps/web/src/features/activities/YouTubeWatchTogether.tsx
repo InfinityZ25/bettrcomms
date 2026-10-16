@@ -467,9 +467,9 @@ function YouTubeWatchRoom({
     return (
       <section
         aria-label="YouTube watch queue"
-        className="space-y-3 rounded-xl border bg-muted/20 p-4"
+        className="space-y-3 rounded-2xl bc-card p-4"
       >
-        <h3 className="text-sm font-medium">Watch YouTube together</h3>
+        <h3 className="font-heading text-base font-semibold">Watch YouTube together</h3>
         <p role="status" className="text-sm text-muted-foreground">
           {configured === null
             ? 'Checking YouTube availability…'
@@ -483,7 +483,7 @@ function YouTubeWatchRoom({
             type="url"
             value={url}
             readOnly
-            className="mt-2 min-h-11 w-full rounded-md border bg-background px-3"
+            className="mt-2 min-h-11 w-full rounded-xl border bg-background px-3"
             placeholder="Paste a YouTube link"
           />
         </label>
@@ -511,9 +511,9 @@ function YouTubeWatchRoom({
       {browserRequired && <YouTubeBrowserRequired />}
       {canView ? (
         <>
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bc-card p-3">
             <span className="inline-flex items-center gap-2 text-sm">
-              <Users size={16} />
+              <Users size={16} className="size-8 rounded-lg bg-pink/15 p-1.5 text-pink" />
               {queue.viewers} watching ·{' '}
               {joined
                 ? 'You joined Watch'
@@ -549,13 +549,13 @@ function YouTubeWatchRoom({
                 event.preventDefault();
                 void enqueue(!state);
               }}
-              className="space-y-2 rounded-xl border bg-muted/20 p-3"
+              className="space-y-2 rounded-2xl bc-card p-4"
             >
               <label className="block text-sm font-medium">
                 Add a YouTube video or Short
                 <input
                   type="url"
-                  className="mt-2 min-h-11 w-full rounded-md border bg-background px-3"
+                  className="mt-2 min-h-11 w-full rounded-xl border bg-background px-3"
                   placeholder="Paste a YouTube link"
                   value={url}
                   onChange={(event) => setURL(event.target.value)}
@@ -566,7 +566,7 @@ function YouTubeWatchRoom({
               <label className="block text-xs text-muted-foreground">
                 Title (optional)
                 <input
-                  className="mt-1 min-h-11 w-full rounded-md border bg-background px-3 text-sm"
+                  className="mt-1 min-h-11 w-full rounded-xl border bg-background px-3 text-sm"
                   value={title}
                   onChange={(event) => setTitle(event.target.value)}
                   maxLength={200}
@@ -603,7 +603,7 @@ function YouTubeWatchRoom({
             </form>
           )}
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h3 className="inline-flex items-center gap-2 text-sm font-medium">
+            <h3 className="inline-flex items-center gap-2 font-heading text-base font-semibold">
               <ListVideo size={16} />
               Up next · {queue.items.length}/100
             </h3>
@@ -646,9 +646,9 @@ function YouTubeWatchRoom({
             {queue.items.map((item, index) => (
               <li
                 key={item.id}
-                className="flex min-w-0 items-center gap-2 rounded-lg border p-2"
+                className="flex min-w-0 items-center gap-2 rounded-xl border border-border bg-background/60 p-2"
               >
-                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                <span className="grid size-6 shrink-0 place-items-center rounded-lg bg-muted text-xs font-medium tabular-nums text-muted-foreground">
                   {index + 1}
                 </span>
                 <span className="min-w-0 flex-1 break-words text-sm">
@@ -698,7 +698,7 @@ function YouTubeWatchRoom({
                   aria-label="YouTube next host"
                   value={nextHost}
                   onChange={(event) => setNextHost(event.target.value)}
-                  className="mt-1 min-h-11 w-full rounded-md border bg-background px-2 text-sm"
+                  className="mt-1 min-h-11 w-full rounded-xl border bg-background px-2 text-sm"
                 >
                   <option value="">Choose a viewing member</option>
                   {members
@@ -768,7 +768,7 @@ function YouTubeWatchRoom({
         </p>
       )}
       <div className="space-y-3 border-t pt-4">
-        <h3 className="text-sm font-medium">Your private YouTube lists</h3>
+        <h3 className="font-heading text-base font-semibold">Your private YouTube lists</h3>
         <div className="flex flex-wrap gap-2">
           <input
             aria-label="Name for saved YouTube list"
@@ -776,7 +776,7 @@ function YouTubeWatchRoom({
             onChange={(event) => setListName(event.target.value)}
             maxLength={100}
             placeholder="Movie night"
-            className="min-h-11 min-w-0 flex-1 rounded-md border bg-background px-3 text-sm"
+            className="min-h-11 min-w-0 flex-1 rounded-xl border bg-background px-3 text-sm"
           />
           <Button
             size="sm"
@@ -793,8 +793,8 @@ function YouTubeWatchRoom({
           </Button>
         </div>
         {playlists.map((list) => (
-          <details key={list.id} className="rounded-lg border p-3">
-            <summary className="flex min-h-11 cursor-pointer items-center text-sm">
+          <details key={list.id} className="rounded-2xl bc-card p-3">
+            <summary className="flex min-h-11 cursor-pointer items-center text-sm font-medium">
               {list.name} · {list.videos.length} videos
             </summary>
             <div className="mt-3 flex flex-wrap gap-2">
@@ -835,7 +835,7 @@ function YouTubeWatchRoom({
                 defaultValue={list.name}
                 key={`${list.id}:${list.version}`}
                 maxLength={100}
-                className="mt-1 min-h-11 w-full rounded-md border bg-background px-3 text-sm"
+                className="mt-1 min-h-11 w-full rounded-xl border bg-background px-3 text-sm"
                 onBlur={(event) => {
                   if (
                     event.target.value.trim() &&

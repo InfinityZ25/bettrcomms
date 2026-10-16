@@ -127,23 +127,23 @@ export default function IncomingCall({
 
   return (
     <div className="pointer-events-none fixed inset-x-0 top-3 z-50 flex justify-center [[data-desktop-frame]_&]:top-[52px]">
-      <div className="pointer-events-auto flex items-center gap-3 rounded-2xl border border-border bg-card/95 py-2 pr-2 pl-3 shadow-[0_18px_46px_rgb(0_0_0/0.35)] backdrop-blur">
-        <span className="relative">
+      <div className="pointer-events-auto flex animate-bc-rise items-center gap-3 rounded-full border border-border bc-glass py-2 pr-2 pl-2">
+        <span className="relative grid size-11 shrink-0 place-items-center rounded-full bg-online/10 animate-bc-pulse">
           <Avatar name={name} id={ringing.id} />
-          <span className="absolute -right-0.5 -bottom-0.5 size-2.5 animate-pulse rounded-full bg-primary ring-2 ring-card" />
+          <span className="absolute -right-0.5 -bottom-0.5 size-3 rounded-full bg-online ring-2 ring-popover" />
         </span>
-        <div className="min-w-0">
+        <div className="min-w-0 pr-1">
           <strong className="block max-w-48 truncate text-sm font-semibold">
             {name}
           </strong>
-          <span className="text-[0.65rem] text-muted-foreground">
+          <span className="text-xs text-muted-foreground">
             Incoming call
           </span>
         </div>
         <Button
           size="sm"
           variant="ghost"
-          className="text-destructive"
+          className="h-9 rounded-full bg-dnd/12 px-3.5 text-destructive hover:bg-dnd/22 hover:text-destructive dark:hover:bg-dnd/22"
           onClick={() => {
             settled.current.add(ringing.id);
             setRinging(null);
@@ -153,6 +153,7 @@ export default function IncomingCall({
         </Button>
         <Button
           size="sm"
+          className="h-9 rounded-full px-4 bc-glow"
           onClick={() => {
             settled.current.add(ringing.id);
             setRinging(null);

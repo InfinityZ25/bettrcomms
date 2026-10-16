@@ -3,7 +3,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-2xl);
   background: var(--card);
-  box-shadow: 0 18px 45px #0003;
+  box-shadow: var(--shadow-elevated);
 }
 
 .recording-player__stage {
@@ -13,10 +13,11 @@
   min-height: 260px;
   place-items: center;
   overflow: hidden;
+  /* The stage is a video backdrop, so it stays dark in both themes. */
   background: radial-gradient(
     ellipse at 50% 80%,
-    color-mix(in oklch, var(--card) 93%, var(--foreground)),
-    var(--background) 72%
+    oklch(0.27 0.05 292 / 0.42),
+    oklch(0.13 0.012 274) 72%
   );
 }
 
@@ -38,17 +39,17 @@
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  color: var(--muted-foreground);
+  color: oklch(0.8 0.012 274);
   text-align: center;
 }
 
 .recording-player__empty svg {
-  color: var(--primary);
+  color: var(--brand);
 }
 .recording-player__empty strong {
-  color: var(--foreground);
+  color: oklch(0.97 0.005 274);
   font:
-    600 16px 'Manrope Variable',
+    600 16px 'Bricolage Grotesque Variable',
     sans-serif;
 }
 .recording-player__empty span {
@@ -64,10 +65,14 @@
   gap: 9px;
   padding: 6px 7px 6px 10px;
   border-radius: var(--radius-lg);
-  background: color-mix(in oklch, var(--background) 82%, transparent);
-  backdrop-filter: blur(10px);
+  background: color-mix(in oklch, var(--popover) 86%, transparent);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--foreground) 12%, transparent),
+    var(--shadow-soft);
   color: var(--muted-foreground);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .recording-player__source select {
@@ -92,7 +97,8 @@
 }
 
 .recording-player__track.is-active {
-  background: color-mix(in oklch, var(--accent) 55%, transparent);
+  background: color-mix(in oklch, var(--primary) 9%, transparent);
+  box-shadow: inset 3px 0 0 var(--primary);
 }
 .recording-player__mute {
   display: grid;
@@ -124,7 +130,7 @@
   display: block;
   margin-top: 3px;
   color: var(--muted-foreground);
-  font-size: 9px;
+  font-size: 11px;
 }
 .recording-player__track input,
 .recording-player__transport input {
@@ -132,7 +138,7 @@
   padding: 0;
   border: 0;
   background: transparent;
-  accent-color: var(--brand-accent);
+  accent-color: var(--primary);
 }
 .recording-player__track input {
   width: min(180px, 28vw);
@@ -140,7 +146,7 @@
 .recording-player__volume-value {
   width: 34px;
   color: var(--muted-foreground);
-  font-size: 9px;
+  font-size: 11px;
   text-align: right;
 }
 
@@ -152,7 +158,10 @@
   border-top: 1px solid var(--border);
   color: var(--muted-foreground);
   font-variant-numeric: tabular-nums;
-  font-size: 10px;
+  font-size: 11px;
+  background: color-mix(in oklch, var(--popover) 86%, transparent);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
 }
 
 .recording-player__transport input {
@@ -167,6 +176,8 @@
   border-radius: 50%;
   color: var(--primary-foreground);
   background: var(--primary);
+  box-shadow: var(--glow-brand);
+  transition: background-color 150ms ease, box-shadow 150ms ease;
 }
 .recording-player__play:hover {
   background: color-mix(in oklch, var(--primary) 88%, var(--foreground));
@@ -185,8 +196,15 @@
   background: color-mix(in oklch, var(--muted) 70%, transparent);
   font-size: 11px;
 }
+.recording-player__fullscreen {
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
 .recording-player__fullscreen:hover {
+  border-color: color-mix(in oklch, var(--primary) 40%, var(--border));
   background: var(--accent);
+}
+.recording-player__fullscreen[aria-pressed='true'] {
+  color: var(--primary);
 }
 .recording-player__mixer-toggle {
   display: none;
@@ -194,22 +212,22 @@
 .recording-player__error {
   padding: 10px 16px;
   border-top: 1px solid color-mix(in oklch, var(--destructive) 45%, transparent);
-  color: var(--destructive);
+  color: color-mix(in oklch, var(--destructive) 75%, var(--foreground));
   background: color-mix(in oklch, var(--destructive) 13%, transparent);
   font-size: 11px;
 }
 .recording-player__warnings {
   padding: 10px 16px;
-  border-top: 1px solid color-mix(in oklch, #e4c581 38%, transparent);
-  color: #e4c581;
-  background: color-mix(in oklch, #e4c581 11%, transparent);
+  border-top: 1px solid color-mix(in oklch, var(--amber) 40%, transparent);
+  color: color-mix(in oklch, var(--amber) 55%, var(--foreground));
+  background: color-mix(in oklch, var(--amber) 12%, transparent);
   font-size: 11px;
 }
 .recording-player__warnings p {
   margin: 3px 0;
 }
 .recording-player__warnings strong {
-  color: color-mix(in oklch, #e4c581 75%, var(--foreground));
+  color: var(--foreground);
 }
 
 .recording-player:fullscreen {
@@ -256,6 +274,10 @@
   color: var(--foreground);
   background: color-mix(in oklch, var(--muted) 70%, transparent);
   font-size: 11px;
+}
+
+.recording-player:fullscreen .recording-player__mixer-toggle[aria-pressed='true'] {
+  color: var(--primary);
 }
 
 @media (max-width: 600px) {

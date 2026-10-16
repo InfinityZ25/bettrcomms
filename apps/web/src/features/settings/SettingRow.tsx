@@ -29,9 +29,9 @@ export function SettingRow({
       )}
     >
       <div className="min-w-0">
-        <strong className="block text-sm font-medium">{title}</strong>
+        <strong className="block text-sm font-semibold">{title}</strong>
         {description && (
-          <p className="mt-0.5 max-w-prose text-xs leading-5 text-muted-foreground">
+          <p className="mt-0.5 max-w-prose text-[0.8125rem] leading-5 text-muted-foreground">
             {description}
           </p>
         )}
@@ -62,7 +62,7 @@ export function SettingBlock({
   return (
     <div className="border-b border-border/50 py-3.5 last:border-b-0">
       <div className="flex items-baseline justify-between gap-4">
-        <strong className="text-sm font-medium">{title}</strong>
+        <strong className="text-sm font-semibold">{title}</strong>
         {value !== undefined && (
           <output className="text-xs text-muted-foreground tabular-nums">
             {value}
@@ -70,7 +70,7 @@ export function SettingBlock({
         )}
       </div>
       {description && (
-        <p className="mt-0.5 max-w-prose text-xs leading-5 text-muted-foreground">
+        <p className="mt-0.5 max-w-prose text-[0.8125rem] leading-5 text-muted-foreground">
           {description}
         </p>
       )}

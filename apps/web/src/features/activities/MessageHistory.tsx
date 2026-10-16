@@ -75,7 +75,7 @@ export function MessageHistory({
       )}
       <ol className="space-y-3">
         {versions.map((version, index) => (
-          <li key={version.version} className="rounded-xl border p-4">
+          <li key={version.version} className="rounded-2xl border border-border bg-background/60 p-4">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
               <strong className="text-foreground">
                 {index === 0 ? 'Latest text' : `Version ${version.version}`}
@@ -84,7 +84,7 @@ export function MessageHistory({
                 {new Date(version.changed_at).toLocaleString()}
               </time>
             </div>
-            <p className="whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">
+            <p className="whitespace-pre-wrap text-[0.9375rem] leading-relaxed [overflow-wrap:anywhere]">
               {version.body || 'Attachment only'}
             </p>
           </li>

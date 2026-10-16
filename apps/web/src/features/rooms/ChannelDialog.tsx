@@ -93,14 +93,14 @@ export default function ChannelDialog({
           />
         </label>
         <fieldset className="space-y-2" disabled={busy}>
-          <legend className="mb-2 text-sm font-medium">Channel type</legend>
+          <legend className="mb-2 bc-kicker">Channel type</legend>
           {(['hybrid', 'announcement'] as const).map((value) => (
             <label
               key={value}
-              className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 ${type === value ? 'border-primary bg-primary/5' : 'border-border'}`}
+              className="flex cursor-pointer items-start gap-3 rounded-2xl border border-border bg-card/60 p-4 transition hover:border-foreground/20 has-[:checked]:border-primary/50 has-[:checked]:bg-primary/8 has-[:checked]:shadow-[var(--glow-brand)]"
             >
               <input
-                className="mt-1"
+                className="mt-1 accent-primary"
                 type="radio"
                 name="channel-type"
                 value={value}
@@ -108,12 +108,12 @@ export default function ChannelDialog({
                 onChange={() => setType(value)}
               />
               {value === 'hybrid' ? (
-                <Hash className="mt-0.5 shrink-0" size={18} />
+                <Hash className="mt-0.5 shrink-0 text-primary" size={18} />
               ) : (
-                <Megaphone className="mt-0.5 shrink-0" size={18} />
+                <Megaphone className="mt-0.5 shrink-0 text-violet" size={18} />
               )}
               <span>
-                <strong className="block text-sm">
+                <strong className="block text-sm font-semibold">
                   {value === 'hybrid' ? 'Text and voice' : 'Announcements'}
                 </strong>
                 <span className="text-xs leading-5 text-muted-foreground">
@@ -125,16 +125,16 @@ export default function ChannelDialog({
             </label>
           ))}
         </fieldset>
-        <label className="flex items-start gap-3 rounded-xl border p-3 text-sm">
+        <label className="flex items-start gap-3 rounded-2xl border border-border bg-card/60 p-4 text-sm transition hover:border-foreground/20 has-[:checked]:border-primary/50 has-[:checked]:bg-primary/8 has-[:checked]:shadow-[var(--glow-brand)]">
           <input
             type="checkbox"
-            className="mt-1"
+            className="mt-1 accent-primary"
             checked={isPrivate}
             onChange={(event) => setPrivate(event.target.checked)}
             disabled={busy}
           />
           <span>
-            <strong className="block">Private channel</strong>
+            <strong className="block font-semibold">Private channel</strong>
             <small className="block text-xs leading-5 text-muted-foreground">
               Start with access for the owner and admins. Allow other roles in
               channel settings after creating it.

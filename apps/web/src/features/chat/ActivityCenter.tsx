@@ -65,13 +65,13 @@ export default function ActivityCenter({ user, rooms, onClose, onOpenMessage, on
     } finally { if (!lifetime().aborted) setBusy(''); }
   }
   return <AppDialog open onOpenChange={(open) => { if (!open) onClose(); }} title="Activity" description="Your mentions, replies and pending requests. Opening a message takes you to its conversation." className="flex max-h-[85dvh] flex-col sm:max-w-2xl">
-    <div className="flex flex-wrap gap-1" role="group" aria-label="Activity filters">
-      {filters.map((filter) => <Button key={filter.id} variant={state.filter === filter.id ? 'secondary' : 'ghost'} size="sm" className="min-h-9 phone:min-h-11" aria-pressed={state.filter === filter.id} onClick={() => feed.choose(filter.id)}>{filter.label}</Button>)}
+    <div className="inline-flex max-w-full flex-wrap items-center gap-1 rounded-full bg-muted/60 p-1" role="group" aria-label="Activity filters">
+      {filters.map((filter) => <Button key={filter.id} variant={state.filter === filter.id ? 'secondary' : 'ghost'} size="sm" className="min-h-9 rounded-full px-3.5 text-muted-foreground transition-colors hover:text-foreground aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-[var(--shadow-soft)] aria-pressed:hover:bg-background phone:min-h-11" aria-pressed={state.filter === filter.id} onClick={() => feed.choose(filter.id)}>{filter.label}</Button>)}
       <Button variant="ghost" size="icon-sm" className="ml-auto phone:size-11" aria-label="Refresh activity" disabled={state.loading} onClick={() => void feed.load()}><RefreshCw size={16} /></Button>
     </div>
     {(state.error || actionError) && <p role="alert" className="text-sm text-destructive">{state.error || actionError}<Button variant="ghost" size="sm" onClick={() => { setActionError(''); void feed.load(); }}>Retry</Button></p>}
     <div className="min-h-0 overflow-y-auto overscroll-contain" aria-label="Activity results" aria-busy={state.loading}>
-      {!state.items.length && !state.error && <div className="flex min-h-48 flex-col items-center justify-center gap-3 text-center text-sm text-muted-foreground"><Inbox size={28} /><p role="status">{state.loading ? 'Loading activity…' : 'You are all caught up here.'}</p></div>}
+      {!state.items.length && !state.error && <div className="animate-bc-rise flex min-h-48 flex-col items-center justify-center gap-3 text-center text-sm text-muted-foreground"><Inbox size={28} className="size-12 rounded-2xl bg-muted p-3" /><p role="status">{state.loading ? 'Loading activity…' : 'You are all caught up here.'}</p></div>}
       <ul className="space-y-2">
         {state.items.map((item) => {
           const person = item.message?.author ?? item.friend_request?.sender;
@@ -79,11 +79,11 @@ export default function ActivityCenter({ user, rooms, onClose, onOpenMessage, on
           const name = person?.name ?? item.dm_request?.sender_name ?? 'Member';
           const room = rooms.find((candidate) => candidate.id === item.room_id);
           const Icon = icons[item.kind];
-          return <li key={item.id} className={`rounded-xl border p-3 ${item.read ? 'bg-muted/20' : 'border-primary/30 bg-primary/5'}`}>
+          return <li key={item.id} className={`rounded-xl border px-3 py-2.5 transition-colors hover:bg-accent/60 ${item.read ? 'bg-muted/20' : 'border-primary/30 bg-primary/5'}`}>
             <div className="flex items-start gap-2.5">
               <button type="button" disabled={!personId} aria-label={`View ${name}'s profile`} className="shrink-0 rounded-full focus-visible:ring-2 focus-visible:ring-ring" onClick={() => { if (personId) openUserProfile(personId); }}><Avatar id={personId} name={name} src={person?.avatar_url} /></button>
               <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs"><strong>{name}</strong><span className="inline-flex items-center gap-1 text-muted-foreground"><Icon size={13} />{labels[item.kind]}</span>{!item.read && <span className="rounded bg-primary/15 px-1.5 text-primary">Unread</span>}</div>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs"><strong className="text-sm font-semibold">{name}</strong><span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-muted-foreground"><Icon size={13} />{labels[item.kind]}</span>{!item.read && <span className="rounded-full bg-primary/15 px-2 py-0.5 font-semibold text-primary">Unread</span>}</div>
                 <time className="mt-1 block text-xs text-muted-foreground" dateTime={item.created_at}>{new Date(item.created_at).toLocaleString()}</time>
                 <p className="my-2 line-clamp-3 whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{formatMessagePreview(item.message?.body ?? item.dm_request?.body ?? '') || (item.message?.attachments?.length ? 'Attachment' : '')}</p>
                 {item.message && <Button variant="outline" size="sm" className="phone:min-h-11" disabled={!room} onClick={() => { if (room && item.message) { onClose(); onOpenMessage(room, item.message); } }}>{room ? `Open ${roomLabel(room)}` : 'Conversation unavailable'}</Button>}

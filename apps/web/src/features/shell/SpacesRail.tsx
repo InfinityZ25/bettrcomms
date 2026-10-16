@@ -1,5 +1,4 @@
 import {
-  AudioLines,
   Clapperboard,
   LogOut,
   MessageSquare,
@@ -13,6 +12,7 @@ import {
   Search,
 } from 'lucide-react';
 import { Avatar } from '@/components/avatar';
+import { BrandTile } from '@/components/brand-mark';
 import { useOwnFace } from '@/features/settings/blobatarIdentity';
 import { useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
@@ -46,7 +46,10 @@ import { openUserProfile } from '@/features/settings/ProfileDialog';
 import { CustomStatusText } from '@/features/settings/CustomStatus';
 import { openPersonalInbox } from '@/features/personal/inboxEvents';
 
-const railButton = 'size-10 rounded-2xl min-[481px]:size-11';
+// A circle that firms into a squircle under the pointer — the shape it keeps
+// while it is the current section — with icons drawn at rail size, not row size.
+const railButton =
+  "size-10 rounded-2xl text-muted-foreground transition-[color,background-color,border-radius,box-shadow,transform] duration-200 ease-out min-[481px]:size-11 hover:rounded-xl hover:bg-sidebar-accent hover:text-foreground dark:hover:bg-sidebar-accent [&_svg:not([class*='size-'])]:size-5";
 // Portrait phones: a labelled tab, sized for a thumb rather than a pointer.
 const tabButton =
   'max-[820px]:h-12 max-[820px]:w-auto max-[820px]:min-w-0 max-[820px]:flex-1 max-[820px]:flex-col max-[820px]:gap-0.5 max-[820px]:rounded-xl max-[820px]:px-1';
@@ -119,9 +122,13 @@ export default function SpacesRail({
   return (
     <nav
       className={cn(
-        'space-rail flex w-[54px] shrink-0 flex-col items-center gap-2 bg-sidebar px-1 py-3 min-[821px]:w-[62px] min-[481px]:px-2 min-[1001px]:w-[68px] min-[1001px]:py-4',
-        'max-[820px]:w-full max-[820px]:flex-row max-[820px]:gap-1 max-[820px]:border-t max-[820px]:border-border/60 max-[820px]:px-2 max-[820px]:pt-1 max-[820px]:pb-[max(0.25rem,env(safe-area-inset-bottom))]',
-        collapsed && 'min-[821px]:w-[52px] min-[821px]:px-1',
+        // Transparent on the window frame, so the frame's glow runs behind the
+        // rail unbroken. The gutter is the space between a button and the
+        // rail's outer edge, where the current-section pill sits.
+        'space-rail flex w-[54px] shrink-0 flex-col items-center gap-2 bg-transparent px-1 py-3 [--avatar-ring:var(--sidebar)] min-[821px]:w-[62px] min-[821px]:[--rail-gutter:9px] min-[481px]:px-2 min-[1001px]:w-[68px] min-[1001px]:py-4 min-[1001px]:[--rail-gutter:12px]',
+        'max-[820px]:w-full max-[820px]:flex-row max-[820px]:gap-1 max-[820px]:border-t max-[820px]:border-border max-[820px]:bc-glass max-[820px]:px-2 max-[820px]:pt-1 max-[820px]:pb-[max(0.25rem,env(safe-area-inset-bottom))] max-[820px]:[--avatar-ring:var(--popover)]',
+        collapsed &&
+          'min-[821px]:w-[52px] min-[821px]:px-1 min-[821px]:[--rail-gutter:4px]',
         hidden && 'hidden',
       )}
       aria-label="Sections"
@@ -140,14 +147,21 @@ export default function SpacesRail({
         solid
         current={home && !friendsOpen}
       >
-        <AudioLines />
+        {/* The app icon is the way home. Its bars move while a call is live. */}
+        <BrandTile
+          live={collapsed}
+          className="size-full transition-[border-radius,box-shadow,background-color] duration-200 ease-out group-hover/button:rounded-[24%] group-hover/button:shadow-[var(--glow-brand),0_0_0_4px_color-mix(in_oklch,var(--brand)_16%,transparent),inset_0_1px_0_oklch(1_0_0/0.4),inset_0_-1px_0_oklch(0_0_0/0.12)] max-[820px]:size-5 max-[820px]:bg-transparent max-[820px]:bg-none max-[820px]:text-current max-[820px]:shadow-none max-[820px]:group-hover/button:shadow-none max-[820px]:[&>svg]:size-full"
+        />
       </RailButton>
       <SidebarTrigger
-        className={cn(railButton, 'text-muted-foreground max-[820px]:hidden')}
+        className={cn(
+          railButton,
+          "text-muted-foreground [&_svg:not([class*='size-'])]:size-[18px] max-[820px]:hidden",
+        )}
         aria-label="Toggle sidebar"
         title="Toggle sidebar"
       />
-      <Separator className="my-1 w-6 max-[820px]:hidden" />
+      <Separator className="my-1 w-6 rounded-full bg-border max-[820px]:hidden" />
       {user && <RailButton label="Quick access" tab="Find" onClick={onQuickAccess}><Search /></RailButton>}
 
       <RailButton
@@ -194,7 +208,7 @@ export default function SpacesRail({
                 size="icon"
                 className={cn(
                   railButton,
-                  'rounded-full max-[820px]:h-12 max-[820px]:w-full max-[820px]:flex-col max-[820px]:gap-0.5',
+                  'rounded-full hover:rounded-full aria-expanded:bg-sidebar-accent max-[820px]:h-12 max-[820px]:w-full max-[820px]:flex-col max-[820px]:gap-0.5 max-[820px]:rounded-xl max-[820px]:hover:rounded-xl',
                 )}
                 aria-label={
                   user ? `${user.name} and account options` : 'Account options'
@@ -208,6 +222,7 @@ export default function SpacesRail({
                 id={user.id}
                 src={user.avatar_url}
                 prefer={ownFace}
+                className="rounded-full bg-sidebar-accent/70 ring-2 ring-transparent ring-offset-2 ring-offset-transparent transition-shadow duration-200 group-hover/button:ring-primary/40 group-aria-expanded/button:ring-primary/60 min-[821px]:size-9"
                 presence={
                   ownPresence.userId === user.id
                     ? ownPresence.status === 'invisible'
@@ -228,11 +243,11 @@ export default function SpacesRail({
           <DropdownMenuContent
             align="end"
             side={isMobile ? 'top' : 'left'}
-            className="w-52"
+            className="w-56"
           >
             {/* The label is a group label: Base UI requires it inside a group. */}
             <DropdownMenuGroup>
-              <DropdownMenuLabel className="truncate">
+              <DropdownMenuLabel className="truncate font-heading text-sm font-semibold tracking-normal text-foreground normal-case">
                 {user?.name ?? 'Not signed in'}
               </DropdownMenuLabel>
             </DropdownMenuGroup>
@@ -319,9 +334,16 @@ function RailButton({
             className={cn(
               railButton,
               tabButton,
+              'relative',
+              // The brand tile is the button's face; the button itself only
+              // keeps its focus ring and, as a phone tab, the tab's colours.
               solid &&
-                'shadow-lg shadow-primary/15 max-[820px]:bg-transparent max-[820px]:text-foreground max-[820px]:shadow-none',
-              current && 'bg-accent text-accent-foreground',
+                'bg-transparent shadow-none hover:bg-transparent hover:shadow-none dark:hover:bg-transparent max-[820px]:text-muted-foreground max-[820px]:hover:text-foreground',
+              current &&
+                !solid &&
+                'rounded-xl bg-primary/12 text-primary hover:rounded-xl hover:bg-primary/15 hover:text-primary dark:hover:bg-primary/15',
+              current &&
+                'max-[820px]:bg-primary/10 max-[820px]:text-primary max-[820px]:hover:bg-primary/10 max-[820px]:hover:text-primary',
             )}
             aria-label={label}
             aria-current={current ? 'page' : undefined}
@@ -331,11 +353,28 @@ function RailButton({
       >
         {children}
         <span
-          className="hidden text-[0.6875rem] leading-none font-medium max-[820px]:block"
+          className={cn(
+            'hidden text-[0.6875rem] leading-none font-medium max-[820px]:block',
+            current && 'max-[820px]:font-semibold',
+          )}
           aria-hidden="true"
         >
           {tab}
         </span>
+        {/*
+          Where you are, on the rail's outer edge: a pill that peeks out under
+          the pointer and stands full height beside the current section. A
+          phone tab bar carries it along its top edge instead.
+        */}
+        <span
+          aria-hidden="true"
+          className={cn(
+            'pointer-events-none absolute top-1/2 right-[calc(var(--rail-gutter,0px)*-1)] h-0 w-1 -translate-y-1/2 rounded-l-full bg-primary opacity-0 transition-[height,width,opacity] duration-200 ease-out group-hover/button:h-2.5 group-hover/button:opacity-100',
+            'max-[820px]:-top-1 max-[820px]:right-auto max-[820px]:left-1/2 max-[820px]:h-[3px] max-[820px]:w-0 max-[820px]:-translate-x-1/2 max-[820px]:translate-y-0 max-[820px]:rounded-full max-[820px]:group-hover/button:h-[3px]',
+            current &&
+              'h-6 opacity-100 group-hover/button:h-6 max-[820px]:w-6',
+          )}
+        />
       </TooltipTrigger>
       <TooltipContent side="left">{label}</TooltipContent>
     </Tooltip>

@@ -166,7 +166,7 @@ export default function DesktopFrame({ children }: { children: ReactNode }) {
             <Button
               variant="ghost"
               size="icon"
-              className="size-7 rounded-lg text-muted-foreground"
+              className="size-7 rounded-lg text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
               aria-label="Go back"
               title="Back"
               disabled={!history_.canGoBack}
@@ -177,7 +177,7 @@ export default function DesktopFrame({ children }: { children: ReactNode }) {
             <Button
               variant="ghost"
               size="icon"
-              className="size-7 rounded-lg text-muted-foreground"
+              className="size-7 rounded-lg text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
               aria-label="Go forward"
               title="Forward"
               disabled={!history_.canGoForward}
@@ -217,15 +217,15 @@ function TitlebarSearch() {
         <Search
           size={13}
           aria-hidden="true"
-          className="pointer-events-none absolute start-2.5 text-muted-foreground"
+          className="pointer-events-none absolute start-2.5 z-10 text-muted-foreground"
         />
         <button
           type="button"
           aria-label="Quick access (Ctrl+K)"
           onClick={openQuickAccess}
-          className="h-7 w-full rounded-lg border border-border/70 bg-background/50 ps-8 pe-2.5 text-left text-xs text-muted-foreground hover:bg-background focus-visible:ring-2 focus-visible:ring-ring/40"
+          className="h-7 w-full rounded-lg border border-border bg-background/45 ps-8 pe-1.5 text-left text-xs text-muted-foreground shadow-[var(--highlight)] transition-colors hover:border-foreground/15 hover:bg-background/80 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
         >
-          Go to a friend, channel or setting <span className="float-right">Ctrl K</span>
+          Go to a friend, channel or setting <span className="float-right rounded-md border border-border bg-sidebar-accent px-1.5 text-[0.6875rem] leading-4 font-medium text-muted-foreground">Ctrl K</span>
         </button>
       </div>
     </div>
@@ -248,7 +248,7 @@ function Notifications() {
             <Button
               variant="ghost"
               size="icon"
-              className="size-7 rounded-lg text-muted-foreground"
+              className="size-7 rounded-lg text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
               aria-label="Notifications"
               title="Notifications"
             />

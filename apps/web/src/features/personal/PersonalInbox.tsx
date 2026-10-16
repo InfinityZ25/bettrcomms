@@ -125,7 +125,7 @@ export function PersonalInboxButton({
       >
         <Bell size={16} />
         {count > 0 && (
-          <span className="absolute -right-1 -top-1 flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] text-primary-foreground">
+          <span className="absolute -right-1 -top-1 flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[0.6875rem] font-semibold tabular-nums text-primary-foreground">
             {count > 99 ? '99+' : count}
           </span>
         )}
@@ -139,12 +139,12 @@ export function PersonalInboxButton({
           className="flex max-h-[85dvh] flex-col sm:max-w-2xl"
         >
           <div
-            className="flex shrink-0 gap-2 border-b pb-3"
+            className="inline-flex shrink-0 gap-1 self-start rounded-full bg-muted/60 p-1"
             role="group"
             aria-label="Personal inbox views"
           >
             <Button
-              className="min-h-11"
+              className="min-h-11 rounded-full text-muted-foreground transition-colors hover:text-foreground aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-[var(--shadow-soft)] aria-pressed:hover:bg-background"
               variant={tab === 'reminders' ? 'secondary' : 'ghost'}
               aria-pressed={tab === 'reminders'}
               onClick={() => setTab('reminders')}
@@ -153,7 +153,7 @@ export function PersonalInboxButton({
               Reminders
             </Button>
             <Button
-              className="min-h-11"
+              className="min-h-11 rounded-full text-muted-foreground transition-colors hover:text-foreground aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-[var(--shadow-soft)] aria-pressed:hover:bg-background"
               variant={tab === 'saved' ? 'secondary' : 'ghost'}
               aria-pressed={tab === 'saved'}
               onClick={() => setTab('saved')}
@@ -198,7 +198,7 @@ function SavedItems({ onOpenMessage }: Navigation) {
   return (
     <div className="space-y-3">
       <div
-        className="flex flex-wrap gap-1"
+        className="inline-flex max-w-full flex-wrap gap-1 rounded-full bg-muted/60 p-1"
         role="group"
         aria-label="Saved item filters"
       >
@@ -211,7 +211,7 @@ function SavedItems({ onOpenMessage }: Navigation) {
           <Button
             key={value}
             size="sm"
-            className="min-h-11"
+            className="min-h-11 rounded-full text-muted-foreground transition-colors hover:text-foreground aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-[var(--shadow-soft)] aria-pressed:hover:bg-background"
             variant={kind === value ? 'secondary' : 'ghost'}
             aria-pressed={kind === value}
             onClick={() => setKind(value)}
@@ -268,7 +268,7 @@ function SavedPage({ kind, onOpenMessage }: { kind: string } & Navigation) {
       />
       <ul className="space-y-3" aria-label="Saved items">
         {page.items.map((item) => (
-          <li key={item.id} className="rounded-xl border bg-muted/10 p-3">
+          <li key={item.id} className="rounded-2xl bc-card p-3 transition hover:border-foreground/15">
             <p className="text-xs text-muted-foreground">
               {item.room_name}
               {item.message ? ` · ${item.message.author.name}` : ''} ·{' '}
@@ -348,7 +348,7 @@ function Reminders({
   return (
     <div className="space-y-3">
       <div
-        className="flex flex-wrap gap-1"
+        className="inline-flex max-w-full flex-wrap gap-1 rounded-full bg-muted/60 p-1"
         role="group"
         aria-label="Reminder filters"
       >
@@ -360,7 +360,7 @@ function Reminders({
           <Button
             key={value}
             size="sm"
-            className="min-h-11"
+            className="min-h-11 rounded-full text-muted-foreground transition-colors hover:text-foreground aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-[var(--shadow-soft)] aria-pressed:hover:bg-background"
             variant={filter === value ? 'secondary' : 'ghost'}
             aria-pressed={filter === value}
             onClick={() => setFilter(value)}
@@ -433,7 +433,7 @@ function ReminderPage({
         {page.items.map((item) => (
           <li
             key={item.id}
-            className={`rounded-xl border p-3 ${item.state === 'due' ? 'border-primary/30 bg-primary/5' : 'bg-muted/10'}`}
+            className={`rounded-2xl border p-3 transition-colors hover:bg-accent/60 ${item.state === 'due' ? 'border-primary/30 bg-primary/5' : 'bg-muted/10'}`}
           >
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
               <Clock size={13} />
@@ -545,7 +545,7 @@ function EventReminders({
   }
   return (
     <section className="space-y-2" aria-label="Event reminders">
-      <h3 className="text-xs font-medium text-muted-foreground">
+      <h3 className="bc-kicker">
         Events starting soon
       </h3>
       {error && (
@@ -556,10 +556,10 @@ function EventReminders({
       {events.map((item) => (
         <div
           key={item.id}
-          className="rounded-xl border border-primary/25 bg-primary/5 p-3"
+          className="rounded-2xl border border-primary/25 bg-primary/5 p-3"
         >
-          <h4 className="flex items-center gap-2 text-sm font-medium">
-            <CalendarDays size={15} />
+          <h4 className="font-heading flex items-center gap-2 text-sm font-bold">
+            <CalendarDays size={15} className="size-8 shrink-0 rounded-xl bg-primary/15 p-1.5 text-primary" />
             {item.title}
           </h4>
           <p className="mt-1 text-xs text-muted-foreground">
@@ -615,8 +615,8 @@ function ListFeedback({
     );
   if (empty)
     return (
-      <div className="flex min-h-36 flex-col items-center justify-center gap-3 p-4 text-center text-sm text-muted-foreground">
-        <Inbox size={25} />
+      <div className="animate-bc-rise flex min-h-36 flex-col items-center justify-center gap-3 p-4 text-center text-sm text-muted-foreground">
+        <Inbox size={25} className="size-12 rounded-2xl bg-muted p-3" />
         <p role="status">{loading ? 'Loading your inbox…' : label}</p>
       </div>
     );

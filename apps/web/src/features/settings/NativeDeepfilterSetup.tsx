@@ -79,7 +79,7 @@ export default function NativeDeepfilterSetup({
       </p>
     );
   return (
-    <div className="my-4 rounded-lg border bg-muted/40 p-3 text-xs leading-6 text-muted-foreground">
+    <div className="my-4 rounded-2xl border border-border bg-muted/40 p-4 text-xs leading-6 text-muted-foreground">
       <p>DeepFilterNet is unavailable: {status.detail}</p>
       {info && <p>{info.detail}</p>}
       {info?.supported && (

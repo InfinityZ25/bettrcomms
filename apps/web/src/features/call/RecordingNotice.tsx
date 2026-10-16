@@ -58,29 +58,29 @@ export default function RecordingNotice({
   return (
     <div
       role="status"
-      className="fixed top-3 right-3 z-40 w-[min(22rem,calc(100vw-1.5rem))] rounded-2xl border border-border bg-card/95 p-3 shadow-[0_16px_40px_rgb(0_0_0/0.28)] backdrop-blur [.desktop-frame_&]:top-[52px]"
+      className="fixed top-3 right-3 z-40 w-[min(22rem,calc(100vw-1.5rem))] animate-bc-rise rounded-2xl border border-border bc-glass p-3.5 [.desktop-frame_&]:top-[52px]"
     >
-      <div className="flex items-start gap-2.5">
+      <div className="flex items-start gap-3">
         <span
           aria-hidden="true"
           className={
-            'mt-0.5 grid size-6 shrink-0 place-items-center rounded-full ' +
+            'mt-0.5 grid size-8 shrink-0 place-items-center rounded-full ' +
             (failed
               ? 'bg-destructive/15 text-destructive'
-              : 'bg-primary/15 text-primary')
+              : 'bg-primary/15 text-primary ring-1 ring-primary/25')
           }
         >
           {failed ? <TriangleAlert size={14} /> : <Check size={14} />}
         </span>
         <div className="min-w-0 flex-1">
-          <strong className="block text-[0.8rem] font-semibold">
+          <strong className="block font-heading text-sm font-bold">
             {failed
               ? 'Recording not saved'
               : saved
                 ? 'Recording saved'
                 : 'Saving recording…'}
           </strong>
-          <p className="mt-0.5 text-[0.7rem] leading-5 text-muted-foreground">
+          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
             {failed
               ? 'This is the only copy. Download the tracks before you close the app.'
               : 'On this device, with a mixer for every voice.'}
@@ -90,7 +90,7 @@ export default function RecordingNotice({
           variant="ghost"
           size="icon"
           aria-label="Dismiss"
-          className="-mt-1 -mr-1 size-7 shrink-0 text-muted-foreground"
+          className="-mt-1 -mr-1 size-7 shrink-0 rounded-full text-muted-foreground"
           onClick={dismissResult}
         >
           <X size={15} />
@@ -100,7 +100,7 @@ export default function RecordingNotice({
         <Button
           variant="secondary"
           size="sm"
-          className="mt-2.5 w-full"
+          className="mt-3 w-full"
           onClick={onRecordings}
         >
           Open it

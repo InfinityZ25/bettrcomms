@@ -160,7 +160,7 @@ export default function MediaSettings({ section }: { section: 'voice' | 'recordi
         />}
       />
       {desktop && nvidia && !nvidia.ready && (
-        <div className="my-3 rounded-xl border border-border/60 bg-muted/40 p-3 text-xs leading-6 text-muted-foreground">
+        <div className="my-3 rounded-2xl border border-border bg-muted/40 p-4 text-xs leading-6 text-muted-foreground">
           <p>NVIDIA Audio Effects is unavailable: {nvidia.detail}</p>
           {nvidiaInfo && (
             <>

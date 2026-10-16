@@ -4,26 +4,37 @@
 /* Bars, and that is the whole control. The quality colour is the one thing it
    has to say from across the room; everything it used to spell out in words is
    in the panel behind it. */
+/* A round glass chip whose bars take the colour of the connection. */
 .connection-trigger {
   display: inline-flex;
   align-items: center;
-  padding: 6px;
-  border-radius: var(--radius-lg);
+  justify-content: center;
+  padding: 7px;
+  border-radius: 999px;
   color: var(--muted-foreground);
+  background: color-mix(in oklch, var(--popover) 66%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  backdrop-filter: blur(16px) saturate(1.4);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--foreground) 10%, transparent);
   transition: color 120ms ease, background-color 120ms ease;
 }
-.connection-trigger:hover {
+.connection-trigger:hover,
+.connection-trigger[aria-expanded='true'] {
   color: var(--foreground);
-  background: color-mix(in oklch, var(--muted) 60%, transparent);
+  background: color-mix(in oklch, var(--popover) 92%, transparent);
+}
+.connection-trigger:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 .connection-good > svg {
-  color: var(--primary);
+  color: var(--online);
 }
 .connection-fair > svg {
-  color: #e4c581;
+  color: var(--idle);
 }
 .connection-poor > svg {
-  color: var(--destructive);
+  color: var(--dnd);
 }
 .connection-pending > svg {
   color: var(--muted-foreground);
@@ -36,37 +47,53 @@
   overflow-x: hidden;
   z-index: 90;
   padding: 18px;
-  background: var(--card);
-  border: 1px solid var(--muted);
-  border-radius: 14px;
-  box-shadow: 0 12px 45px #0008;
+  color: var(--popover-foreground);
+  background: color-mix(in oklch, var(--popover) 92%, transparent);
+  -webkit-backdrop-filter: blur(24px) saturate(1.5);
+  backdrop-filter: blur(24px) saturate(1.5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--shadow-elevated), var(--highlight);
 }
 .connection-popover header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 .connection-popover header > strong {
-  font-size: 14px;
+  font-family: var(--font-heading);
+  font-size: 15px;
+  font-weight: 700;
 }
 .connection-popover header button {
-  padding: 3px;
+  display: grid;
+  place-items: center;
+  padding: 5px;
+  border-radius: 999px;
   color: var(--muted-foreground);
+  transition: color 120ms ease, background-color 120ms ease;
+}
+.connection-popover header button:hover {
+  color: var(--foreground);
+  background: color-mix(in oklch, var(--foreground) 9%, transparent);
 }
 .connection-reading {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 8px;
 }
 .connection-reading strong {
-  font-size: 24px;
+  font-family: var(--font-heading);
+  font-size: 30px;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
-  font-weight: 600;
+  font-weight: 800;
+  letter-spacing: -0.02em;
 }
 .connection-reading span {
   color: var(--muted-foreground);
-  font-size: 11px;
+  font-size: 12px;
 }
 .connection-popover > svg {
   display: block;
@@ -77,18 +104,20 @@
 .connection-popover polyline {
   fill: none;
   stroke: var(--primary);
-  stroke-width: 1.8;
+  stroke-width: 2;
   stroke-linejoin: round;
   stroke-linecap: round;
+  filter: drop-shadow(0 0 5px color-mix(in oklch, var(--primary) 55%, transparent));
 }
 .connection-grid {
-  stroke: var(--muted);
+  stroke: var(--border);
+  stroke-dasharray: 3 5;
   fill: none;
   stroke-width: 1;
 }
 .connection-popover dl {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   margin: 12px 0;
   font-size: 12px;
 }
@@ -96,12 +125,16 @@
   display: flex;
   justify-content: space-between;
   gap: 12px;
+  padding: 7px 10px;
+  border-radius: var(--radius-lg);
+  background: color-mix(in oklch, var(--foreground) 5%, transparent);
 }
 .connection-popover dt {
   color: var(--muted-foreground);
 }
 .connection-popover dd {
   margin: 0;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 .connection-peer {
@@ -109,7 +142,7 @@
   justify-content: space-between;
   align-items: center;
   padding: 9px 0;
-  border-top: 1px solid var(--muted);
+  border-top: 1px solid var(--border);
   font-size: 12px;
 }
 .connection-peer > span {
@@ -121,7 +154,7 @@
 .connection-peer small {
   display: block;
   color: var(--muted-foreground);
-  font-size: 10px;
+  font-size: 11px;
   margin-top: 3px;
 }
 .connection-peer > strong {
@@ -135,6 +168,26 @@
   line-height: 1.65;
   margin-top: 12px;
 }
+.connection-popover details {
+  margin-top: 10px;
+  font-size: 12px;
+}
+.connection-popover details > summary {
+  cursor: pointer;
+  color: var(--muted-foreground);
+}
+.connection-popover details > summary:hover {
+  color: var(--foreground);
+}
+.connection-popover code {
+  display: block;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-lg);
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
 .connection-more {
   margin-top: 14px;
   display: flex;
@@ -142,26 +195,65 @@
   align-items: center;
   gap: 8px;
   padding: 9px;
-  border: 1px solid var(--muted);
-  border-radius: 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
   width: 100%;
   color: var(--primary);
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 600;
+  transition: background-color 120ms ease, border-color 120ms ease;
 }
-.camera-tile.is-speaking {
-  border-color: var(--primary);
-  box-shadow:
-    inset 0 0 0 2px var(--primary),
-    0 0 12px color-mix(in oklch, var(--primary) 13%, transparent);
+.connection-more:hover {
+  border-color: color-mix(in oklch, var(--primary) 40%, var(--border));
+  background: color-mix(in oklch, var(--primary) 10%, transparent);
+}
+.connection-more:focus-visible,
+.connection-popover header button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/*
+  Speaking: the tile lights up in the live green, with a glow that breathes
+  slowly while the voice lasts. The ring is drawn twice — the tile's own edge
+  and a frame laid over the picture — because a playing video covers the
+  inside of the first one. The gallery's own shadow is more specific than
+  `.camera-tile`, hence the second selector.
+*/
+.camera-tile.is-speaking,
+.call-workspace .stage[data-has-share] .camera-tile.is-speaking {
+  border-color: var(--online);
+  box-shadow: var(--glow-live);
+  animation: call-speaking-glow 2.4s ease-in-out infinite;
 }
 .camera-tile.is-speaking::after {
   content: '';
   position: absolute;
   inset: 0;
-  border: 2px solid var(--primary);
+  border: 2px solid var(--online);
   border-radius: inherit;
   pointer-events: none;
   z-index: 3;
+  box-shadow: inset 0 0 26px -8px color-mix(in oklch, var(--online) 60%, transparent);
+}
+@keyframes call-speaking-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px color-mix(in oklch, var(--online) 55%, transparent),
+      0 0 16px -6px color-mix(in oklch, var(--online) 45%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 3px color-mix(in oklch, var(--online) 80%, transparent),
+      0 0 34px -4px color-mix(in oklch, var(--online) 72%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .camera-tile.is-speaking,
+  .call-workspace .stage[data-has-share] .camera-tile.is-speaking {
+    animation: none;
+  }
 }
 .speaking-label {
   position: absolute;

@@ -73,7 +73,7 @@ export function PollsPanel({
       </div>
       {creating && (
         <form
-          className="space-y-3 rounded-xl border bg-muted/20 p-4"
+          className="space-y-3 rounded-2xl bc-card p-4"
           onSubmit={(event) => {
             event.preventDefault();
             void create();
@@ -170,8 +170,8 @@ export function PollsPanel({
         </form>
       )}
       {!polls.length && (
-        <div className="flex min-h-40 flex-col items-center justify-center gap-3 text-center text-muted-foreground">
-          <BarChart3 size={26} />
+        <div className="animate-bc-rise flex min-h-40 flex-col items-center justify-center gap-3 text-center text-muted-foreground">
+          <BarChart3 size={26} className="size-11 rounded-2xl bg-violet/15 p-2.5 text-violet" />
           <p className="text-sm">Pick a game, a time or a place together.</p>
         </div>
       )}
@@ -179,12 +179,12 @@ export function PollsPanel({
         const total = poll.counts.reduce((sum, count) => sum + count, 0);
         const closed = pollClosed(poll);
         return (
-          <article key={poll.id} className="space-y-3 rounded-xl border p-4">
+          <article key={poll.id} className="space-y-3 rounded-2xl bc-card p-4">
             <div className="flex items-start justify-between gap-3">
-              <h3 className="font-medium [overflow-wrap:anywhere]">
+              <h3 className="font-heading text-base font-semibold [overflow-wrap:anywhere]">
                 {poll.question}
               </h3>
-              <span className="rounded bg-muted px-2 py-1 text-xs text-muted-foreground">
+              <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
                 {closed ? 'Closed' : 'Open'}
               </span>
             </div>
@@ -195,13 +195,13 @@ export function PollsPanel({
                   type="button"
                   disabled={busy || closed}
                   aria-pressed={poll.vote === index}
-                  className={`relative flex min-h-11 w-full overflow-hidden rounded-lg border px-3 py-2 text-left text-sm transition-colors disabled:cursor-default ${poll.vote === index ? 'border-primary' : 'hover:border-primary/50'}`}
+                  className={`relative flex min-h-11 w-full overflow-hidden rounded-xl border px-3 py-2 text-left text-sm transition-[color,background-color,border-color] duration-150 ease-out disabled:cursor-default ${poll.vote === index ? 'border-primary/50 bg-primary/10' : 'hover:border-primary/50 hover:bg-accent/40'}`}
                   onClick={() =>
                     void act(`/polls/${poll.id}/vote`, { option: index }, 'PUT')
                   }
                 >
                   <span
-                    className="absolute inset-y-0 left-0 bg-primary/10"
+                    className="absolute inset-y-0 left-0 bg-primary/20"
                     style={{
                       width: `${total ? (poll.counts[index] / total) * 100 : 0}%`,
                     }}

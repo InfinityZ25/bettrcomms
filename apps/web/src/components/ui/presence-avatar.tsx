@@ -24,11 +24,11 @@ export type PresenceState = "online" | "away" | "idle" | "dnd" | "offline" | "th
  * somebody is, and a loading indicator says that in a way no colour does.
  */
 const PRESENCE: Record<PresenceState, { dot?: string; label: string }> = {
-  online: { dot: "bg-emerald-500", label: "online" },
-  away: { dot: "bg-amber-500", label: "away" },
-  idle: { dot: "bg-amber-500", label: "away" },
-  dnd: { dot: "bg-red-500", label: "do not disturb" },
-  offline: { dot: "bg-zinc-600", label: "offline" },
+  online: { dot: "bg-online", label: "online" },
+  away: { dot: "bg-idle", label: "away" },
+  idle: { dot: "bg-idle", label: "away" },
+  dnd: { dot: "bg-dnd", label: "do not disturb" },
+  offline: { dot: "bg-offline", label: "offline" },
   thinking: { label: "thinking" },
 };
 
@@ -156,9 +156,11 @@ export function PresenceAvatar({
         same component reads as an avatar with a status light in one list and as
         a status light with an avatar behind it in the next.
 
-        `ring-background` rather than a border: the ring is the page showing
-        through, which separates the dot from whatever it overlaps without
-        introducing a colour that has to be chosen per surface.
+        A ring rather than a border: the ring is the page showing through,
+        which separates the dot from whatever it overlaps without introducing
+        a colour that has to be chosen per surface. It is the page background
+        unless an ancestor names its own surface with
+        `[--avatar-ring:var(--sidebar)]` (or `--card`, `--popover`).
       */}
       {state === "thinking" ? (
         <span
@@ -199,7 +201,7 @@ export function PresenceAvatar({
         <span
           aria-hidden="true"
           className={cn(
-            "ring-background absolute top-0 right-0 h-[26%] w-[26%] rounded-full ring-2",
+            "absolute top-0 right-0 h-[26%] w-[26%] rounded-full ring-2 ring-[color:var(--avatar-ring,var(--background))]",
             presence.dot,
           )}
         />
@@ -214,7 +216,7 @@ export function PresenceAvatar({
       {unread ? (
         <span
           aria-hidden="true"
-          className="bg-primary text-primary-foreground ring-background absolute -right-1 -bottom-1 grid h-5 min-w-5 place-items-center rounded-full px-1 font-mono text-[0.65rem] leading-none ring-2"
+          className="absolute -right-1 -bottom-1 grid h-5 min-w-5 place-items-center rounded-full bg-primary px-1 text-[0.6875rem] leading-none font-semibold text-primary-foreground tabular-nums ring-2 ring-[color:var(--avatar-ring,var(--background))]"
         >
           {/* Past two digits the badge stops being a count and starts being a
               layout problem. Anything over 99 is "lots", which is all the

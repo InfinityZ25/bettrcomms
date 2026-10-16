@@ -63,8 +63,8 @@ export default function ProfileSettings({ user }: { user: User }) {
   return (
     <div className="space-y-5">
       <SettingsSection id="settings-profile" title="Your profile">
-        <div className="flex flex-wrap items-center gap-4 border-b pb-5">
-          <Avatar name={user.name} id={user.id} src={user.avatar_url} size="lg" className="size-20" />
+        <div className="flex flex-wrap items-center gap-4 border-b pt-2 pb-5">
+          <Avatar name={user.name} id={user.id} src={user.avatar_url} size="lg" className="size-20 rounded-full bc-brand-gradient p-[2px]" />
           <div className="min-w-0 flex-1 space-y-2">
             <div className="flex flex-wrap gap-2">
               <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => fileInput.current?.click()}><Camera size={15} /> Change photo</Button>
@@ -84,7 +84,7 @@ export default function ProfileSettings({ user }: { user: User }) {
             }, 'Profile photo updated.');
           }} />
         </div>
-        <form onSubmit={save} className="space-y-4 pt-5">
+        <form onSubmit={save} className="space-y-4 pt-5 pb-2">
           <div className="space-y-1.5">
             <label htmlFor="profile-display-name" className="text-sm font-medium">Display name</label>
             <Input id="profile-display-name" autoComplete="nickname" value={draft.name} maxLength={80} required disabled={busy} onChange={(event) => edit('name', event.target.value)} />
@@ -96,10 +96,10 @@ export default function ProfileSettings({ user }: { user: User }) {
           </div>
           <div className="space-y-1.5">
             <label htmlFor="profile-bio" className="text-sm font-medium">About you</label>
-            <textarea id="profile-bio" value={draft.bio} maxLength={160} disabled={busy} onChange={(event) => edit('bio', event.target.value)} className="min-h-24 w-full resize-y rounded-lg border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+            <textarea id="profile-bio" value={draft.bio} maxLength={160} disabled={busy} onChange={(event) => edit('bio', event.target.value)} className="min-h-24 w-full resize-y rounded-xl border border-input bg-background/70 px-3 py-2 text-sm text-foreground outline-none transition-[color,box-shadow,background-color,border-color] focus-visible:border-ring focus-visible:bg-background focus-visible:ring-3 focus-visible:ring-ring/20" />
             <p className="text-right text-xs text-muted-foreground">{[...draft.bio].length}/160</p>
           </div>
-          {changedElsewhere && <div className="rounded-lg border p-3 text-xs leading-5">Your profile was updated. <button type="button" className="font-medium underline" disabled={busy} onClick={reset}>Load the current profile</button> before saving to avoid replacing another device's edits.</div>}
+          {changedElsewhere && <div className="rounded-xl border border-border bg-muted/40 p-3 text-xs leading-5">Your profile was updated. <button type="button" className="font-medium underline" disabled={busy} onClick={reset}>Load the current profile</button> before saving to avoid replacing another device's edits.</div>}
           {dirty && validation && <p className="text-xs text-destructive">{validation}</p>}
           <div className="flex flex-wrap items-center gap-2">
             <Button type="submit" disabled={busy || !dirty || Boolean(validation)}>{busy ? 'Saving…' : 'Save profile'}</Button>

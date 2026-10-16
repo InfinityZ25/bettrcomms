@@ -140,12 +140,12 @@ function QuietHoursForm({ quiet }: { quiet: QuietHours }) {
   }
   return (
     <section
-      className="space-y-3 rounded-xl border p-4"
+      className="space-y-3 rounded-2xl bc-card p-4"
       aria-label="Quiet hours"
     >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="inline-flex items-center gap-2 text-sm font-medium">
+          <h3 className="font-heading inline-flex items-center gap-2 text-base font-bold">
             <Moon size={16} />
             Quiet hours
           </h3>
@@ -173,7 +173,7 @@ function QuietHoursForm({ quiet }: { quiet: QuietHours }) {
             type="button"
             variant={draft.weekdays.includes(index) ? 'secondary' : 'outline'}
             size="sm"
-            className="min-h-11 min-w-11"
+            className="min-h-11 min-w-11 rounded-full aria-pressed:bg-primary/15 aria-pressed:text-primary aria-pressed:ring-1 aria-pressed:ring-primary/40 aria-pressed:hover:bg-primary/20"
             disabled={busy}
             aria-pressed={draft.weekdays.includes(index)}
             onClick={() =>

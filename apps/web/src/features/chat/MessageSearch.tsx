@@ -223,15 +223,15 @@ export default function MessageSearch({
             {(fromDate || throughDate || kind) && <Button type="button" size="sm" variant="ghost" className="min-h-11" onClick={() => { setFromDate(''); setThroughDate(''); setKind(''); invalidated(); }}>Clear date and type</Button>}
           </div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            <label className="grid min-w-0 gap-1 text-xs" htmlFor="search-from-date">From<input id="search-from-date" type="date" aria-label="Search from date" className="min-h-11 min-w-0 rounded-lg border bg-background p-2" value={fromDate} onChange={(event) => { setFromDate(event.target.value); invalidated(); }} /></label>
-            <label className="grid min-w-0 gap-1 text-xs" htmlFor="search-through-date">Through<input id="search-through-date" type="date" aria-label="Search through date" className="min-h-11 min-w-0 rounded-lg border bg-background p-2" value={throughDate} onChange={(event) => { setThroughDate(event.target.value); invalidated(); }} /></label>
-            <label className="col-span-2 grid min-w-0 gap-1 text-xs sm:col-span-1" htmlFor="search-content-type">Content<select id="search-content-type" aria-label="Search content type" className="min-h-11 min-w-0 rounded-lg border bg-background p-2" value={kind} onChange={(event) => { setKind(event.target.value); invalidated(); }}><option value="">All content</option><option value="link">Links</option><option value="image">Images</option><option value="video">Videos</option><option value="audio">Audio</option><option value="file">Files</option></select></label>
+            <label className="grid min-w-0 gap-1 text-xs" htmlFor="search-from-date">From<input id="search-from-date" type="date" aria-label="Search from date" className="min-h-11 min-w-0 rounded-xl border bg-background p-2" value={fromDate} onChange={(event) => { setFromDate(event.target.value); invalidated(); }} /></label>
+            <label className="grid min-w-0 gap-1 text-xs" htmlFor="search-through-date">Through<input id="search-through-date" type="date" aria-label="Search through date" className="min-h-11 min-w-0 rounded-xl border bg-background p-2" value={throughDate} onChange={(event) => { setThroughDate(event.target.value); invalidated(); }} /></label>
+            <label className="col-span-2 grid min-w-0 gap-1 text-xs sm:col-span-1" htmlFor="search-content-type">Content<select id="search-content-type" aria-label="Search content type" className="min-h-11 min-w-0 rounded-xl border bg-background p-2" value={kind} onChange={(event) => { setKind(event.target.value); invalidated(); }}><option value="">All content</option><option value="link">Links</option><option value="image">Images</option><option value="video">Videos</option><option value="audio">Audio</option><option value="file">Files</option></select></label>
           </div>
           <div className="flex flex-wrap gap-2">
             <label className="flex min-w-0 flex-1 flex-col gap-1 text-xs">
               Conversation
               <select
-                className="rounded-lg border bg-background p-2"
+                className="rounded-xl border bg-background p-2"
                 aria-label="Search conversation"
                 value={scope}
                 onChange={(event) => {
@@ -254,7 +254,7 @@ export default function MessageSearch({
             <label className="flex min-w-0 flex-1 flex-col gap-1 text-xs">
               Author
               <select
-                className="rounded-lg border bg-background p-2"
+                className="rounded-xl border bg-background p-2"
                 aria-label="Search author"
                 value={author}
                 onChange={(event) => {
@@ -278,7 +278,7 @@ export default function MessageSearch({
                 value={personQuery}
                 maxLength={200}
                 placeholder="Find a person by name or email"
-                className="min-w-0 flex-1 rounded-lg border bg-background px-3 py-2 text-xs"
+                className="min-w-0 flex-1 rounded-xl border bg-background px-3 py-2 text-xs"
                 onChange={(event) => setPersonQuery(event.target.value)}
               />
               <Button
@@ -294,7 +294,7 @@ export default function MessageSearch({
           )}
         </form>
         {busy && (
-          <p role="status" className="text-xs">
+          <p role="status" className="text-xs text-muted-foreground">
             Searching…
           </p>
         )}
@@ -320,7 +320,7 @@ export default function MessageSearch({
             />
           ))}
           {page && !page.messages.length && (
-            <p className="p-4 text-sm text-muted-foreground">
+            <p className="animate-bc-rise p-4 text-center text-sm text-muted-foreground">
               No messages found.
             </p>
           )}
@@ -352,7 +352,7 @@ function SearchResult({
     <button
       type="button"
       onClick={onClick}
-      className="mb-2 block w-full rounded-xl border p-3 text-left hover:bg-muted"
+      className="mb-2 block w-full rounded-xl border px-3 py-2.5 text-left transition-colors hover:bg-accent/60"
     >
       <span className="block text-xs text-muted-foreground">
         {room ? roomLabel(room) : 'Conversation'} · {message.author.name} ·{' '}
@@ -362,7 +362,7 @@ function SearchResult({
         {formatMessagePreview(message.body)}
       </span>
       {!!message.attachments?.length && <span className="mt-1 block truncate text-xs text-muted-foreground">{message.attachments.map((attachment) => attachment.filename).join(' · ')}</span>}
-      <span className="mt-1 block text-xs text-primary">Go to message</span>
+      <span className="mt-1 block text-xs font-medium text-primary">Go to message</span>
     </button>
   );
 }

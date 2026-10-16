@@ -130,15 +130,15 @@ export default function PendingAttachmentCard({
   return (
     <div
       className={cn(
-        'relative min-w-0 overflow-hidden rounded-xl border bg-background',
-        failed && 'border-destructive/40',
+        'relative min-w-0 overflow-hidden rounded-xl border border-border bg-background/70 shadow-[var(--highlight)] transition-colors',
+        failed && 'border-destructive/40 bg-destructive/5',
       )}
       aria-label={`Pending attachment ${attachment.filename}`}
     >
       {kind === 'image' && url && !previewError && (
         <button
           type="button"
-          className="block h-28 w-full bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring"
+          className="block h-28 w-full bg-muted/40 transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
           aria-label={`Preview ${attachment.filename}`}
           onClick={() => {
             setExpanded(true);
@@ -166,7 +166,7 @@ export default function PendingAttachmentCard({
         />
       )}
       {(kind === 'file' || !url || previewError) && (
-        <div className="flex h-16 items-center justify-center bg-muted/30 text-muted-foreground">
+        <div className="flex h-16 items-center justify-center bg-muted/50 text-primary">
           <Icon aria-hidden size={24} />
         </div>
       )}
@@ -175,7 +175,7 @@ export default function PendingAttachmentCard({
           <Icon size={14} className="mt-0.5 shrink-0 text-muted-foreground" />
           <span
             title={attachment.filename}
-            className="min-w-0 flex-1 truncate text-xs font-medium"
+            className="min-w-0 flex-1 truncate text-xs font-semibold"
           >
             {attachment.voice_note
               ? `Voice note · ${voiceNoteTime(attachment.duration_ms ?? 0)}`
@@ -185,6 +185,7 @@ export default function PendingAttachmentCard({
             type="button"
             variant="ghost"
             size="icon-xs"
+            className="rounded-md text-muted-foreground hover:bg-destructive/12 hover:text-destructive"
             disabled={!removable}
             aria-label={`Remove ${attachment.filename}`}
             onClick={onRemove}
@@ -192,7 +193,7 @@ export default function PendingAttachmentCard({
             <X />
           </Button>
         </div>
-        <div className="text-[0.65rem] text-muted-foreground">
+        <div className="text-[0.6875rem] text-muted-foreground tabular-nums">
           {attachmentSize(attachment.size_bytes)}
           {previewError && ' · Preview unavailable; file can still be sent'}
         </div>
@@ -202,7 +203,7 @@ export default function PendingAttachmentCard({
           </Button>
         )}
         {previewLoading && (
-          <p role="status" className="text-[0.65rem] text-muted-foreground">
+          <p role="status" className="text-[0.6875rem] text-muted-foreground">
             Loading preview…
           </p>
         )}
@@ -232,8 +233,9 @@ export default function PendingAttachmentCard({
         <p
           role={failed ? 'alert' : 'status'}
           className={cn(
-            'flex items-start gap-1 text-[0.65rem]',
+            'flex items-start gap-1 text-[0.6875rem] tabular-nums',
             failed ? 'text-destructive' : 'text-muted-foreground',
+            ready && !failed && '[&>svg]:text-primary',
           )}
         >
           {ready && <Check size={12} className="shrink-0" />}
@@ -245,7 +247,7 @@ export default function PendingAttachmentCard({
               max={100}
               value={attachment.progress ?? 0}
               aria-label={`Upload progress for ${attachment.filename}`}
-              className="h-1 w-full accent-primary"
+              className="h-1.5 w-full appearance-none overflow-hidden rounded-full bg-muted accent-primary [&::-moz-progress-bar]:rounded-full [&::-moz-progress-bar]:bg-primary [&::-webkit-progress-bar]:bg-muted [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-primary [&::-webkit-progress-value]:transition-[width]"
             />
             <Button type="button" variant="ghost" size="xs" onClick={onCancel}>
               Cancel upload

@@ -121,7 +121,7 @@ export default function CallToolbar({
             Focus call rather than on top of them. */}
         <DropdownMenuContent align="end" className="w-56">
           <DropdownMenuGroup>
-            <DropdownMenuLabel className="py-1.5 text-[0.65rem] tracking-wide uppercase">
+            <DropdownMenuLabel className="py-1.5 text-[0.6875rem] font-semibold tracking-[0.08em] uppercase">
               Arrangement
             </DropdownMenuLabel>
           </DropdownMenuGroup>
@@ -149,7 +149,7 @@ export default function CallToolbar({
             <>
               <DropdownMenuSeparator />
               <DropdownMenuGroup>
-                <DropdownMenuLabel className="py-1.5 text-[0.65rem] tracking-wide uppercase">
+                <DropdownMenuLabel className="py-1.5 text-[0.6875rem] font-semibold tracking-[0.08em] uppercase">
                   Cameras
                 </DropdownMenuLabel>
               </DropdownMenuGroup>

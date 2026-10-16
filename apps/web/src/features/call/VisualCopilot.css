@@ -8,37 +8,44 @@
 .copilot-settings p { max-width: 75ch; line-height: 1.5; }
 .copilot-permissions label { display: flex; gap: 8px; align-items: center; }
 .copilot-pointer-surface { touch-action: none; }
-.copilot-sent-point { position: absolute; width: 24px; height: 24px; border: 2px solid var(--primary); background: color-mix(in oklch, var(--primary) 25%, transparent); border-radius: 50%; transform: translate(-50%,-50%); pointer-events: none; }
+.copilot-sent-point { position: absolute; width: 24px; height: 24px; border: 2px solid var(--brand); background: color-mix(in oklch, var(--brand) 25%, transparent); box-shadow: var(--glow-brand); border-radius: 50%; transform: translate(-50%,-50%); pointer-events: none; }
 .copilot-sent-point.is-laser { width: 12px; height: 12px; background: #ff665f; border-color: #fff; }
 .copilot-settings p, .copilot-permissions p { color: var(--muted-foreground); font-size: 12px; }
+/* What the sharer allows: a glass card in the corner, a pill when folded. */
 .copilot-permissions {
   position: relative;
   align-self: flex-start;
   max-width: 100%;
   max-height: 230px;
-  padding: 4px 10px;
+  padding: 6px 12px;
   overflow: auto;
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: color-mix(in oklch, var(--card) 70%, transparent);
+  border-radius: var(--radius-xl);
+  background: color-mix(in oklch, var(--popover) 86%, transparent);
+  -webkit-backdrop-filter: blur(22px) saturate(1.5);
+  backdrop-filter: blur(22px) saturate(1.5);
+  box-shadow: var(--shadow-elevated), var(--highlight);
   font-size: 12px;
 }
 .copilot-permissions:not([open]) {
-  border-color: transparent;
-  background: none;
-  color: var(--muted-foreground);
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--popover) 74%, transparent);
+  box-shadow: var(--shadow-soft), var(--highlight);
+  color: var(--foreground);
 }
 .copilot-permissions:not([open]) summary {
   padding: 2px 0;
 }
-.copilot-permissions summary { display: flex; align-items: center; gap: 8px; cursor: pointer; }
-.copilot-permissions summary::after { content: '⌄'; margin-left: auto; padding-left: 12px; }
+.copilot-permissions summary { display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 600; }
+.copilot-permissions summary > svg { color: var(--primary); }
+.copilot-permissions summary::after { content: '⌄'; margin-left: auto; padding-left: 12px; color: var(--muted-foreground); }
 .copilot-permissions[open] summary::after { transform: rotate(180deg); }
 .copilot-permissions summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
 .copilot-permission-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 8px; margin: 12px 0; }
-.copilot-overlay-status { margin: 4px 0; padding: 6px 12px; font-size: 12px; color: var(--primary); background: var(--card); border-radius: 6px; }
-.copilot-permissions fieldset { display: grid; gap: 8px; min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 8px 12px 12px; }
+.copilot-overlay-status { margin: 4px 0; padding: 5px 12px; font-size: 12px; font-weight: 500; color: var(--primary); background: color-mix(in oklch, var(--popover) 84%, transparent); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); box-shadow: inset 0 0 0 1px var(--border); border-radius: 999px; }
+.copilot-permissions fieldset { display: grid; gap: 8px; min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-lg); background: color-mix(in oklch, var(--foreground) 4%, transparent); padding: 8px 12px 12px; }
 .copilot-permissions legend { padding: 0 4px; font-weight: 600; }
+.copilot-permissions input[type=checkbox] { accent-color: var(--primary); }
 .copilot-permissions label { justify-content: flex-start; width: auto; }
 .copilot-permissions input[type=checkbox], .copilot-settings input[type=checkbox] { width: 16px; height: 16px; flex: 0 0 16px; margin: 0; }
 .copilot-viewer { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
@@ -53,9 +60,11 @@
   max-width: calc(100% - 20px);
   padding: 6px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: color-mix(in oklch, var(--background) 78%, transparent);
-  backdrop-filter: blur(10px);
+  border-radius: var(--radius-xl);
+  background: color-mix(in oklch, var(--popover) 80%, transparent);
+  -webkit-backdrop-filter: blur(20px) saturate(1.5);
+  backdrop-filter: blur(20px) saturate(1.5);
+  box-shadow: var(--shadow-elevated), var(--highlight);
   font-size: 11px;
   opacity: 0.75;
   transition: opacity 140ms ease;
@@ -77,10 +86,10 @@
   line-height: 1.5;
   color: var(--muted-foreground);
 }
-.copilot-presentation { font-size: 10px; }
+.copilot-presentation { font-size: 11px; }
 .copilot-tools { display: flex; flex-wrap: wrap; gap: 4px; }
 .copilot-toolbar button { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; }
-.copilot-toolbar button[aria-pressed=true] { background: var(--primary); color: var(--card); }
+.copilot-toolbar button[aria-pressed=true] { background: var(--brand); color: var(--brand-foreground); box-shadow: var(--glow-brand); }
 .copilot-toolbar span { color: var(--foreground); }
 .copilot-pointer-surface { position: absolute; inset: 0; pointer-events: auto; cursor: crosshair; }
 .copilot-frozen { width: 100%; height: 100%; object-fit: contain; background: var(--background); }
@@ -95,7 +104,7 @@
 .copilot-cards { position: absolute; z-index: 35; max-width: calc(100% - 24px); max-height: 65%; overflow: auto; display: grid; gap: 8px; pointer-events: auto; }
 .copilot-cards--top-right { top: 52px; right: 12px; }.copilot-cards--top-left { top: 52px; left: 12px; }
 .copilot-cards--bottom-right { bottom: 72px; right: 12px; }.copilot-cards--bottom-left { bottom: 72px; left: 12px; }
-.copilot-card { padding: 8px; border: 1px solid var(--ring); border-radius: 10px; background: color-mix(in oklch, var(--card) 96%, transparent); box-shadow: 0 8px 28px #0008; }
-.copilot-card header { display: flex; justify-content: space-between; align-items: center; font-size: 12px; gap: 8px; }
-.copilot-card img { display: block; width: 100%; border-radius: 6px; margin: 6px 0; }
-.copilot-card small { font-size: 10px; color: var(--primary); }
+.copilot-card { padding: 8px; border: 1px solid color-mix(in oklch, var(--brand) 40%, var(--border)); border-radius: var(--radius-xl); background: color-mix(in oklch, var(--popover) 92%, transparent); -webkit-backdrop-filter: blur(20px) saturate(1.5); backdrop-filter: blur(20px) saturate(1.5); box-shadow: var(--shadow-elevated), var(--highlight); }
+.copilot-card header { display: flex; justify-content: space-between; align-items: center; font-size: 12px; gap: 8px; padding-left: 4px; }
+.copilot-card img { display: block; width: 100%; border-radius: var(--radius-lg); margin: 6px 0; }
+.copilot-card small { display: block; padding-inline: 4px; font-size: 11px; color: var(--muted-foreground); }

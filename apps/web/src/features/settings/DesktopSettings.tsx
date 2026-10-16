@@ -91,7 +91,7 @@ export default function DesktopSettings() {
     <SettingRow as="div" title="Check updates automatically" description="Check at most every six hours while the app is running. Downloads and restart require your action."
       control={<Switch aria-label="Check desktop updates automatically" checked={update?.automatic ?? false} disabled={busy || !update?.available}
         onCheckedChange={enabled => { void perform(() => setAutomaticUpdates(enabled), setUpdate); }} />} />
-    <div className="space-y-3 rounded-lg border border-border p-4">
+    <div className="space-y-3 rounded-2xl border border-border bg-background/60 p-4">
       <p className="text-sm font-medium">BetterComms {update?.currentVersion || 'desktop'}{update?.version ? ' → ' + update.version : ''}</p>
       <p role="status" className="text-sm text-muted-foreground">{update?.detail || 'Loading update status…'}</p>
       {update?.notes && <p className="whitespace-pre-wrap text-sm text-muted-foreground">{update.notes}</p>}

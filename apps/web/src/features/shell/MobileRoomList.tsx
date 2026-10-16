@@ -94,14 +94,14 @@ export default function MobileRoomList({
       className="mobile-room-list flex min-h-0 flex-1 flex-col bg-background"
       aria-label={messages ? 'Messages' : 'Rooms'}
     >
-      <header className="flex shrink-0 items-center gap-3 px-5 pt-5 pb-3">
-        <h1 className="min-w-0 flex-1 text-2xl font-semibold tracking-tight">
+      <header className="flex shrink-0 items-center gap-2 px-5 pt-5 pb-4">
+        <h1 className="min-w-0 flex-1 font-heading text-3xl font-extrabold tracking-tight">
           {messages ? 'Messages' : 'Rooms'}
         </h1>
         <Button
           variant="secondary"
           size="icon"
-          className="size-11 rounded-full"
+          className="size-11 rounded-full border-transparent bg-primary text-primary-foreground shadow-[var(--glow-brand)] hover:bg-primary/90"
           aria-label={messages ? 'Find friends' : 'Create room'}
           onClick={messages ? onFriends : onCreate}
         >
@@ -111,7 +111,7 @@ export default function MobileRoomList({
           <Button
             variant="ghost"
             size="icon"
-            className="size-11 rounded-full"
+            className="size-11 rounded-full text-muted-foreground hover:text-foreground"
             aria-label="Search all messages"
             onClick={() => openMessageSearch()}
           >
@@ -123,7 +123,7 @@ export default function MobileRoomList({
         <div className="mx-4 mb-3">
           <Button
             variant="secondary"
-            className="h-11 w-full"
+            className="h-11 w-full rounded-2xl"
             onClick={messages ? onCreateGroup : onJoinInvitation}
           >
             {messages ? 'New group message' : 'Join with invitation'}
@@ -141,7 +141,7 @@ export default function MobileRoomList({
       )}
       <label className="relative mx-4 mb-3 block shrink-0">
         <Search
-          className="pointer-events-none absolute top-3 left-3 text-muted-foreground"
+          className="pointer-events-none absolute top-3 left-3.5 text-muted-foreground"
           size={20}
         />
         <input
@@ -152,7 +152,7 @@ export default function MobileRoomList({
           }}
           aria-label={messages ? 'Filter conversations' : 'Filter rooms'}
           placeholder={messages ? 'Find a conversation' : 'Find a room'}
-          className="h-11 pl-10!"
+          className="h-11 rounded-2xl bg-card/70 pl-11!"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
@@ -192,17 +192,19 @@ export default function MobileRoomList({
                     onError={onError}
                   >
                     <button
-                      className="flex min-h-20 w-full items-center gap-3 rounded-2xl px-3 py-3 pr-14 text-left hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+                      className="flex min-h-20 w-full items-center gap-3.5 rounded-2xl px-3 py-3 pr-14 text-left transition-colors hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring active:bg-accent"
                       aria-label={roomLabel(room)}
                       onClick={() => onSelect(room)}
                     >
                       <Avatar
                         name={roomLabel(room)}
                         id={room.id}
-                        className="size-11 shrink-0"
+                        className="size-12 shrink-0"
                       />
                       <span className="min-w-0 flex-1">
-                        <strong className="block truncate text-base font-semibold">
+                        <strong
+                          className={`block truncate text-base ${count > 0 ? 'font-bold' : 'font-semibold'}`}
+                        >
                           {preferences[room.id]?.favorite && (
                             <Star
                               size={13}
@@ -212,7 +214,9 @@ export default function MobileRoomList({
                           )}
                           {roomLabel(room)}
                         </strong>
-                        <span className="mt-1 flex items-center gap-1.5 truncate text-sm text-muted-foreground">
+                        <span
+                          className={`mt-1 flex items-center gap-1.5 truncate text-sm ${known && callers.length > 0 ? 'font-medium text-foreground dark:text-online' : 'text-muted-foreground'}`}
+                        >
                           {known && callers.length ? (
                             <>
                               <Headphones size={14} />
@@ -233,7 +237,7 @@ export default function MobileRoomList({
                       </span>
                       {count > 0 && (
                         <span
-                          className="grid min-w-6 place-items-center rounded-full bg-primary px-1.5 py-0.5 text-xs font-semibold text-primary-foreground"
+                          className="grid h-6 min-w-6 place-items-center rounded-full bg-primary px-1.5 text-xs font-bold text-primary-foreground tabular-nums animate-bc-pop"
                           aria-label={`${count} unread messages`}
                         >
                           {count > 99 ? '99+' : count}
@@ -259,9 +263,9 @@ export default function MobileRoomList({
             })}
           </ul>
         ) : (
-          <div className="flex min-h-64 flex-col items-center justify-center gap-3 px-5 text-center">
-            <Mascot className="w-20" />
-            <h2 className="text-lg font-semibold">
+          <div className="flex min-h-64 flex-col items-center justify-center gap-3 px-5 text-center animate-bc-rise">
+            <Mascot className="w-20 animate-bc-float drop-shadow-[0_14px_28px_color-mix(in_oklch,var(--violet)_40%,transparent)]" />
+            <h2 className="font-heading text-xl font-bold tracking-tight">
               {query
                 ? 'No matches'
                 : archived && messages

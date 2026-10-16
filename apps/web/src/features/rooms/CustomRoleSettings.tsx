@@ -52,7 +52,7 @@ export default function CustomRoleSettings({
     <section className="space-y-4" aria-label="Custom room roles">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h3 className="text-sm font-semibold">Custom roles</h3>
+          <h3 className="font-heading text-base font-semibold">Custom roles</h3>
           <p className="mt-1 max-w-lg text-xs leading-5 text-muted-foreground">
             Give your group recognizable roles and default channel permissions.
             Owner, admin and moderator authority stays with the built-in roles.
@@ -68,14 +68,14 @@ export default function CustomRoleSettings({
         </Button>
       </div>
       {roles.length ? (
-        <ul className="divide-y rounded-lg border px-3">
+        <ul className="space-y-2">
           {roles.map((role) => (
-            <li key={role.id} className="flex items-center gap-3 py-3">
+            <li key={role.id} className="flex items-center gap-3 rounded-2xl bc-card px-4 py-3">
               <span
                 className="size-3 shrink-0 rounded-full"
                 style={{ backgroundColor: role.color }}
               />
-              <span className="min-w-0 flex-1 truncate text-sm font-medium">
+              <span className="min-w-0 flex-1 truncate text-sm font-semibold">
                 {role.name}
               </span>
               <Button
@@ -98,7 +98,7 @@ export default function CustomRoleSettings({
           ))}
         </ul>
       ) : (
-        <p className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">
+        <p className="rounded-2xl border border-dashed border-border bg-background/60 p-6 text-center text-sm text-muted-foreground animate-bc-rise">
           Create a role for your gaming squad, guests or regulars, then assign
           it in Members.
         </p>
@@ -233,7 +233,7 @@ function RoleEditor({
             Color
             <input
               type="color"
-              className="block h-9 w-14 cursor-pointer rounded-md border bg-background p-1"
+              className="block h-9 w-14 cursor-pointer rounded-xl border border-input bg-background p-1"
               value={color}
               onChange={(event) => setColor(event.target.value)}
               disabled={busy}
@@ -241,13 +241,13 @@ function RoleEditor({
           </label>
         </div>
         <fieldset className="space-y-3" disabled={busy}>
-          <legend className="mb-2 text-sm font-semibold">
+          <legend className="mb-2 bc-kicker">
             Default channel permissions
           </legend>
           {channelPermissions.map((permission) => (
             <label
               key={permission.key}
-              className="flex items-center justify-between gap-4 text-sm"
+              className="flex items-center justify-between gap-4 rounded-xl px-3 py-2 text-sm hover:bg-accent/50"
             >
               <span>
                 {permission.label}
@@ -257,7 +257,7 @@ function RoleEditor({
               </span>
               <select
                 aria-label={`Default ${permission.label.toLowerCase()}`}
-                className="h-9 rounded-md border bg-background px-2"
+                className="h-9 w-auto rounded-xl border border-input bg-background px-2.5 shadow-xs"
                 value={
                   permissions[permission.key] === undefined
                     ? 'inherit'

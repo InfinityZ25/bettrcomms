@@ -106,10 +106,10 @@ function MemberRoleEditor({
             roles.map((role) => (
               <label
                 key={role.id}
-                className="flex cursor-pointer items-center gap-3 rounded-lg border p-3 text-sm"
+                className="flex cursor-pointer items-center gap-3 rounded-2xl border border-border bg-card/60 p-3.5 text-sm transition hover:border-foreground/20 has-[:checked]:border-primary/50 has-[:checked]:bg-primary/8"
               >
                 <input
-                  type="checkbox"
+                  type="checkbox" className="accent-primary"
                   checked={selectedRoles.has(role.id)}
                   onChange={(event) =>
                     setSelected((current) =>

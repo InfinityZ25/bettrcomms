@@ -168,10 +168,10 @@ export default function QuickAccessResults({
         key={`${revision}:${retry}`}
         onLoaded={(value) => setLoaded({ revision, retry, value })}
       />
-      <Autocomplete.InputGroup className="mx-4 mb-3 flex min-h-12 shrink-0 items-center gap-3 rounded-2xl border border-input bg-input/30 px-3 focus-within:ring-2 focus-within:ring-ring">
+      <Autocomplete.InputGroup className="group/search mx-4 mb-4 flex min-h-14 shrink-0 items-center gap-3 rounded-2xl border border-border bg-background/60 px-4 shadow-[var(--highlight)] transition-[border-color,box-shadow] duration-150 focus-within:border-ring/60 focus-within:ring-4 focus-within:ring-ring/15">
         <Search
           aria-hidden="true"
-          className="size-4 shrink-0 text-muted-foreground"
+          className="size-5 shrink-0 text-muted-foreground transition-colors group-focus-within/search:text-primary"
         />
         <Autocomplete.Input
           ref={inputRef}
@@ -179,7 +179,7 @@ export default function QuickAccessResults({
           aria-describedby="quick-access-help"
           placeholder="Friend, channel or setting…"
           maxLength={120}
-          className="h-12 w-full min-w-0 bg-transparent text-base outline-none placeholder:text-muted-foreground sm:text-sm"
+          className="h-14 w-full min-w-0 rounded-none border-0 bg-transparent px-0 py-0 text-base shadow-none outline-none placeholder:text-muted-foreground hover:border-0 focus-visible:border-0 focus-visible:bg-transparent focus-visible:ring-0 sm:text-[0.9375rem]"
         />
       </Autocomplete.InputGroup>
       <Separator />
@@ -203,10 +203,10 @@ export default function QuickAccessResults({
         </div>
       )}
       <div
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2"
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pt-1 pb-2"
         aria-busy={busy}
       >
-        <Autocomplete.Empty className="px-3 py-10 text-center text-sm text-muted-foreground empty:py-0">
+        <Autocomplete.Empty className="px-3 py-12 text-center text-sm text-muted-foreground empty:py-0">
           No destinations found. Try a name, room or setting.
         </Autocomplete.Empty>
         <Autocomplete.List aria-label="Quick access destinations">
@@ -214,9 +214,9 @@ export default function QuickAccessResults({
             <Autocomplete.Group
               key={group.value}
               items={group.items}
-              className="pb-2"
+              className="pb-1.5"
             >
-              <Autocomplete.GroupLabel className="px-3 pt-3 pb-1.5 text-[0.6875rem] font-semibold tracking-wide text-muted-foreground uppercase">
+              <Autocomplete.GroupLabel className="px-3 pt-3 pb-2 text-[0.6875rem] leading-4 font-semibold tracking-[0.08em] text-muted-foreground uppercase">
                 {group.value}
               </Autocomplete.GroupLabel>
               <Autocomplete.Collection>
@@ -226,11 +226,11 @@ export default function QuickAccessResults({
                     value={item}
                     disabled={busy}
                     onClick={() => void choose(item)}
-                    className="group flex min-h-14 cursor-pointer items-center gap-3 rounded-xl px-3 py-2 outline-none data-highlighted:bg-accent data-highlighted:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-60"
+                    className="group relative flex min-h-14 cursor-pointer items-center gap-3 rounded-xl px-3 py-2 outline-none transition-colors duration-100 before:absolute before:top-1/2 before:left-0 before:h-0 before:w-[3px] before:-translate-y-1/2 before:rounded-full before:bg-primary before:transition-[height] before:duration-150 data-highlighted:bg-primary/10 data-highlighted:text-foreground data-highlighted:before:h-6 data-disabled:pointer-events-none data-disabled:opacity-60"
                   >
                     <DestinationIcon item={item} />
                     <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                      <span className="truncate text-sm font-medium">
+                      <span className="truncate text-sm font-semibold">
                         {item.label}
                       </span>
                       <span className="truncate text-xs text-muted-foreground">
@@ -240,12 +240,12 @@ export default function QuickAccessResults({
                     {item.favorite && (
                       <Star
                         aria-label="Favorite"
-                        className="size-3.5 shrink-0 text-muted-foreground"
+                        className="size-3.5 shrink-0 fill-primary text-primary"
                       />
                     )}
                     <ArrowUpRight
                       aria-hidden="true"
-                      className="size-4 shrink-0 text-muted-foreground opacity-0 group-data-highlighted:opacity-100"
+                      className="size-4 shrink-0 text-primary opacity-0 transition-[opacity,transform] duration-150 group-data-highlighted:translate-x-0.5 group-data-highlighted:-translate-y-0.5 group-data-highlighted:opacity-100"
                     />
                   </Autocomplete.Item>
                 )}
@@ -271,9 +271,9 @@ export default function QuickAccessResults({
       <Separator />
       <p
         id="quick-access-help"
-        className="shrink-0 px-5 py-3 text-xs text-muted-foreground"
+        className="shrink-0 px-5 py-3 text-xs leading-6 text-muted-foreground [&>kbd]:mx-px [&>kbd]:inline-grid [&>kbd]:h-5 [&>kbd]:min-w-5 [&>kbd]:place-items-center [&>kbd]:rounded-md [&>kbd]:border [&>kbd]:border-b-2 [&>kbd]:border-border [&>kbd]:bg-sidebar-accent [&>kbd]:px-1 [&>kbd]:align-middle [&>kbd]:font-sans [&>kbd]:text-[0.6875rem] [&>kbd]:leading-none [&>kbd]:font-semibold [&>kbd]:text-foreground"
       >
-        ↑ ↓ to move · Enter to open · Esc to close
+        <kbd>↑</kbd> <kbd>↓</kbd> to move · <kbd>Enter</kbd> to open · <kbd>Esc</kbd> to close
       </p>
     </Autocomplete.Root>
   );
@@ -335,11 +335,23 @@ function DestinationIcon({ item }: { item: QuickItem }) {
             ? Users
             : ArrowUpRight;
   return (
+    // Each kind of destination keeps its own colour, so a long list sorts
+    // itself by eye before it is read.
     <span
-      className="grid size-9 shrink-0 place-items-center rounded-xl bg-muted text-muted-foreground"
+      className={`grid size-9 shrink-0 place-items-center rounded-xl transition-transform duration-150 group-data-highlighted:scale-105 ${
+        item.group === 'Settings'
+          ? 'bg-violet/15 text-violet'
+          : item.group === 'Channels'
+            ? 'bg-primary/15 text-primary'
+            : item.group === 'Conversations'
+              ? 'bg-cyan/15 text-cyan'
+              : item.group === 'Friends' || item.group === 'Rooms'
+                ? 'bg-amber/15 text-amber'
+                : 'bg-muted text-muted-foreground'
+      }`}
       aria-hidden="true"
     >
-      <Icon className="size-4" />
+      <Icon className="size-[1.125rem]" />
     </span>
   );
 }

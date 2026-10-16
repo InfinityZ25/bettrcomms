@@ -55,8 +55,8 @@ export default function JoinInvitation({ token, onClose, onJoined }: { token: st
   return <AppDialog open className="max-h-[calc(100dvh-2rem)] overflow-y-auto" onOpenChange={(open) => { if (!open && !busy) onClose(); }} title="Room invitation" description="Review the room and choose whether to join.">
     <div className="mt-5 space-y-4">
       {loading && <p role="status" className="text-sm text-muted-foreground">Checking invitation…</p>}
-      {preview && <div className="rounded-xl border p-4">
-        <strong className="block break-words">{preview.room_name}</strong>
+      {preview && <div className="rounded-2xl bc-card p-5">
+        <strong className="block break-words font-heading text-lg font-bold">{preview.room_name}</strong>
         <p className="mt-2 text-sm text-muted-foreground">{preview.already_member ? 'You already belong to this room.' : 'Joining gives you access to this room and its message history.'}</p>
         {preview.expires_at && <p className="mt-2 text-xs text-muted-foreground">Expires {new Date(preview.expires_at).toLocaleString()}</p>}
       </div>}

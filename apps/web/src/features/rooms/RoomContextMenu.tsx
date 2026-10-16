@@ -126,7 +126,7 @@ export default function RoomContextMenu({
         <ContextMenuTrigger className="w-full">{children}</ContextMenuTrigger>
         <ContextMenuContent>
           <ContextMenuGroup>
-            <ContextMenuLabel className="truncate font-medium text-foreground">
+            <ContextMenuLabel className="truncate text-sm font-semibold tracking-normal text-foreground normal-case">
               {label}
             </ContextMenuLabel>
           </ContextMenuGroup>

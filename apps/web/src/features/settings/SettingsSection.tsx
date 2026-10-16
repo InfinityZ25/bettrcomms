@@ -21,7 +21,7 @@ export function SettingsSection({
   children: ReactNode;
 }) {
   return (
-    <section id={id} className="scroll-mt-6" aria-labelledby={`${id}-title`}>
+    <section id={id} className="scroll-mt-6 rounded-2xl bc-card px-4 py-3" aria-labelledby={`${id}-title`}>
       <h3 id={`${id}-title`} className="sr-only">
         {title}
       </h3>

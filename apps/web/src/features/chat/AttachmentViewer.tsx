@@ -103,7 +103,7 @@ export default function AttachmentViewer({
           </Button>
         )}
       </div>
-      <div className="flex min-h-40 max-h-[70dvh] min-w-0 items-start justify-center overflow-auto rounded-xl bg-muted/40 p-2">
+      <div className="flex min-h-40 max-h-[70dvh] min-w-0 items-start justify-center overflow-auto rounded-2xl border border-border bg-background/70 p-2">
         {loading && (
           <p
             role="status"
@@ -135,7 +135,7 @@ export default function AttachmentViewer({
             src={url}
             alt={filename}
             className={cn(
-              'shrink-0 rounded-md object-contain',
+              'shrink-0 rounded-xl object-contain shadow-[var(--shadow-soft)]',
               actualSize ? 'max-h-none max-w-none' : 'max-h-[65dvh] max-w-full',
             )}
             onError={onMediaError}
@@ -150,7 +150,7 @@ export default function AttachmentViewer({
             playsInline
             preload="metadata"
             aria-label={filename}
-            className="max-h-[65dvh] max-w-full rounded-md"
+            className="max-h-[65dvh] max-w-full rounded-xl"
             onError={onMediaError}
           />
         )}

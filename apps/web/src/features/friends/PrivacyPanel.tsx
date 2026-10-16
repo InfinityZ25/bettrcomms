@@ -49,11 +49,11 @@ export default function PrivacyPanel({ userId, onOpenRoom, onError }: {
 
   return (
     <section className="space-y-3 border-t pt-4" aria-label="Message privacy">
-      <h3 className="flex items-center gap-2 text-sm font-semibold"><ShieldCheck size={16} /> Message privacy</h3>
+      <h3 className="flex items-center gap-2 font-heading text-base font-semibold"><ShieldCheck size={16} /> Message privacy</h3>
       {!privacy ? <p className="text-xs text-muted-foreground">Loading privacy settings…</p> : (
-        <label className="flex items-center gap-2 text-xs">
+        <label className="flex items-center gap-3 rounded-2xl border border-border bg-card/60 p-4 text-sm transition hover:border-foreground/20 has-[:checked]:border-primary/50 has-[:checked]:bg-primary/8 has-[:checked]:shadow-[var(--glow-brand)]">
           <input
-            type="checkbox"
+            type="checkbox" className="accent-primary"
             checked={privacy.allow_dm_requests}
             disabled={busy}
             onChange={(event) => {
@@ -68,8 +68,8 @@ export default function PrivacyPanel({ userId, onOpenRoom, onError }: {
       )}
       <p className="text-xs text-muted-foreground">Requests show text only. You decide whether to open a direct conversation.</p>
       {requests.filter((request) => request.receiver_id === userId).map((request) => (
-        <div key={request.id} className="rounded-xl border p-3 text-xs">
-          <strong>{request.sender_name}</strong>
+        <div key={request.id} className="rounded-2xl bc-card p-4 text-xs">
+          <strong className="text-sm font-semibold">{request.sender_name}</strong>
           <p className="my-2 whitespace-pre-wrap [overflow-wrap:anywhere]">{request.body}</p>
           <div className="flex flex-wrap gap-2">
             <Button size="sm" disabled={busy} onClick={() => void action(async () => {
@@ -86,16 +86,16 @@ export default function PrivacyPanel({ userId, onOpenRoom, onError }: {
         </div>
       ))}
       {requests.filter((request) => request.sender_id === userId).map((request) => (
-        <div key={request.id} className="flex items-center justify-between gap-2 text-xs">
+        <div key={request.id} className="flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-xs hover:bg-accent/50">
           <span>Request to {request.receiver_name} pending</span>
           <Button size="sm" variant="ghost" disabled={busy} onClick={() => void action(async () => {
             await api(`/dm-requests/${request.id}/decline`, {}, 'POST');
           })}>Cancel</Button>
         </div>
       ))}
-      {!!privacy?.blocked.length && <h4 className="text-xs font-semibold">Blocked people</h4>}
+      {!!privacy?.blocked.length && <h4 className="bc-kicker">Blocked people</h4>}
       {privacy?.blocked.map((person) => (
-        <div key={person.id} className="flex items-center justify-between gap-2 text-xs">
+        <div key={person.id} className="flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-xs hover:bg-accent/50">
           <span>{person.name}</span>
           <Button size="sm" variant="ghost" disabled={busy} onClick={() => void action(async () => {
             await api(`/privacy/blocks/${person.id}`, undefined, 'DELETE');

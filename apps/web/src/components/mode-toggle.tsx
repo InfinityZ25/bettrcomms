@@ -17,7 +17,7 @@ export function ModeToggle() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        render={<Button variant="ghost" size="icon" className="relative" aria-label="Toggle theme" />}
+        render={<Button variant="ghost" size="icon" className="relative border-border bg-background/60" aria-label="Toggle theme" />}
       >
         <AnimatePresence mode="wait" initial={false}>
           <motion.span
@@ -34,9 +34,9 @@ export function ModeToggle() {
         <span className="sr-only">Toggle theme</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => setTheme('light')}>Light</DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setTheme('dark')}>Dark</DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setTheme('system')}>System</DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setTheme('light')}><Sun aria-hidden="true" />Light</DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setTheme('dark')}><Moon aria-hidden="true" />Dark</DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setTheme('system')}><SunMoon aria-hidden="true" />System</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
