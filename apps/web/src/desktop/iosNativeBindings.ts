@@ -14,8 +14,8 @@ export const iosNativeBinding = {
   screenSender: 0xBC160109,
 } as const;
 
-export async function callIOSNative(method: number): Promise<void> {
-  await Call.ByID(method, nativePageToken());
+export async function callIOSNative(method: number, ...args: unknown[]): Promise<void> {
+  await Call.ByID(method, nativePageToken(), ...args);
 }
 
 export async function callIOSMetaSender<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {
