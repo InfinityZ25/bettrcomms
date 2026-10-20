@@ -18,6 +18,33 @@ The conversation column contains message history, composer, replies, reactions, 
 
 Core entities are `User`, `Friendship`, `DirectConversation`, `Community`, `CommunityMember`, `Role`, `Channel`, `Message`, `Attachment`, `ReadCursor`, `CallSession`, `CallParticipant`, and `DeviceSession`. Stable UUIDs are generated server-side. Every mutable row has created/updated timestamps; destructive moderation and permission changes produce audit events.
 
+## Personal characters
+
+Each account has a consistent procedural character alongside its profile photo.
+The photo remains an identity cue in messages and call footers. The character
+has its own role in live presence: prominent in camera-off call tiles, smaller
+in a reserved camera-on footer, beside typing activity, and available for
+explicit Wave, Nod and Celebrate gestures. Profile settings offer a small
+saved choice of account-derived variants and colors while preserving the
+original appearance by default. This is not a global visual uniqueness promise.
+
+True call arrivals can trigger a brief greeting. Initial participant snapshots,
+transport resume and layout changes must not repeat arrivals. Speaking movement
+reuses the call's existing voice state. Conversation and thread gestures remain
+ephemeral, authorized posting actions; they do not become messages, unread items
+or replayable history. A device-local motion control and system reduced-motion
+preference keep characters still while retaining textual activity cues. Movement
+is event-driven and bounded; resource budgets require measured acceptance.
+
+The account's own character can also live on screen as a companion: it stands
+on the composer, a call's controls or the content canvas, reacts to
+conversation and call events, and can be booped, petted and thrown. Its
+temperament derives from the character seed. It must draw no frames while idle,
+stop entirely while the app is unfocused or hidden, and remain optional per
+device. A friend's gesture may show that friend's character as a short local
+visitor; nothing about the visit is persisted or sent.
+See `PERSONAL_CHARACTERS.md` for the current contract and local checks.
+
 ## System architecture
 
 The web client uses React, TypeScript, Vite, and shadcn/ui. State is split between server state (query cache), durable client preferences, and transient call state. The Go API owns authorization, persistence, signaling, presence fanout, and TURN credentials. PostgreSQL is authoritative. WorkOS supplies authentication; the API validates issuer, audience, signature, expiry, and organization context where applicable, then maps the external subject to an internal user.

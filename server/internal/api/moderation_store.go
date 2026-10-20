@@ -227,14 +227,14 @@ func (s *PostgresStore) RoomModeration(room, actor, after string) ([]RoomBan, []
 	if after != "" {
 		cursor = after
 	}
-	rows, err := s.DB.Query(context.Background(), `SELECT u.id::text,u.email,u.name,u.avatar_url,u.created_at,b.reason,b.created_at FROM community_bans b JOIN users u ON u.id=b.user_id WHERE b.community_id=(SELECT community_id FROM rooms WHERE id=$1) AND ($2::uuid IS NULL OR b.user_id>$2::uuid) ORDER BY b.user_id LIMIT 51`, room, cursor)
+	rows, err := s.DB.Query(context.Background(), `SELECT u.id::text,u.email,u.name,u.avatar_url,u.created_at,u.character_variant,u.character_hue,b.reason,b.created_at FROM community_bans b JOIN users u ON u.id=b.user_id WHERE b.community_id=(SELECT community_id FROM rooms WHERE id=$1) AND ($2::uuid IS NULL OR b.user_id>$2::uuid) ORDER BY b.user_id LIMIT 51`, room, cursor)
 	if err != nil {
 		return nil, nil, "", err
 	}
 	bans := []RoomBan{}
 	for rows.Next() {
 		var b RoomBan
-		if err = rows.Scan(&b.User.ID, &b.User.Email, &b.User.Name, &b.User.AvatarURL, &b.User.CreatedAt, &b.Reason, &b.CreatedAt); err != nil {
+		if err = rows.Scan(&b.User.ID, &b.User.Email, &b.User.Name, &b.User.AvatarURL, &b.User.CreatedAt, &b.User.Character.Variant, &b.User.Character.Hue, &b.Reason, &b.CreatedAt); err != nil {
 			rows.Close()
 			return nil, nil, "", err
 		}

@@ -41,11 +41,42 @@ export default function SignInPanel({
           <BrandTile className="size-12" />
           <Wordmark />
         </span>
-        <strong className="block font-heading text-xl font-extrabold tracking-tight bc-gradient-text">Your people are one sign-in away.</strong>
+        <strong className="block font-heading text-xl font-extrabold tracking-tight bc-gradient-text">{devAuth ? 'Enter your local workspace.' : 'Your people are one sign-in away.'}</strong>
         <p className="mt-1.5 text-sm text-muted-foreground">
-          Sign in securely to create rooms and invite your friends.
+          {devAuth ? 'Use the local form to test the app on this computer. A WorkOS account is not required.' : 'Sign in securely to create rooms and invite your friends.'}
         </p>
       </div>
+      {devAuth && (
+        <form
+          aria-label="Local workspace sign-in"
+          className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2"
+          onSubmit={onDevSignIn}
+        >
+          <span className="text-xs font-medium text-muted-foreground sm:col-span-2">Local development</span>
+          <Input
+            className="min-w-0"
+            aria-label="Your name"
+            placeholder="Your name"
+            autoComplete="name"
+            value={name}
+            onChange={(event) => onNameChange(event.target.value)}
+            required
+          />
+          <Input
+            className="min-w-0"
+            aria-label="Your email"
+            type="email"
+            placeholder="you@example.test"
+            autoComplete="email"
+            value={email}
+            onChange={(event) => onEmailChange(event.target.value)}
+            required
+          />
+          <Button type="submit" className="bc-glow min-h-11 sm:col-span-2 sm:justify-self-start" disabled={busy}>
+            Enter local workspace <ArrowRight size={17} />
+          </Button>
+        </form>
+      )}
       {waiting ? (
         <div
           className="flex flex-col gap-1.5 min-[821px]:items-end"
@@ -75,8 +106,9 @@ export default function SignInPanel({
           </Button>
         </div>
       ) : (
-        <div className="flex flex-col gap-1.5 min-[821px]:items-end">
-          <Button className="bc-glow" onClick={onSignIn}>
+        <div className={devAuth ? 'flex w-full flex-col items-start gap-2 border-t border-border pt-4' : 'flex flex-col gap-1.5 min-[821px]:items-end'}>
+          {devAuth && <span className="text-xs text-muted-foreground">Or use a WorkOS account, when configured.</span>}
+          <Button variant={devAuth ? 'secondary' : 'default'} className={devAuth ? undefined : 'bc-glow'} onClick={onSignIn}>
             Continue with WorkOS <ArrowRight size={17} />
           </Button>
           {signInStatus?.state === 'failed' && (
@@ -85,36 +117,6 @@ export default function SignInPanel({
             </span>
           )}
         </div>
-      )}
-      {devAuth && (
-        <form
-          className="grid w-full grid-cols-1 items-center gap-2.5 pb-2.5 min-[821px]:flex min-[821px]:flex-wrap"
-          onSubmit={onDevSignIn}
-        >
-          <span className="my-1 text-[0.6875rem] text-muted-foreground min-[821px]:my-0 min-[821px]:shrink-0">
-            Local development
-          </span>
-          <Input
-            className="min-w-20 min-[821px]:flex-1"
-            aria-label="Your name"
-            placeholder="Your name"
-            value={name}
-            onChange={(event) => onNameChange(event.target.value)}
-            required
-          />
-          <Input
-            className="min-w-20 min-[821px]:flex-1"
-            aria-label="Your email"
-            type="email"
-            placeholder="you@example.test"
-            value={email}
-            onChange={(event) => onEmailChange(event.target.value)}
-            required
-          />
-          <Button type="submit" variant="secondary" disabled={busy}>
-            Enter local workspace
-          </Button>
-        </form>
       )}
     </div>
   );

@@ -102,23 +102,13 @@ export function PresenceAvatar({
    * still lines up on the layout size rather than on how wide each creature
    * happens to be.
    *
-   * The two branches exist because the adapter's props are a union: `animate`
-   * turns the element from an `<img>` into an `<svg>`, and passing
-   * `animate={undefined}` to satisfy both arms is exactly the thing the union
-   * is shaped to refuse.
+   * Availability figures stay static; event movement belongs to Companion.
    */
   const face = (
     <Blobatar
       name={name}
       {...blobatar}
-      /*
-       * One element for every state now, where this used to be two. The branch
-       * existed because `animate` decides whether the adapter renders an `<img>`
-       * or an `<svg>`, and the props union follows the element: passing
-       * `animate={undefined}` satisfies neither arm. With the prop constant
-       * there is nothing left to branch on, and the expression rides on top.
-       */
-      animate="always"
+      animate={undefined}
       expression={state === "thinking" ? thinking : blobatar?.expression}
       // Decorative: the accessible name is on the wrapper, and a picture that
       // announced itself here would be read twice.

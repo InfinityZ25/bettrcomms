@@ -44,6 +44,7 @@ import { hasDesktopCapability } from '@/desktop/capabilities';
 import { errorMessage } from '@/lib/errors';
 import { readStored, writeStored } from '@/lib/storage';
 import { createCallPeerId } from './callPeerId';
+import { CallCompanions, EMPTY_CALL_COMPANIONS } from './callCompanions';
 import type {
   CallPresence,
   JoinMode,
@@ -117,6 +118,7 @@ export function useCallSession({
   const [remote, setRemote] = useState<RemoteTrack[]>([]);
   const [peers, setPeers] = useState<Record<string, string>>({});
   const [names, setNames] = useState<Record<string, string>>({});
+  const [companions, setCompanions] = useState(EMPTY_CALL_COMPANIONS);
   const [recording, setRecording] = useState(false);
   const [clipping, setClipping] = useState(false);
   const clippingRef = useRef(false);
@@ -307,6 +309,7 @@ export function useCallSession({
     setRemote([]);
     setPeers({});
     setNames({});
+    setCompanions(EMPTY_CALL_COMPANIONS);
     setRemoteRecording({});
     setRemotePresence({});
     setCallPlaybackDeafened(false);
@@ -657,6 +660,8 @@ export function useCallSession({
       });
       assertCurrent();
       const peerId = createCallPeerId();
+      const callCompanions = new CallCompanions(peerId, user.id);
+      setCompanions(EMPTY_CALL_COMPANIONS);
       const query = new URLSearchParams({
         peer_id: peerId,
         join_mode: joinMode,
@@ -737,6 +742,7 @@ export function useCallSession({
       connection.addEventListener(
         'peers',
         (event) => {
+          setCompanions(callCompanions.snapshotPeers(event.detail.peerIds, event.detail.identities));
           for (const id of event.detail.peerIds) {
             media.addPeer(id);
             setPeers((current) =>
@@ -768,7 +774,8 @@ export function useCallSession({
       connection.addEventListener(
         'peer-joined',
         (event) => {
-          const { peerId: id, name } = event.detail;
+          const { peerId: id, userId, name } = event.detail;
+          setCompanions(callCompanions.joinPeer(id, userId));
           media.addPeer(id);
           setPeers((current) =>
             current[id] === undefined
@@ -783,6 +790,7 @@ export function useCallSession({
         'peer-left',
         (event) => {
           const { peerId: id } = event.detail;
+          setCompanions(callCompanions.leavePeer(id));
           const without = <T>(record: Record<string, T>) => {
             const next = { ...record };
             delete next[id];
@@ -882,6 +890,7 @@ export function useCallSession({
           joinedRoom.current = null;
           reportRoom.current?.(null);
           setJoined(false);
+          setCompanions(EMPTY_CALL_COMPANIONS);
           setCallPlaybackDeafened(false);
           serverRtt.current = null;
           setStats([]);
@@ -913,6 +922,7 @@ export function useCallSession({
         joinedRoom.current = freshRoom;
         reportRoom.current?.(freshRoom);
         setJoined(true);
+        setCompanions(callCompanions.confirmLocalJoin());
         const input = callMicrophone.getSnapshot();
         connection.sendPresence({
           camera: false,
@@ -936,6 +946,7 @@ export function useCallSession({
           joinedRoom.current = null;
           reportRoom.current?.(null);
           setJoined(false);
+          setCompanions(EMPTY_CALL_COMPANIONS);
           setLocals(new Map());
           setRemote([]);
           setPeers({});
@@ -1133,6 +1144,7 @@ export function useCallSession({
     remote,
     peers,
     names,
+    ...companions,
     stats,
     getServerRtt: () => serverRtt.current,
     signaling: socket.current,

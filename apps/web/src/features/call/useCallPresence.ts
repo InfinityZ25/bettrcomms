@@ -16,6 +16,10 @@ import { receivePersonalEvent } from '@/features/personal/api';
 import { refreshPersonal } from '@/features/personal/personalStore';
 import { refreshDrafts } from '@/features/personal/draftStore';
 import { refreshNotificationPolicy } from '@/features/chat/notificationSettings';
+import { receiveCharacterGesture, setCharacterGestureConnection, clearCharacterGestures, type CharacterGestureEvent } from '@/features/chat/characterGestureStore';
+import { clearCharacters, observeCharacters } from '@/features/settings/characterStore';
+import { clearCompanionMotion } from '@/features/settings/companionMotion';
+import { emitPetSignal } from '@/features/pet/signals';
 
 type RoomPresence = { room_id: string; participants: CallParticipant[] };
 type RealtimeMessage = { sequence: number; value: Message };
@@ -56,6 +60,8 @@ export function useCallPresence(userId?: string) {
 export function startRealtimeSession(user: User) {
   const userId = user.id;
   const session = ++sessionGeneration;
+  setCharacterGestureConnection(false);
+  if (state.userId && state.userId !== userId) { clearCharacters(); clearCompanionMotion(); }
   const stopPresence = startPresenceSession(userId, user.presence_status);
   receiveProfile(user);
   update({ ...emptyState, userId });
@@ -77,6 +83,7 @@ export function startRealtimeSession(user: User) {
       if (!active() || socket !== current) return;
       reconnectDelay = 500;
       setTypingSocket(current, userId);
+      setCharacterGestureConnection(true);
       const ping = () => {
         if (current.readyState === WebSocket.OPEN) current.send(JSON.stringify({ type: 'ping', request_id: crypto.randomUUID() }));
       };
@@ -124,9 +131,18 @@ export function startRealtimeSession(user: User) {
         } else if (message.type === 'chat.updated' || message.type === 'chat.message') {
           const value = message.payload as Message;
           if (!value?.id || !value.room_id) return;
+          observeCharacters(value);
           receiveMessage(userId, value);
           if (message.type === 'chat.message') {
             if (value.author.id === userId) invalidatePostingState(value.room_id);
+            emitPetSignal({
+              type: 'message',
+              roomId: value.room_id,
+              authorId: value.author.id,
+              own: value.author.id === userId,
+              mention: Boolean(value.mentions?.some((person) => person.id === userId)),
+              length: value.body?.length ?? 0,
+            });
             messageSequence += 1;
             update({ messages: [...state.messages.slice(-99), { sequence: messageSequence, value }], activityRevision: state.activityRevision + 1 });
           } else {
@@ -145,13 +161,26 @@ export function startRealtimeSession(user: User) {
           receiveCustomStatus(message.payload);
         } else if (message.type === 'chat.typing') {
           const value = message.payload as { room_id?: string; user_id?: string; typing?: boolean; thread_root_id?: string };
-          if (value?.room_id && value.user_id && value.user_id !== userId && typeof value.typing === 'boolean') receiveTyping(value.room_id, value.user_id, value.typing, value.thread_root_id);
+          if (value?.room_id && value.user_id && value.user_id !== userId && typeof value.typing === 'boolean') {
+            receiveTyping(value.room_id, value.user_id, value.typing, value.thread_root_id);
+            emitPetSignal({ type: 'typing', roomId: value.room_id, userId: value.user_id, typing: value.typing });
+          }
+        } else if (message.type === 'character.gesture') {
+          const gesture = message.payload as CharacterGestureEvent;
+          receiveCharacterGesture(gesture);
+          if (gesture?.id && gesture.room_id && gesture.user_id && ['wave', 'nod', 'celebrate'].includes(gesture.gesture)) {
+            emitPetSignal({
+              type: 'gesture', id: gesture.id, roomId: gesture.room_id, userId: gesture.user_id,
+              name: gesture.name, gesture: gesture.gesture, character: gesture.character,
+            });
+          }
         } else if (message.type === 'room.moderation') {
           const value = message.payload as { room_id?: string };
           if (value?.room_id) invalidatePostingState(value.room_id);
         } else if (message.type === 'account.deleted') {
           reconcileMessaging(userId, true);
         } else if (message.type === 'rooms.changed') {
+          clearCharacterGestures();
           reconcileMessaging(userId, true);
           reconcileConversationPreferences();
           receivePersonalEvent('personal.saved.changed');
@@ -160,6 +189,7 @@ export function startRealtimeSession(user: User) {
           void refreshDrafts();
           update({ roomsRevision: state.roomsRevision + 1 });
         } else if (message.type === 'friends.changed' || message.type === 'dm.requests.changed' || message.type === 'privacy.changed') {
+          clearCharacterGestures();
           update({ friendsRevision: state.friendsRevision + 1 });
         } else if (message.type === 'user.profile') {
           const value = message.payload as { user?: User };
@@ -173,6 +203,7 @@ export function startRealtimeSession(user: User) {
           if (!value?.user_id || typeof value.online !== 'boolean') return;
           if (value.user_id === userId) receiveOwnPresence(userId, value.desired_status);
           const status = contactStatus(value.status, value.online);
+          if (value.user_id !== userId && status !== 'offline' && !state.onlineUsers[value.user_id]) emitPetSignal({ type: 'friend-online', userId: value.user_id });
           update({ onlineUsers: { ...state.onlineUsers, [value.user_id]: status !== 'offline' }, contactStatuses: { ...state.contactStatuses, [value.user_id]: status } });
         }
       } catch { /* Isolate malformed events; the next event remains usable. */ }
@@ -185,6 +216,7 @@ export function startRealtimeSession(user: User) {
       socket = undefined;
       if (!active()) return;
       setTypingSocket(null);
+      setCharacterGestureConnection(false);
       update({ known: false, onlineUsers: {}, contactStatuses: {} });
       reconnectTimer = setTimeout(connect, reconnectDelay);
       reconnectDelay = Math.min(10_000, reconnectDelay * 2);
@@ -203,7 +235,10 @@ export function startRealtimeSession(user: User) {
     if (sessionGeneration !== session) return;
     sessionGeneration += 1;
     setTypingSocket(null);
+    setCharacterGestureConnection(false);
     clearProfiles();
+    clearCharacters();
+    clearCompanionMotion();
     clearAvatarCache();
     update(emptyState);
   };

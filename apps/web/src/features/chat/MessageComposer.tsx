@@ -7,6 +7,7 @@ import {
   type RefObject,
   type Dispatch,
   type SetStateAction,
+  type ReactNode,
 } from 'react';
 import {
   AtSign,
@@ -75,6 +76,7 @@ type MessageComposerProps = {
   userId?: string;
   recordingKey?: string;
   onVoiceFile?: (file: File, durationMs: number) => boolean | void;
+  companion?: ReactNode;
 };
 
 export default function MessageComposer(props: MessageComposerProps) {
@@ -119,6 +121,7 @@ function ScopedMessageComposer({
   attachmentsBlockedReason,
   userId,
   onVoiceFile,
+  companion,
 }: MessageComposerProps) {
   const phone = useIsMobile();
   const fileInput = useRef<HTMLInputElement>(null);
@@ -197,6 +200,9 @@ function ScopedMessageComposer({
   };
   return (
     <form
+      // The screen companion sits on this well's top edge, in the activity row above it.
+      data-pet-perch="composer"
+      data-pet-room={roomId}
       // An elevated well that lights up lime while you write.
       className="message-composer @container/composer relative mx-3 mt-1 mb-3 shrink-0 rounded-2xl border border-border bg-card p-2 shadow-[var(--shadow-soft)] transition-[border-color,box-shadow] duration-150 focus-within:border-primary/40 focus-within:shadow-[var(--glow-brand)] phone:m-2 phone:p-1"
       onSubmit={(event) => {
@@ -398,6 +404,7 @@ function ScopedMessageComposer({
             <Icon size={14} className="size-3.5" />
           </Button>
         ))}
+        {companion && <div className="ml-auto shrink-0">{companion}</div>}
       </div>
       {/* A narrow desktop well (the chat beside a call) gives the text the whole
           first line and moves the actions under it, instead of squeezing the

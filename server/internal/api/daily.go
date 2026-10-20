@@ -31,15 +31,16 @@ type AccountPreferences struct {
 	Settings map[string]json.RawMessage `json:"settings"`
 }
 type PublicUser struct {
-	ID             string       `json:"id"`
-	Name           string       `json:"name"`
-	Username       *string      `json:"username"`
-	Bio            string       `json:"bio"`
-	AvatarURL      *string      `json:"avatar_url"`
-	CreatedAt      time.Time    `json:"created_at"`
-	ProfileVersion int64        `json:"profile_version"`
-	CustomStatus   CustomStatus `json:"custom_status"`
-	StatusVersion  int64        `json:"status_version"`
+	Character      CharacterAppearance `json:"character"`
+	ID             string              `json:"id"`
+	Name           string              `json:"name"`
+	Username       *string             `json:"username"`
+	Bio            string              `json:"bio"`
+	AvatarURL      *string             `json:"avatar_url"`
+	CreatedAt      time.Time           `json:"created_at"`
+	ProfileVersion int64               `json:"profile_version"`
+	CustomStatus   CustomStatus        `json:"custom_status"`
+	StatusVersion  int64               `json:"status_version"`
 }
 type UserProfile struct {
 	User            PublicUser   `json:"user"`

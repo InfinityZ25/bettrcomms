@@ -294,6 +294,8 @@ func (a *API) authed(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		a.json(w, 200, map[string]any{"user": u})
+	case p == "me/character":
+		a.character(w, r, u)
 	case p == "me" || p == "me/avatar" || p == "me/presence":
 		a.profile(w, r, u, p)
 	case strings.HasPrefix(p, "users/") && strings.HasSuffix(p, "/avatar"):
@@ -550,6 +552,10 @@ func (a *API) room(w http.ResponseWriter, r *http.Request, u User, p []string) {
 	}
 	if _, e := a.Store.RoomForMember(rid, u.ID); e != nil {
 		a.fail(w, 403, "not_a_member", "room membership required")
+		return
+	}
+	if len(p) == 3 && p[2] == "character-gesture" {
+		a.characterGesture(w, r, u, rid)
 		return
 	}
 	if len(p) == 3 && p[2] == "preferences" {

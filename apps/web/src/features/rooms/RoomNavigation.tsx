@@ -9,11 +9,10 @@ import {
   Headphones,
   HeadphoneOff,
   MicOff,
-  Users,
   Star,
 } from 'lucide-react';
 import type { CallParticipant, Room, User } from '@/api';
-import { Avatar } from '@/components/avatar';
+import ConversationAvatar from '@/features/chat/ConversationAvatar';
 import RoomContextMenu from './RoomContextMenu';
 import CommunityNavigation from './CommunityNavigation';
 import { cn } from '@/lib/utils';
@@ -139,26 +138,9 @@ export default function RoomNavigation({
                       title={roomLabel(room)}
                       aria-label={`${roomLabel(room)}${known && callers.length ? ` ${callers.length} in call` : ''}`}
                     >
-                      {/* Who it is with, by face; a group gets a group tile. */}
-                      {room.kind === 'group' ? (
-                        <span
-                          aria-hidden="true"
-                          className="grid size-8 shrink-0 place-items-center rounded-xl bg-violet/15 text-violet"
-                        >
-                          <Users size={18} />
-                        </span>
-                      ) : (
-                        <span
-                          aria-hidden="true"
-                          className="grid size-8 shrink-0 place-items-center [&_svg]:size-full!"
-                        >
-                          <Avatar
-                            name={roomLabel(room)}
-                            id={room.id}
-                            className="size-8"
-                          />
-                        </span>
-                      )}
+                      <span aria-hidden="true" className="grid size-8 shrink-0 place-items-center">
+                        <ConversationAvatar room={room} className="size-8" />
+                      </span>
                       <span className="min-w-0 flex-1 truncate">
                         {roomLabel(room)}
                       </span>

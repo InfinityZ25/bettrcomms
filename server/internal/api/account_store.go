@@ -160,7 +160,7 @@ func (s *PostgresStore) DeleteAccount(ctx context.Context, user string) ([]strin
 	// Keep anonymous author/audit references. Personal content and device access
 	// disappear atomically; S3 object keys survive for the bounded cleanup worker.
 	for _, sql := range []string{
-		`UPDATE users SET deleted_at=clock_timestamp(),workos_user_id=NULL,email='deleted-'||id::text||'@invalid.local',name='Deleted account',username=NULL,bio='',avatar_url=NULL,profile_edited=true,avatar_edited=true,profile_version=profile_version+1,avatar_version=avatar_version+1,presence_status='invisible',allow_dm_requests=false,updated_at=clock_timestamp() WHERE id=$1`,
+		`UPDATE users SET deleted_at=clock_timestamp(),workos_user_id=NULL,email='deleted-'||id::text||'@invalid.local',name='Deleted account',username=NULL,bio='',avatar_url=NULL,character_variant=0,character_hue=NULL,profile_edited=true,avatar_edited=true,profile_version=profile_version+1,avatar_version=avatar_version+1,presence_status='invisible',allow_dm_requests=false,updated_at=clock_timestamp() WHERE id=$1`,
 		`DELETE FROM user_avatars WHERE user_id=$1`,
 		`DELETE FROM user_custom_status WHERE user_id=$1`,
 		`DELETE FROM account_preferences WHERE user_id=$1`,

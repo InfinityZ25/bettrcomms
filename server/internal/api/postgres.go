@@ -43,11 +43,11 @@ func norm(err error) error {
 	return err
 }
 
-const userCols = `id::text,email,name,avatar_url,created_at,username,bio,profile_version`
+const userCols = `id::text,email,name,avatar_url,created_at,username,bio,profile_version,character_variant,character_hue`
 
 func scanUser(row pgx.Row) (User, error) {
 	var u User
-	err := row.Scan(&u.ID, &u.Email, &u.Name, &u.AvatarURL, &u.CreatedAt, &u.Username, &u.Bio, &u.ProfileVersion)
+	err := row.Scan(&u.ID, &u.Email, &u.Name, &u.AvatarURL, &u.CreatedAt, &u.Username, &u.Bio, &u.ProfileVersion, &u.Character.Variant, &u.Character.Hue)
 	return u, norm(err)
 }
 func (s *PostgresStore) UpsertUser(w, e, n string, a *string) (User, error) {
@@ -68,7 +68,7 @@ func (s *PostgresStore) FindUsers(q, uid string) ([]User, error) {
 	out := []User{}
 	for rows.Next() {
 		var u User
-		if e = rows.Scan(&u.ID, &u.Email, &u.Name, &u.AvatarURL, &u.CreatedAt, &u.Username, &u.Bio, &u.ProfileVersion); e != nil {
+		if e = rows.Scan(&u.ID, &u.Email, &u.Name, &u.AvatarURL, &u.CreatedAt, &u.Username, &u.Bio, &u.ProfileVersion, &u.Character.Variant, &u.Character.Hue); e != nil {
 			return nil, e
 		}
 		out = append(out, u)
@@ -175,7 +175,7 @@ func (s *PostgresStore) RemoveRoomMember(rid, actor, target string) error {
 	return s.removeMember(rid, actor, target)
 }
 func (s *PostgresStore) ListRoomMembers(rid string) ([]RoomMember, error) {
-	rows, e := s.DB.Query(context.Background(), `SELECT u.id::text,u.email,u.name,u.avatar_url,u.created_at,u.username,u.bio,u.profile_version,rm.role,rm.joined_at,rm.posting_restricted_until FROM room_members rm JOIN users u ON u.id=rm.user_id WHERE rm.room_id=$1 AND u.deleted_at IS NULL ORDER BY CASE rm.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 WHEN 'moderator' THEN 2 ELSE 3 END,u.name`, rid)
+	rows, e := s.DB.Query(context.Background(), `SELECT u.id::text,u.email,u.name,u.avatar_url,u.created_at,u.username,u.bio,u.profile_version,u.character_variant,u.character_hue,rm.role,rm.joined_at,rm.posting_restricted_until FROM room_members rm JOIN users u ON u.id=rm.user_id WHERE rm.room_id=$1 AND u.deleted_at IS NULL ORDER BY CASE rm.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 WHEN 'moderator' THEN 2 ELSE 3 END,u.name`, rid)
 	if e != nil {
 		return nil, e
 	}
@@ -183,7 +183,7 @@ func (s *PostgresStore) ListRoomMembers(rid string) ([]RoomMember, error) {
 	out := []RoomMember{}
 	for rows.Next() {
 		var m RoomMember
-		if e = rows.Scan(&m.User.ID, &m.User.Email, &m.User.Name, &m.User.AvatarURL, &m.User.CreatedAt, &m.User.Username, &m.User.Bio, &m.User.ProfileVersion, &m.Role, &m.JoinedAt, &m.RestrictedUntil); e != nil {
+		if e = rows.Scan(&m.User.ID, &m.User.Email, &m.User.Name, &m.User.AvatarURL, &m.User.CreatedAt, &m.User.Username, &m.User.Bio, &m.User.ProfileVersion, &m.User.Character.Variant, &m.User.Character.Hue, &m.Role, &m.JoinedAt, &m.RestrictedUntil); e != nil {
 			return nil, e
 		}
 		out = append(out, m)
@@ -194,7 +194,7 @@ func (s *PostgresStore) AddRoomMember(rid, owner, newID string) error {
 	return s.addMember(rid, owner, newID)
 }
 func (s *PostgresStore) ListMessages(rid string, before time.Time, limit int) ([]Message, error) {
-	rows, e := s.DB.Query(context.Background(), `SELECT m.id::text,m.room_id::text,m.body,m.created_at,u.id::text,u.email,u.name,u.avatar_url,u.created_at,u.username,u.bio,u.profile_version FROM messages m JOIN users u ON u.id=m.author_id WHERE m.room_id=$1 AND m.created_at<$2 ORDER BY m.created_at DESC LIMIT $3`, rid, before, limit)
+	rows, e := s.DB.Query(context.Background(), `SELECT m.id::text,m.room_id::text,m.body,m.created_at,u.id::text,u.email,u.name,u.avatar_url,u.created_at,u.username,u.bio,u.profile_version,u.character_variant,u.character_hue FROM messages m JOIN users u ON u.id=m.author_id WHERE m.room_id=$1 AND m.created_at<$2 ORDER BY m.created_at DESC LIMIT $3`, rid, before, limit)
 	if e != nil {
 		return nil, e
 	}
@@ -202,7 +202,7 @@ func (s *PostgresStore) ListMessages(rid string, before time.Time, limit int) ([
 	out := []Message{}
 	for rows.Next() {
 		var m Message
-		if e = rows.Scan(&m.ID, &m.RoomID, &m.Body, &m.CreatedAt, &m.Author.ID, &m.Author.Email, &m.Author.Name, &m.Author.AvatarURL, &m.Author.CreatedAt, &m.Author.Username, &m.Author.Bio, &m.Author.ProfileVersion); e != nil {
+		if e = rows.Scan(&m.ID, &m.RoomID, &m.Body, &m.CreatedAt, &m.Author.ID, &m.Author.Email, &m.Author.Name, &m.Author.AvatarURL, &m.Author.CreatedAt, &m.Author.Username, &m.Author.Bio, &m.Author.ProfileVersion, &m.Author.Character.Variant, &m.Author.Character.Hue); e != nil {
 			return nil, e
 		}
 		out = append([]Message{m}, out...)
@@ -237,14 +237,14 @@ func (s *PostgresStore) CreateMessage(rid, uid, body string) (Message, error) {
 	return m, e
 }
 func (s *PostgresStore) ListFriends(uid string) ([]User, []FriendRequest, error) {
-	rows, e := s.DB.Query(context.Background(), `SELECT u.id::text,u.email,u.name,u.avatar_url,u.created_at,u.username,u.bio,u.profile_version FROM friend_requests f JOIN users u ON u.id=CASE WHEN f.sender_id=$1 THEN f.receiver_id ELSE f.sender_id END WHERE (f.sender_id=$1 OR f.receiver_id=$1) AND f.status='accepted' ORDER BY u.name`, uid)
+	rows, e := s.DB.Query(context.Background(), `SELECT u.id::text,u.email,u.name,u.avatar_url,u.created_at,u.username,u.bio,u.profile_version,u.character_variant,u.character_hue FROM friend_requests f JOIN users u ON u.id=CASE WHEN f.sender_id=$1 THEN f.receiver_id ELSE f.sender_id END WHERE (f.sender_id=$1 OR f.receiver_id=$1) AND f.status='accepted' ORDER BY u.name`, uid)
 	if e != nil {
 		return nil, nil, e
 	}
 	friends := []User{}
 	for rows.Next() {
 		var u User
-		if e = rows.Scan(&u.ID, &u.Email, &u.Name, &u.AvatarURL, &u.CreatedAt, &u.Username, &u.Bio, &u.ProfileVersion); e != nil {
+		if e = rows.Scan(&u.ID, &u.Email, &u.Name, &u.AvatarURL, &u.CreatedAt, &u.Username, &u.Bio, &u.ProfileVersion, &u.Character.Variant, &u.Character.Hue); e != nil {
 			rows.Close()
 			return nil, nil, e
 		}
@@ -254,7 +254,7 @@ func (s *PostgresStore) ListFriends(uid string) ([]User, []FriendRequest, error)
 	if e = s.populateFriendStatuses(uid, friends); e != nil {
 		return nil, nil, e
 	}
-	rows, e = s.DB.Query(context.Background(), `SELECT f.id::text,f.status,f.created_at,s.id::text,s.email,s.name,s.avatar_url,s.created_at,s.username,s.bio,s.profile_version,r.id::text,r.email,r.name,r.avatar_url,r.created_at,r.username,r.bio,r.profile_version FROM friend_requests f JOIN users s ON s.id=f.sender_id JOIN users r ON r.id=f.receiver_id WHERE (f.sender_id=$1 OR f.receiver_id=$1) AND f.status='pending'`, uid)
+	rows, e = s.DB.Query(context.Background(), `SELECT f.id::text,f.status,f.created_at,s.id::text,s.email,s.name,s.avatar_url,s.created_at,s.username,s.bio,s.profile_version,s.character_variant,s.character_hue,r.id::text,r.email,r.name,r.avatar_url,r.created_at,r.username,r.bio,r.profile_version,r.character_variant,r.character_hue FROM friend_requests f JOIN users s ON s.id=f.sender_id JOIN users r ON r.id=f.receiver_id WHERE (f.sender_id=$1 OR f.receiver_id=$1) AND f.status='pending'`, uid)
 	if e != nil {
 		return nil, nil, e
 	}
@@ -262,7 +262,7 @@ func (s *PostgresStore) ListFriends(uid string) ([]User, []FriendRequest, error)
 	reqs := []FriendRequest{}
 	for rows.Next() {
 		var f FriendRequest
-		if e = rows.Scan(&f.ID, &f.Status, &f.CreatedAt, &f.Sender.ID, &f.Sender.Email, &f.Sender.Name, &f.Sender.AvatarURL, &f.Sender.CreatedAt, &f.Sender.Username, &f.Sender.Bio, &f.Sender.ProfileVersion, &f.Receiver.ID, &f.Receiver.Email, &f.Receiver.Name, &f.Receiver.AvatarURL, &f.Receiver.CreatedAt, &f.Receiver.Username, &f.Receiver.Bio, &f.Receiver.ProfileVersion); e != nil {
+		if e = rows.Scan(&f.ID, &f.Status, &f.CreatedAt, &f.Sender.ID, &f.Sender.Email, &f.Sender.Name, &f.Sender.AvatarURL, &f.Sender.CreatedAt, &f.Sender.Username, &f.Sender.Bio, &f.Sender.ProfileVersion, &f.Sender.Character.Variant, &f.Sender.Character.Hue, &f.Receiver.ID, &f.Receiver.Email, &f.Receiver.Name, &f.Receiver.AvatarURL, &f.Receiver.CreatedAt, &f.Receiver.Username, &f.Receiver.Bio, &f.Receiver.ProfileVersion, &f.Receiver.Character.Variant, &f.Receiver.Character.Hue); e != nil {
 			return nil, nil, e
 		}
 		reqs = append(reqs, f)

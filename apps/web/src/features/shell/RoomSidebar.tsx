@@ -1,7 +1,7 @@
 import { openMessageSearch } from '@/features/chat/searchEvents';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Headphones, Link, Plus, Search, X } from 'lucide-react';
-import { Avatar } from '@/components/avatar';
+import ConversationAvatar from '@/features/chat/ConversationAvatar';
 import { Mascot } from '@/components/mascot';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -312,10 +312,9 @@ export default function RoomSidebar({
 /**
  * Who a direct conversation is with.
  *
- * Only what the room itself carries is shown. A conversation knows the other
- * person's display name, and presence knows whether they are in a call right
- * now; anything more — an email, a real presence state — is not on this side of
- * the API, and inventing it would be worse than leaving it out.
+ * The room supplies its label and a neutral conversation icon. Call presence
+ * only says whether a call is running, so it does not invent the person's
+ * account-wide availability or start a member lookup for this sidebar.
  */
 function ConversationProfile({
   room,
@@ -338,9 +337,8 @@ function ConversationProfile({
         className="pointer-events-none absolute inset-x-0 top-0 h-16 bc-brand-gradient opacity-30 [mask-image:linear-gradient(to_bottom,black,transparent)]"
       />
       <div className="relative flex justify-center">
-        <Avatar
-          name={name}
-          id={room.id}
+        <ConversationAvatar
+          room={room}
           className="size-16 drop-shadow-[0_8px_18px_oklch(0_0_0/0.35)]"
         />
       </div>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
 import { Volume2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { talkBindingLabel } from '@/media/pushToTalk';
@@ -30,6 +30,7 @@ import './CallPhone.css';
 import CallMoreMenu from './CallMoreMenu';
 import { useCameraOverlay } from './CameraOverlay';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { profileSnapshot, subscribeProfiles } from '@/features/settings/profileStore';
 
 // Keep the desktop status elements as direct footer children: its grid and
 // fullscreen rules depend on that structure. Phones need their own status row.
@@ -84,6 +85,9 @@ export default function CallStage({
     remote,
     peers,
     names,
+    peerUserIds,
+    companionArrivals,
+    companionArrivalTimes,
     speaking,
     remotePresence,
     microphone,
@@ -97,6 +101,7 @@ export default function CallStage({
   const [cameraAspects, setCameraAspects] = useState<Record<string, number>>({});
   const [featuredCamera, setFeaturedCamera] = useState('self');
   const [showStats, setShowStats] = useState(false);
+  const profiles = useSyncExternalStore(subscribeProfiles, profileSnapshot, profileSnapshot);
 
   const shares: ScreenShare[] = [
     ...(locals.has('screen')
@@ -272,7 +277,10 @@ export default function CallStage({
               <CameraTile
                 key={camera.id}
                 name={camera.name}
-                peerId={camera.self ? user?.id : camera.id}
+                userId={camera.self ? user?.id : peerUserIds[camera.id]}
+                photoSrc={camera.self ? user?.avatar_url : profiles[peerUserIds[camera.id]]?.avatar_url}
+                arrivalId={companionArrivals[camera.self ? user?.id ?? '' : peerUserIds[camera.id]]}
+                arrivalAt={companionArrivalTimes[camera.self ? user?.id ?? '' : peerUserIds[camera.id]]}
                 caption={camera.self ? `${camera.name} · you` : camera.name}
                 track={camera.track}
                 self={camera.self}

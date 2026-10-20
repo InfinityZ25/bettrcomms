@@ -1,4 +1,5 @@
 import type { User } from '@/api';
+import { receiveCharacter } from './characterStore';
 
 let profiles: Readonly<Record<string, User>> = {};
 const listeners = new Set<() => void>();
@@ -16,6 +17,7 @@ export function receiveProfile(user: User) {
   if (!user?.id || typeof user.name !== 'string') return;
   const current = profiles[user.id];
   if (current && (current.profile_version ?? 0) > (user.profile_version ?? 0)) return current;
+  receiveCharacter(user.id, user.character, user.profile_version ?? 0, user);
   const next = { ...profiles, [user.id]: user };
   const ids = Object.keys(next);
   for (const id of ids.slice(0, Math.max(0, ids.length - 512))) delete next[id];

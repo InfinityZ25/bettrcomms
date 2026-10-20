@@ -4,6 +4,7 @@ import TrackVideo from './TrackVideo';
 import FrozenTrackPreview from './FrozenTrackPreview';
 import { PeerVolume } from './PeerAudio';
 import { Avatar } from '@/components/avatar';
+import { Companion } from '@/components/companion';
 import type { RemoteTrack } from '@/media';
 import type { ScreenShare } from './stageItems';
 
@@ -11,10 +12,13 @@ const DEGRADED_HINT =
   'The direct native connection failed, so this screen is being re-encoded through the call at reduced quality.';
 
 
-/** One participant in the camera strip: their video, or their initials. */
+/** Camera and personal companion share a seat; the identity stays in its footer. */
 export function CameraTile({
   name,
-  peerId,
+  userId,
+  photoSrc,
+  arrivalId,
+  arrivalAt,
   caption,
   track,
   self,
@@ -32,8 +36,11 @@ export function CameraTile({
   volume,
 }: {
   name: string;
-  /** Whose face this is. Your own tile passes nothing and falls back to a name. */
-  peerId?: string;
+  /** Account identity, separate from the per-device peer used for media. */
+  userId?: string;
+  photoSrc?: string | null;
+  arrivalId?: string;
+  arrivalAt?: number;
   caption: string;
   track?: MediaStreamTrack;
   self?: boolean;
@@ -55,12 +62,13 @@ export function CameraTile({
   return (
     <div
       className={
-        'camera-tile' +
+        'camera-tile camera-participant-tile' +
         (self ? ' self' : '') +
         (speaking ? ' is-speaking' : '') +
         (featured ? ' is-featured' : '')
       }
       data-speaking={speaking}
+      data-user-id={userId}
       style={{ '--media-aspect': aspect } as CSSProperties}
     >
       {track && canFocus && (
@@ -76,20 +84,18 @@ export function CameraTile({
       {speaking && (
         <span className="speaking-label">{self ? 'Microphone active' : 'Speaking'}</span>
       )}
-      {track ? (
-        <TrackVideo track={track} self={self} onAspectRatio={onAspectRatio} />
-      ) : (
-        /*
-          Two letters in a grey circle told you nothing about who was in the
-          tile beyond the letters. A blobatar is a face — the same one every
-          time for the same person — and it is already alive: it blinks and
-          breathes, which is the difference between a call that has people in
-          it and a call that has placeholders in it.
-        */
-        <Avatar name={name} id={peerId} speaking={speaking} className="tile-face" />
-      )}
-      <div className="tile-caption">
-        <span>{caption}</span>
+      <div className="camera-tile-media">
+        {track ? (
+          <TrackVideo track={track} self={self} onAspectRatio={onAspectRatio} />
+        ) : (
+          <Companion userId={userId} name={name} speaking={speaking} arrivalId={arrivalId} arrivalAt={arrivalAt} className="tile-face" />
+        )}
+      </div>
+      <div className="tile-caption participant-caption">
+        <span className="participant-identity">
+          <Avatar name={name} id={userId} src={photoSrc} className="size-6" />
+          <span className="participant-name">{caption}</span>
+        </span>
         {self ? (
           <>
             {muted ? <MicOff size={13} /> : <Mic size={13} />}
@@ -102,6 +108,7 @@ export function CameraTile({
             <span className={connection === 'connected' ? 'online-dot' : 'connecting-dot'} />
           </>
         )}
+        {track && <Companion userId={userId} name={name} speaking={speaking} arrivalId={arrivalId} arrivalAt={arrivalAt} className="tile-camera-companion" />}
       </div>
       {volume && (
         <details className="peer-volume">

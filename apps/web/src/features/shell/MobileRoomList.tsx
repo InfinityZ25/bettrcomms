@@ -8,7 +8,7 @@ import {
   Users,
 } from 'lucide-react';
 import type { CallParticipant, Room, User } from '@/api';
-import { Avatar } from '@/components/avatar';
+import ConversationAvatar from '@/features/chat/ConversationAvatar';
 import { Button } from '@/components/ui/button';
 import { Mascot } from '@/components/mascot';
 import {
@@ -196,9 +196,8 @@ export default function MobileRoomList({
                       aria-label={roomLabel(room)}
                       onClick={() => onSelect(room)}
                     >
-                      <Avatar
-                        name={roomLabel(room)}
-                        id={room.id}
+                      <ConversationAvatar
+                        room={room}
                         className="size-12 shrink-0"
                       />
                       <span className="min-w-0 flex-1">

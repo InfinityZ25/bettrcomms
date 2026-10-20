@@ -1,3 +1,63 @@
+## Unreleased — screen companion
+
+Your character now lives on the screen. It stands on the composer, hops to a
+call's controls or the bottom of other screens as you move around, and follows
+focus between conversation and thread composers. Each creature has its own
+temperament and signature move, derived from its seed and shown in profile
+settings, which shape how it idles, naps and reacts.
+
+It reacts to messages, mentions, your own sends and failed sends, people typing,
+friends coming online, call joins, and speech (it talks while the call hears
+you). It can be booped, petted, dragged and thrown with simple physics. A
+gesture a friend sends brings their creature in for a short local visit.
+
+It is built to cost nothing while nothing happens: the generator's infinite
+idle loops are disabled for it, movement is compositor-driven transforms, and
+blur, hidden pages, fullscreen and deep sleep stop all of its timers and
+animations. Settings → Appearance turns it off or changes its size per device;
+Character motion off and reduced motion keep it still. See
+[personal characters](PERSONAL_CHARACTERS.md#screen-companion) for its contract
+and the local measurement.
+
+## Unreleased — visible local sign-in
+
+When the API is explicitly started with `-DevAuth`, the initial screen now puts
+the local name/email form first, with **Enter local workspace** as its primary
+action. It no longer sits below a full-height signed-out home screen. WorkOS
+remains a separate sign-in option that requires its own configuration. Local
+authentication retains its existing opt-in and loopback checks.
+
+## Unreleased — personal characters
+
+Account characters now accompany profile photos instead of replacing them.
+Profile settings offer six account-derived choices, automatic or selected color,
+a local greeting preview, and explicit Save/Discard controls. The original
+choice preserves the existing character. Saved changes synchronize through the
+existing versioned profile updates.
+
+Calls use account identity for remote characters, independently of the media
+connection ID. Camera-off tiles show the character prominently; camera-on tiles
+reserve a footer for the photo, name and smaller character. Brief greetings are
+triggered by actual joins, not initial participant snapshots or signaling resume.
+The existing speaking state supplies a small visual response without another
+audio analyser.
+
+The composer offers Wave, Nod and Celebrate. These are live, permission-checked
+conversation or thread gestures, visible for four seconds and absent from
+message history, unread counts and reconnect replay. Typing activity uses the
+same personal characters. Gestures have a cooldown and server rate limits.
+
+Character motion can be disabled on each device and always respects system
+reduced motion. Hidden pages suppress movement; event animations are limited to
+two at once. Ordinary avatar lists remain still. These controls bound the work;
+hardware performance still requires measurement.
+
+Migration 022 adds the saved appearance fields with preserving defaults and
+supports the API's repeated migration execution. This does not guarantee
+globally unique appearances or change native media readiness.
+See [personal characters](PERSONAL_CHARACTERS.md) for contracts, local setup and
+acceptance checks.
+
 ## Unreleased — local image editing and quick access
 
 Pending local images can be cropped, rotated, drawn on, marked with arrows or
