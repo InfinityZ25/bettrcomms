@@ -1,0 +1,368 @@
+/*
+  The screen companion.
+
+  Four nested boxes, each with one job, so every motion is a transform on its
+  own element and none of them fight: `.pet` is where it stands, `.pet-hop`
+  is how high it is off the ground, `.pet-body` is squash and stretch around
+  its feet, `.pet-face` lines the drawing's feet up with the box's.
+*/
+.pet {
+  --pet-size: 62px;
+  --pet-ink: oklch(0.2 0.02 272);
+  --pet-confetti-1: oklch(0.84 0.19 128);
+  --pet-confetti-2: oklch(0.7 0.2 350);
+  --pet-confetti-3: oklch(0.72 0.15 225);
+  --pet-confetti-4: oklch(0.82 0.16 80);
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 40;
+  width: var(--pet-size);
+  height: var(--pet-size);
+  contain: layout style;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  will-change: transform;
+}
+
+.pet:not([data-ready]) {
+  opacity: 0;
+}
+
+.pet[data-hidden='true'] {
+  visibility: hidden;
+}
+
+.pet-hop,
+.pet-body,
+.pet-face {
+  position: absolute;
+  inset: 0;
+}
+
+.pet-hop,
+.pet-body {
+  will-change: transform;
+}
+
+.pet-body {
+  transform-origin: 50% 100%;
+}
+
+.pet-face {
+  transform: translate(var(--pet-feet-x, 0%), var(--pet-feet-y, 0%));
+  transform-origin: 50% 100%;
+  transition: scale 180ms cubic-bezier(0.3, 0.7, 0.4, 1.5);
+}
+
+.pet[data-hover='true']:not([data-held]) .pet-face {
+  scale: 1.06;
+}
+
+.pet-face > svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.pet-hit {
+  position: absolute;
+  top: var(--pet-hit-y, 20%);
+  left: var(--pet-hit-x, 18%);
+  width: var(--pet-hit-w, 64%);
+  height: var(--pet-hit-h, 60%);
+  border-radius: 46%;
+  cursor: grab;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.pet[data-held] .pet-hit {
+  cursor: grabbing;
+}
+
+.pet-shadow {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: calc(var(--pet-span, 0.6) * 100%);
+  height: 16%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgb(0 0 0 / 0.24), rgb(0 0 0 / 0.1) 60%, transparent);
+  translate: -50% 45%;
+  transition: opacity 180ms ease-out;
+}
+
+.dark .pet-shadow {
+  background: radial-gradient(closest-side, rgb(0 0 0 / 0.55), rgb(0 0 0 / 0.22) 60%, transparent);
+}
+
+.pet[data-airborne] .pet-shadow,
+.pet[data-held] .pet-shadow {
+  opacity: 0;
+}
+
+/*
+  The generator's own idle loops — breathe, bob, blink, glance, tremor — run
+  forever once a blobatar animates, and an infinite animation keeps the
+  browser producing frames even when nothing visibly changes. Here they are
+  off; the engine blinks and breathes in short bursts instead.
+*/
+.pet .mo-root,
+.pet .mo-breathe,
+.pet .mo-bob,
+.pet .mo-eyes,
+.pet .mo-eye,
+.pet .mo-eye > * {
+  animation: none;
+}
+
+.pet .mo-root:hover {
+  transform: none;
+}
+
+.pet .mo-eyes {
+  --mo-track-travel: 3.4px;
+}
+
+.pet .mo-eye > * {
+  transition: transform 420ms ease-in-out;
+}
+
+.pet[data-expr='mad'] .mo-root,
+.pet[data-expr='scared'] .mo-root,
+.pet[data-expr='sick'] .mo-root {
+  animation: mo-shake calc(0.112s * var(--mo-rate, 1)) linear infinite;
+}
+
+.pet[data-expr='thinking'] .mo-eye {
+  animation: mo-rock calc(0.9s * var(--mo-rate, 1)) ease-in-out infinite;
+}
+
+.pet[data-blink='true'] .mo-eye > * {
+  animation: pet-blink 190ms ease-in-out;
+}
+
+.pet[data-asleep='true'] .mo-eye > * {
+  transform: rotate(calc(var(--mo-lean, 0) * 1deg)) scaleY(0.12) rotate(calc(var(--mo-lean, 0) * -1deg));
+}
+
+@keyframes pet-blink {
+  0%,
+  100% {
+    transform: rotate(calc(var(--mo-lean, 0) * 1deg)) scaleY(1) rotate(calc(var(--mo-lean, 0) * -1deg));
+  }
+  45%,
+  55% {
+    transform: rotate(calc(var(--mo-lean, 0) * 1deg)) scaleY(0.08) rotate(calc(var(--mo-lean, 0) * -1deg));
+  }
+}
+
+/* Mouth and cheeks: borrowed for a moment, never part of the resting face. */
+.pet-overlay {
+  pointer-events: none;
+}
+
+.pet-cheek {
+  fill: oklch(0.64 0.21 8 / 0.62);
+  opacity: 0;
+  transition: opacity 320ms ease-out;
+}
+
+.pet[data-blush='true'] .pet-cheek {
+  opacity: 1;
+}
+
+.pet-mouth > * {
+  fill: none;
+  stroke: var(--pet-ink);
+  stroke-width: 2.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0;
+  scale: 0.4;
+  transform-box: fill-box;
+  transform-origin: 50% 0;
+  transition:
+    opacity 140ms ease-out,
+    scale 220ms cubic-bezier(0.3, 0.7, 0.4, 1.5);
+}
+
+.pet-mouth > .pet-mouth-fill {
+  fill: var(--pet-ink);
+  stroke: none;
+}
+
+.pet[data-mouth='smile'] [data-mouth='smile'],
+.pet[data-mouth='cat'] [data-mouth='cat'],
+.pet[data-mouth='flat'] [data-mouth='flat'],
+.pet[data-mouth='wavy'] [data-mouth='wavy'],
+.pet[data-mouth='open'] [data-mouth='open'],
+.pet[data-mouth='o'] [data-mouth='o'] {
+  opacity: 1;
+  scale: 1;
+}
+
+/* Your voice, on its face: a mouth that moves while the call hears you. */
+.pet[data-talking='true'] .pet-mouth > * {
+  opacity: 0;
+}
+
+.pet[data-talking='true'] .pet-mouth > [data-mouth='talk'] {
+  opacity: 1;
+  scale: 1;
+  animation: pet-talk 210ms ease-in-out infinite alternate;
+}
+
+.pet[data-talking='true']:not([data-held]) .pet-face {
+  animation: pet-talk-bob 290ms ease-in-out infinite alternate;
+}
+
+@keyframes pet-talk {
+  from { scale: 1 0.3; }
+  to { scale: 1 1; }
+}
+
+@keyframes pet-talk-bob {
+  from { translate: 0 0; }
+  to { translate: 0 -3%; }
+}
+
+/* Comic-strip marks over the head. */
+.pet-fx {
+  position: absolute;
+  top: var(--pet-head, 20%);
+  left: 50%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.pet-emote {
+  position: absolute;
+  bottom: calc(var(--pet-size) * 0.02);
+  left: calc(var(--pet-size) * 0.08);
+  width: calc(var(--pet-size) * 0.36);
+  height: calc(var(--pet-size) * 0.36);
+  min-width: 16px;
+  min-height: 16px;
+  transform-origin: 30% 100%;
+  animation: pet-emote 1500ms cubic-bezier(0.3, 0.7, 0.4, 1) both;
+}
+
+.pet-emote svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  fill: currentColor;
+  stroke: currentColor;
+  stroke-width: 0;
+  filter: drop-shadow(0 0 1.2px var(--background)) drop-shadow(0 1px 1.5px rgb(0 0 0 / 0.2));
+}
+
+.pet-emote-heart { color: oklch(0.66 0.22 12); }
+.pet-emote-exclaim { color: oklch(0.72 0.17 62); }
+.pet-emote-question { color: oklch(0.6 0.15 255); }
+.pet-emote-note { color: var(--primary); }
+.pet-emote-sparkle { color: oklch(0.8 0.16 88); }
+.pet-emote-anger { color: oklch(0.6 0.22 25); }
+.pet-emote-sweat { color: oklch(0.72 0.12 225); }
+.pet-emote-swirl { color: oklch(0.62 0.17 300); }
+.pet-emote-zzz { color: var(--muted-foreground); }
+.pet-emote-dots { color: var(--muted-foreground); }
+
+.pet-emote-sweat .pet-emote-shine {
+  stroke: rgb(255 255 255 / 0.75);
+}
+
+.pet-emote-dots .pet-emote-bubble {
+  fill: var(--popover);
+  stroke: color-mix(in oklch, var(--foreground) 22%, transparent);
+  stroke-width: 1.2;
+}
+
+.pet-emote-dots {
+  left: calc(var(--pet-size) * -0.6);
+  width: calc(var(--pet-size) * 0.46);
+  height: calc(var(--pet-size) * 0.46);
+  transform-origin: 100% 100%;
+  animation-duration: 1900ms;
+}
+
+.pet-emote-zzz {
+  left: calc(var(--pet-size) * 0.1);
+  width: calc(var(--pet-size) * 0.26);
+  height: calc(var(--pet-size) * 0.26);
+  animation: pet-zzz 2600ms ease-out both;
+}
+
+.pet-emote-confetti {
+  bottom: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  min-width: 0;
+  min-height: 0;
+  animation: none;
+}
+
+.pet-emote-confetti i {
+  position: absolute;
+  top: -4px;
+  left: -3px;
+  width: 6px;
+  height: 9px;
+  border-radius: 2px;
+  background: var(--c);
+  animation: pet-confetti 1100ms cubic-bezier(0.2, 0.6, 0.3, 1) both;
+}
+
+@keyframes pet-emote {
+  0% { opacity: 0; transform: translateY(25%) scale(0.2) rotate(-14deg); }
+  14% { opacity: 1; transform: translateY(-8%) scale(1.18) rotate(6deg); }
+  26% { transform: translateY(0) scale(1) rotate(0); }
+  72% { opacity: 1; transform: translateY(-14%) scale(1); }
+  100% { opacity: 0; transform: translateY(-40%) scale(0.9); }
+}
+
+@keyframes pet-zzz {
+  0% { opacity: 0; transform: translate(0, 20%) scale(0.4); }
+  25% { opacity: 0.9; }
+  100% { opacity: 0; transform: translate(80%, -140%) scale(1.2) rotate(14deg); }
+}
+
+@keyframes pet-confetti {
+  0% { opacity: 1; transform: translate(0, 0) rotate(0) scale(0.4); }
+  70% { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--dx), calc(var(--dy) + 46px)) rotate(var(--r)) scale(1); }
+}
+
+/* In the background it is a still drawing: nothing may tick. */
+.pet[data-frozen='true'],
+.pet[data-frozen='true'] * {
+  animation-play-state: paused !important;
+  transition: none !important;
+}
+
+.pet[data-still='true'],
+.pet[data-still='true'] * {
+  animation: none !important;
+  transition: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pet *,
+  .pet-emote {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+@media print {
+  .pet {
+    display: none;
+  }
+}

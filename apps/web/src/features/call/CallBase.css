@@ -893,25 +893,62 @@ h1 {
   }
 }
 
-/* A camera-less tile shows the person's blobatar. See CameraTile.tsx.
-
-   The face is already alive on its own — every presence avatar blinks and
-   breathes — so speaking is said by the tile around it rather than by a second
-   animation competing with the first. The library's pose surface is the eyes;
-   it has no mouth channel to move, so a talking mouth is not something this
-   can honestly draw. */
-/* Bounded on both axes. Height alone let focus mode — where one tile becomes
-   the whole window — grow the face until it filled the screen. */
+/* The character owns the empty seat. Live video keeps a reserved identity
+   footer, so its smaller companion never covers the participant's face. */
+.camera-participant-tile {
+  flex-direction: column;
+}
+.camera-tile-media {
+  display: flex;
+  width: 100%;
+  min-height: 0;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.participant-caption {
+  position: static;
+  inset: auto;
+  width: 100%;
+  min-height: 38px;
+  flex: none;
+  gap: 5px;
+  padding: 5px 7px;
+  background: color-mix(in oklch, var(--card) 94%, var(--foreground) 6%);
+  border-top: 1px solid color-mix(in oklch, var(--foreground) 7%, transparent);
+}
+.participant-caption > .participant-identity {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0;
+  background: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
+}
+.participant-caption > svg {
+  width: 12px;
+  height: 12px;
+  padding: 3px;
+}
+.participant-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tile-camera-companion {
+  width: 28px;
+  height: 28px;
+  flex: none;
+}
+/* Bounded on both axes even when one tile occupies the whole window. */
 .tile-face {
   width: auto;
-  height: min(42%, 40cqw, 200px);
+  height: min(68%, 45cqw, 220px);
   aspect-ratio: 1;
-  /* The face casts a soft shadow on its seat; a speaking one glows instead. */
-  filter: drop-shadow(0 14px 22px color-mix(in oklch, black 32%, transparent));
-  transition: filter 200ms ease-out;
-}
-.camera-tile.is-speaking .tile-face {
-  filter: drop-shadow(0 0 22px color-mix(in oklch, var(--online) 42%, transparent));
 }
 .camera-tile {
   container-type: size;

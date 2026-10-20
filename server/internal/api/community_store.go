@@ -340,7 +340,7 @@ func (s *PostgresStore) CommunityMembers(id, user string) ([]RoomMember, error) 
 	if _, err := s.CommunityForMember(id, user); err != nil {
 		return nil, err
 	}
-	rows, err := s.DB.Query(context.Background(), `SELECT u.id::text,u.email,u.name,u.avatar_url,u.created_at,u.username,u.bio,u.profile_version,m.role,m.joined_at,m.posting_restricted_until,ARRAY(SELECT mr.role_id::text FROM community_member_roles mr WHERE mr.community_id=m.community_id AND mr.user_id=m.user_id ORDER BY mr.role_id)
+	rows, err := s.DB.Query(context.Background(), `SELECT u.id::text,u.email,u.name,u.avatar_url,u.created_at,u.username,u.bio,u.profile_version,u.character_variant,u.character_hue,m.role,m.joined_at,m.posting_restricted_until,ARRAY(SELECT mr.role_id::text FROM community_member_roles mr WHERE mr.community_id=m.community_id AND mr.user_id=m.user_id ORDER BY mr.role_id)
  FROM community_members m JOIN users u ON u.id=m.user_id WHERE m.community_id=$1 AND u.deleted_at IS NULL ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 WHEN 'moderator' THEN 2 ELSE 3 END,u.name,u.id`, id)
 	if err != nil {
 		return nil, err
@@ -349,7 +349,7 @@ func (s *PostgresStore) CommunityMembers(id, user string) ([]RoomMember, error) 
 	out := []RoomMember{}
 	for rows.Next() {
 		var m RoomMember
-		if err = rows.Scan(&m.User.ID, &m.User.Email, &m.User.Name, &m.User.AvatarURL, &m.User.CreatedAt, &m.User.Username, &m.User.Bio, &m.User.ProfileVersion, &m.Role, &m.JoinedAt, &m.RestrictedUntil, &m.CustomRoleIDs); err != nil {
+		if err = rows.Scan(&m.User.ID, &m.User.Email, &m.User.Name, &m.User.AvatarURL, &m.User.CreatedAt, &m.User.Username, &m.User.Bio, &m.User.ProfileVersion, &m.User.Character.Variant, &m.User.Character.Hue, &m.Role, &m.JoinedAt, &m.RestrictedUntil, &m.CustomRoleIDs); err != nil {
 			return nil, err
 		}
 		out = append(out, m)

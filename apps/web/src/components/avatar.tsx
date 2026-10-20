@@ -1,10 +1,11 @@
 import { useCallback, useState, useSyncExternalStore } from 'react';
 import { Blobatar } from '@blobatar/react';
-import { thinking } from 'blobatar/expression';
 import { PresenceAvatar, type PresenceState } from '@/components/ui/presence-avatar';
 import { blobatarFor } from '@/features/settings/blobatarIdentity';
 import { cn } from '@/lib/utils';
 import { avatarApiPath, avatarSnapshot, subscribeAvatar } from '@/features/settings/avatarCache';
+import { characterProfileSnapshot, subscribeCharacter } from '@/features/settings/characterStore';
+import type { CharacterAppearance } from '@/api';
 
 /** "Ada Lovelace" → "AL". Used wherever a full name is known. */
 export const initials = (name: string) =>
@@ -58,11 +59,17 @@ export type AvatarProps = {
   prefer?: 'photo' | 'face';
   presence?: PresenceState;
   speaking?: boolean;
+  character?: CharacterAppearance;
   className?: string;
 };
 export function Avatar(props: AvatarProps) {
+  const id = props.id ?? props.name;
+  const subscribe = useCallback((listener: () => void) => subscribeCharacter(id, listener), [id]);
+  const snapshot = useCallback(() => characterProfileSnapshot(id), [id]);
+  const profile = useSyncExternalStore(subscribe, snapshot, snapshot);
+  const src = profile?.avatarUrl !== undefined ? profile.avatarUrl : props.src;
   // Changing an image resets its failure state without synchronizing React state.
-  return <AvatarContent key={props.src ?? ''} {...props} />;
+  return <AvatarContent key={src ?? ''} {...props} src={src} character={profile?.appearance ?? props.character} />;
 }
 function AvatarContent({
   name,
@@ -72,6 +79,7 @@ function AvatarContent({
   prefer = 'photo',
   presence,
   speaking = false,
+  character,
   className,
 }: AvatarProps) {
   const path = avatarApiPath(src);
@@ -83,7 +91,7 @@ function AvatarContent({
   // should be, so failure falls back to the face underneath.
   const [broken, setBroken] = useState(false);
 
-  const face = blobatarFor(id ?? name);
+  const face = blobatarFor(id ?? name, character);
   const photo = source && !broken;
   const photoLeads = photo && prefer === 'photo';
 
@@ -94,7 +102,6 @@ function AvatarContent({
       state={presence}
       blobatar={{
         hue: face.hue,
-        expression: speaking ? thinking : undefined,
       }}
       className="size-full"
     />
@@ -102,8 +109,6 @@ function AvatarContent({
     <Blobatar
       name={face.name}
       hue={face.hue}
-      animate="always"
-      expression={speaking ? thinking : undefined}
       title={photoLeads ? undefined : name}
       aria-hidden={photoLeads ? 'true' : undefined}
       className="size-full"
@@ -112,6 +117,7 @@ function AvatarContent({
 
   return (
     <span
+      data-speaking={speaking}
       className={cn(
         'relative inline-flex shrink-0 items-center justify-center',
         size === 'lg' ? 'size-14' : 'size-8',

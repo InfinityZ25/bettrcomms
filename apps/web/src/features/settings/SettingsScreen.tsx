@@ -26,6 +26,8 @@ import ProfileSettings from './ProfileSettings';
 import PreferenceSyncSettings from './PreferenceSyncSettings';
 import NotificationSettings from '@/features/personal/NotificationSettings';
 import { DraftSyncSettings } from '@/features/personal/DraftStatus';
+import { companionMotionSnapshot, setCompanionMotion, subscribeCompanionMotion } from './companionMotion';
+import { PET_SIZE_LABELS, PET_SIZES, setPetEnabled, setPetSize, usePetSettings, type PetSize } from '@/features/pet/petSettings';
 
 export type SettingsPage = 'profile' | 'audio' | 'voice' | 'recording' | 'stream' | 'connection' | 'appearance' | 'notifications' | 'account' | 'desktop';
 
@@ -40,6 +42,8 @@ export default function SettingsScreen({ page, user, noise, onNoiseChange, balan
   onLayoutChange: (value: string) => void;
 }) {
   const face = useOwnFace();
+  const characterMotion = useSyncExternalStore(subscribeCompanionMotion, companionMotionSnapshot);
+  const pet = usePetSettings();
   const { enabled: sounds, volume, each } = useSyncExternalStore(subscribeSoundSettings, soundSettingsSnapshot);
   const desktop = getDesktopRuntime() === 'wails';
   if (page === 'account') return user ? <AccountSettings key={user.id} user={user} /> : <p className="text-sm text-muted-foreground">Sign in to manage your account.</p>;
@@ -98,6 +102,28 @@ export default function SettingsScreen({ page, user, noise, onNoiseChange, balan
   if (page === 'appearance') return (
     <SettingsSection id="settings-appearance" title="Look & feel">
       <SettingRow as="div" title="Theme" description="Light, dark, or match your system." control={<ModeToggle />} />
+      <SettingRow as="div" title="Character motion" description="Greetings, voice gestures and your screen companion's hops. Off keeps characters still on this device; your system's reduced-motion preference always takes priority." control={<Switch aria-label="Character motion" checked={characterMotion.preference === 'expressive'} onCheckedChange={(enabled) => setCompanionMotion(enabled ? 'expressive' : 'quiet')} />} />
+      <SettingRow
+        as="div"
+        title="Screen companion"
+        description="Your character lives on screen: it sits on the composer, reacts to messages and calls, and naps when you step away. Drag it, toss it or pet it. It stops completely while BetterComms is in the background."
+        control={<Switch aria-label="Screen companion" checked={pet.enabled} onCheckedChange={setPetEnabled} />}
+      />
+      {pet.enabled && (
+        <SettingRow
+          as="div"
+          title="Companion size"
+          description="How big it is on this device."
+          control={
+            <Select value={pet.size} onValueChange={(value) => { if (value) setPetSize(value as PetSize); }}>
+              <SelectTrigger aria-label="Companion size" className="w-full"><SelectValue>{PET_SIZE_LABELS[pet.size]}</SelectValue></SelectTrigger>
+              <SelectContent>
+                {PET_SIZES.map((size) => <SelectItem key={size} value={size}>{PET_SIZE_LABELS[size]}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          }
+        />
+      )}
       {user && <PreferenceSyncSettings userId={user.id} />}
       {user && <DraftSyncSettings userId={user.id} />}
       {user && (

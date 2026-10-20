@@ -11,6 +11,7 @@ import AccountPresenceSelector from './AccountPresenceSelector';
 import { SettingsSection } from './SettingsSection';
 import CustomStatusSettings from './CustomStatus';
 import { openUserProfile } from './ProfileDialog';
+import CharacterSettings from './CharacterSettings';
 
 const draftFor = (user: User): ProfileDraft => ({ name: user.name, username: user.username ?? '', bio: user.bio ?? '' });
 
@@ -110,6 +111,7 @@ export default function ProfileSettings({ user }: { user: User }) {
         {feedback.error && <p className="mt-3 text-sm text-destructive" role="alert">{feedback.error}</p>}
         {feedback.success && <p className="mt-3 text-sm text-muted-foreground" role="status">{feedback.success}</p>}
       </SettingsSection>
+      <CharacterSettings key={user.id} user={user} />
       <SettingsSection id="settings-presence" title="Availability"><AccountPresenceSelector user={user} /></SettingsSection>
       <SettingsSection id="settings-custom-status" title="Custom status"><CustomStatusSettings user={user} /></SettingsSection>
     </div>

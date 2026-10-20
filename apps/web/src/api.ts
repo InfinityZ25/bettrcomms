@@ -7,6 +7,12 @@ import {
   sessionExpired,
   sessionGeneration,
 } from '@/features/auth/sessionEvents';
+import { observeCharacters } from '@/features/settings/characterStore';
+
+export interface CharacterAppearance {
+  variant: number;
+  hue: number | null;
+}
 
 export interface CustomStatus {
   text: string;
@@ -23,6 +29,7 @@ export interface PublicUser {
   status_version?: number;
   /** A trusted provider picture or a versioned authenticated API resource. */
   avatar_url?: string | null;
+  character?: CharacterAppearance;
 }
 export interface User extends PublicUser {
   email: string;
@@ -170,7 +177,10 @@ export async function api<T>(
       Number(response.headers.get('Retry-After')) || undefined,
     );
   }
-  return response.status === 204 ? (undefined as T) : response.json();
+  if (response.status === 204) return undefined as T;
+  const result: T = await response.json();
+  if (!signal?.aborted && generation === sessionGeneration()) observeCharacters(result);
+  return result;
 }
 
 export async function uploadMessageAttachment(

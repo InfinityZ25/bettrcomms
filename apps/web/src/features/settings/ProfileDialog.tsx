@@ -2,6 +2,7 @@ import { useRef, useState, useSyncExternalStore } from 'react';
 import { Check, Hash, MessageSquare, Phone, UserPlus } from 'lucide-react';
 import { api, type Room, type User } from '@/api';
 import { Avatar } from '@/components/avatar';
+import { Companion } from '@/components/companion';
 import { AppDialog } from '@/components/app-dialog';
 import { Button } from '@/components/ui/button';
 import { useMountEffect } from '@/hooks/useMountEffect';
@@ -90,6 +91,10 @@ function ProfileDialog({ userId, user, onOpenRoom, onCall, onEditProfile }: Host
     <ProfileLoader key={reload} reader={reader} />
     {person ? <div className="min-h-0 overflow-y-auto space-y-5 pr-1">
       <div className="flex items-center gap-4"><Avatar name={person.name} id={person.id} src={person.avatar_url} size="lg" className="size-20 rounded-full bc-brand-gradient p-[2px] [&_img]:rounded-full" presence={presence === 'idle' ? 'away' : presence} /><div className="min-w-0"><h2 className="truncate font-heading text-xl font-bold">{person.name}</h2>{person.username && <p className="truncate text-sm text-muted-foreground">@{person.username}</p>}<p className="mt-1 text-xs text-muted-foreground">{presenceLabels[presence]}</p><CustomStatusText userId={person.id} status={person.custom_status} version={person.status_version} /></div></div>
+      <section className="flex items-center gap-4 rounded-xl border border-border bg-muted/30 px-4 py-3" aria-label={`${person.name}'s character`}>
+        <Companion userId={person.id} name={person.name} character={person.character} className="size-20" />
+        <div className="min-w-0"><h3 className="font-medium">{data?.relationship === 'self' ? 'Your character' : 'Their character'}</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">A familiar presence in calls and conversations.</p></div>
+      </section>
       {person.bio && <div><h3 className="bc-kicker mb-1">About</h3><p className="whitespace-pre-wrap text-sm leading-6 [overflow-wrap:anywhere]">{person.bio}</p></div>}
       <div className="flex flex-wrap gap-2">
         {data?.relationship === 'friend' && <><Button size="sm" disabled={busy} onClick={() => { void openConversation(); }}><MessageSquare size={15} /> Message</Button>{onCall && <Button size="sm" variant="secondary" disabled={busy} onClick={() => { void openConversation(true); }}><Phone size={15} /> Call</Button>}</>}

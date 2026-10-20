@@ -76,6 +76,8 @@ import ConversationPreferencesSession from '@/features/rooms/ConversationPrefere
 import { ProfileDialogHost } from '@/features/settings/ProfileDialog';
 import AccountPreferencesSession from '@/features/settings/AccountPreferencesSession';
 import { ActivityReminderInbox } from '@/features/activities/ActivityReminderInbox';
+import PetHost from '@/features/pet/PetHost';
+import PetCallBridge from '@/features/pet/PetCallBridge';
 const ActivityCenter = lazy(() => import('@/features/chat/ActivityCenter'));
 
 export default function App() {
@@ -600,7 +602,7 @@ export default function App() {
             session itself lives above this tree, so nothing is torn down by
             swapping what is on screen.
           */}
-                {atHome ? (
+                {atHome && user ? (
                   <HomeScreen
                     user={user}
                     rooms={rooms}
@@ -980,6 +982,9 @@ export default function App() {
         {/* Outlives the call screen on purpose: stopping a recording and
           leaving the room tend to be the same moment. */}
         <RecordingNotice onRecordings={openRecordings} />
+        {/* Your character on the screen. Loads itself once the app is idle. */}
+        {user && <PetHost key={`pet:${user.id}`} user={user} />}
+        <PetCallBridge />
         <FriendsDialog
           open={friendsOpen}
           onOpenChange={(next) => {

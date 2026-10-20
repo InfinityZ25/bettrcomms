@@ -6,14 +6,14 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-const publicUserCols = `u.id::text,u.name,u.username,u.bio,u.avatar_url,u.created_at,u.profile_version,
+const publicUserCols = `u.id::text,u.name,u.username,u.bio,u.avatar_url,u.created_at,u.profile_version,u.character_variant,u.character_hue,
  CASE WHEN st.expires_at IS NULL OR st.expires_at>clock_timestamp() THEN COALESCE(st.text,'') ELSE '' END,
  CASE WHEN st.expires_at IS NULL OR st.expires_at>clock_timestamp() THEN COALESCE(st.emoji,'') ELSE '' END,
  CASE WHEN st.expires_at>clock_timestamp() THEN st.expires_at END,COALESCE(st.version,0)`
 
 func scanPublicUser(row pgx.Row) (PublicUser, error) {
 	var u PublicUser
-	e := row.Scan(&u.ID, &u.Name, &u.Username, &u.Bio, &u.AvatarURL, &u.CreatedAt, &u.ProfileVersion, &u.CustomStatus.Text, &u.CustomStatus.Emoji, &u.CustomStatus.ExpiresAt, &u.StatusVersion)
+	e := row.Scan(&u.ID, &u.Name, &u.Username, &u.Bio, &u.AvatarURL, &u.CreatedAt, &u.ProfileVersion, &u.Character.Variant, &u.Character.Hue, &u.CustomStatus.Text, &u.CustomStatus.Emoji, &u.CustomStatus.ExpiresAt, &u.StatusVersion)
 	return u, norm(e)
 }
 

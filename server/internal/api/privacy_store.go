@@ -32,7 +32,7 @@ func (s *PostgresStore) DMPrivacy(user string) (bool, []User, error) {
 	if err := s.DB.QueryRow(ctx, `SELECT allow_dm_requests FROM users WHERE id=$1`, user).Scan(&allow); err != nil {
 		return false, nil, norm(err)
 	}
-	rows, err := s.DB.Query(ctx, `SELECT u.id::text,u.email,u.name,u.avatar_url,u.created_at,u.username,u.bio,u.profile_version FROM user_blocks b JOIN users u ON u.id=b.blocked_id WHERE b.blocker_id=$1 ORDER BY u.name`, user)
+	rows, err := s.DB.Query(ctx, `SELECT u.id::text,u.email,u.name,u.avatar_url,u.created_at,u.username,u.bio,u.profile_version,u.character_variant,u.character_hue FROM user_blocks b JOIN users u ON u.id=b.blocked_id WHERE b.blocker_id=$1 ORDER BY u.name`, user)
 	if err != nil {
 		return false, nil, err
 	}
@@ -40,7 +40,7 @@ func (s *PostgresStore) DMPrivacy(user string) (bool, []User, error) {
 	blocked := []User{}
 	for rows.Next() {
 		var item User
-		if err = rows.Scan(&item.ID, &item.Email, &item.Name, &item.AvatarURL, &item.CreatedAt, &item.Username, &item.Bio, &item.ProfileVersion); err != nil {
+		if err = rows.Scan(&item.ID, &item.Email, &item.Name, &item.AvatarURL, &item.CreatedAt, &item.Username, &item.Bio, &item.ProfileVersion, &item.Character.Variant, &item.Character.Hue); err != nil {
 			return false, nil, err
 		}
 		blocked = append(blocked, item)

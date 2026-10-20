@@ -1,0 +1,6 @@
+.character-introduction { display: flex; align-items: center; gap: 20px; padding: 8px 0 24px; }
+.character-choices { display: grid; width: 100%; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+.character-choice { height: auto; min-width: 0; flex-direction: column; gap: 4px; border: 1px solid var(--border); border-radius: 14px; padding: 8px 4px; }
+.character-choice[aria-pressed='true'] { border-color: var(--primary); background: color-mix(in oklch, var(--primary) 9%, var(--background)); }
+.character-swatch { display: inline-block; width: 14px; height: 14px; flex: none; border-radius: 50%; }
+@media (max-width: 560px) { .character-choices { grid-template-columns: repeat(3, minmax(0, 1fr)); } .character-introduction { gap: 12px; } }

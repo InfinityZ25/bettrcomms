@@ -61,7 +61,7 @@ export default function CallControls({
   more?: ReactNode;
 }) {
   return (
-    <div className="call-controls">
+    <div className="call-controls" data-pet-perch="call">
       <Button
         variant={muted ? 'destructive' : 'secondary'}
         size="icon"

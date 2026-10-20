@@ -63,6 +63,9 @@ import { cancelResumableUpload } from './resumableUploads';
 import { persistDraftFiles, restoreDraftFiles } from './attachmentDraftFiles';
 import { draftReplyToId, draftScope, draftsSnapshot, editTextDraft, focusTextDraft, loadTextDraft, sentTextDraft, submittedDraft, subscribeDrafts } from '@/features/personal/draftStore';
 import { DraftStatus } from '@/features/personal/DraftStatus';
+import ComposerCompanion from './ComposerCompanion';
+import { emitPetSignal } from '@/features/pet/signals';
+import ConversationPresence from './ConversationPresence';
 
 function StopRestrictedUploads({ cancel }: { cancel: () => void }) {
   useMountEffect(() => {
@@ -565,6 +568,7 @@ function MessageTimeline({
       )
         void posting.refresh();
       onError(error instanceof Error ? error.message : 'Message action failed');
+      emitPetSignal({ type: 'send-failed' });
       return false;
     } finally {
       busyRef.current = false;
@@ -721,9 +725,10 @@ function MessageTimeline({
             message.author.id !== user.id &&
             (message.sequence ?? 0) > chat.unreadBoundary!,
         );
-  const typingNames = typing
-    .map((id) => chat.members.find((member) => member.id === id)?.name)
-    .filter((name): name is string => Boolean(name));
+  const typingPeople = typing
+    .filter((id) => id !== user.id)
+    .map((id) => chat.members.find((member) => member.id === id))
+    .filter((person): person is User => Boolean(person));
   return (
     <div
       className="message-thread relative flex min-h-0 flex-1 flex-col select-text"
@@ -1135,26 +1140,19 @@ function MessageTimeline({
           Jump to latest
         </Button>
       )}
-      {typingNames.length > 0 && (
-        <p className="flex items-center gap-2 px-5 py-1 text-xs text-muted-foreground" role="status">
-          <span
-            aria-hidden="true"
-            // Decorative: three lime dots taking turns.
-            className="inline-flex items-center gap-[3px]"
-          >
-            <span className="size-1.5 animate-bc-breathe rounded-full bg-primary [animation-duration:1.2s]" />
-            <span className="size-1.5 animate-bc-breathe rounded-full bg-primary [animation-delay:200ms] [animation-duration:1.2s]" />
-            <span className="size-1.5 animate-bc-breathe rounded-full bg-primary [animation-delay:400ms] [animation-duration:1.2s]" />
-          </span>
-          {typingNames.join(', ')} {typingNames.length === 1 ? 'is' : 'are'}{' '}
-          typing…
-        </p>
-      )}
+      <ConversationPresence roomId={roomId} threadRootId={threadRootId} typingPeople={typingPeople} />
       {!editing && <div className="px-4"><DraftStatus roomId={roomId} root={threadRootId} /></div>}
       <MessageComposer
         roomId={roomId}
         userId={user.id}
         recordingKey={`${user.id}:${roomId}:${threadRootId ?? ''}`}
+        companion={<ComposerCompanion
+          user={user}
+          roomId={roomId}
+          threadRootId={threadRootId}
+          blocked={busy || !!editing || permission.current.restricted || posting.cooldown || chat.loading || Boolean(chat.error) || !chat.members.some((person) => person.id === user.id)}
+          onError={onError}
+        />}
         draft={draft}
         onDraft={changeDraft}
         onDraftFocus={(focused) => focusTextDraft(roomId, !editing && focused, threadRootId)}

@@ -1,5 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import type { BlobatarOptions } from 'blobatar';
+import type { CharacterAppearance } from '@/api';
+import { characterSeed, ORIGINAL_CHARACTER } from './character';
 
 /**
  * Whose face is whose.
@@ -8,9 +10,9 @@ import type { BlobatarOptions } from 'blobatar';
  * is the account id wherever one is known: a display name is something people
  * change, and a face that changes with it stops being theirs.
  *
- * Nobody edits their own. The creature people tune is the app's mascot, which
- * is one character and lives in components/mascot.tsx; a face here stands for
- * a person and is theirs by derivation rather than by choice.
+ * Account identity stays the seed. A saved character choice adds a bounded
+ * variant and optional hue; variant zero keeps the original creature. The
+ * app's mascot remains separate, in components/mascot.tsx.
  */
 export type BlobatarIdentity = Pick<BlobatarOptions, 'traits' | 'hue'> & {
   /** The seed. Everything about the creature that is not overridden. */
@@ -37,8 +39,9 @@ export function hueFor(key: string): number {
 }
 
 /** The face for a person, by account id where there is one and by name where there is not. */
-export function blobatarFor(key: string): BlobatarIdentity {
-  return { name: key, hue: hueFor(key) };
+export function blobatarFor(key: string, character: CharacterAppearance = ORIGINAL_CHARACTER): BlobatarIdentity {
+  const name = characterSeed(key, character.variant);
+  return { name, hue: character.hue ?? hueFor(name) };
 }
 
 /**

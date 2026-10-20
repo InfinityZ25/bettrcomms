@@ -1,0 +1,30 @@
+@layer components {
+.companion {
+  display: inline-block;
+  flex: none;
+  width: 48px;
+  height: 48px;
+  vertical-align: middle;
+  transform-origin: 50% 90%;
+}
+}
+
+.companion-figure {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform-origin: 50% 85%;
+  transition: transform 160ms cubic-bezier(.22, .61, .36, 1);
+}
+
+.companion[data-speaking='true'] > .companion-figure {
+  transform: translateY(-3%) scale(1.025);
+}
+
+[data-companion-motion='quiet'] .companion-figure {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .companion-figure { transition: none; transform: none !important; }
+}

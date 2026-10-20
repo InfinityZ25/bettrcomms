@@ -33,6 +33,11 @@ Open **http://localhost:5173**. WorkOS's allowed callback must include `http://l
 
 For automated tests or a local test account, explicitly start the API with `./scripts/start-api.ps1 -DevAuth`. This reveals the local development login form and enables a loopback-restricted test endpoint. Normal startup does not enable this bypass. Use distinct browser profiles or private windows for distinct participants.
 
+With `-DevAuth`, enter a name and email in **Enter local workspace** on the
+initial screen. This path does not require WorkOS credentials. **Continue with
+WorkOS** requires a separately configured WorkOS application; an unconfigured
+local server returns `auth_not_configured` on that route.
+
 The API generates cryptographically random session tokens, stores only their hashes in PostgreSQL, and revokes the active session on logout. Docker's database binds only to loopback on port 54329 and persists in the `bettercomms_postgres-data` volume.
 
 ## Optional local relay

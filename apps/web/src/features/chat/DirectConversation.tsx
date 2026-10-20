@@ -15,7 +15,6 @@ import {
   FolderOpen,
 } from 'lucide-react';
 import { type Message, type Room, type User } from '@/api';
-import { Avatar } from '@/components/avatar';
 import { Button } from '@/components/ui/button';
 import { useActiveCall } from '@/features/call/CallSessionContext';
 import { SecondDevice } from '@/features/call/CallLobby';
@@ -26,6 +25,7 @@ import {
 import { roomLabel } from '@/features/rooms/RoomNavigation';
 import { cn } from '@/lib/utils';
 import MessageThread from './MessageThread';
+import ConversationAvatar from './ConversationAvatar';
 import { openMessageSearch } from './searchEvents';
 import { conversationSnapshot, markRead } from './messageStore';
 import { openConversationPanel } from './conversationPanels';
@@ -138,7 +138,7 @@ export default function DirectConversation({
             {announcement ? <Megaphone size={18} /> : <Hash size={20} />}
           </span>
         ) : (
-          <Avatar name={name} id={room.id} className="size-10 phone:size-9" />
+          <ConversationAvatar room={room} viewerId={user?.id} className="size-10 phone:size-9" />
         )}
         <div className="min-w-0 flex-1">
           <h2 className="block truncate font-heading text-lg leading-tight font-bold phone:text-base">

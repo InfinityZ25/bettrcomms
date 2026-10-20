@@ -3,18 +3,19 @@ package api
 import "time"
 
 type User struct {
-	CustomStatus   *CustomStatus `json:"custom_status,omitempty"`
-	StatusVersion  int64         `json:"status_version,omitempty"`
-	ProfileVersion int64         `json:"profile_version"`
-	ID             string        `json:"id"`
-	WorkOSID       *string       `json:"-"`
-	Email          string        `json:"email"`
-	Name           string        `json:"name"`
-	Username       *string       `json:"username"`
-	Bio            string        `json:"bio"`
-	PresenceStatus string        `json:"presence_status,omitempty"`
-	AvatarURL      *string       `json:"avatar_url"`
-	CreatedAt      time.Time     `json:"created_at"`
+	Character      CharacterAppearance `json:"character"`
+	CustomStatus   *CustomStatus       `json:"custom_status,omitempty"`
+	StatusVersion  int64               `json:"status_version,omitempty"`
+	ProfileVersion int64               `json:"profile_version"`
+	ID             string              `json:"id"`
+	WorkOSID       *string             `json:"-"`
+	Email          string              `json:"email"`
+	Name           string              `json:"name"`
+	Username       *string             `json:"username"`
+	Bio            string              `json:"bio"`
+	PresenceStatus string              `json:"presence_status,omitempty"`
+	AvatarURL      *string             `json:"avatar_url"`
+	CreatedAt      time.Time           `json:"created_at"`
 }
 type Room struct {
 	IsPrivate       bool            `json:"is_private"`
